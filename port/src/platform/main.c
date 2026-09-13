@@ -62,6 +62,8 @@ static void usage(const char* argv0) {
             "  --glinfo          dump the driver's GL strings, limits and extensions\n"
             "  --perf            per-frame game/gx/present timing, both clocks\n"
             "  --drawlog N       explain the first N draws: geometry, texture, state\n"
+            "  --drawlog-at F    ...but only on presented frame F, which is how you\n"
+            "                    point --drawlog at a screen rather than at the boot\n"
             "  --dumptex         write every decoded texture (colour + alpha) to shotdir\n"
             "  --texhash-full    hash whole textures on every bind (slow; a correctness check)\n"
             "  --gxwarn          name every GX feature the backend degraded\n"
@@ -209,6 +211,8 @@ int port_parse_args(int argc, char** argv) {
             port_opt.perf = 1;
         } else if (!strcmp(a, "--drawlog") && i + 1 < argc) {
             port_opt.drawlog = atoi(argv[++i]);
+        } else if (!strcmp(a, "--drawlog-at") && i + 1 < argc) {
+            port_opt.drawlog_frame = atoi(argv[++i]);
         } else if (!strcmp(a, "--dumptex")) {
             port_opt.dumptex = 1;
         } else if (!strcmp(a, "--texhash-full")) {

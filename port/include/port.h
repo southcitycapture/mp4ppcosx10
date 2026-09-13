@@ -51,6 +51,8 @@ typedef struct PortOptions {
     const char* dumpframe;  /* --dumpframe SPEC  frames to write: N, a,b, a-b/s */
     const char* shotdir;    /* --shotdir  where --dumpframe writes            */
     int scale;              /* --scale N  window scale over 640x480           */
+    /* ---- M3 ---- */
+    int drawlog_frame;      /* --drawlog-at F  only explain draws on frame F  */
     /* ---- M3: PAD ---- */
     int nopad;              /* --nopad  no controller 1 at all (keyboard too) */
     int pad_debug;          /* --paddbg  log raw pad reports/buttons/axes     */

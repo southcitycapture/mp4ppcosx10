@@ -877,7 +877,34 @@ void gl13_apply_raster_state(void) {
 /* ---- transform ------------------------------------------------------------ */
 /* GX's projection maps eye z to [-1, 0] and GL's to [-1, 1], so every
  * projection gets one extra row operation: z' = 2z + w.  GX's 3x4 matrices
- * are row major and GL's are column major, so the load transposes. */
+ * are row major and GL's are column major, so the load transposes.
+ *
+ * The sign of that `+ w` is the whole of M2b's missing 3D layer, and it is
+ * worth writing the derivation down rather than the answer.  Under a
+ * perspective projection **w_clip is `-z_eye`, not `+z_eye`** -- that is what
+ * `M[3][2] = -1` two lines further down says.  So:
+ *
+ *     z_gx      = m22*z + m23           (GXSetProjection's stored elements)
+ *     z_ndc_gx  = z_gx / w_clip         in [-1, 0]
+ *     z_ndc_gl  = 2*z_ndc_gx + 1        in [-1, 1]
+ *     z_clip_gl = w_clip * z_ndc_gl
+ *               = 2*z_gx + w_clip
+ *               = 2*(m22*z + m23) + (-z)
+ *               = (2*m22 - 1)*z + 2*m23
+ *
+ * so `M[2][2] = 2*m22 - 1`.  The port had `2*m22 + 1`.  With the title
+ * screen's projection (m22 = -3.05e-06, near 0.1, far 32768) that is
+ * +0.99999389 where it should be -1.00000610 -- a coefficient of very nearly
+ * the right magnitude and exactly the wrong sign, which puts **every**
+ * perspective vertex at a z just past -1 in normalised device coordinates and
+ * hands the lot to GL's near plane.  A vertex at z_eye = -949 came out at
+ * z_ndc = -1.0002.
+ *
+ * That is why 27,041 vertices in 358 display lists submitted cleanly, drew
+ * with no GL error, and put nothing on the screen; and it is why only the 3D
+ * layer was missing, because the orthographic branch has w_clip = 1 and its
+ * `+ 1` was right all along.  A clipping bug of two ten-thousandths.
+ */
 
 void gl13_apply_transform(void) {
     float m[16];
@@ -892,7 +919,7 @@ void gl13_apply_transform(void) {
         m[8] = p[1];
         m[5] = p[2];
         m[9] = p[3];
-        m[10] = 2.0f * p[4] + 1.0f; /* [-1,0] -> [-1,1] */
+        m[10] = 2.0f * p[4] - 1.0f; /* [-1,0] -> [-1,1]; w_clip is -z_eye */
         m[14] = 2.0f * p[5];
         m[11] = -1.0f;
     } else {

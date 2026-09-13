@@ -39,6 +39,8 @@
 #include "gx_internal.h"
 #include "gx_math.h"
 
+unsigned gl13_frame_number(void);
+
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -746,6 +748,15 @@ static void draw_log(void) {
     if (!port_opt.drawlog || shown >= port_opt.drawlog) {
         return;
     }
+    /* --drawlog-at: the draws worth explaining are almost never the first
+     * ones.  The boot spends hundreds of frames on two logos, so an
+     * unqualified --drawlog explains the Nintendo logo eight times and stops;
+     * the question at M3 was about the title screen's character models, six
+     * hundred frames later. */
+    if (port_opt.drawlog_frame &&
+        gl13_frame_number() + 1 != (unsigned)port_opt.drawlog_frame) {
+        return;
+    }
     shown++;
     port_log("---- draw %d: prim %02x, %d verts, %d tev stage(s), %d texgen(s), "
              "%d chan(s) ----\n",
@@ -859,7 +870,9 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
      * current descriptor says each vertex carries.  `nactive == 0` is the
      * dangerous one -- the parser then cannot know the stride, so it consumes
      * nothing and the list never advances. */
-    if (port_opt.drawlog && dl_shown < port_opt.drawlog) {
+    if (port_opt.drawlog && dl_shown < port_opt.drawlog &&
+        (!port_opt.drawlog_frame ||
+         gl13_frame_number() + 1 == (unsigned)port_opt.drawlog_frame)) {
         dl_shown++;
         port_log("---- display list %d: %u bytes at %p ----\n", dl_shown,
                  (unsigned)nbytes, list);
@@ -886,7 +899,9 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
         nverts = 0;
         in_prim = 1;
         begin_attr_order();
-        if (port_opt.drawlog && dl_shown < port_opt.drawlog) {
+        if (port_opt.drawlog && dl_shown < port_opt.drawlog &&
+        (!port_opt.drawlog_frame ||
+         gl13_frame_number() + 1 == (unsigned)port_opt.drawlog_frame)) {
             port_log("   op %02x prim %02x fmt %d count %u nactive %d, %u bytes left\n",
                      op, prim, vtxfmt, count, nactive, (unsigned)(end - p));
         }
