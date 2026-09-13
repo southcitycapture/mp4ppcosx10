@@ -642,6 +642,60 @@ void GXBegin(GXPrimitive type, GXVtxFmt fmt, u16 n) {
     GXLOG("GXBegin", "prim %02x fmt %d n %u, %d attrs", type, fmt, n, nactive);
 }
 
+/* --drawlog N: explain the first N draws in full -- the geometry after the CPU
+ * transform, the raster colour, the texture that is bound and the pipeline
+ * state that decides whether any of it survives to the framebuffer.  Written
+ * because "the draw happens and the screen stays black" has too many possible
+ * causes to reason about from the source, and each of them is one line here. */
+static void draw_log(void) {
+    static int shown;
+    int i;
+    const GXTevStage* s0 = &gx.tev[0];
+    GXTexObjPort* t;
+    if (!port_opt.drawlog || shown >= port_opt.drawlog) {
+        return;
+    }
+    shown++;
+    port_log("---- draw %d: prim %02x, %d verts, %d tev stage(s), %d texgen(s), "
+             "%d chan(s) ----\n",
+             shown, prim, nverts, gx.num_tev, gx.num_texgens, gx.num_chans);
+    for (i = 0; i < nverts && i < 4; i++) {
+        const Vtx* v = &verts[i];
+        port_log("  v%d pos %8.2f %8.2f %8.2f  clr %3u %3u %3u %3u  st %6.3f %6.3f\n",
+                 i, v->pos[0], v->pos[1], v->pos[2], v->clr[0][0], v->clr[0][1],
+                 v->clr[0][2], v->clr[0][3], v->tex[0][0], v->tex[0][1]);
+    }
+    port_log("  proj %s [%g %g %g %g %g %g]  viewport %g %g %g %g z %g..%g\n",
+             gx.proj_type == GX_PERSPECTIVE ? "persp" : "ortho", gx.proj[0],
+             gx.proj[1], gx.proj[2], gx.proj[3], gx.proj[4], gx.proj[5], gx.vp[0],
+             gx.vp[1], gx.vp[2], gx.vp[3], gx.vp[4], gx.vp[5]);
+    port_log("  stage0 coord %u map %u chan %u  cin %u %u %u %u  ain %u %u %u %u\n",
+             s0->coord, s0->map, s0->chan, s0->cin[0], s0->cin[1], s0->cin[2],
+             s0->cin[3], s0->ain[0], s0->ain[1], s0->ain[2], s0->ain[3]);
+    t = gx_bound_tex(s0->map);
+    if (t) {
+        port_log("  texmap%u %ux%u fmt %u ci %u tlut %u gl %u\n", s0->map, t->width,
+                 t->height, t->format, t->is_ci, t->tlut_name, t->gl_name);
+    } else {
+        port_log("  texmap%u NOT BOUND\n", s0->map);
+    }
+    port_log("  chan0 enable %u matsrc %u mat %u %u %u %u  ambsrc %u\n",
+             gx.chan[0].enable, gx.chan[0].mat_src, gx.chan[0].mat.r,
+             gx.chan[0].mat.g, gx.chan[0].mat.b, gx.chan[0].mat.a,
+             gx.chan[0].amb_src);
+    port_log("  alphacmp %u ref %u op %u / %u ref %u   zmode test %u fn %u write %u\n",
+             gx.alpha_comp0, gx.alpha_ref0, gx.alpha_op, gx.alpha_comp1,
+             gx.alpha_ref1, gx.z_enable, gx.z_func, gx.z_update);
+    port_log("  blend mode %u src %u dst %u   cull %u   scissor %u %u %u %u\n",
+             gx.blend_mode, gx.blend_src, gx.blend_dst, gx.cull,
+             gx.scissor[0], gx.scissor[1], gx.scissor[2], gx.scissor[3]);
+    {
+        GLenum e = GL(glGetError)();
+        port_log("  glGetError %s (0x%04x)\n", e == GL_NO_ERROR ? "GL_NO_ERROR" : "SET",
+                 (unsigned)e);
+    }
+}
+
 static void draw_now(void) {
     if (!nverts) {
         return;
@@ -654,6 +708,10 @@ static void draw_now(void) {
     gl13_apply_transform();
     gl13_apply_raster_state();
     gx_tev_apply();
+    /* After the state is applied, not before: the texture cache fills in
+     * gl_name at bind time, so a log taken earlier reports a stale 0 and
+     * sends you hunting for a texture upload that already happened. */
+    draw_log();
 
     GL(glEnableClientState)(GL_VERTEX_ARRAY);
     GL(glVertexPointer)(3, GL_FLOAT, sizeof(Vtx), &verts[0].pos[0]);
@@ -665,7 +723,7 @@ static void draw_now(void) {
             int stage = i < gx.num_tev ? i : -1;
             GL(glClientActiveTexture)(GL_TEXTURE0 + i);
             if (stage >= 0 && gx.tev[stage].coord < GX_TEXCOORDS &&
-                gx.tev[stage].map < GX_TEX_UNITS && gx.bound[gx.tev[stage].map]) {
+                gx_bound_tex(gx.tev[stage].map) != NULL) {
                 GL(glEnableClientState)(GL_TEXTURE_COORD_ARRAY);
                 GL(glTexCoordPointer)(2, GL_FLOAT, sizeof(Vtx),
                                       &verts[0].tex[gx.tev[stage].coord][0]);
@@ -687,7 +745,9 @@ void GXEnd(void) {
         return;
     }
     in_prim = 0;
+    port_perf_gx_begin();
     draw_now();
+    port_perf_gx_end();
     nverts = 0;
 }
 
@@ -704,6 +764,7 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
     }
     dl_replaying = 1;
     stat_dls++;
+    port_perf_gx_begin();
     while (p < end) {
         u8 op = *p++;
         u32 count;
@@ -776,6 +837,7 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
         draw_now();
         nverts = 0;
     }
+    port_perf_gx_end();
     dl_replaying = 0;
 }
 
@@ -786,9 +848,12 @@ void GXCopyDisp(void* dest, GXBool clear) {
     /* The XFB does not exist here: the game draws into GL's back buffer and
      * the swap happens at the retrace gate, so the double-buffer discipline
      * the game expects is preserved (PLAN.md §3.7).  The clear it asks for is
-     * the *next* frame's clear, which is where gl13_clear runs. */
+     * the *next* frame's clear and must not touch this one -- on the console
+     * the copy to the XFB has already happened by the time the EFB is cleared,
+     * and here the "copy" is the swap, which has not happened yet.  So it is
+     * queued and run immediately after the swap. */
     if (clear) {
-        gl13_clear(gx.copy_clear, gx.copy_clear_z);
+        gl13_clear_at_swap(gx.copy_clear, gx.copy_clear_z);
     }
 }
 

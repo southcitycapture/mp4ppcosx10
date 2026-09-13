@@ -21,6 +21,8 @@
 #include "gx_internal.h"
 
 #include <stdio.h>
+
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -355,12 +357,16 @@ typedef struct CacheEntry {
     unsigned gl_name;
     u8 wrap_s, wrap_t, min_filt, mag_filt;
     int used;
+    /* The Radeon 9000 has no ARB_texture_non_power_of_two, so an NPOT texture
+     * is uploaded into the next power of two up and these are the fractions of
+     * it that hold real texels.  1.0 for the overwhelmingly common POT case. */
+    float su, sv;
 } CacheEntry;
 
 #define CACHE_MAX 2048
 static CacheEntry cache[CACHE_MAX];
 static int cache_used;
-static unsigned stat_hit, stat_miss, stat_evict, stat_bytes;
+static unsigned stat_hit, stat_miss, stat_evict, stat_bytes, stat_npot;
 
 void gx_tex_init(void) {
     memset(cache, 0, sizeof(cache));
@@ -372,8 +378,9 @@ void gx_tex_report(void) {
         return;
     }
     port_log("port> texture cache: %u hits, %u misses, %u re-uploads, %u entries, "
-             "%u KB decoded\n",
-             stat_hit, stat_miss, stat_evict, (unsigned)cache_used, stat_bytes / 1024);
+             "%u KB decoded, %u padded to a power of two\n",
+             stat_hit, stat_miss, stat_evict, (unsigned)cache_used, stat_bytes / 1024,
+             stat_npot);
 }
 
 static GLenum gl_wrap(u8 w) {
@@ -397,6 +404,39 @@ static GLenum gl_filter(u8 f, int is_min) {
 
 static int pot(int v) { return v > 0 && (v & (v - 1)) == 0; }
 
+static int pot_up(int v) {
+    int p = 1;
+    while (p < v) {
+        p <<= 1;
+    }
+    return p;
+}
+
+/* Copy a decoded RGBA8 image into the next power of two up, replicating the
+ * last row and column across the padding.  GX's texture unit takes the real
+ * width and height and pads to its own tile size in hardware; GL 1.3 without
+ * NPOT cannot, and an NPOT glTexImage2D makes the texture *incomplete*, which
+ * silently disables texturing for that unit -- the failure looks like a
+ * lighting bug thirty draws later, which is exactly how this one presented.
+ * Edge replication rather than zero fill is what keeps GX_CLAMP and GX_LINEAR
+ * from fringing along the two padded edges. */
+static u8* pad_to_pot(const u8* src, int w, int h, int pw, int ph) {
+    u8* dst = (u8*)malloc((size_t)pw * ph * 4);
+    int y, x;
+    if (!dst) {
+        return NULL;
+    }
+    for (y = 0; y < ph; y++) {
+        const u8* srow = src + (size_t)(y < h ? y : h - 1) * w * 4;
+        u8* drow = dst + (size_t)y * pw * 4;
+        memcpy(drow, srow, (size_t)w * 4);
+        for (x = w; x < pw; x++) {
+            memcpy(drow + (size_t)x * 4, srow + (size_t)(w - 1) * 4, 4);
+        }
+    }
+    return dst;
+}
+
 void gx_tex_bind(int unit, GXTexObjPort* o) {
     const GXTlutObjPort* tlut = NULL;
     u32 content;
@@ -410,8 +450,13 @@ void gx_tex_bind(int unit, GXTexObjPort* o) {
     /* GX textures are always power of two, and a non-POT one silently makes
      * the GL texture incomplete -- which disables texturing for that unit and
      * looks like a lighting bug thirty draws later. */
-    if (!pot(o->width) || !pot(o->height)) {
-        gx_warn("texture: a non-power-of-two texture was bound");
+    if ((!pot(o->width) || !pot(o->height)) &&
+        (o->wrap_s == GX_REPEAT || o->wrap_t == GX_REPEAT)) {
+        /* Padding and GX_REPEAT disagree: the repeat would run over the
+         * padding.  Every NPOT texture in the boot path clamps, so this is
+         * reported rather than solved until something actually needs it. */
+        gx_warn("texture: a non-power-of-two texture with GX_REPEAT is padded "
+                "to a power of two and will repeat over the padding");
     }
 
     content = fnv(&o->format, sizeof(o->format), 2166136261u);
@@ -459,8 +504,61 @@ void gx_tex_bind(int unit, GXTexObjPort* o) {
         cache[slot].w = o->width;
         cache[slot].h = o->height;
         cache[slot].content = content;
+        cache[slot].su = cache[slot].sv = 1.0f;
+        /* --dumptex: every texture the decoder produces, as it produced it,
+         * written out the first time it is decoded.  "The draw is right and
+         * the screen is black" is nearly always the texture, and looking at
+         * the texture is much faster than reasoning about the format. */
+        if (rgba && port_opt.dumptex) {
+            char path[1024];
+            FILE* f;
+            snprintf(path, sizeof(path), "%s/tex-%03d-%dx%d-fmt%u%s.ppm",
+                     port_opt.shotdir ? port_opt.shotdir : ".", slot, w, h,
+                     (unsigned)o->format, o->is_ci ? "-ci" : "");
+            f = fopen(path, "wb");
+            if (f) {
+                int yy, xx;
+                fprintf(f, "P6\n%d %d\n255\n", w, h);
+                for (yy = 0; yy < h; yy++) {
+                    for (xx = 0; xx < w; xx++) {
+                        fwrite(rgba + ((size_t)yy * w + xx) * 4, 1, 3, f);
+                    }
+                }
+                fclose(f);
+                port_log("port> --dumptex: wrote %s\n", path);
+            }
+            /* and the alpha, which is what an alpha test actually judges */
+            snprintf(path, sizeof(path), "%s/tex-%03d-%dx%d-fmt%u%s-alpha.pgm",
+                     port_opt.shotdir ? port_opt.shotdir : ".", slot, w, h,
+                     (unsigned)o->format, o->is_ci ? "-ci" : "");
+            f = fopen(path, "wb");
+            if (f) {
+                int yy, xx;
+                fprintf(f, "P5\n%d %d\n255\n", w, h);
+                for (yy = 0; yy < h; yy++) {
+                    for (xx = 0; xx < w; xx++) {
+                        fwrite(rgba + ((size_t)yy * w + xx) * 4 + 3, 1, 1, f);
+                    }
+                }
+                fclose(f);
+            }
+        }
         if (rgba) {
+            int pw = pot_up(w), ph = pot_up(h);
+            u8* up = rgba;
             stat_bytes += (unsigned)(w * h * 4);
+            if (pw != w || ph != h) {
+                u8* padded = pad_to_pot(rgba, w, h, pw, ph);
+                if (padded) {
+                    up = padded;
+                    cache[slot].su = (float)w / (float)pw;
+                    cache[slot].sv = (float)h / (float)ph;
+                    stat_npot++;
+                } else {
+                    pw = w;
+                    ph = h;
+                }
+            }
             if (gl13_live()) {
                 GLuint name = cache[slot].gl_name;
                 if (!name) {
@@ -468,8 +566,11 @@ void gx_tex_bind(int unit, GXTexObjPort* o) {
                     cache[slot].gl_name = name;
                 }
                 GL(glBindTexture)(GL_TEXTURE_2D, name);
-                GL(glTexImage2D)(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA,
-                                 GL_UNSIGNED_BYTE, rgba);
+                GL(glTexImage2D)(GL_TEXTURE_2D, 0, GL_RGBA8, pw, ph, 0, GL_RGBA,
+                                 GL_UNSIGNED_BYTE, up);
+            }
+            if (up != rgba) {
+                free(up);
             }
             free(rgba);
         }
@@ -480,6 +581,21 @@ void gx_tex_bind(int unit, GXTexObjPort* o) {
     }
     GL(glActiveTexture)(GL_TEXTURE0 + unit);
     GL(glBindTexture)(GL_TEXTURE_2D, o->gl_name);
+    /* Fold the NPOT padding into this unit's texture matrix, so the vertex
+     * decoder keeps emitting the game's own 0..1 texcoords and knows nothing
+     * about it.  GL_TEXTURE is otherwise unused by this backend -- texgen is
+     * done on the CPU (PLAN.md §10.5) -- so the matrix is ours to spend. */
+    {
+        float m[16];
+        memset(m, 0, sizeof(m));
+        m[0] = cache[slot].su;
+        m[5] = cache[slot].sv;
+        m[10] = 1.0f;
+        m[15] = 1.0f;
+        GL(glMatrixMode)(GL_TEXTURE);
+        GL(glLoadMatrixf)(m);
+        GL(glMatrixMode)(GL_MODELVIEW);
+    }
     GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, (GLint)gl_wrap(o->wrap_s));
     GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, (GLint)gl_wrap(o->wrap_t));
     /* No mip levels are uploaded, so a mipmapped min filter would make the
@@ -543,9 +659,20 @@ void GXInitTexObjWrapMode(GXTexObj* obj, GXTexWrapMode s, GXTexWrapMode t) {
 }
 
 void GXLoadTexObj(GXTexObj* obj, GXTexMapID id) {
-    if ((unsigned)id < GX_TEX_UNITS) {
-        gx.bound[id] = (GXTexObjPort*)obj;
+    /* Copy, do not alias: see the comment on GXState::bound.  This is what
+     * the console's write to the texture registers is, and the game's sprite
+     * path depends on it -- HuSprTexLoad's GXTexObj is a stack local. */
+    if ((unsigned)id < GX_TEX_UNITS && obj) {
+        gx.bound[id] = *(const GXTexObjPort*)obj;
     }
+}
+
+/* NULL unless the unit holds an object GXInitTexObj actually initialised. */
+GXTexObjPort* gx_bound_tex(unsigned id) {
+    if (id >= GX_TEX_UNITS || gx.bound[id].magic != TEXOBJ_MAGIC) {
+        return NULL;
+    }
+    return &gx.bound[id];
 }
 
 void GXInitTlutObj(GXTlutObj* obj, void* lut, GXTlutFmt fmt, u16 n) {

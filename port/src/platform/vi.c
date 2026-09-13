@@ -110,7 +110,9 @@ static double first_retrace_at;
 
 void VIWaitForRetrace(void) {
     if (swap_pending) {
+        port_perf_present_begin();
         port_gx_present();
+        port_perf_present_end();
         swap_pending = 0;
     }
     if (pre_cb) {
@@ -136,9 +138,11 @@ void VIWaitForRetrace(void) {
             req.tv_sec = (time_t)d;
             req.tv_nsec = (long)((d - (double)req.tv_sec) * 1e9);
             nanosleep(&req, NULL);
+            port_perf_slept(d);
         }
     }
     port_time_tick();
+    port_perf_frame();
 
     retrace_count++;
     field ^= 1;

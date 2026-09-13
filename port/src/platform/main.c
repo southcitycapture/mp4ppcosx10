@@ -49,6 +49,7 @@ static void usage(const char* argv0) {
             "  --gxlog           log every GX call, not just the first of each\n"
             "  --stub-trace      log every stub call, not just the first of each\n"
             "  --deterministic   fixed 60 Hz tick and no wall-clock pacing\n"
+            "  --seed N          the deterministic clock's origin: the RNG seed\n"
             "  --verbose         print each stub the first time it is called\n"
             "\n"
             "  --reldir DIR      where the 99 REL bundles live (default: <exe dir>/rels)\n"
@@ -58,8 +59,13 @@ static void usage(const char* argv0) {
             "  --noaudio         HuAudInit and msm succeed as silent stubs\n"
             "  --headless        decode and log GX, but open no window\n"
             "  --glcheck         assert that no GL call leaves the GL 1.3 subset\n"
+            "  --glinfo          dump the driver's GL strings, limits and extensions\n"
+            "  --perf            per-frame game/gx/present timing, both clocks\n"
+            "  --drawlog N       explain the first N draws: geometry, texture, state\n"
+            "  --dumptex         write every decoded texture (colour + alpha) to shotdir\n"
             "  --gxwarn          name every GX feature the backend degraded\n"
-            "  --dumpframe N     write the presented frame N as a PPM\n"
+            "  --dumpframe SPEC  write these presented frames as PPMs:\n"
+            "                    N, or a,b,c, or first-last/step (e.g. 1-400/20)\n"
             "  --shotdir DIR     where --dumpframe writes (default: .)\n"
             "  --scale N         window scale over 640x480 (default 1)\n",
             argv0);
@@ -170,6 +176,11 @@ int port_parse_args(int argc, char** argv) {
             port_opt.stub_trace = 1;
         } else if (!strcmp(a, "--deterministic")) {
             port_opt.deterministic = 1;
+        } else if (!strcmp(a, "--seed") && i + 1 < argc) {
+            /* --seed implies --deterministic: it *is* the deterministic
+             * clock, started at a chosen reading.  See os_misc.c. */
+            port_opt.seed = strtoll(argv[++i], NULL, 0);
+            port_opt.deterministic = 1;
         } else if (!strcmp(a, "--reldir") && i + 1 < argc) {
             port_opt.reldir = argv[++i];
         } else if (!strcmp(a, "--gxdemo")) {
@@ -182,12 +193,20 @@ int port_parse_args(int argc, char** argv) {
             port_opt.noaudio = 1;
         } else if (!strcmp(a, "--glcheck")) {
             port_opt.glcheck = 1;
+        } else if (!strcmp(a, "--glinfo")) {
+            port_opt.glinfo = 1;
         } else if (!strcmp(a, "--gxwarn")) {
             port_opt.gxwarn = 1;
+        } else if (!strcmp(a, "--perf")) {
+            port_opt.perf = 1;
+        } else if (!strcmp(a, "--drawlog") && i + 1 < argc) {
+            port_opt.drawlog = atoi(argv[++i]);
+        } else if (!strcmp(a, "--dumptex")) {
+            port_opt.dumptex = 1;
         } else if (!strcmp(a, "--headless")) {
             port_opt.headless = 1;
         } else if (!strcmp(a, "--dumpframe") && i + 1 < argc) {
-            port_opt.dumpframe = atoi(argv[++i]);
+            port_opt.dumpframe = argv[++i];
         } else if (!strcmp(a, "--shotdir") && i + 1 < argc) {
             port_opt.shotdir = argv[++i];
         } else if (!strcmp(a, "--scale") && i + 1 < argc) {
@@ -214,6 +233,7 @@ void GXInit_demo_bootstrap(void);
 /* One exit path, so a quit through the game's own reset, through --frames and
  * through the end of main() all report the same things in the same order. */
 void port_shutdown(int code) {
+    port_perf_report();
     port_gx_shutdown();
     port_dvd_stats();
     port_dll_report();

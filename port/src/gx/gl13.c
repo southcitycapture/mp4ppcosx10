@@ -67,7 +67,7 @@ static const char* const GL13_ALLOWED[] = {
     "glTexEnvi", "glTexImage2D", "glTexParameterf", "glTexParameteri",
     "glVertexPointer", "glViewport", "glActiveTexture", "glClientActiveTexture",
     "glDeleteTextures", "glShadeModel", "glLightModelfv", "glLightModeli",
-    "glColorMaterial", "glPolygonMode", "glHint",
+    "glColorMaterial", "glPolygonMode", "glHint", "glGetError",
 };
 
 int gl13_check(const char* fn) {
@@ -128,6 +128,56 @@ static void report_caps(void) {
              "blend_subtract %d, depth_texture %d, %d units\n",
              gl13_have_combine3, gl13_have_crossbar, gl13_have_s3tc,
              gl13_have_blend_subtract, gl13_have_depth_texture, gl13_max_tex_units);
+    /* --glinfo is the N64 ports' driver dump: the whole GL identity and every
+     * extension string, one per line, plus the limits the backend leans on.
+     * The card is the specification for this port and this is how it is
+     * recorded rather than remembered. */
+    if (port_opt.glinfo) {
+        static const struct {
+            GLenum e;
+            const char* name;
+        } limits[] = {
+            { GL_MAX_TEXTURE_UNITS, "GL_MAX_TEXTURE_UNITS" },
+            { GL_MAX_TEXTURE_SIZE, "GL_MAX_TEXTURE_SIZE" },
+            { GL_MAX_LIGHTS, "GL_MAX_LIGHTS" },
+            { GL_MAX_MODELVIEW_STACK_DEPTH, "GL_MAX_MODELVIEW_STACK_DEPTH" },
+            { GL_MAX_PROJECTION_STACK_DEPTH, "GL_MAX_PROJECTION_STACK_DEPTH" },
+            { GL_MAX_TEXTURE_STACK_DEPTH, "GL_MAX_TEXTURE_STACK_DEPTH" },
+            { GL_RED_BITS, "GL_RED_BITS" },
+            { GL_GREEN_BITS, "GL_GREEN_BITS" },
+            { GL_BLUE_BITS, "GL_BLUE_BITS" },
+            { GL_ALPHA_BITS, "GL_ALPHA_BITS" },
+            { GL_DEPTH_BITS, "GL_DEPTH_BITS" },
+            { GL_STENCIL_BITS, "GL_STENCIL_BITS" },
+        };
+        const char* ven = (const char*)GL(glGetString)(GL_VENDOR);
+        size_t li;
+        int n = 0;
+        port_log("---- --glinfo ----\n");
+        port_log("GL_VENDOR    %s\n", ven ? ven : "?");
+        port_log("GL_RENDERER  %s\n", ren ? ren : "?");
+        port_log("GL_VERSION   %s\n", ver ? ver : "?");
+        for (li = 0; li < sizeof(limits) / sizeof(limits[0]); li++) {
+            GLint v = 0;
+            GL(glGetIntegerv)(limits[li].e, &v);
+            port_log("%-30s %d\n", limits[li].name, (int)v);
+        }
+        if (ext) {
+            const char* p = ext;
+            while (*p) {
+                const char* q = p;
+                while (*q && *q != ' ') {
+                    q++;
+                }
+                if (q > p) {
+                    port_log("ext %.*s\n", (int)(q - p), p);
+                    n++;
+                }
+                p = *q ? q + 1 : q;
+            }
+        }
+        port_log("---- %d extensions ----\n", n);
+    }
 #endif
 }
 
@@ -201,6 +251,24 @@ int gl13_live(void) { return gl_on; }
 
 
 /* ---- per-frame ------------------------------------------------------------ */
+
+/* GXCopyDisp's clear is deferred to just after the swap.  On the console
+ * GXCopyDisp *copies* the EFB into the XFB and only then clears the EFB for
+ * the next frame, so the clear never touches the image being shown.  Here the
+ * back buffer is the image, so clearing it when the game asks -- inside
+ * HuSysDoneRender, before SwapBuffers -- throws away the frame that was just
+ * drawn and presents a solid clear colour instead.  Every frame renders
+ * correctly and every frame is black, which is a memorable way to spend an
+ * afternoon.  See PLAN.md §12. */
+static int clear_pending;
+static GXColor clear_color;
+static u32 clear_z;
+
+void gl13_clear_at_swap(GXColor c, u32 z) {
+    clear_pending = 1;
+    clear_color = c;
+    clear_z = z;
+}
 
 void gl13_clear(GXColor c, u32 z) {
     if (!gl_on) {
@@ -453,10 +521,54 @@ void gl13_write_ppm(const char* path) {
 #endif
 }
 
+/* --dumpframe's argument is a frame *set*, not a frame: "187", "1,90,186" or
+ * "1-400/20" (first-last/step), and any comma-separated mixture of the three.
+ * A spread is what the comparison against Dolphin actually needs -- the two
+ * sides do not agree on absolute frame numbers, because the port skips the
+ * console's DVD seek, so you shoot a spread on both, find the matching pair
+ * once, and reuse it (PLAN.md §5.1). */
+static int frame_wanted(unsigned n) {
+    const char* p = port_opt.dumpframe;
+    if (!p) {
+        return 0;
+    }
+    while (*p) {
+        long a, b, step = 1;
+        char* e;
+        a = strtol(p, &e, 10);
+        if (e == p) {
+            break;
+        }
+        p = e;
+        b = a;
+        if (*p == '-') {
+            b = strtol(p + 1, &e, 10);
+            p = e;
+        }
+        if (*p == '/') {
+            step = strtol(p + 1, &e, 10);
+            p = e;
+            if (step < 1) {
+                step = 1;
+            }
+        }
+        if ((long)n >= a && (long)n <= b && ((long)n - a) % step == 0) {
+            return 1;
+        }
+        while (*p && *p != ',') {
+            p++;
+        }
+        if (*p == ',') {
+            p++;
+        }
+    }
+    return 0;
+}
+
 void gl13_present(void) {
 #ifndef PORT_NO_SDL
     frame_no++;
-    if (port_opt.dumpframe && (int)frame_no == port_opt.dumpframe) {
+    if (frame_wanted(frame_no)) {
         char path[1024];
         snprintf(path, sizeof(path), "%s/frame-%05u.ppm",
                  port_opt.shotdir ? port_opt.shotdir : ".", frame_no);
@@ -470,6 +582,10 @@ void gl13_present(void) {
         return;
     }
     SDL_GL_SwapWindow(window);
+    if (clear_pending) {
+        clear_pending = 0;
+        gl13_clear(clear_color, clear_z);
+    }
     {
         SDL_Event e;
         while (SDL_PollEvent(&e)) {

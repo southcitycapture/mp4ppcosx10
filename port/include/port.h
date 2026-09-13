@@ -40,9 +40,14 @@ typedef struct PortOptions {
                              *   hand on load, as if dlclose never unloaded   */
     int noaudio;            /* --noaudio  HuAudInit/msm succeed as silent stubs */
     int glcheck;            /* --glcheck  assert no GL call outside GL 1.3    */
+    int glinfo;             /* --glinfo   dump GL strings, limits, extensions */
+    long long seed;         /* --seed N   deterministic clock origin (RNG seed) */
+    int perf;               /* --perf     per-frame game/gx/present timing     */
+    int drawlog;            /* --drawlog N  explain the first N draws in full  */
+    int dumptex;            /* --dumptex  write every decoded texture as a PPM */
     int gxwarn;             /* --gxwarn   name every degraded GX feature      */
     int headless;           /* --headless no window; still decodes and logs   */
-    int dumpframe;          /* --dumpframe N  write frame N as a PPM          */
+    const char* dumpframe;  /* --dumpframe SPEC  frames to write: N, a,b, a-b/s */
     const char* shotdir;    /* --shotdir  where --dumpframe writes            */
     int scale;              /* --scale N  window scale over 640x480           */
 } PortOptions;
@@ -63,6 +68,15 @@ void port_log(const char* fmt, ...);
 void port_logv(const char* fmt, va_list ap);
 void port_fatal(const char* fmt, ...);
 void port_shutdown(int code); /* the one exit path: report, flush, close SDL */
+
+/* --perf, src/debug/perf.c */
+void port_perf_gx_begin(void);
+void port_perf_gx_end(void);
+void port_perf_present_begin(void);
+void port_perf_present_end(void);
+void port_perf_slept(double seconds);
+void port_perf_frame(void);
+void port_perf_report(void);
 
 /* ---- the clock ----------------------------------------------------------- */
 /* mach_absolute_time, because clock_gettime is not in the 10.4 SDK. */

@@ -277,11 +277,11 @@ void gx_tev_apply(void) {
             const GXTevStage* s = &gx.tev[i];
             float konst[4] = { 0, 0, 0, 0 };
             int konst_set = 0;
-            int have_tex = s->map < GX_TEX_UNITS && gx.bound[s->map] != NULL &&
-                           s->coord < GX_TEXCOORDS;
+            GXTexObjPort* bound = gx_bound_tex(s->map);
+            int have_tex = bound != NULL && s->coord < GX_TEXCOORDS;
             if (have_tex) {
                 GL(glEnable)(GL_TEXTURE_2D);
-                gx_tex_bind(i, gx.bound[s->map]);
+                gx_tex_bind(i, bound);
             } else {
                 /* A stage with no texture still has to run its combiner, and
                  * a disabled unit in GL passes the previous colour through

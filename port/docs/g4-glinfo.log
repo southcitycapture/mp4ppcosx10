@@ -1,0 +1,107 @@
+Mario Party 4 -- native port, milestone M2a
+port> GL: ATI Radeon 9000 OpenGL Engine / 1.3 ATI-1.5.28, 6 texture units
+port> GL feature set used: combine3 1, crossbar 1, s3tc 1, blend_subtract 1, depth_texture 0, 6 units
+---- --glinfo ----
+GL_VENDOR    ATI Technologies Inc.
+GL_RENDERER  ATI Radeon 9000 OpenGL Engine
+GL_VERSION   1.3 ATI-1.5.28
+GL_MAX_TEXTURE_UNITS           6
+GL_MAX_TEXTURE_SIZE            2048
+GL_MAX_LIGHTS                  8
+GL_MAX_MODELVIEW_STACK_DEPTH   32
+GL_MAX_PROJECTION_STACK_DEPTH  10
+GL_MAX_TEXTURE_STACK_DEPTH     10
+GL_RED_BITS                    8
+GL_GREEN_BITS                  8
+GL_BLUE_BITS                   8
+GL_ALPHA_BITS                  8
+GL_DEPTH_BITS                  24
+GL_STENCIL_BITS                0
+ext GL_ARB_transpose_matrix
+ext GL_ARB_vertex_program
+ext GL_ARB_vertex_blend
+ext GL_ARB_window_pos
+ext GL_ARB_shader_objects
+ext GL_ARB_vertex_shader
+ext GL_ARB_shading_language_100
+ext GL_EXT_multi_draw_arrays
+ext GL_EXT_clip_volume_hint
+ext GL_EXT_rescale_normal
+ext GL_EXT_draw_range_elements
+ext GL_EXT_fog_coord
+ext GL_EXT_gpu_program_parameters
+ext GL_EXT_geometry_shader4
+ext GL_EXT_transform_feedback
+ext GL_APPLE_client_storage
+ext GL_APPLE_specular_vector
+ext GL_APPLE_transform_hint
+ext GL_APPLE_packed_pixels
+ext GL_APPLE_fence
+ext GL_APPLE_vertex_array_object
+ext GL_APPLE_vertex_program_evaluators
+ext GL_APPLE_element_array
+ext GL_APPLE_flush_render
+ext GL_APPLE_aux_depth_stencil
+ext GL_NV_texgen_reflection
+ext GL_NV_light_max_exponent
+ext GL_IBM_rasterpos_clip
+ext GL_SGIS_generate_mipmap
+ext GL_ARB_imaging
+ext GL_ARB_texture_env_crossbar
+ext GL_ARB_texture_border_clamp
+ext GL_ARB_multitexture
+ext GL_ARB_texture_env_add
+ext GL_ARB_texture_cube_map
+ext GL_ARB_texture_env_dot3
+ext GL_ARB_multisample
+ext GL_ARB_texture_env_combine
+ext GL_ARB_texture_compression
+ext GL_ARB_texture_mirrored_repeat
+ext GL_ARB_occlusion_query
+ext GL_ARB_vertex_buffer_object
+ext GL_ARB_pixel_buffer_object
+ext GL_EXT_compiled_vertex_array
+ext GL_EXT_texture_rectangle
+ext GL_ARB_texture_rectangle
+ext GL_EXT_texture_env_add
+ext GL_EXT_blend_color
+ext GL_EXT_blend_minmax
+ext GL_EXT_blend_subtract
+ext GL_EXT_texture_lod_bias
+ext GL_EXT_abgr
+ext GL_EXT_bgra
+ext GL_EXT_stencil_wrap
+ext GL_EXT_texture_filter_anisotropic
+ext GL_EXT_separate_specular_color
+ext GL_EXT_secondary_color
+ext GL_EXT_blend_func_separate
+ext GL_EXT_texture_compression_s3tc
+ext GL_EXT_texture_compression_dxt1
+ext GL_EXT_blend_equation_separate
+ext GL_APPLE_flush_buffer_range
+ext GL_APPLE_ycbcr_422
+ext GL_APPLE_vertex_array_range
+ext GL_APPLE_texture_range
+ext GL_APPLE_pixel_buffer
+ext GL_NV_blend_square
+ext GL_NV_fog_distance
+ext GL_ATI_texture_mirror_once
+ext GL_ATI_text_fragment_shader
+ext GL_ATI_blend_equation_separate
+ext GL_ATI_blend_weighted_minmax
+ext GL_ATI_texture_env_combine3
+ext GL_ATI_array_rev_comps_in_4_bytes
+ext GL_SGIS_texture_edge_clamp
+ext GL_SGIS_texture_lod
+ext GL_SGI_color_matrix
+---- 77 extensions ----
+port> GXInit: FIFO 0x0, 0 bytes (the port keeps no FIFO; the write-gather writers are ordinary calls under TARGET_PC)
+port> --gxdemo: display list recorded, 32 bytes (1 opcode + 2 count + 8 indices = 19, padded to 32)
+port> --dumpframe: wrote /Users/zach/mp4out/gxdemo.ppm
+port> GX draw: 13 primitives, 56 vertices, 13 glDrawArrays, 1 display lists replayed
+port> texture cache: 1 hits, 8 misses, 0 re-uploads, 8 entries, 32 KB decoded
+port> DVD: 0 reads, 0 bytes
+
+---- SDK surface hit at boot: 0 distinct stubs, in first-call order ----
+---- 0 stub calls total ----
+EXITCODE=0

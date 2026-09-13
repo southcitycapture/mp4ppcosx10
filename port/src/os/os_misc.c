@@ -37,7 +37,21 @@ void OSInit(void) {
 /* OSGetTick counts the console's 40.5 MHz decrementer.  OSGetTime is the same
  * counter as a 64-bit value since the RTC epoch (2000-01-01).  Under
  * --deterministic both advance by exactly one 60 Hz frame per retrace, so a
- * replay is reproducible. */
+ * replay is reproducible.
+ *
+ * `--seed N` is that same deterministic clock started at a different reading,
+ * and it is the port's whole RNG-seed story.  The game has exactly two random
+ * sources and **both of them seed from `OSGetTime` and from nothing else**:
+ *
+ *   src/game/frand.c:13    frandom(0) -> rand8() ^ (s64)OSGetTime() ^ 0xD826BC89,
+ *                          reached once from init.c:77 (`rnd_temp = frand()`)
+ *   src/game/board/main.c:1432  BoardRandInit() -> boardRandSeed = OSGetTime()
+ *
+ * and `rand8`'s own `rnd_seed` is a literal 0x0000D9ED in main.c:134.  So
+ * moving the clock's origin moves both generators, together, through the
+ * game's own seed sites -- no patch to game source, no second seeding path to
+ * keep in step with the first, and the two RNGs stay in the same relationship
+ * to each other that they have on the console. */
 
 #define GC_EPOCH_UNIX 946684800LL /* 2000-01-01T00:00:00Z */
 
@@ -47,7 +61,7 @@ void port_time_tick(void) { det_ticks += PORT_TIMER_CLOCK / 60; }
 
 static OSTime host_ticks(void) {
     if (port_opt.deterministic) {
-        return det_ticks;
+        return port_opt.seed + det_ticks;
     }
     return (OSTime)(port_now_ns() / 1000ULL) * (PORT_TIMER_CLOCK / 1000000) / 1000;
 }

@@ -131,7 +131,14 @@ typedef struct GXState {
     u32 copy_clear_z;
 
     /* textures */
-    GXTexObjPort* bound[GX_TEX_UNITS];
+    /* Bound textures are held BY VALUE, not by pointer.  GXLoadTexObj's
+     * contract is the hardware's: it loads the object's contents into the
+     * texture registers and the caller's GXTexObj is dead the instant it
+     * returns.  The game leans on that -- `HuSprTexLoad` in src/game/sprput.c
+     * builds its GXTexObj as a *stack local*, loads it, and returns before a
+     * single vertex is emitted -- so a port that aliased the caller's object
+     * would be reading a dead stack frame at draw time.  See PLAN.md §11.x. */
+    GXTexObjPort bound[GX_TEX_UNITS];
     GXTlutObjPort tlut[64];
 
     /* copies */
@@ -154,6 +161,7 @@ void gx_tev_report(void);
 /* gx_tex.c */
 void gx_tex_init(void);
 void gx_tex_bind(int unit, GXTexObjPort* obj);
+GXTexObjPort* gx_bound_tex(unsigned id); /* NULL unless the unit holds a real object */
 void gx_tex_copy(void* dest, int clear);
 void gx_tex_report(void);
 
@@ -165,6 +173,7 @@ void gl13_present(void);
 void gl13_apply_raster_state(void);
 void gl13_apply_transform(void);
 void gl13_clear(GXColor c, u32 z);
+void gl13_clear_at_swap(GXColor c, u32 z); /* run it after the swap, not before */
 int gl13_check(const char* fn);   /* --glcheck; returns 0, for the GL() macro */
 int gl13_live(void);
 void gl13_write_ppm(const char* path);
