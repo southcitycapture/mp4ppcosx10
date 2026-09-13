@@ -56,6 +56,10 @@ static void usage(const char* argv0) {
             "  --reltest         load and unload all 99 REL bundles twice and report\n"
             "  --gxdemo          draw the GX self-test frame instead of the game\n"
             "  --relzerobss      always zero a module's bss by hand on load\n"
+            "  --reldlclose      really dlclose a REL when the game unlinks it.  The\n"
+            "                    port keeps it mapped by default, because the game\n"
+            "                    calls into bootDll after unlinking it and the\n"
+            "                    console's freed heap is still executable\n"
             "  --noaudio         HuAudInit and msm succeed as silent stubs\n"
             "  --headless        decode and log GX, but open no window\n"
             "  --glcheck         assert that no GL call leaves the GL 1.3 subset\n"
@@ -64,6 +68,10 @@ static void usage(const char* argv0) {
             "  --drawlog N       explain the first N draws: geometry, texture, state\n"
             "  --drawlog-at F    ...but only on presented frame F, which is how you\n"
             "                    point --drawlog at a screen rather than at the boot\n"
+            "  --nocard          both memory-card slots read empty.  The game then\n"
+            "                    stops at SELECT A FILE, exactly as a console with no\n"
+            "                    card does; without it slot A holds a 512 KB image in\n"
+            "                    ~/Library/Application Support/MarioParty4/\n"
             "  --dumptex         write every decoded texture (colour + alpha) to shotdir\n"
             "  --texhash-full    hash whole textures on every bind (slow; a correctness check)\n"
             "  --gxwarn          name every GX feature the backend degraded\n"
@@ -213,6 +221,10 @@ int port_parse_args(int argc, char** argv) {
             port_opt.drawlog = atoi(argv[++i]);
         } else if (!strcmp(a, "--drawlog-at") && i + 1 < argc) {
             port_opt.drawlog_frame = atoi(argv[++i]);
+        } else if (!strcmp(a, "--nocard")) {
+            port_opt.nocard = 1;
+        } else if (!strcmp(a, "--reldlclose")) {
+            port_opt.reldlclose = 1;
         } else if (!strcmp(a, "--dumptex")) {
             port_opt.dumptex = 1;
         } else if (!strcmp(a, "--texhash-full")) {
@@ -260,6 +272,7 @@ void port_shutdown(int code) {
     port_gx_shutdown();
     port_dvd_stats();
     port_thp_report();
+    port_card_report();
     port_dll_report();
     port_reset_report();
     port_stub_report();
@@ -288,6 +301,7 @@ int main(int argc, char** argv) {
     }
     port_log("Mario Party 4 -- native port, milestone M2a\n");
     if (port_opt.reltest) {
+        port_opt.reldlclose = 1; /* the self-test is *about* the unload path */
         return port_dll_selftest();
     }
     if (port_opt.gxdemo) {

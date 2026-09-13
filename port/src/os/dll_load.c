@@ -307,9 +307,45 @@ void portDLLEpilog(void* handle) {
     }
 }
 
+/* Unlinking a module does not unmap it, and that is deliberate.
+ *
+ * `dlclose` really does unload a bundle -- M2a's `--reltest` proved it, twice,
+ * on the real machine, and that was the right answer to risk 2.  It is the
+ * wrong answer for the game.  On the console `OSUnlink` relocates nothing away
+ * and `objdll.c` then `HuMemDirectFree`s the module's memory: freed heap is
+ * still readable and still executable, so a pointer the game left behind into
+ * a module it has just unlinked keeps working until something allocates over
+ * it.  Mario Party 4 leaves exactly such a pointer.  Accepting the title
+ * screen unlinks `bootDll` and the very next thing the game does is call into
+ * its dead text -- M3 caught it as `signal 11 at 0x9ff004` with a program
+ * counter no image claimed, one instruction into a bundle dyld had genuinely
+ * thrown away.  On the console that call lands on code that is still there.
+ *
+ * So the port keeps the mapping and drops only the reference: the module is
+ * marked unlinked, and a later `omDLLStart` re-enters it through the same
+ * path a resident module always took, with its bss zeroed by hand.  That is
+ * the console's behaviour, only more reliably.  It costs address space --
+ * ninety-nine bundles, the largest 36 KB -- which a 32-bit machine has plenty
+ * of.  `--reldlclose` restores the strict close, which is what `--reltest`
+ * runs with, so the unload path stays proven rather than merely remembered.
+ */
 s32 portDLLClose(void* handle) {
     DllModule* m = by_handle(handle);
     if (!handle) {
+        return TRUE;
+    }
+    if (!port_opt.reldlclose) {
+        stat_close++;
+        if (m) {
+            m->handle = NULL;
+            if (!m->stuck) {
+                m->stuck = 1; /* so a re-open zeroes the bss by hand */
+                if (port_opt.verbose) {
+                    port_log("port> REL %s: unlinked, kept mapped (see "
+                             "portDLLClose)\n", m->name);
+                }
+            }
+        }
         return TRUE;
     }
     if (dlclose(handle) != 0) {
@@ -337,6 +373,18 @@ void* portDLLReenter(const char* name, void* handle) {
     stat_reenter++;
     portDLLClose(handle);
     return portDLLOpen(name);
+}
+
+/* How many modules are mapped but unlinked, for the shutdown report -- the
+ * number that says what keeping them costs. */
+int port_dll_resident_count(void) {
+    int i, n = 0;
+    for (i = 0; i < mod_count; i++) {
+        if (mods[i].stuck && !mods[i].handle) {
+            n++;
+        }
+    }
+    return n;
 }
 
 /* ---- --reltest ----------------------------------------------------------- */

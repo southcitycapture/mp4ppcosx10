@@ -174,3 +174,27 @@ src/game/thpmain.c	BOOL HuTHPEndCheck(void)\n{\n    s32 temp_r31;\n	int portTHPA
 # model it was drawing into, clear THPProc so a later HuTHPSprCreateVol still
 # works, and HuPrcKill itself.
 src/game/thpmain.c	    while (THPSimpleOpen(THPFileName) == 0) {\n        OSReport("THPSimpleOpen fail");\n        HuPrcVSleep();\n    }	    if (!portTHPAvailable()) {\n        void portTHPSkip(const char *);\n        portTHPSkip(THPFileName);\n        if (SimpleControl.unk19C == 1) {\n            Hu3DModelKill(SimpleControl.unk19E);\n        } else {\n            HuSprKill(SimpleControl.unk19E);\n        }\n        THPProc = NULL;\n        HuPrcKill(HuPrcCurrentGet());\n        while (1) {\n            HuPrcVSleep();\n        }\n    }\n    while (THPSimpleOpen(THPFileName) == 0) {\n        OSReport("THPSimpleOpen fail");\n        HuPrcVSleep();\n    }
+
+# ---------------------------------------------------------------- game/window.c
+# "Is this a message id or a pointer to a string?"
+#
+# The game asks that four times in window.c and answers it by testing the
+# value against 0x80000000: on the console every RAM address is at or above
+# that line and every id from MAKE_MESSID(bank, mess) = (bank << 16) + mess is
+# far below it.  Here nothing is above the line -- MEM1 is around 0x02100000,
+# the REL bundles around 0x0b000000, the executable at 0x1000 -- so every real
+# pointer reads as an id, MessData_MesPtrGet hands back NULL, and the first
+# screen that shows the player a string the game built itself dies on it.
+# That is the file-select screen: modeseldll/filesel.c names a memory-card
+# slot with MAKE_MESSID_PTR, which is a bare cast.
+#
+# A range check does not work, because these pointers come from all three
+# regions -- saveload.c's SlotNameTbl is rodata in the executable, at
+# addresses a message id can also have.  So the *tag* is made real instead:
+# MAKE_MESSID_PTR sets the bit the game already tests, and the four places
+# that turn the value back into a pointer clear it.  The four tests are then
+# untouched and exactly as correct as they are on the console.  See
+# port/src/os/os_arena.c, which also says loudly if a pointer ever arrives
+# with the top bit already set.
+include/game/window.h	#define MAKE_MESSID_PTR(ptr) ((u32)(ptr))	u32 portMessTag(const void* p);   /* port: see port/src/os/os_arena.c */\nu8* portMessPtr(u32 mess);\n#define MAKE_MESSID_PTR(ptr) portMessTag(ptr)
+x4:src/game/window.c	(u8 *)mess;	portMessPtr(mess);

@@ -253,3 +253,50 @@ void OSVisitAllocated(OSAllocVisitor visitor) {
         }
     }
 }
+
+/* "Is this a message id or a pointer to a string?"
+ *
+ * src/game/window.c asks that four times -- HuWinMesSet, HuWinInsertMesSet,
+ * GetMesMaxSizeSub, HuWinKeyWaitNumGet -- and answers it by testing the value
+ * against 0x80000000.  On the console the test is exact: every RAM address is
+ * at or above 0x80000000 and every id from `MAKE_MESSID(bank, mess)`, which is
+ * `(bank << 16) + mess`, is far below it.  Here nothing is above the line.
+ * MEM1 is wherever the port allocated it (around 0x02100000 on the G4), the
+ * REL bundles are wherever dyld mapped them (around 0x0b000000), and the
+ * executable's own rodata is at 0x1000 -- an address range a message id can
+ * also occupy, which is why a simple "is it in MEM1" range check is not
+ * enough: `saveload.c`'s `SlotNameTbl` and `SAVEWIN_MESS` are string literals
+ * in the executable.
+ *
+ * So the port makes the tag real rather than inferring it.  `MAKE_MESSID_PTR`
+ * -- a bare cast on the console -- sets the bit the game already tests, and
+ * the four places that turn the value back into a pointer clear it again.
+ * Every one of the game's own tests is then untouched and exactly as correct
+ * as it is on hardware.
+ *
+ * This is the one place in the whole game where the *address* MEM1 lives at is
+ * load-bearing, which is how PLAN.md 1.5's "no pinned-globals scheme is
+ * needed" survived all the way to a screen that shows the player a string the
+ * game built itself: the file-select screen naming a memory-card slot "A".
+ */
+#define PORT_MESS_TAG 0x80000000u
+
+u32 portMessTag(const void* p) {
+    uintptr_t v = (uintptr_t)p;
+    if (v & PORT_MESS_TAG) {
+        /* A 32-bit Darwin process puts nothing up there, and a 64-bit host
+         * would have been truncated long before reaching here, but a tag that
+         * silently collided with an address would present as a missing string
+         * on one screen and nothing else, so it says so. */
+        static int said;
+        if (!said) {
+            said = 1;
+            port_log("port> window: a message pointer %p already has the tag bit "
+                     "set; the id/pointer test in window.c cannot tell them "
+                     "apart\n", p);
+        }
+    }
+    return (u32)(v | PORT_MESS_TAG);
+}
+
+u8* portMessPtr(u32 mess) { return (u8*)(uintptr_t)(mess & ~PORT_MESS_TAG); }

@@ -53,6 +53,8 @@ typedef struct PortOptions {
     int scale;              /* --scale N  window scale over 640x480           */
     /* ---- M3 ---- */
     int drawlog_frame;      /* --drawlog-at F  only explain draws on frame F  */
+    int nocard;             /* --nocard   both memory-card slots read empty   */
+    int reldlclose;         /* --reldlclose  really dlclose an unlinked REL   */
     /* ---- M3: PAD ---- */
     int nopad;              /* --nopad  no controller 1 at all (keyboard too) */
     int pad_debug;          /* --paddbg  log raw pad reports/buttons/axes     */
@@ -114,6 +116,7 @@ void port_host_service(void); /* called from VIWaitForRetrace, once per frame */
 void port_dvd_init(void);
 void port_dvd_service(void);
 void port_thp_report(void);
+void port_card_report(void);
 void port_arq_service(void);
 
 /* ---- REL modules (port/src/os/dll_load.c) -------------------------------- */

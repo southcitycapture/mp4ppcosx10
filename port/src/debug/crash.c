@@ -57,8 +57,57 @@ static void handler(int sig, siginfo_t* info, void* uap) {
         if (pc && dladdr((void*)(uintptr_t)pc, &di) && di.dli_sname) {
             port_log("    in   %s  (%s)\n", di.dli_sname,
                      di.dli_fname ? di.dli_fname : "?");
+        } else if (pc) {
+            port_log("    in   no image claims this pc -- a REL bundle that has "
+                     "been dlclose'd, or a wild jump\n");
         }
     }
+    /* A backtrace, walked by hand.  No unwinder can follow this stack: the
+     * game runs on one the port allocated (port_call_on_stack) and its
+     * HUPROCESS coroutines swap `sp` under everyone's feet with the
+     * hand-written gcsetjmp in src/game/jmp.c.  But the PowerPC linkage
+     * convention is simple enough to walk without one -- the word at r1 is
+     * the caller's frame and the return address is eight bytes into it -- and
+     * naming the frames is the difference between "signal 11 somewhere" and
+     * an answer.  Bounded, and every dereference is range-checked, because
+     * this runs inside a fault handler and must not fault again. */
+#if defined(__ppc__)
+    if (sp) {
+        unsigned long frame = (unsigned long)sp;
+        int depth;
+        port_log("    backtrace (pc, then return addresses up the linkage chain):\n");
+        for (depth = 0; depth < 24; depth++) {
+            unsigned long next, lr;
+            Dl_info di;
+            if (frame < 0x1000 || (frame & 3) != 0) {
+                break;
+            }
+            next = *(const unsigned long*)frame;
+            if (next <= frame || next < 0x1000 || (next & 3) != 0) {
+                break;
+            }
+            lr = *(const unsigned long*)(next + 8);
+            if (!lr) {
+                break;
+            }
+            if (dladdr((void*)lr, &di) && di.dli_sname) {
+                const char* f = di.dli_fname ? di.dli_fname : "?";
+                const char* slash = f;
+                const char* q;
+                for (q = f; *q; q++) {
+                    if (*q == '/') {
+                        slash = q + 1;
+                    }
+                }
+                port_log("      #%-2d %08lx  %s + %lu  [%s]\n", depth, lr, di.dli_sname,
+                         (unsigned long)((char*)lr - (char*)di.dli_saddr), slash);
+            } else {
+                port_log("      #%-2d %08lx  (no image -- unloaded REL?)\n", depth, lr);
+            }
+            frame = next;
+        }
+    }
+#endif
 #else
     (void)uap;
     port_log("\n*** port: signal %d at address %p\n", sig, info ? info->si_addr : NULL);
