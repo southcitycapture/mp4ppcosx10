@@ -1175,7 +1175,25 @@ image, and play.
 ### 5.1 Dolphin as the reference
 
 Dolphin is the reference *runtime*, never a source of code (GPLv2+; we read
-none of it). Three of its features do the work:
+none of it).
+
+**The rig for this already exists**, in `port/ref/`, built before this plan:
+
+| path | what |
+|---|---|
+| `port/ref/tools/capture.sh` | headless Dolphin capture — `-b -e <iso> -v Vulkan` against a pinned, isolated user directory, one PNG per emulated frame into `Dump/Frames`, SIGTERM after N seconds. Takes extra Dolphin args, so `-m movie.dtm` replays a recording. ~0.4× real time on an M1 Max. |
+| `port/ref/tools/mkdtm.py` | authors a Dolphin `.dtm` from a plain-text script (`frames`, `press`, `tap`, `hold`, `release`, `stick`, `cstick`, `trigL/R`, `mark`), writing the 256-byte header plus one packed 8-byte `ControllerState` **per input poll**, and a sidecar `.marks` file naming labelled polls. |
+| `port/ref/tools/pick.sh` | downsamples selected frames to 320×264 (exactly half of Dolphin's 1× native 640×528), named by the **original emulated frame number** so the filename is the comparison key. |
+| `port/ref/tools/contact.sh` | builds a labelled contact sheet so a long capture can be scanned by eye in one image. |
+| `port/ref/Config/{Dolphin,GFX}.ini` | the pinned emulator configuration, so captures are reproducible. |
+| `port/ref/frames/boot-*.png` | 78 already-captured boot frames, `boot-0001` through `boot-6880`. |
+
+So the emulator half of §5 is done; what M2 adds is the port half — `--shotat`
+and a differ — and `port/docs/reference-dolphin.md`, which `mkdtm.py`'s
+docstring already cites and which should record the `.dtm` field layout and the
+capture recipe.
+
+Three of Dolphin's features do the work:
 
 - **Frames at fixed moments.** Dolphin's frame dump and its screenshot hotkey
   give a 640×480 image at a known frame; the port's `--shotat R1,R2,...` writes
@@ -1191,8 +1209,9 @@ none of it). Three of its features do the work:
   port will have, and it is nearly free.
 - **`.dtm` input recordings.** Dolphin's movie format is a 256-byte header
   plus one 8-byte `ControllerState` per polled frame (buttons bitfield,
-  L/R analog, stick X/Y, C-stick X/Y). It is trivially parseable, and it is
-  the same data `PADRead` returns. **Design the input path so a `.dtm` can
+  L/R analog, stick X/Y, C-stick X/Y) — `port/ref/tools/mkdtm.py` already
+  writes them. It is trivially parseable, and it is the same data `PADRead`
+  returns. **Design the input path so a `.dtm` can
   drive it:** `port/src/pad/pad_source.h` defines one interface —
   `bool pad_next(int chan, PADStatus *out)` — with three implementations
   (`pad_sdl.c`, `pad_script.c` for the text scripts, `pad_dtm.c`), selected by
