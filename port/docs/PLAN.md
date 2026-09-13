@@ -2874,10 +2874,29 @@ the reader expects a depth ramp, which is worse than a flat neutral value.
 Two things are still visibly wrong, and they are M4's opening in the same way
 the 3D layer was M3's:
 
-1. **The theatre-stage backdrop is black** behind the new-file, character-select
-   and board-settings screens, where `menu-2900` has curtains, stars and
-   garlands. The foreground of those screens is correct, so this is one scene
-   that is not drawing rather than a broken pipeline.
+1. **The theatre-stage backdrop is black** behind the new-file,
+   character-select and board-settings screens, where `menu-2900` has
+   curtains, stars and garlands. The foreground of those screens is correct,
+   so this is one scene that is not drawing rather than a broken pipeline, and
+   `--drawlog-at 5100` (which now prints the position matrix as well) narrows
+   it a long way: the stage geometry **is** submitted, 317 draws of it a frame
+   through a 640x480 perspective projection, and it is transformed clean off
+   the side of the world.
+
+   ```
+   v0 pos -68320.26   279.57  -872.29
+   posmtx0     1.000    0.000    0.000  -67720.26
+               0.000    0.996   -0.087     -94.02
+               0.000    0.087    0.996   -2109.56
+   ```
+
+   The rotation is sensible, the y and z translations are sensible, and the x
+   translation is -67,720 -- so the camera and the model disagree about where
+   in the world this scene sits by about 67,720 units, with the camera holding
+   the offset and the model not. The same log at frame 3500 shows nothing
+   like it (every position matrix there has a translation under 80), so
+   whatever introduces the offset happens between the character-select screen
+   and the board settings. That is where M4 should pick it up.
 2. **Window backgrounds draw as pale blocks.** That is `HuSprDisp`'s
    `sprite->bg` tiling path, which is indirect texturing — the 20,818 warnings
    above — and §3.4 case 3 already names the three ways out. A tiled window
@@ -2890,6 +2909,7 @@ the 3D layer was M3's:
 | flag | what |
 |---|---|
 | `--drawlog-at F` | restrict `--drawlog` to presented frame F |
+| (`--drawlog` itself) | now prints the loaded position matrix too, which is what turned "the background is black" into "the modelview's x translation is -67,720" |
 | `--nocard` | both card slots read empty |
 | `--reldlclose` | really `dlclose` a REL the game unlinks (what `--reltest` uses) |
 | `--play SCRIPT` / `--record FILE` | scripted and recorded controller 1 |
@@ -2901,8 +2921,11 @@ afternoon.
 
 ### 13.12 What M4 needs
 
-1. **The stage backdrop**, §13.10 item 1 — the last thing between the menus and
-   a screenshot that matches the reference outright.
+1. **The stage backdrop**, §13.10 item 1, which is now a specific question
+   rather than a symptom: where the modelview's -67,720 in x comes from, and
+   why the camera has the scene's world offset and the model does not. The
+   last thing between the menus and a screenshot that matches the reference
+   outright.
 2. **The window background tiling**, §13.10 item 2.
 3. **Speed, again, and it is `transform_and_store`.** The title screen is 7.4
    fps and half the samples are in one function. The next three things to try,

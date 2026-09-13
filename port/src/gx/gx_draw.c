@@ -859,6 +859,13 @@ static void draw_log(void) {
                  i, v->pos[0], v->pos[1], v->pos[2], v->clr[0][0], v->clr[0][1],
                  v->clr[0][2], v->clr[0][3], v->tex[0][0], v->tex[0][1]);
     }
+    {
+        const f32* m = gx.pos_mtx[gx.cur_pnmtx < 10 ? gx.cur_pnmtx : 0];
+        port_log("  posmtx%u  %8.3f %8.3f %8.3f %10.2f\n", gx.cur_pnmtx, m[0], m[1],
+                 m[2], m[3]);
+        port_log("           %8.3f %8.3f %8.3f %10.2f\n", m[4], m[5], m[6], m[7]);
+        port_log("           %8.3f %8.3f %8.3f %10.2f\n", m[8], m[9], m[10], m[11]);
+    }
     port_log("  proj %s [%g %g %g %g %g %g]  viewport %g %g %g %g z %g..%g\n",
              gx.proj_type == GX_PERSPECTIVE ? "persp" : "ortho", gx.proj[0],
              gx.proj[1], gx.proj[2], gx.proj[3], gx.proj[4], gx.proj[5], gx.vp[0],
