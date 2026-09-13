@@ -954,3 +954,342 @@ void gx_tex_copy(void* dest, int clear) {
 }
 
 void GXCopyTex(void* dest, GXBool clear) { gx_tex_copy(dest, clear ? 1 : 0); }
+
+/* ---- indirect tiling, composed on the CPU --------------------------------- */
+
+/* `HuSprDisp` draws every tiled window background as one quad with an
+ * indirect texture stage (src/game/sprput.c:99):
+ *
+ *     GXSetTexCoordScaleManually(GX_TEXCOORD0, TRUE, mapW*16, mapH*16);
+ *     GXSetIndTexOrder(GX_INDTEXSTAGE0, GX_TEXCOORD0, GX_TEXMAP1);
+ *     GXSetIndTexCoordScale(GX_INDTEXSTAGE0, GX_ITS_16, GX_ITS_16);
+ *     GXSetTevIndTile(GX_TEVSTAGE0, GX_INDTEXSTAGE0, 16,16, 16,16, GX_ITF_4, ...);
+ *
+ * which on the hardware means, for a texel (X, Y) of the background:
+ *
+ *     (vs, vt)  = the indirect texture's texel at (X / 16, Y / 16)
+ *     result    = the tile sheet's texel at (vs*16 + X%16, vt*16 + Y%16)
+ *
+ * There is no dependent texture read in GL 1.3 and no fragment program on a
+ * Radeon 9000, so §3.4 case 3 gave up on this and drew the direct stage
+ * alone -- which is why every window background came out as a pale block of
+ * whatever tile happened to be under the quad.
+ *
+ * But nothing in that formula is per-pixel *state*: both textures are
+ * ordinary images in main memory, and the composition is a pure function of
+ * their contents.  So it is done once on the CPU, into a cache keyed on the
+ * content hash of both images plus the tile geometry, and the result is bound
+ * as an ordinary texture.  It is exact rather than approximate, and after the
+ * first frame it costs one hash lookup.  The fallback -- a warning and the
+ * direct stage alone -- stays for every indirect form that is not this one.
+ *
+ * Both textures come out of the same `decode` the rest of the cache uses, so
+ * this knows nothing about texture formats: an indirect lookup on the console
+ * samples the texture unit like any other, and what it gets back is the
+ * decoded colour.  GX_ITF_4 then takes the low four bits of each component,
+ * component 0 addressing S and component 1 addressing T. */
+
+typedef struct TileEntry {
+    u32 key;         /* content hash of both images and the tile geometry */
+    unsigned gl_name;
+    int w, h, pw, ph;
+    float su, sv;
+    int param_wrap_s, param_wrap_t, param_min, param_mag;
+} TileEntry;
+
+#define TILE_MAX 64
+static TileEntry tiles[TILE_MAX];
+static int tiles_used;
+static unsigned stat_tile_hit, stat_tile_build;
+
+static u32 tex_content_hash(const GXTexObjPort* o, const GXTlutObjPort* tlut) {
+    u32 c = fnv(&o->format, sizeof(o->format), 2166136261u);
+    c = fnv(&o->width, sizeof(o->width), c);
+    c = fnv(&o->height, sizeof(o->height), c);
+    if (o->image) {
+        c = fnv(o->image, encoded_size(o->format, o->width, o->height), c);
+    }
+    if (tlut && tlut->lut) {
+        c = fnv(tlut->lut, (size_t)tlut->n * 2, c);
+    }
+    return c;
+}
+
+static const GXTlutObjPort* tlut_for(const GXTexObjPort* o) {
+    if (o->is_ci && o->tlut_name < 64 && gx.tlut[o->tlut_name].magic == TLUT_MAGIC) {
+        return &gx.tlut[o->tlut_name];
+    }
+    return NULL;
+}
+
+/* How many bits of each indirect component the format keeps. */
+static u32 ind_mask(u8 fmt) {
+    switch (fmt) {
+        case GX_ITF_8: return 0xFFu;
+        case GX_ITF_5: return 0x1Fu;
+        case GX_ITF_4: return 0x0Fu;
+        default: return 0x07u; /* GX_ITF_3 */
+    }
+}
+
+/* Which two numbers a tile-map texel carries.
+ *
+ * The indirect unit reads its texture as raw texel bits and hands the offset
+ * matrix three components; the decoder here has already turned those bits
+ * into RGBA, so the components have to be read back out of it.  For an RGB
+ * map that is components 0 and 1 -- red and green -- which is the ordinary
+ * case and what an indirect *bump* map uses.
+ *
+ * `HuSprDisp`'s window backgrounds are not that.  Their maps are GX_TF_IA4,
+ * one byte a tile, and the byte is `SSSS TTTT` -- so the S component is the
+ * *alpha* nibble and the T component the intensity nibble, because that is
+ * how IA4 splits a byte.  Measured, not guessed: the file-select window's map
+ * is 17x6 and reads
+ *
+ *     0 7 7 ... 7 1        the nine-slice, S in the alpha nibble,
+ *     4 8 8 ... 8 5        T zero throughout, against a 256x32 sheet
+ *     2 6 6 ... 6 3        whose nine tiles are a single row.
+ *
+ * Reading red for S instead gives zero everywhere and one tile stretched over
+ * the window, which is what the "pale blocks" of §13.10 were. */
+static void ind_components(const GXTexObjPort* map, const u8* texel, u32 mask, int* vs,
+                           int* vt) {
+    switch (map->format) {
+        case GX_TF_I4:
+        case GX_TF_I8:
+        case GX_TF_IA4:
+        case GX_TF_IA8:
+            *vs = (int)(((u32)texel[3] >> 4) & mask);
+            *vt = (int)(((u32)texel[0] >> 4) & mask);
+            return;
+        default:
+            *vs = (int)((u32)texel[0] & mask);
+            *vt = (int)((u32)texel[1] & mask);
+            return;
+    }
+}
+
+int gx_tex_bind_tiled(int unit, GXTexObjPort* sheet, GXTexObjPort* map,
+                      const GXIndTile* tile) {
+    u32 key;
+    int i, slot = -1;
+    int ts = tile->ts_s, tt = tile->ts_t;
+    int sps = tile->tsp_s, spt = tile->tsp_t;
+    int mw, mh, sw, sh, w, h;
+    u8 *mrgba = NULL, *srgba = NULL, *out = NULL;
+    u32 mask;
+
+    if (!sheet || !map || sheet->magic != TEXOBJ_MAGIC || map->magic != TEXOBJ_MAGIC) {
+        return 0;
+    }
+    if (ts <= 0 || tt <= 0 || sps <= 0 || spt <= 0) {
+        return 0;
+    }
+    mw = map->width;
+    mh = map->height;
+    w = mw * ts;
+    h = mh * tt;
+    /* A composed background bigger than this is not a window background, and
+     * the point of doing it on the CPU is that it stays small. */
+    if (w <= 0 || h <= 0 || (long)w * h > 1024L * 1024L) {
+        gx_warn("GXSetTevIndTile: the composed tile map would be larger than "
+                "1024x1024; the direct stage is drawn alone");
+        return 0;
+    }
+
+    key = tex_content_hash(sheet, tlut_for(sheet));
+    key = fnv(&map->image, sizeof(map->image), key);
+    key = tex_content_hash(map, tlut_for(map)) ^ (key * 16777619u);
+    key = fnv(tile, sizeof(*tile), key);
+
+    for (i = 0; i < tiles_used; i++) {
+        if (tiles[i].key == key) {
+            slot = i;
+            break;
+        }
+    }
+    if (slot >= 0) {
+        stat_tile_hit++;
+    } else {
+        int x, y;
+        if (tiles_used == TILE_MAX) {
+            slot = (int)(key % TILE_MAX);
+            if (gl13_live() && tiles[slot].gl_name) {
+                GLuint n = tiles[slot].gl_name;
+                GL(glDeleteTextures)(1, &n);
+            }
+            memset(&tiles[slot], 0, sizeof(tiles[slot]));
+        } else {
+            slot = tiles_used++;
+        }
+        stat_tile_build++;
+        mrgba = decode(map, tlut_for(map), &mw, &mh);
+        srgba = decode(sheet, tlut_for(sheet), &sw, &sh);
+        if (port_opt.dumptex && stat_tile_build <= 2 && mrgba && srgba) {
+            int r, c;
+            port_log("port> indtile: map %dx%d fmt %u ci %u, sheet %dx%d fmt %u ci %u,"
+                     " tile %dx%d spacing %dx%d fmt %u -> %dx%d\n",
+                     mw, mh, (unsigned)map->format, (unsigned)map->is_ci, sw, sh,
+                     (unsigned)sheet->format, (unsigned)sheet->is_ci, ts, tt, sps, spt,
+                     (unsigned)tile->fmt, w, h);
+            {
+                char path[1024];
+                FILE* f;
+                snprintf(path, sizeof(path), "%s/indsheet-%02u-%dx%d.ppm",
+                         port_opt.shotdir ? port_opt.shotdir : ".",
+                         stat_tile_build, sw, sh);
+                f = fopen(path, "wb");
+                if (f) {
+                    int yy, xx;
+                    fprintf(f, "P6\n%d %d\n255\n", sw, sh);
+                    for (yy = 0; yy < sh; yy++)
+                        for (xx = 0; xx < sw; xx++)
+                            fwrite(srgba + ((size_t)yy * sw + xx) * 4, 1, 3, f);
+                    fclose(f);
+                }
+                snprintf(path, sizeof(path), "%s/indmap-%02u-%dx%d.raw",
+                         port_opt.shotdir ? port_opt.shotdir : ".",
+                         stat_tile_build, mw, mh);
+                f = fopen(path, "wb");
+                if (f) {
+                    fwrite(mrgba, 4, (size_t)mw * mh, f);
+                    fclose(f);
+                }
+            }
+            for (r = 0; r < mh && r < 4; r++) {
+                char line[512];
+                int at = 0;
+                for (c = 0; c < mw && c < 12; c++) {
+                    const u8* q = mrgba + ((size_t)r * mw + c) * 4;
+                    at += snprintf(line + at, sizeof(line) - at, " %02x%02x%02x%02x",
+                                   q[0], q[1], q[2], q[3]);
+                }
+                port_log("port> indtile map row %d:%s\n", r, line);
+            }
+        }
+        if (!mrgba || !srgba) {
+            free(mrgba);
+            free(srgba);
+            memset(&tiles[slot], 0, sizeof(tiles[slot]));
+            if (slot == tiles_used - 1) {
+                tiles_used--;
+            }
+            return 0;
+        }
+        out = (u8*)calloc((size_t)w * h, 4);
+        if (!out) {
+            free(mrgba);
+            free(srgba);
+            return 0;
+        }
+        mask = ind_mask(tile->fmt);
+        for (y = 0; y < h; y++) {
+            int my = y / tt, iy = y % tt;
+            const u8* mrow = mrgba + (size_t)my * mw * 4;
+            u8* orow = out + (size_t)y * w * 4;
+            for (x = 0; x < w; x++) {
+                int mx = x / ts, ix = x % ts;
+                const u8* mv = mrow + (size_t)mx * 4;
+                int vs, vt, sx, sy;
+                ind_components(map, mv, mask, &vs, &vt);
+                sx = vs * sps + ix;
+                sy = vt * spt + iy;
+                {
+                u8* o = orow + (size_t)x * 4;
+                if (sx >= 0 && sx < sw && sy >= 0 && sy < sh) {
+                    memcpy(o, srgba + ((size_t)sy * sw + sx) * 4, 4);
+                }
+                }
+            }
+        }
+        free(mrgba);
+        free(srgba);
+        if (port_opt.dumptex && stat_tile_build <= 4) {
+            char path[1024];
+            FILE* f;
+            snprintf(path, sizeof(path), "%s/indtile-%02u-%dx%d.ppm",
+                     port_opt.shotdir ? port_opt.shotdir : ".", stat_tile_build, w, h);
+            f = fopen(path, "wb");
+            if (f) {
+                int yy, xx;
+                fprintf(f, "P6\n%d %d\n255\n", w, h);
+                for (yy = 0; yy < h; yy++) {
+                    for (xx = 0; xx < w; xx++) {
+                        fwrite(out + ((size_t)yy * w + xx) * 4, 1, 3, f);
+                    }
+                }
+                fclose(f);
+                port_log("port> --dumptex: wrote %s\n", path);
+            }
+        }
+        tiles[slot].key = key;
+        tiles[slot].w = w;
+        tiles[slot].h = h;
+        tiles[slot].pw = pot_up(w);
+        tiles[slot].ph = pot_up(h);
+        tiles[slot].su = (float)w / (float)tiles[slot].pw;
+        tiles[slot].sv = (float)h / (float)tiles[slot].ph;
+        tiles[slot].param_wrap_s = -1;
+        stat_bytes += (unsigned)(w * h * 4);
+        if (gl13_live()) {
+            u8* up = out;
+            GLuint name = tiles[slot].gl_name;
+            if (tiles[slot].pw != w || tiles[slot].ph != h) {
+                u8* padded = pad_to_pot(out, w, h, tiles[slot].pw, tiles[slot].ph);
+                if (padded) {
+                    up = padded;
+                    stat_npot++;
+                } else {
+                    tiles[slot].pw = w;
+                    tiles[slot].ph = h;
+                    tiles[slot].su = tiles[slot].sv = 1.0f;
+                }
+            }
+            if (!name) {
+                GL(glGenTextures)(1, &name);
+                tiles[slot].gl_name = name;
+            }
+            glc_active_texture(unit);
+            GL(glBindTexture)(GL_TEXTURE_2D, name);
+            glc_note_bind(unit, name);
+            GL(glTexImage2D)(GL_TEXTURE_2D, 0, GL_RGBA8, tiles[slot].pw,
+                             tiles[slot].ph, 0, GL_RGBA, GL_UNSIGNED_BYTE, up);
+            if (up != out) {
+                free(up);
+            }
+        }
+        free(out);
+    }
+    if (!gl13_live() || !tiles[slot].gl_name) {
+        return 1;
+    }
+    glc_bind_texture(unit, tiles[slot].gl_name);
+    glc_tex_matrix(unit, tiles[slot].su, tiles[slot].sv);
+    {
+        TileEntry* e = &tiles[slot];
+        int ws = (int)gl_wrap(sheet->wrap_s);
+        int wt = (int)gl_wrap(sheet->wrap_t);
+        int mn = sheet->min_filt == GX_NEAR ? GL_NEAREST : GL_LINEAR;
+        int mg = (int)gl_filter(sheet->mag_filt, 0);
+        if (e->param_wrap_s != ws || e->param_wrap_t != wt || e->param_min != mn ||
+            e->param_mag != mg) {
+            e->param_wrap_s = ws;
+            e->param_wrap_t = wt;
+            e->param_min = mn;
+            e->param_mag = mg;
+            GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, (GLint)ws);
+            GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, (GLint)wt);
+            GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, (GLint)mn);
+            GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, (GLint)mg);
+        }
+    }
+    return 1;
+}
+
+void gx_tex_tile_report(void) {
+    if (!stat_tile_hit && !stat_tile_build) {
+        return;
+    }
+    port_log("port> indirect tiling: %u composed backgrounds, %u cache hits\n",
+             stat_tile_build, stat_tile_hit);
+}

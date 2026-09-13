@@ -119,6 +119,15 @@ u32 PADRead(PADStatus* status) {
             pad_sdl_poll(&raw); /* keyboard, OR'd under an SDL pad if one is open */
         }
         pad_play_step(frame, &raw); /* a --play script overwrites raw for its frames */
+        if (port_pad_debug && (raw.button || raw.stickX || raw.stickY)) {
+            extern u8 HuPadDStk[4];
+            extern u8 HuPadDStkRep[4];
+            port_log("pad> frame %u: btn %04x stick %d,%d  (last frame's dstk %02x "
+                     "rep %02x)\n",
+                     (unsigned)frame, (unsigned)raw.button, (int)raw.stickX,
+                     (int)raw.stickY, (unsigned)HuPadDStk[0],
+                     (unsigned)HuPadDStkRep[0]);
+        }
 
         status[0].button = raw.button;
         status[0].stickX = raw.stickX;

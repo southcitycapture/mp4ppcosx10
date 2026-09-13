@@ -280,7 +280,24 @@ void gx_tev_apply(void) {
             int have_tex = bound != NULL && s->coord < GX_TEXCOORDS;
             if (have_tex) {
                 glc_unit_enable_tex2d(i, 1);
-                gx_tex_bind(i, bound);
+                /* The tile-map case is composed on the CPU and bound as one
+                 * ordinary texture (gx_tex.c); everything else indirect is
+                 * still the direct stage alone. */
+                if (gx.num_ind && gx.ind_tile[i].on) {
+                    const GXIndTile* t = &gx.ind_tile[i];
+                    GXTexObjPort* map = gx_bound_tex(gx.ind[t->ind].map);
+                    if (!map || !gx_tex_bind_tiled(i, bound, map, t)) {
+                        gx_warn("indirect texturing: the fixed-function path "
+                                "draws the direct stage only (PLAN.md 3.4 case 3)");
+                        gx_tex_bind(i, bound);
+                    }
+                } else {
+                    if (gx.num_ind && !s->direct) {
+                        gx_warn("indirect texturing: the fixed-function path "
+                                "draws the direct stage only (PLAN.md 3.4 case 3)");
+                    }
+                    gx_tex_bind(i, bound);
+                }
             } else {
                 /* A stage with no texture still has to run its combiner, and
                  * a disabled unit in GL passes the previous colour through

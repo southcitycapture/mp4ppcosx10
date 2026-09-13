@@ -36,6 +36,8 @@
  * descriptor state, which is what the hardware did and what the game assumes
  * -- every one of its 42 call sites sets the state immediately before.
  */
+#include <dlfcn.h>
+
 #include "gx_internal.h"
 #include "gx_math.h"
 
@@ -71,6 +73,47 @@ static int nactive;
 static int acur;                /* which of them the next writer fills */
 static int tex_slots;
 static int in_prim;
+
+/* ---- what a primitive settles once, rather than once a vertex -------------
+ *
+ * M3's profile put `transform_and_store` at 1,727 of about 4,300 in-thread
+ * samples on the G4 and §13.12 named the reason: the function re-derived, for
+ * every single vertex, things that cannot change between `GXBegin` and
+ * `GXEnd` -- which matrix slot is current, whether the colour channel is lit
+ * at all, which texgen reads what through which matrix, how wide the texcoord
+ * array has to be.  None of that is arithmetic the frame needs; it is
+ * bookkeeping, paid 250,000 times a frame.
+ *
+ * There is one thing to be careful about and it is worth naming: this is only
+ * sound because a GX primitive cannot change any of it mid-stream.  The
+ * matrix index is a per-*vertex* attribute on real hardware (`GX_VA_PNMTXIDX`)
+ * and a display list may carry XF register writes -- but Mario Party 4 uses
+ * neither (PLAN.md §3.2), the port asserts as much by warning on the
+ * descriptor, and `GXSetCurrentMtx` is a state call the game only makes
+ * between primitives.  If that ever stops being true the symptom is a whole
+ * primitive drawn with the previous primitive's matrix, which is loud. */
+typedef struct PrimInv {
+    const f32* pos_mtx;
+    const f32* nrm_mtx;
+    int have_nrm;
+    int no_clr0;         /* CLR0 absent: the register material is the colour  */
+    /* 0: the channel writes nothing;  1: it splats the register material;
+     * 2: it is genuinely lit and light_channel has to run.  Case 2 is rare on
+     * the menus and case 0/1 was paying for a function call and eleven struct
+     * loads to do nothing. */
+    int chan_mode;
+    int ntexgen;
+    struct {
+        u8 src_kind;     /* 0 = a texcoord, 1 = position, 2 = normal          */
+        u8 src_k;        /* which texcoord, when src_kind is 0                */
+        u8 divide;       /* GX_TG_MTX3x4: divide by q                         */
+        const f32* mtx;  /* NULL for the identity                             */
+    } tg[GX_TEXCOORDS];
+    /* the indexed reader's per-attribute constants */
+    const GXArraySpec* arr[GX_MAX_ATTR];
+    const GXVatFmt* vat[GX_MAX_ATTR];
+} PrimInv;
+static PrimInv pi;
 static u8 prim;
 static u8 vtxfmt;
 static u16 want_verts;
@@ -306,6 +349,53 @@ static void begin_attr_order(void) {
             tex_slots = GX_TEXCOORDS;
         }
     }
+
+    /* everything transform_and_store would otherwise re-derive per vertex */
+    {
+        u32 slot = gx.cur_pnmtx < 10 ? gx.cur_pnmtx : 0;
+        const GXChanCtrl* cc = &gx.chan[0];
+        int t;
+        pi.pos_mtx = gx.pos_mtx[slot];
+        pi.nrm_mtx = gx.nrm_mtx[slot];
+        pi.have_nrm = gx.vcd[GX_VA_NRM] != GX_NONE;
+        pi.no_clr0 = gx.vcd[GX_VA_CLR0] == GX_NONE;
+        if (gx.num_chans == 0) {
+            pi.chan_mode = 0;
+        } else if (!cc->enable) {
+            pi.chan_mode = cc->mat_src == GX_SRC_REG ? 1 : 0;
+        } else {
+            pi.chan_mode = 2;
+        }
+        pi.ntexgen = gx.num_texgens < GX_TEXCOORDS ? gx.num_texgens : GX_TEXCOORDS;
+        for (t = 0; t < pi.ntexgen; t++) {
+            const GXTexGen* g = &gx.texgen[t];
+            if (g->src >= GX_TG_TEX0 && g->src <= GX_TG_TEX7) {
+                pi.tg[t].src_kind = 0;
+                pi.tg[t].src_k = (u8)(g->src - GX_TG_TEX0);
+            } else if (g->src == GX_TG_POS) {
+                pi.tg[t].src_kind = 1;
+                pi.tg[t].src_k = 0;
+            } else if (g->src == GX_TG_NRM) {
+                pi.tg[t].src_kind = 2;
+                pi.tg[t].src_k = 0;
+            } else {
+                pi.tg[t].src_kind = 0;
+                pi.tg[t].src_k = (u8)t;
+            }
+            if (g->mtx == GX_IDENTITY || g->mtx < GX_TEXMTX0) {
+                pi.tg[t].mtx = NULL;
+            } else {
+                u32 ts = ((u32)g->mtx - GX_TEXMTX0) / 3;
+                pi.tg[t].mtx = gx.tex_mtx[ts < 20 ? ts : 0];
+            }
+            pi.tg[t].divide = (u8)(g->func == GX_TG_MTX3x4);
+        }
+        for (i = 0; i < (size_t)nactive; i++) {
+            int a = active[i];
+            pi.arr[a] = &gx.array[a];
+            pi.vat[a] = &gx.vat[vtxfmt][a];
+        }
+    }
 }
 
 static void transform_and_store(void);
@@ -496,8 +586,8 @@ static void light_channel(int c, const float* wpos, const float* wnrm,
 
 static void transform_and_store(void) {
     Vtx* v;
-    const f32* m = gx.pos_mtx[gx.cur_pnmtx < 10 ? gx.cur_pnmtx : 0];
-    const f32* n = gx.nrm_mtx[gx.cur_pnmtx < 10 ? gx.cur_pnmtx : 0];
+    const f32* m = pi.pos_mtx;
+    const f32* n = pi.nrm_mtx;
     float px, py, pz;
     int i;
     if (nverts >= MAX_VERTS) {
@@ -525,7 +615,7 @@ static void transform_and_store(void) {
     v->pos[1] = m[4] * px + m[5] * py + m[6] * pz + m[7];
     v->pos[2] = m[8] * px + m[9] * py + m[10] * pz + m[11];
 
-    if (gx.vcd[GX_VA_NRM] != GX_NONE) {
+    if (pi.have_nrm) {
         float nx = pending.nrm[0], ny = pending.nrm[1], nz = pending.nrm[2];
         float len2;
         v->nrm[0] = n[0] * nx + n[1] * ny + n[2] * nz;
@@ -543,51 +633,48 @@ static void transform_and_store(void) {
         v->nrm[2] = 1.0f;
     }
 
-    if (gx.vcd[GX_VA_CLR0] == GX_NONE) {
+    if (pi.no_clr0) {
         v->clr[0][0] = gx.chan[0].mat.r;
         v->clr[0][1] = gx.chan[0].mat.g;
         v->clr[0][2] = gx.chan[0].mat.b;
         v->clr[0][3] = gx.chan[0].mat.a;
     }
-    if (gx.num_chans > 0) {
+    if (pi.chan_mode == 2) {
         light_channel(0, v->pos, v->nrm, v->clr[0]);
+    } else if (pi.chan_mode == 1) {
+        v->clr[0][0] = gx.chan[0].mat.r;
+        v->clr[0][1] = gx.chan[0].mat.g;
+        v->clr[0][2] = gx.chan[0].mat.b;
+        v->clr[0][3] = gx.chan[0].mat.a;
     }
 
     /* texgen: the only forms the game uses are a 2x4/3x4 matrix over a
      * texcoord or over the position (PLAN.md §1.14 -- there are no bump or
      * SRTG texgens outside the handful already warned about). */
-    for (i = 0; i < gx.num_texgens && i < GX_TEXCOORDS; i++) {
-        const GXTexGen* g = &gx.texgen[i];
+    for (i = 0; i < pi.ntexgen; i++) {
         float s, t, in[3];
-        u32 slot;
-        if (g->src >= GX_TG_TEX0 && g->src <= GX_TG_TEX7) {
-            int k = g->src - GX_TG_TEX0;
+        const f32* tm = pi.tg[i].mtx;
+        if (pi.tg[i].src_kind == 0) {
+            int k = pi.tg[i].src_k;
             in[0] = pending.tex[k][0];
             in[1] = pending.tex[k][1];
             in[2] = 1.0f;
-        } else if (g->src == GX_TG_POS) {
+        } else if (pi.tg[i].src_kind == 1) {
             in[0] = v->pos[0];
             in[1] = v->pos[1];
             in[2] = v->pos[2];
-        } else if (g->src == GX_TG_NRM) {
+        } else {
             in[0] = v->nrm[0];
             in[1] = v->nrm[1];
             in[2] = v->nrm[2];
-        } else {
-            in[0] = pending.tex[i][0];
-            in[1] = pending.tex[i][1];
-            in[2] = 1.0f;
         }
-        if (g->mtx == GX_IDENTITY || g->mtx < GX_TEXMTX0) {
+        if (!tm) {
             s = in[0];
             t = in[1];
         } else {
-            const f32* tm;
-            slot = ((u32)g->mtx - GX_TEXMTX0) / 3;
-            tm = gx.tex_mtx[slot < 20 ? slot : 0];
             s = tm[0] * in[0] + tm[1] * in[1] + tm[2] * in[2] + tm[3];
             t = tm[4] * in[0] + tm[5] * in[1] + tm[6] * in[2] + tm[7];
-            if (g->func == GX_TG_MTX3x4) {
+            if (pi.tg[i].divide) {
                 float q = tm[8] * in[0] + tm[9] * in[1] + tm[10] * in[2] + tm[11];
                 if (q != 0.0f) {
                     s /= q;
@@ -615,8 +702,8 @@ static void indexed(u32 index) {
         attr_written();
         return;
     }
-    a = &gx.array[attr];
-    f = &gx.vat[vtxfmt][attr];
+    a = pi.arr[attr];
+    f = pi.vat[attr];
     if (!a->base || !a->stride) {
         attr_written();
         return;
@@ -866,6 +953,24 @@ static void draw_log(void) {
         port_log("           %8.3f %8.3f %8.3f %10.2f\n", m[4], m[5], m[6], m[7]);
         port_log("           %8.3f %8.3f %8.3f %10.2f\n", m[8], m[9], m[10], m[11]);
     }
+    {
+        int mdl = -1;
+        const char* nm = port_drawobj_name(gx_last_posmtx_arg, &mdl);
+        if (mdl >= 0) {
+            port_log("           drawobj model %d object \"%s\"\n", mdl,
+                     nm ? nm : "?");
+        }
+    }
+    {
+        Dl_info di;
+        if (gx_last_posmtx_caller &&
+            dladdr((void*)(uintptr_t)gx_last_posmtx_caller, &di) && di.dli_sname) {
+            port_log("           loaded by %s+%u (%s)\n", di.dli_sname,
+                     (unsigned)((const char*)gx_last_posmtx_caller -
+                                (const char*)di.dli_saddr),
+                     di.dli_fname ? di.dli_fname : "?");
+        }
+    }
     port_log("  proj %s [%g %g %g %g %g %g]  viewport %g %g %g %g z %g..%g\n",
              gx.proj_type == GX_PERSPECTIVE ? "persp" : "ortho", gx.proj[0],
              gx.proj[1], gx.proj[2], gx.proj[3], gx.proj[4], gx.proj[5], gx.vp[0],
@@ -1101,6 +1206,7 @@ void port_gx_shutdown(void) {
     gx_draw_report();
     gl13_state_report();
     gx_tex_report();
+    gx_tex_tile_report();
     gx_warn_report();
     gl13_shutdown();
 }

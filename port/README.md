@@ -22,12 +22,19 @@ the GameCube, so nothing needs byteswapping, and the game addresses memory
 through ordinary pointers and ARAM through plain offsets, so there is no
 pinned-globals scheme.
 
-**Status: M3 done — the game reaches Party Mode, with a pad and a memory
-card.** The title screen's 3D layer renders, the boot walks through SELECT A
+**Status: M4 in part — window backgrounds are right, and Mini-Game mode
+runs.** The title screen's 3D layer renders, the boot walks through SELECT A
 FILE, the new-file scene and character select to the board-settings screen, an
 Xbox One pad is read over IOUSBLib on the G4 with rumble, and saves go into a
 512 KB memory-card image in the console's own format. The title screen is
-2.3x faster than it was at M2b. See §13 of [`docs/PLAN.md`](docs/PLAN.md). Two binaries and two
+2.3x faster than it was at M2b. M4 adds the one indirect-texturing form the
+game actually leans on — `GXSetTevIndTile`'s tile maps, which draw every
+message window's background — composed exactly on the CPU and cached, so the
+windows now match the reference instead of coming out as pale blocks; and it
+reaches Mini-Game mode, where a fresh save has nothing unlocked to play. The
+theatre-stage backdrop is still missing and §14.2 says exactly which draws are
+wrong and where to look next. See §13 and §14 of
+[`docs/PLAN.md`](docs/PLAN.md). Two binaries and two
 sets of modules build from one Makefile: `port/build-ppc.sh -j8` produces a
 `powerpc-apple-darwin8` executable plus 99 Mach-O bundles for the G4, and
 `make -C port TARGET=host -j8` produces an arm64 pair for the development Mac.
@@ -67,7 +74,8 @@ holding an extracted `files/` tree. Other flags: `--frames N`, `--watchdog SEC`,
 `--noaudio`, `--headless`, `--glcheck`, `--glinfo`, `--gxwarn`, `--gxdemo`,
 `--perf`, `--drawlog N`, `--drawlog-at F`, `--dumptex`, `--texhash-full`,
 `--dumpframe SPEC`, `--shotdir DIR`, `--scale N`, `--nocard`, `--nopad`,
-`--paddbg`, `--play SCRIPT`, `--record FILE`.
+`--paddbg`, `--play SCRIPT`, `--record FILE`, `--scenelog F[,F...]`,
+`--ovllog`.
 
 `--dumpframe` takes a frame *set*, not a frame: `187`, `1,90,186`, or
 `1-400/20`. Comparing against Dolphin needs a spread, because the two sides do
@@ -85,6 +93,8 @@ output:
 | `--drawlog N` | what the first N draws submitted: geometry after the CPU transform, raster colour, the texture actually bound, projection, TEV inputs, alpha compare, blend, z, scissor, and any pending GL error |
 | `--dumptex` | what a texture decoded to -- colour as a PPM and alpha as a PGM, because an alpha test judges the alpha |
 | `--perf` | where the frame went: game, gx and present, with mean/median/p95/worst, and the game clock against the wall clock (an idle-gated retrace hides overruns) |
+| `--scenelog F` | what the 3D scene believes about itself on frame F: every camera, every model's placement, every HSF object transform -- which is how "the modelview is 67,720 out" became "the camera and the models are both fine and a second pass over the same objects is not" |
+| `--ovllog` | one line whenever the scene changes, which is the only way to know which screen a scripted A press landed on without shooting the frame |
 
 ## Running on the G4
 
@@ -119,10 +129,13 @@ ssh g4 './MarioParty4.app/Contents/MacOS/isle --watchdog 6'
 plugged in, or from a script -- SELECT A FILE, the new-file scene, PARTY MODE,
 character select with 1P and three COM players on EASY, and the board-settings
 screen for Toad's Midway Madness. It creates a save file on a 512 KB memory
-card image on the way through. The opening THP movie is skipped deliberately
-and says so; the theatre-stage backdrop behind three of the menu screens does
-not draw yet, and window backgrounds come out as pale blocks, which is
-`HuSprDisp`'s indirect-textured tiling. The title screen went from 10.4 to
+card image on the way through. It also walks into **Mini-Game
+mode**, which loads and runs `mgmodedll` and then says "You haven't opened any
+games!", because Free Play lists only what a save file has unlocked and this
+one is minutes old. The opening THP movie is skipped deliberately and says so;
+message-window backgrounds are now composed correctly from their tile maps, and
+the theatre-stage backdrop behind three of the menu screens still does not
+draw. The title screen went from 10.4 to
 23.7 effective fps, and the reason it is not 60 is now measured rather than
 guessed. See [`docs/PLAN.md`](docs/PLAN.md) §13.
 
@@ -161,6 +174,7 @@ and [`docs/g4-m2a-boot.log`](docs/g4-m2a-boot.log) (M2a); §10 of
 | `docs/g4-audio-first-sound.log` | the audio path on the G4 with audio on: the M6 hand-off |
 | `docs/screenshots/` | both logos, the title with its 3D layer, and the five menu screens |
 | `ref/movies/menu-walk-port.play` | the reference menu walk, rebased on the port's own clock |
+| `ref/movies/minigame-select.play` | the same walk, but taking the Mini-Game row of the mode ring |
 | `Makefile` | the whole build, `TARGET=host` or `TARGET=ppc-darwin` |
 | `build-ppc.sh` | the Docker wrapper around the PowerPC cross build |
 | `patches.txt` | every change the port makes to game sources, as exact text |

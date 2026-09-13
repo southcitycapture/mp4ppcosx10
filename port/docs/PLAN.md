@@ -2942,3 +2942,262 @@ afternoon.
 5. **The pad's shutdown path.** `pad: xone: read failed (e00002eb), controller
    gone` is printed at exit; harmless, but it is the driver noticing its own
    teardown and it should not have to.
+
+## 14. M4 log — indirect tiling, the stage offset's real address, and one step of the vertex loop *(2026-09-13)*
+
+M4's done-means was four things: the theatre-stage backdrop, the window
+backgrounds, the menus at 60 fps, and a minigame. **Two landed, one did not
+move, and one got as far as the mode it lives in and stopped on a locked
+door.** This log says which is which, because the two that did not land are
+both further forward than they were and the evidence is worth more than the
+guess §13.12 opened with.
+
+### 14.1 Window backgrounds: indirect tiling, composed on the CPU
+
+§13.10 item 2 is fixed, exactly rather than approximately, and it is the
+change that most visibly moves the port toward the reference frames.
+
+`HuSprDisp` draws every message window's background as **one quad with an
+indirect texture stage** (`src/game/sprput.c:99`):
+
+```c
+HuSprTexLoad(sprite->bg, layer->bmpNo, 1, GX_CLAMP, GX_CLAMP, GX_NEAR);
+GXSetNumIndStages(1);
+GXSetTexCoordScaleManually(GX_TEXCOORD0, GX_TRUE, bg_bmp->sizeX*16, bg_bmp->sizeY*16);
+GXSetIndTexOrder(GX_INDTEXSTAGE0, GX_TEXCOORD0, GX_TEXMAP1);
+GXSetIndTexCoordScale(GX_INDTEXSTAGE0, GX_ITS_16, GX_ITS_16);
+GXSetTevIndTile(GX_TEVSTAGE0, GX_INDTEXSTAGE0, 16,16, 16,16, GX_ITF_4, GX_ITM_0, ...);
+```
+
+which on the hardware means, for a texel (X, Y) of the background:
+
+```
+(vs, vt) = the indirect texture's texel at (X/16, Y/16)
+result   = the tile sheet's texel at (vs*16 + X%16, vt*16 + Y%16)
+```
+
+There is no dependent texture read in GL 1.3, no fragment program on a Radeon
+9000 (§12.2), and §3.4 case 3 had given up and drawn the direct stage alone —
+which is why every window background came out as a pale block of whatever tile
+the quad happened to land on.
+
+**But nothing in that formula is per-pixel state.** Both textures are ordinary
+images in main memory and the composition is a pure function of their
+contents, so it is done once on the CPU into a cache keyed on the content hash
+of both images plus the tile geometry, and bound as an ordinary texture. It is
+*exact*, not an approximation, and after the first frame it costs one hash
+lookup. `port/src/gx/gx_tex.c`'s `gx_tex_bind_tiled`; `gx_tev.c` reaches for it
+only when the stage is a tile stage and falls back to the old warning for every
+other indirect form (`m405Dll` still warps, and still warns).
+
+Over the reference menu walk: **18 composed backgrounds, 20,450 cache hits**,
+and the two indirect warnings — 20,818 each — are gone.
+
+**The one thing that had to be measured rather than reasoned about was which
+two numbers a tile-map texel carries.** The obvious reading, and what an
+indirect *bump* map uses, is components 0 and 1 — red and green of the decoded
+texel. That gives zero everywhere here and one tile stretched over the window,
+which is indistinguishable from the old bug. The maps are `GX_TF_IA4`, one
+byte a tile, and the byte is `SSSS TTTT` — so S is the **alpha** nibble and T
+the intensity nibble, because that is how IA4 splits a byte. The file-select
+window's map is 17x6 and reads
+
+```
+0 7 7 ... 7 1        the nine-slice, S in the alpha nibble, T zero throughout,
+4 8 8 ... 8 5        against a 256x32 sheet whose nine tiles are a single row
+2 6 6 ... 6 3
+```
+
+which composes to a rounded panel with a gold border — and that is what the
+file select, the board settings, the "Pick a card to get this party started!"
+prompt and the Mini-Game room's text windows all now draw.
+
+### 14.2 The stage backdrop: four suspects eliminated, and the real address
+
+§13.10 item 1 said the modelview's x translation was **-67,720** at frame 5100
+and that the camera and the model disagreed about the world offset. Every part
+of that sentence except the symptom turns out to be wrong, and the four
+candidates M4 opened with — a mishandled `GXLoadPosMtxImm`, `C_MTXConcat`
+precision or aliasing, a pointer-vs-`u32` widening in the camera struct, a
+matrix index the port ignores — are all eliminated. So is `-malign-natural`.
+
+A new **`--scenelog F`** reads the game's own globals at a presented frame
+(`src/game/hsfman.c` is DOL code compiled into this binary, so there is nothing
+to hook and nothing to patch — the port simply looks), and a new
+**`--ovllog`** names the scene every time `omcurovl` changes. Between them:
+
+| what | measured at frame 5100 | verdict |
+|---|---|---|
+| `Hu3DCamera[0]` | pos (0.00, 277.52, 1743.34), target (0, 125, 0), fov 42, near 20, far 5000 | sane |
+| `Hu3DCameraMtx` | translation (-0.00, -124.52, -1760.89) | sane, and it is `C_MTXLookAt` of the above |
+| all 158 live `Hu3DData` models | every `pos` under 4,600 (the drifting confetti), every `mtx` the identity | sane |
+| every HSF object transform in every model | no `base.pos.x` or `curr.pos.x` over 2,000 | sane |
+| the HSF trees re-walked with `objMesh`'s own T*R*S order | nothing concatenates past 3,000 in x | sane |
+
+And yet **1,264 of the frame's 1,756 draws carry a position matrix with an x
+translation between -15,000 and -31,000**, with eye-space z *positive* — behind
+the camera — which is why the stage is not merely displaced but absent.
+
+Two more port-side instruments closed in on where they come from. The first
+captures `__builtin_return_address(0)` in `GXLoadPosMtxImm` and symbolises it
+with `dladdr` — the same trick §13.7's hand-walked backtrace uses — which puts
+every one of them in `ObjDraw` (a static function, so `dladdr` reports it as
+`Hu3DDrawPost+2468`). The second is better: `GXLoadPosMtxImm` is handed
+`drawObj->matrix`, and that is a *member of a `HU3DDRAWOBJ`*, so subtracting
+the field offset recovers the whole draw object and with it the model index and
+the HSF object's name. That turns "1,264 draws are off the side of the world"
+into a list:
+
+```
+108 BIG model 142 "obj61"      70 ok / 70 BIG model 154 "all"
+108 BIG model 142 "obj52"      56 ok / 56 BIG model 156 "noko"
+ 84 BIG model 142 "obj66"      43 ok / 43 BIG model 155 "zen"
+ 26 BIG model 139 "pillar"     37 ok / 37 BIG model 144 "body"
+```
+
+Models 139 and 142 are the stage (a pillar and sixteen `objNN` pieces) and are
+*always* off-world; models 144 and 153–157 are the characters and are drawn
+**twice, once correctly and once off-world**, in equal numbers. So this is not
+a bad model and not a bad camera: it is a second pass over the same objects
+whose matrix is wrong, and the stage happens to be drawn only in that pass.
+
+That is where M5 picks it up, and the remaining candidates are now three rather
+than seven: the envelope-matrix path in `objMesh`
+(`hsf->matrix->data[i + base_idx]`, which bypasses the object transform
+entirely and is the only input `--scenelog` has not yet read back), `objReplica`
+/ `objMap`, and the `constData->hookMdlId` chain. `--scenelog` already prints
+`base_idx`, `count` and the largest translation in each model's matrix buffer;
+that line is the next thing to read.
+
+### 14.3 Speed: the per-primitive hoist, and an honest number
+
+§13.12's first step is done. `transform_and_store` no longer re-derives, per
+vertex, which matrix slot is current, whether the colour channel is lit, which
+texgen reads what through which matrix, or which array and format an indexed
+attribute uses. All of it moves into a `PrimInv` filled once per `GXBegin`
+(and once per display-list primitive — both paths go through
+`begin_attr_order`). §13.12's third step comes with it: the channel is
+classified into "writes nothing", "splats the register material" and "is
+genuinely lit", and only the third calls `light_channel` at all.
+
+This is sound only because a GX primitive cannot change any of it mid-stream.
+The matrix index is a per-vertex attribute on real hardware and a display list
+may carry XF register writes — Mario Party 4 uses neither (§3.2), the port
+warns on the descriptor if it ever sees one, and `GXSetCurrentMtx` is a state
+call the game only makes between primitives.
+
+It is arithmetically identical by construction: the same operations in the same
+order, only looked up earlier.
+
+**And it did not make the frame faster.** A 1,000-frame `--seed 12345` run
+ending on the title:
+
+| | M3 | M4 |
+|---|---:|---:|
+| gx, mean | 39.88 ms | 41.12 ms |
+| frame, mean | 42.14 ms | 43.62 ms |
+| clocks ratio | 2.526 | 2.615 |
+| effective fps | 23.7 | **22.9** |
+
+That is inside run-to-run variance on a machine that has been up for three
+days, and the reading is that the bookkeeping §13.12 assumed was expensive was
+not: the 7450 was already hoisting most of it, and what remains in
+`transform_and_store` is the arithmetic itself. **The 60 fps target is not
+met**, and the honest next step is another `sample` profile on the character
+select rather than another guess — which is exactly the lesson §13.1 already
+paid for once.
+
+**The AltiVec path was not attempted.** The reason is worth recording rather
+than leaving as an omission: the transform is one 3x4 matrix against one
+3-vector at a time, and a single vec3 through AltiVec costs more in loads,
+`vec_perm` for the unaligned operand and the store-back to scalar than the nine
+multiplies save. To win it has to be *batched* — store model-space positions
+and normals into the vertex array during attribute assembly and transform the
+whole `verts[]` run in one pass at `GXEnd` — which is a real restructuring of
+the two-phase vertex path and belongs with the profile that justifies it. It
+would also change rounding (`vec_madd` is fused), so the golden md5s would have
+to be re-based deliberately. Neither happened; nothing in the tree is
+`#ifdef __ALTIVEC__` yet.
+
+### 14.4 A minigame: Mini-Game mode runs, and Free Play is empty
+
+`mgmodedll` loads and runs. `port/ref/movies/minigame-select.play` reaches it
+at port frame 2,015, and `--ovllog` says so in one line:
+
+```
+port> frame  879: overlay 74 (next -1) event 0     modeseldll
+port> frame 2015: overlay 72 (next -1) event 0     mgmodedll
+```
+
+Getting there was the awkward part and the script's comment explains it. The
+mode-select ring (`src/REL/modeseldll/modesel.c:113`) moves on
+`HuPadDStkRep` LEFT/RIGHT and clamps at 0..5, and Mini-Game is index 2 — but
+the frame the ring starts taking input on moves with how long the new-file card
+scene ran, and a stick push that lands before it opens is simply lost. Ten
+pushes spread over 600 frames all were. Two things were verified along the way
+rather than assumed: `--paddbg` now prints the raw stick alongside the pad's
+own `HuPadDStk`/`HuPadDStkRep`, and a `dstk:RIGHT` in a `--play` script does
+produce `dstk 02 rep 02` for exactly one frame, which is what the ring wants.
+So the walk stops trying to find the frame and makes **every A press a
+candidate**: A, then two pushes right 20 and 50 frames later, then the next A
+90 frames on. Whichever A opens the ring, the two pushes that follow it are
+inside it and the A after that accepts Mini-Game.
+
+What is behind the door:
+
+> "You won 'em! Now, you can play 'em!"
+> "Excellent! Say, how do you want to play these here Mini-Games?"
+> "Free Play — Play any one you want."
+> **"You haven't opened any games!"**
+
+Free Play lists only minigames the save file has unlocked, and a save the port
+created three minutes ago has none. So `instDll` and `m4xxDll` are still
+unproved: the route to them is a board, which is M5, or Story mode. The
+windows on those screens are all correct, which is the tiling fix earning its
+keep on a screen that is nothing but windows; the room behind them is flat grey,
+which is §14.2 again.
+
+Screenshots: `docs/screenshots/mp4-minigame-select.png`.
+
+### 14.5 What `--gxwarn` names now
+
+Over the same 5,150-frame walk:
+
+| warning | M3 | M4 |
+|---|---:|---:|
+| `TEV: a stage needs two different constants; the first wins` | 1,340,300 | 1,319,950 |
+| `GXSetTevSwapMode: a non-identity swap table is ignored` | 136,522 | 135,622 |
+| `indirect texturing … direct stage only` | 20,818 | **0** |
+| `GXSetTevIndTile: dropped` | 20,818 | **0** |
+| `GXInitSpecularDir: specular is approximated by the diffuse term` | 12,630 | 12,630 |
+
+Three distinct degradations left, down from five. The two-konst case is the
+big one and it is a real GL 1.3 limit (one `GL_TEXTURE_ENV_COLOR` per unit
+against GX's four konst registers); §3.9's `GL_ATI_text_fragment_shader` escape
+hatch is where it goes, and that is an M8 decision, not an M5 one.
+
+### 14.6 Tooling added
+
+| flag | what |
+|---|---|
+| `--scenelog F[,F…]` | every live camera, every live model's placement and matrix, every model's HSF object transforms and envelope-matrix header, on presented frame F |
+| `--ovllog` | one line whenever `omcurovl` changes: which scene owns which frames |
+| (`--drawlog`) | now also names the draw's model index and HSF object, recovered from the `HU3DDRAWOBJ` the loaded matrix is a member of, and symbolises the caller of `GXLoadPosMtxImm` through `dladdr` |
+| (`--paddbg`) | now prints the raw stick and the pad layer's own `HuPadDStk`/`HuPadDStkRep`, which is how "the script's stick push is not reaching the game" was ruled out in one 200-frame run |
+| (`--dumptex`) | now also writes the composed tile background, its tile sheet and its raw tile map |
+
+`port/ref/movies/minigame-select.play` is the walk into Mini-Game mode.
+
+### 14.7 What M5 needs
+
+1. **The second pass with the wrong matrix** (§14.2). It is one of three named
+   places now, and `--scenelog`'s envelope line is the first thing to read.
+   Everything visual on three menu screens is downstream of it.
+2. **A board with CPU players**, which is M5's own headline, and which is also
+   the only route to `instDll` and an `m4xxDll` — Free Play is locked until a
+   board has been played (§14.4). The board-settings screen already accepts, so
+   the next step is the walk past it into `w01dll`.
+3. **A `sample` profile of the character-select scene**, before any more
+   vertex-path work. §14.3 spent a step on bookkeeping that was not the cost.
+4. **Batched AltiVec**, once (3) says where the time is, as the two-phase
+   restructuring §14.3 describes rather than a per-vertex intrinsic.

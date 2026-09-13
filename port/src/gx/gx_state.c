@@ -163,8 +163,24 @@ void GXSetArray(GXAttr attr, const void* data, u8 stride) {
 
 /* ---- matrices and the viewport -------------------------------------------- */
 
+/* Who loaded the matrix.
+ *
+ * "The stage geometry is transformed clean off the side of the world" is a
+ * question about *which* of the game's matrix builders produced it, and the
+ * port has one fact the game does not: the return address.  Every REL and the
+ * executable are Mach-O images, so `dladdr` names the caller -- the same trick
+ * the fault handler's hand-walked backtrace uses.  Captured only under
+ * --drawlog, and only as a pointer; the symbol lookup happens when a draw is
+ * actually explained. */
+const void* gx_last_posmtx_caller;
+const void* gx_last_posmtx_arg;
+
 void GXLoadPosMtxImm(const void* mtx, u32 id) {
     u32 slot = id / 3;
+    if (port_opt.drawlog) {
+        gx_last_posmtx_caller = __builtin_return_address(0);
+        gx_last_posmtx_arg = mtx;
+    }
     if (slot < 10) {
         memcpy(gx.pos_mtx[slot], mtx, 48);
     }
@@ -570,26 +586,31 @@ void GXSetTevSwapModeTable(GXTevSwapSel table, GXTevColorChan r, GXTevColorChan 
 void GXSetTevDirect(GXTevStageID s) {
     if ((unsigned)s < GX_TEV_STAGES) {
         gx.tev[s].direct = 1;
+        gx.ind_tile[s].on = 0;
     }
 }
 
 void GXSetNumIndStages(u8 n) {
     gx.num_ind = n;
-    if (n) {
-        gx_warn("indirect texturing: the fixed-function path draws the direct "
-                "stage only (PLAN.md 3.4 case 3)");
+    if (!n) {
+        int i;
+        for (i = 0; i < GX_TEV_STAGES; i++) {
+            gx.ind_tile[i].on = 0;
+        }
     }
 }
 
 void GXSetIndTexOrder(GXIndTexStageID s, GXTexCoordID c, GXTexMapID m) {
-    (void)s;
-    (void)c;
-    (void)m;
+    if ((unsigned)s < 4) {
+        gx.ind[s].coord = (u8)c;
+        gx.ind[s].map = (u8)m;
+    }
 }
 void GXSetIndTexCoordScale(GXIndTexStageID s, GXIndTexScale ss, GXIndTexScale ts) {
-    (void)s;
-    (void)ss;
-    (void)ts;
+    if ((unsigned)s < 4) {
+        gx.ind[s].scale_s = (u8)ss;
+        gx.ind[s].scale_t = (u8)ts;
+    }
 }
 void GXSetIndTexMtx(GXIndTexMtxID id, const void* offset, s8 scale_exp) {
     (void)id;
@@ -605,12 +626,33 @@ void GXSetTevIndWarp(GXTevStageID tev, GXIndTexStageID ind, GXBool signed_offset
     (void)mtx;
     gx_warn("GXSetTevIndWarp: dropped; --gxshader (M8) is where this comes back");
 }
+/* The one indirect form the port reproduces exactly.
+ *
+ * `HuSprDisp` draws every tiled window background with it (src/game/sprput.c
+ * :99): a small indirect texture whose texels name 16x16 tiles of a larger
+ * sheet.  There is no dependent texture read in GL 1.3 and no fragment
+ * program on a Radeon 9000, but there does not have to be -- both textures
+ * are ordinary images in main memory, so the composition the hardware would
+ * do per pixel can be done once on the CPU and cached.  gx_tex.c does the
+ * work; this only records what was asked for. */
 void GXSetTevIndTile(GXTevStageID tev, GXIndTexStageID ind, u16 ts_s, u16 ts_t,
                      u16 tsp_s, u16 tsp_t, GXIndTexFormat fmt, GXIndTexMtxID mtx,
                      GXIndTexBiasSel bias, GXIndTexAlphaSel alpha) {
-    (void)tev; (void)ind; (void)ts_s; (void)ts_t; (void)tsp_s; (void)tsp_t;
-    (void)fmt; (void)mtx; (void)bias; (void)alpha;
-    gx_warn("GXSetTevIndTile: dropped");
+    (void)mtx;
+    (void)bias;
+    (void)alpha;
+    if ((unsigned)tev >= GX_TEV_STAGES || (unsigned)ind >= 4) {
+        gx_warn("GXSetTevIndTile: stage out of range; dropped");
+        return;
+    }
+    gx.tev[tev].direct = 0;
+    gx.ind_tile[tev].on = 1;
+    gx.ind_tile[tev].ind = (u8)ind;
+    gx.ind_tile[tev].fmt = (u8)fmt;
+    gx.ind_tile[tev].ts_s = ts_s;
+    gx.ind_tile[tev].ts_t = ts_t;
+    gx.ind_tile[tev].tsp_s = tsp_s;
+    gx.ind_tile[tev].tsp_t = tsp_t;
 }
 
 /* ---- the pixel pipeline --------------------------------------------------- */

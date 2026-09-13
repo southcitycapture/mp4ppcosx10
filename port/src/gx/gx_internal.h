@@ -41,6 +41,22 @@ typedef struct GXTevStage {
     u8 direct;                /* GXSetTevDirect vs an indirect stage          */
 } GXTevStage;
 
+/* GXSetIndTexOrder / GXSetIndTexCoordScale: which texture an indirect stage
+ * looks up, and by how much its coordinate is divided first. */
+typedef struct GXIndStage {
+    u8 coord, map, scale_s, scale_t;
+} GXIndStage;
+
+/* GXSetTevIndTile, the one indirect form the port reproduces exactly: a small
+ * indirect texture whose texels name tiles of a larger one. */
+typedef struct GXIndTile {
+    u8 on;          /* 0 once GXSetTevDirect or GXSetNumIndStages(0) undoes it */
+    u8 ind;         /* which GXIndTexStageID                                   */
+    u8 fmt;         /* GXIndTexFormat                                          */
+    u16 ts_s, ts_t;   /* tile size, in texels of the tile sheet                */
+    u16 tsp_s, tsp_t; /* tile spacing, in texels of the tile sheet             */
+} GXIndTile;
+
 typedef struct GXTexGen {
     u8 func, src, mtx, normalize, postmtx;
 } GXTexGen;
@@ -118,6 +134,10 @@ typedef struct GXState {
     GXColor kcolor[4];
     u8 swap_tbl[4][4];    /* GXSetTevSwapModeTable */
     u8 num_ind;
+    /* The indirect stages the port can actually reproduce: the tile-map case
+     * (GXSetTevIndTile).  See gx_tex.c's gx_tex_bind_tiled. */
+    GXIndStage ind[4];
+    GXIndTile ind_tile[GX_TEV_STAGES];
 
     /* pixel */
     u8 z_enable, z_func, z_update, z_comploc;
@@ -148,6 +168,8 @@ typedef struct GXState {
 } GXState;
 
 extern GXState gx;
+extern const void* gx_last_posmtx_caller;
+extern const void* gx_last_posmtx_arg;
 extern int gx_ready;
 
 /* gx_draw.c */
@@ -161,9 +183,12 @@ void gx_tev_report(void);
 /* gx_tex.c */
 void gx_tex_init(void);
 void gx_tex_bind(int unit, GXTexObjPort* obj);
+int gx_tex_bind_tiled(int unit, GXTexObjPort* sheet, GXTexObjPort* map,
+                      const GXIndTile* tile);
 GXTexObjPort* gx_bound_tex(unsigned id); /* NULL unless the unit holds a real object */
 void gx_tex_copy(void* dest, int clear);
 void gx_tex_report(void);
+void gx_tex_tile_report(void);
 
 /* gl13.c -- the only file that talks to GL */
 int gl13_init(void);

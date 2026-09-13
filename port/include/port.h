@@ -60,6 +60,9 @@ typedef struct PortOptions {
     int pad_debug;          /* --paddbg  log raw pad reports/buttons/axes     */
     const char* pad_play;   /* --play SCRIPT  scripted controller 1 input     */
     const char* pad_record; /* --record FILE  record controller 1's raw input */
+    /* ---- M4 ---- */
+    const char* scenelog;   /* --scenelog F[,F...]  the 3D scene's own state */
+    int ovllog;             /* --ovllog  name the scene every time it changes  */
 } PortOptions;
 
 extern PortOptions port_opt;
@@ -87,6 +90,11 @@ void port_perf_present_end(void);
 void port_perf_slept(double seconds);
 void port_perf_frame(void);
 void port_perf_report(void);
+
+/* --scenelog, src/debug/scenelog.c */
+void port_scenelog(void);
+void port_ovllog(void);
+const char* port_drawobj_name(const void* mtx, int* model_index);
 void port_clock_mark(void);
 void port_clock_report(void);
 

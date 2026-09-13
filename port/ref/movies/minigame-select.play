@@ -1,0 +1,115 @@
+# minigame-select -- the port's own walk into Mini-Game mode.
+#
+# The mode-select ring (src/REL/modeseldll/modesel.c:113) opens on an A whose
+# frame depends on how long the new-file card scene ran, and a stick push that
+# lands before it opens is simply lost -- ten pushes spread over 600 frames all
+# were.  So the walk stops trying to find that frame and makes every A press a
+# candidate: A, then two pushes right 20 and 50 frames later, then the next A
+# 90 frames on.  Whichever A opens the ring, the two pushes that follow it are
+# inside, and the A after that accepts Mini-Game.  A push that lands on the
+# file select or the card scene moves a cursor whose choice does not matter.
+
+at 700 6 START
+at 750 6 START
+at 800 6 START
+at 850 6 START
+at 900 6 START
+at 950 6 START
+at 1000 6 START
+at 1050 6 START
+at 1100 6 START
+
+at 1160 6 A
+at 1180 6 dstk:RIGHT
+at 1210 6 dstk:RIGHT
+at 1250 6 A
+at 1270 6 dstk:RIGHT
+at 1300 6 dstk:RIGHT
+at 1340 6 A
+at 1360 6 dstk:RIGHT
+at 1390 6 dstk:RIGHT
+at 1430 6 A
+at 1450 6 dstk:RIGHT
+at 1480 6 dstk:RIGHT
+at 1520 6 A
+at 1540 6 dstk:RIGHT
+at 1570 6 dstk:RIGHT
+at 1610 6 A
+at 1630 6 dstk:RIGHT
+at 1660 6 dstk:RIGHT
+at 1700 6 A
+at 1720 6 dstk:RIGHT
+at 1750 6 dstk:RIGHT
+at 1790 6 A
+at 1810 6 dstk:RIGHT
+at 1840 6 dstk:RIGHT
+at 1880 6 A
+at 1900 6 dstk:RIGHT
+at 1930 6 dstk:RIGHT
+at 1970 6 A
+at 1990 6 dstk:RIGHT
+at 2020 6 dstk:RIGHT
+at 2060 6 A
+at 2080 6 dstk:RIGHT
+at 2110 6 dstk:RIGHT
+at 2150 6 A
+at 2170 6 dstk:RIGHT
+at 2200 6 dstk:RIGHT
+at 2240 6 A
+at 2260 6 dstk:RIGHT
+at 2290 6 dstk:RIGHT
+at 2330 6 A
+at 2350 6 dstk:RIGHT
+at 2380 6 dstk:RIGHT
+at 2420 6 A
+at 2440 6 dstk:RIGHT
+at 2470 6 dstk:RIGHT
+at 2510 6 A
+at 2530 6 dstk:RIGHT
+at 2560 6 dstk:RIGHT
+at 2600 6 A
+at 2620 6 dstk:RIGHT
+at 2650 6 dstk:RIGHT
+at 2690 6 A
+at 2710 6 dstk:RIGHT
+at 2740 6 dstk:RIGHT
+
+# past the ring: the minigame mode's own menus
+at 2790 6 A
+at 2880 6 A
+at 2970 6 A
+at 3060 6 A
+at 3150 6 A
+at 3240 6 A
+at 3330 6 A
+at 3420 6 A
+at 3510 6 A
+at 3600 6 A
+at 3690 6 A
+at 3780 6 A
+at 3870 6 A
+at 3960 6 A
+at 4050 6 A
+at 4140 6 A
+at 4230 6 A
+at 4320 6 A
+at 4410 6 A
+at 4500 6 A
+at 4590 6 A
+at 4680 6 A
+at 4770 6 A
+at 4860 6 A
+at 4950 6 A
+at 5040 6 A
+at 5130 6 A
+at 5220 6 A
+at 5310 6 A
+at 5400 6 A
+at 5490 6 A
+at 5580 6 A
+at 5670 6 A
+at 5760 6 A
+at 5850 6 A
+at 5940 6 A
+at 6030 6 A
+at 6120 6 A

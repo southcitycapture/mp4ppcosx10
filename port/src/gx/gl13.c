@@ -1023,6 +1023,8 @@ static int frame_wanted(unsigned n) {
 void gl13_present(void) {
 #ifndef PORT_NO_SDL
     frame_no++;
+    port_scenelog();
+    port_ovllog();
     if (frame_wanted(frame_no)) {
         char path[1024];
         snprintf(path, sizeof(path), "%s/frame-%05u.ppm",

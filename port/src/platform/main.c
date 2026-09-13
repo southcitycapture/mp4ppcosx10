@@ -67,6 +67,8 @@ static void usage(const char* argv0) {
             "  --perf            per-frame game/gx/present timing, both clocks\n"
             "  --drawlog N       explain the first N draws: geometry, texture, state\n"
             "  --drawlog-at F    ...but only on presented frame F, which is how you\n"
+            "  --scenelog F      the cameras and camera-bearing models on frame F\n"
+            "  --ovllog          name the scene (omcurovl) every time it changes\n"
             "                    point --drawlog at a screen rather than at the boot\n"
             "  --nocard          both memory-card slots read empty.  The game then\n"
             "                    stops at SELECT A FILE, exactly as a console with no\n"
@@ -221,6 +223,10 @@ int port_parse_args(int argc, char** argv) {
             port_opt.drawlog = atoi(argv[++i]);
         } else if (!strcmp(a, "--drawlog-at") && i + 1 < argc) {
             port_opt.drawlog_frame = atoi(argv[++i]);
+        } else if (!strcmp(a, "--ovllog")) {
+            port_opt.ovllog = 1;
+        } else if (!strcmp(a, "--scenelog") && i + 1 < argc) {
+            port_opt.scenelog = argv[++i];
         } else if (!strcmp(a, "--nocard")) {
             port_opt.nocard = 1;
         } else if (!strcmp(a, "--reldlclose")) {
