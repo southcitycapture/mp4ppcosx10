@@ -1427,12 +1427,12 @@ REL.
 
 | binary | how | size |
 |---|---|---:|
-| `port/build-ppc-darwin/marioparty4` | `port/build-ppc.sh -j8` — GCC 14.2, `powerpc-apple-darwin8`, MacOSX10.4u SDK, `-malign-natural -mone-byte-bool` | 1,093,116 bytes |
-| `port/build-host/marioparty4` | `make -C port TARGET=host -j8` — the Mac's clang, arm64 | 1,078,232 bytes |
+| `port/build-ppc-darwin/marioparty4` | `port/build-ppc.sh -j8` -- GCC 14.2, `powerpc-apple-darwin8`, MacOSX10.4u SDK, `-malign-natural -mone-byte-bool` | 1,093,916 bytes |
+| `port/build-host/marioparty4` | `make -C port TARGET=host -j8` -- the Mac's clang, arm64 | 1,079,192 bytes |
 
 93 game translation units (50 `src/game`, 30 `src/game/board`, 6 `src/msm`,
-2 `src/libhu`, 5 `src/dolphin/mtx`), 10 port sources, one assembly file, and
-one generated stub pair. Both targets stub **exactly the same 204 symbols** —
+2 `src/libhu`, 5 `src/dolphin/mtx`), 12 port sources, one assembly file, and
+one generated stub pair. Both targets stub **exactly the same 188 symbols** —
 the two `missing.txt` files are identical, which is the cheapest possible check
 that the host build is not diverging from the real one.
 
@@ -1481,75 +1481,67 @@ with `atos` and the stub table, and exits.
 
 ### 9.3 The SDK surface the boot actually hit
 
-64 distinct stubs, 135 calls, in first-call order — 55 of them GX, which is the
-best possible argument for §3 being the next milestone rather than anything
-else:
+56 distinct stubs, 111 calls, in first-call order -- 55 of them GX, which is the
+best possible argument for the GX plan (§3) being the next milestone rather
+than anything else:
 
 ```
-   1  PADInit                                 2
-   2  GXInit                                  1
-   3  GXSetViewport                           6
-   4  GXSetScissor                            4
-   5  GXSetDispCopySrc                        1
-   6  GXSetDispCopyDst                        1
-   7  GXSetDispCopyYScale                     1
-   8  GXSetCopyFilter                         1
-   9  GXSetPixelFmt                           1
-  10  GXCopyDisp                              2
-  11  GXSetDispCopyGamma                      1
-  12  PADRead                                 5
-  13  sndIsInstalled                          1
-  14  CARDInit                                1
-  15  PADSetSpec                              1
-  16  SISetSamplingRate                       1
-  17  PADClamp                                4
-  18  PADControlMotor                         6
-  19  PADReset                                4
-  20  GXSetFog                                1
-  21  GXSetDrawSyncCallback                   1
-  22  GXInvalidateVtxCache                    2
-  23  GXInvalidateTexAll                      4
-  24  GXSetGPMetric                           2
-  25  GXClearGPMetric                         2
-  26  GXSetVCacheMetric                       2
-  27  GXClearVCacheMetric                     2
-  28  GXClearPixMetric                        2
-  29  GXClearMemMetric                        2
-  30  GXSetCopyClear                          2
-  31  GXSetDrawSync                           2
-  32  GXSetCurrentMtx                         3
-  33  GXSetProjection                         3
-  34  GXClearVtxDesc                          3
-  35  GXSetVtxDesc                            6
-  36  GXSetVtxAttrFmt                         6
-  37  GXSetCullMode                           1
-  38  GXSetZMode                              4
-  39  GXLoadPosMtxImm                         2
-  40  GXSetChanMatColor                       2
-  41  GXSetNumChans                           2
-  42  GXSetChanCtrl                           2
-  43  GXSetTevOrder                           2
-  44  GXSetTevOp                              2
-  45  GXSetNumTexGens                         2
-  46  GXSetNumTevStages                       2
-  47  GXSetAlphaUpdate                        2
-  48  GXSetColorUpdate                        2
-  49  GXSetAlphaCompare                       2
-  50  GXSetBlendMode                          2
-  51  GXBegin                                 1
-  52  GXPosition2u16                          4
-  53  GXEnd                                   1
-  54  GXSetArray                              1
-  55  GXInitTexObj                            1
-  56  GXInitTexObjLOD                         1
-  57  GXLoadTexObj                            1
-  58  GXSetTexCoordGen2                       1
-  59  GXSetZCompLoc                           1
-  60  GXDrawDone                              1
-  61  GXReadGPMetric                          1
-  62  GXReadVCacheMetric                      1
-  63  GXReadPixMetric                         1
-  64  GXReadMemMetric                         1
+   1  GXInit                                  1
+   2  GXSetViewport                           6
+   3  GXSetScissor                            4
+   4  GXSetDispCopySrc                        1
+   5  GXSetDispCopyDst                        1
+   6  GXSetDispCopyYScale                     1
+   7  GXSetCopyFilter                         1
+   8  GXSetPixelFmt                           1
+   9  GXCopyDisp                              2
+  10  GXSetDispCopyGamma                      1
+  11  sndIsInstalled                          1
+  12  GXSetFog                                1
+  13  GXSetDrawSyncCallback                   1
+  14  GXInvalidateVtxCache                    2
+  15  GXInvalidateTexAll                      4
+  16  GXSetGPMetric                           2
+  17  GXClearGPMetric                         2
+  18  GXSetVCacheMetric                       2
+  19  GXClearVCacheMetric                     2
+  20  GXClearPixMetric                        2
+  21  GXClearMemMetric                        2
+  22  GXSetCopyClear                          2
+  23  GXSetDrawSync                           2
+  24  GXSetCurrentMtx                         3
+  25  GXSetProjection                         3
+  26  GXClearVtxDesc                          3
+  27  GXSetVtxDesc                            6
+  28  GXSetVtxAttrFmt                         6
+  29  GXSetCullMode                           1
+  30  GXSetZMode                              4
+  31  GXLoadPosMtxImm                         2
+  32  GXSetChanMatColor                       2
+  33  GXSetNumChans                           2
+  34  GXSetChanCtrl                           2
+  35  GXSetTevOrder                           2
+  36  GXSetTevOp                              2
+  37  GXSetNumTexGens                         2
+  38  GXSetNumTevStages                       2
+  39  GXSetAlphaUpdate                        2
+  40  GXSetColorUpdate                        2
+  41  GXSetAlphaCompare                       2
+  42  GXSetBlendMode                          2
+  43  GXBegin                                 1
+  44  GXPosition2u16                          4
+  45  GXEnd                                   1
+  46  GXSetArray                              1
+  47  GXInitTexObj                            1
+  48  GXInitTexObjLOD                         1
+  49  GXLoadTexObj                            1
+  50  GXSetTexCoordGen2                       1
+  51  GXSetZCompLoc                           1
+  52  GXDrawDone                              1
+  53  GXReadGPMetric                          1
+  54  GXReadVCacheMetric                      1
+  55  GXReadPixMetric                         1
+  56  GXReadMemMetric                         1
 ```
 
 Everything not in that list is implemented for real: OSReport, the arena and
