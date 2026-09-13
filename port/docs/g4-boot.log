@@ -1,0 +1,320 @@
+Mario Party 4 -- the M1 PowerPC binary on the real Power Mac G4
+===============================================================
+
+Captured 2026-09-13 on the G4 test bench: Power Mac G4, Mac OS X 10.5.4 (9E25),
+Radeon 9000, big endian.  Binary: port/build-ppc-darwin/marioparty4 built by
+port/build-ppc.sh (powerpc-apple-darwin8 GCC 14.2, MacOSX10.4u SDK,
+-malign-natural -mone-byte-bool), wrapped by port/tools/make_bundle.sh and
+installed by port/tools/g4_install.sh as ~/MarioParty4.app.  Disc image:
+~/MarioParty4/mp4.nkit.iso, the same 598,382,592-byte NKit ISO as on the host.
+
+    ./MarioParty4.app/Contents/MacOS/isle --watchdog 6
+
+Boot from `main()` to the REL seam takes under a second; the rest of the run is
+the documented spin in omWatchOverlayProc, which the watchdog ends.  What
+differs from docs/m1-boot.log (the same build on the little-endian development
+host) is listed at the bottom of this file.
+
+--------------------------------------------------------------------------------
+Mario Party 4 -- native port, milestone M1
+port> DVD: disc image /Users/zach/MarioParty4/mp4.nkit.iso, 357 files in the FST
+port> entering the game's own main()
+
+port> OSInit: MEM1 24 MB, ARAM 16 MB, bus 162 MHz
+port> DVDInit
+port> VIInit
+port> PADInit: no controllers (M3 brings SDL2 + the Xbox One driver)
+port> OSCreateHeap 0: 0x192c000..0x3000000 (23375 KB)
+port> VIConfigure: 640x480 xfb, 640x480 efb, tv mode 0
+port> OSCreateThread 0x1444e8 func 0x4105c (the soft-reset watcher; not started)
+HuMem> left memory space 2383KB(2441120)
+port> ARInit: 16 MB of ARAM
+port> CARDInit: no card in either slot
+port> PADInit: no controllers (M3 brings SDL2 + the Xbox One driver)
+DLL DBG OUT
+objman>Call New Ovl 1(1)
+++++++++++++++++++++ Start New OVL 1 (EVT:0 STAT:0x00000000) ++++++++++++++++++
+======== HuMem heap dump 01a2c018 ========
+MCB-----+Size----+MG+FL+Prev----+Next----+UNum----+Body----+Call----
+01a2c018 0000a020 a5 01 01a3e1f8 01a36038 ffffff00 01a2c038 000077ec
+01a36038 000081c0 a5 01 01a2c018 01a3e1f8 ffffff00 01a36058 0003b780
+01a3e1f8 0022de20 cd 00 01a36038 01a2c018 00000000 01a3e218 0003b780
+MCB:3(2/1) MEM:00240000(000121e0/0022de20)
+======== HuMem heap dump 01a2c018 end =====
+======== HuMem heap dump 01dac030 ========
+MCB-----+Size----+MG+FL+Prev----+Next----+UNum----+Body----+Call----
+01dac030 00a80000 cd 00 01dac030 01dac030 ffffff00 01dac050 cdcdcdcd
+MCB:1(0/1) MEM:00a80000(00000000/00a80000)
+======== HuMem heap dump 01dac030 end =====
+======== HuMem heap dump 0282c03c ========
+MCB-----+Size----+MG+FL+Prev----+Next----+UNum----+Body----+Call----
+0282c03c 00580000 cd 00 0282c03c 0282c03c ffffff00 0282c05c cdcdcdcd
+MCB:1(0/1) MEM:00580000(00000000/00580000)
+======== HuMem heap dump 0282c03c end =====
+objman>Used Memory Size:000121e0
+objman>Used Memory Cnt:2
+objman>Init esp
+objman>Call objectsetup
+DLLStart 1 0
+Search:dll/bootdll.rel
+objdll>Link DLL:dll/bootdll.rel
+Rest Memory 580000
+port> OSLink(0x1a3e578): REL relocation is M2 (one dlopen'ed bundle per module); returning FALSE
+objdll>++++++++++++++++ DLL Link Failed
+===== DLL Module Info dump ====
+                   ID:0x00000001
+             LinkPrev:0x00000000
+             LinkNext:0x00000000
+          Section num:14
+Section info tbl ofst:0x00000048
+           nameOffset:0x00000000
+             nameSize:47
+              version:0x00000002
+===============================
+==== DLL Module Header dump ====
+          bss Size:0x0000005c
+        rel Offset:0x00005c9d
+        imp Offset:0x00007a4d
+    prolog Section:1
+    epilog Section:1
+unresolved Section:0
+       prolog func:0x00000000
+       epilog func:0x00000054
+   unresolved func:0x00000000
+================================
+objman>ObjectSetup end
+
+*** port: watchdog fired (the game is not making progress): signal 14 at address 0x3ba30
+    pc   000000000003ba30  (image base 0000000000001000, offset 3aa30)
+    sp   0000000001a3e110
+    atos -o <binary> -l 0x1000 0x3ba30
+
+---- SDK surface hit at boot: 66 distinct stubs, in first-call order ----
+   1  GXInit                                  1
+   2  GXSetViewport                           6
+   3  GXSetScissor                            4
+   4  GXSetDispCopySrc                        1
+   5  GXSetDispCopyDst                        1
+   6  GXSetDispCopyYScale                     1
+   7  GXSetCopyFilter                         1
+   8  GXSetPixelFmt                           1
+   9  GXCopyDisp                              2
+  10  GXSetDispCopyGamma                      1
+  11  sndIsInstalled                          1
+  12  AIInit                                  1
+  13  sndSetHooks                             1
+  14  sndInit                                 1
+  15  AIRegisterDMACallback                   1
+  16  sndStreamAllocEx                        2
+  17  sndAuxCallbackPrepareReverbHI           1
+  18  sndAuxCallbackPrepareDelay              1
+  19  sndSetAuxProcessingCallbacks            1
+  20  sndOutputMode                           2
+  21  sndVolume                               1
+  22  GXSetFog                                1
+  23  GXSetDrawSyncCallback                   1
+  24  GXInvalidateVtxCache                    2
+  25  GXInvalidateTexAll                      4
+  26  GXSetGPMetric                           2
+  27  GXClearGPMetric                         2
+  28  GXSetVCacheMetric                       2
+  29  GXClearVCacheMetric                     2
+  30  GXClearPixMetric                        2
+  31  GXClearMemMetric                        2
+  32  GXSetCopyClear                          2
+  33  GXSetDrawSync                           2
+  34  GXSetCurrentMtx                         3
+  35  GXSetProjection                         3
+  36  GXClearVtxDesc                          3
+  37  GXSetVtxDesc                            6
+  38  GXSetVtxAttrFmt                         6
+  39  GXSetCullMode                           1
+  40  GXSetZMode                              4
+  41  GXLoadPosMtxImm                         2
+  42  GXSetChanMatColor                       2
+  43  GXSetNumChans                           2
+  44  GXSetChanCtrl                           2
+  45  GXSetTevOrder                           2
+  46  GXSetTevOp                              2
+  47  GXSetNumTexGens                         2
+  48  GXSetNumTevStages                       2
+  49  GXSetAlphaUpdate                        2
+  50  GXSetColorUpdate                        2
+  51  GXSetAlphaCompare                       2
+  52  GXSetBlendMode                          2
+  53  GXBegin                                 1
+  54  GXPosition2u16                          4
+  55  GXEnd                                   1
+  56  GXSetArray                              1
+  57  GXInitTexObj                            1
+  58  GXInitTexObjLOD                         1
+  59  GXLoadTexObj                            1
+  60  GXSetTexCoordGen2                       1
+  61  GXSetZCompLoc                           1
+  62  GXDrawDone                              1
+  63  GXReadGPMetric                          1
+  64  GXReadVCacheMetric                      1
+  65  GXReadPixMetric                         1
+  66  GXReadMemMetric                         1
+---- 123 stub calls total ----
+
+--------------------------------------------------------------------------------
+Divergences from docs/m1-boot.log (same source, little-endian arm64 host)
+--------------------------------------------------------------------------------
+
+Every line of narration is identical except the twelve differences below.  Nine
+of them are the endianness dividend arriving; two are pointer width; one is the
+disc's path.
+
+1.  AUDIO -- the headline.  The host prints
+
+        MSM(Sound Manager) Error:Error Code -121
+        port> little-endian host: the game's own MSM parser cannot read the
+              disc's big-endian sound bank; continuing without audio
+
+    (MSM_ERR_INVALIDFILE: msmSysInit reads the version out of
+    sound/mpgcsnd.msm as 0x02000000 instead of 2 and gives up on the first
+    field.)  The G4 prints NEITHER LINE.  msmSysInit succeeds: it parses the
+    sound bank header, loads the base group, and brings MusyX up.  The
+    `host:`-prefixed patch in patches.txt that stops HuAudInit hanging is
+    unreachable on this target, exactly as §9.6 predicted.
+
+2.  Ten new stubs appear in the surface report, in the order MusyX asks for
+    them -- AIInit, sndSetHooks, sndInit, AIRegisterDMACallback,
+    sndStreamAllocEx (x2), sndAuxCallbackPrepareReverbHI,
+    sndAuxCallbackPrepareDelay, sndSetAuxProcessingCallbacks, sndOutputMode
+    (x2), sndVolume.  56 distinct stubs on the host, 66 on the G4; 111 calls
+    against 123.  Every one of them is a real MusyX entry point the host build
+    has never reached, so the G4 is the only place the audio surface can be
+    measured at all.  Two of them had to be told to answer TRUE before the
+    boot got past them -- see "the two fixes" below.
+
+3.  REL HEADERS -- the parse the port will live or die by at M2.  The DLL
+    module dump the failure path prints is the game's own read of
+    dll/bootdll.rel, through `-malign-natural` structs, from a PowerPC FILE*
+    on the NKit image.  Host against G4, and against the raw bytes at disc
+    offset 0xbee90e4 read independently with Python:
+
+        field                    host (LE)      G4 (BE)     raw disc
+        ID                       0x01000000     0x00000001  1
+        LinkPrev                 0x48000000     0x00000000  0
+        LinkNext                 0x00000000     0x00000000  0
+        Section num              788529152      14          14
+        Section info tbl ofst    0x02000000     0x00000048  0x48
+        nameOffset               0x5c000000     0x00000000  0
+        nameSize                 -1654915072    47          47
+        version                  0x4d7a0000     0x00000002  2
+        bss Size                 0x00000101     0x0000005c  0x5c
+        rel Offset               0x00000000     0x00005c9d  0x5c9d
+        imp Offset               0x54000000     0x00007a4d  0x7a4d
+        prolog Section           0              1           1
+        epilog Section           0              1           1
+        unresolved Section       0              0           0
+        prolog func              0x08000000     0x00000000  0
+        epilog func              0x00000000     0x00000054  0x54
+        unresolved func          0x00000000     0x00000000  0
+
+    Sixteen consecutive fields of two structures, every one of them right on
+    the G4 and every one of them wrong on the host.  That is the alignment
+    proof and the endianness proof in the same table: OSModuleInfo is eight
+    u32s and OSModuleHeader adds four u32s, three u8s, a pad byte and three
+    more u32s, and the compiler laid them out so that the game's own loader
+    reads the file with no fixups at all.
+
+4.  MEMORY -- pointer width, and it favours the G4.
+
+        objman>Used Memory Size:00012200   host
+        objman>Used Memory Size:000121E0   G4       (32 bytes less)
+
+    Two live objects, sixteen bytes smaller each: the game's structures hold
+    pointers, and on the 32-bit target they are the size the GameCube's are.
+    The G4 number is the one that should match a real console.  The three heap
+    sizes are identical (0x240000 / 0xa80000 / 0x580000), as is "Rest Memory
+    580000" and "left memory space 2383KB(2441120)".
+
+5.  Addresses.  The host maps MEM1 wherever mmap puts it (0x59.. this run);
+    on the G4 it lands at 0x192c000 and the whole process lives below 32 bits,
+    which is the arrangement HUPROCESS's u32 stack pointers assume natively --
+    port_call_on_stack's 4 GB-window guard has nothing to do here.
+
+6.  The disc path, which is just where the image sits on each machine.
+
+--------------------------------------------------------------------------------
+The two fixes this first run needed
+--------------------------------------------------------------------------------
+
+The very first G4 run stopped 40 lines earlier than the host, at
+
+        HuMem> Failed OSAlloc left space
+        MSM(Sound Manager) Error:Error Code -31
+
+and spun there.  Both were port bugs the host build cannot see, and both are
+one-liners.
+
+a.  OSCheckHeap's answer was not allocatable.  HuMemInitAll's last act is
+    `OSAlloc(OSCheckHeap(h))` -- ask what is left, then ask for exactly that.
+    OSAllocFromHeap rounds requests up to 32 bytes; the block header is 12
+    bytes on the 32-bit target, so a free total is generically 20 (mod 32) and
+    the round-up overshoots by 12.  On the 64-bit host the 16-byte header left
+    the total already 32-aligned by luck, so heap 4 was created there and never
+    on the G4.  port/src/os/os_arena.c now rounds OSCheckHeap's answer down to
+    the allocation granularity.  Host output is unchanged (it was aligned
+    already); the G4 now reports the same 2441120 and creates heap 4.
+
+b.  A generated stub answered FALSE where MusyX answers TRUE.  Only reachable
+    because (1) worked: msmSysSetAuxParam does
+    `result = sndAuxCallbackPrepareReverbHI(...); if (result == FALSE) return TRUE;`
+    and its caller turns that into MSM_ERR_INVALID_AUXPARAM (-31), which makes
+    HuAudInit spin in `while (1)`.  gen_stubs.py already had a RETURN_OVERRIDES
+    table for the typed stubs; the four sndAuxCallbackPrepare* entry points are
+    added to it and the untyped generator now honours it too.  This is a
+    placeholder answer, not an implementation: the aux effects do nothing until
+    the MusyX SAL replacement lands.
+
+--------------------------------------------------------------------------------
+What was proved on hardware, and what was not
+--------------------------------------------------------------------------------
+
+PROVED
+
+  * gcsetjmp / gclongjmp on Darwin PowerPC.  `Start New OVL 1` is printed by
+    omMasterInit after HuPrcSleep hands control away and the scheduler hands it
+    back, so the coroutine switch in port/src/os/jmp_ppc_darwin.s makes a full
+    round trip on real hardware with the real ABI.  Everything after that line
+    -- three heap dumps, objectsetup, the REL request -- runs on the fabricated
+    HUPROCESS stack.
+  * -malign-natural against disc data: the sixteen-field table above.
+  * DVD from the NKit image on a PowerPC FILE*: the FST parses to the same 357
+    files as on the host, the game resolves all of its boot data files without
+    panicking, and it reads 31,325 bytes of dll/bootdll.rel from disc offset
+    0xbee90e4 correctly.
+  * The watchdog: fires at exactly the requested second (2.010 s wall for
+    --watchdog 2, three runs) and prints a usable pc/sp with the
+    image base for atos.
+  * The crash handler links and installs; nothing crashed, so its backtrace
+    path is still unexercised on this target.
+
+NOT PROVED
+
+  * ARAM does no work at boot.  `port> ARInit: 16 MB of ARAM` is the only ARAM
+    line: nothing in the M1 boot issues an ARQ transfer, so the 16 MB block is
+    allocated and indexed but never read or written.  The first real ARAM
+    traffic is MusyX sample upload, which is M3.
+  * dlclose on 10.5 (PLAN risk #2).  --reltest needs the REL loader, which was
+    not on fork/ppc-port when this was captured.
+  * Anything visual.  M1 has no window; the 66 GX entry points are counted, not
+    drawn.
+
+--------------------------------------------------------------------------------
+Timings and footprint on the G4
+--------------------------------------------------------------------------------
+
+    boot, main() to `objman>ObjectSetup end`   under 1 s
+        (a --watchdog 1 run still reaches the seam, and the watchdog is armed
+        before port_mem_init; process startup to exit with --watchdog 2 is
+        2.010 s, so the fixed overhead outside the watchdog is ~10 ms)
+    spin after the seam                        100% of one CPU, omWatchOverlayProc
+    resident                                   1,104 KB
+    virtual                                    126,176 KB  (8 MB game stack +
+                                               24 MB MEM1 + 16 MB ARAM + libs)
+    binary                                     1,094,304 bytes

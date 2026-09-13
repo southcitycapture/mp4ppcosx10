@@ -47,17 +47,56 @@ NKit-trimmed ISO keeps every file at its original offset) or a directory
 holding an extracted `files/` tree. Other flags: `--frames N`, `--watchdog SEC`,
 `--turbo`, `--gxlog`, `--stub-trace`, `--deterministic`, `--verbose`.
 
+## Running on the G4
+
+The G4 test bench is driven by the `g4` helper from `isle-ppc-tools`, which
+several PowerPC projects share: `~/isle.app` on the G4 is a symlink and
+`g4 use NAME.app` points it at one of them.
+
+```sh
+port/build-ppc.sh -j8               # the PowerPC binary
+port/tools/make_bundle.sh           # -> build-ppc-darwin/MarioParty4.app
+port/tools/g4_install.sh --image    # bundle + the 598 MB disc image, first time
+port/tools/g4_install.sh            # bundle only, every time after
+g4 use MarioParty4.app
+g4 run --watchdog 8
+g4 log 60
+g4 use SnowboardKids2.app           # hand the bench back
+```
+
+The executable inside the bundle is named `isle`, not `marioparty4`, because
+the G4's console runner hard-codes that name; `make_bundle.sh` explains why.
+The disc image lives in `~/MarioParty4/` on the G4 and the port finds it there
+by itself — no `--image` needed — or you can build a self-contained bundle with
+`make_bundle.sh --with-image`. M1 has no window, so the binary also runs
+straight over SSH:
+
+```sh
+ssh g4 './MarioParty4.app/Contents/MacOS/isle --watchdog 6'
+```
+
+**What it does there today:** the whole boot narration, in under a second, to
+the same `objdll>Link DLL:dll/bootdll.rel` seam the host reaches — and with the
+audio the host cannot do. On big-endian hardware `msmSysInit` succeeds where the
+host fails, MusyX initialises, and the game's own read of the REL headers off
+the disc is correct in every field. The captured run, the host/G4 diff and the
+two port bugs the G4 found are in [`docs/g4-boot.log`](docs/g4-boot.log); §10 of
+[`docs/PLAN.md`](docs/PLAN.md) is the log entry.
+
 ## Layout
 
 | path | what |
 |---|---|
 | `docs/PLAN.md` | the plan and the engineering log |
 | `docs/inventory.md` | generated: every SDK symbol the game calls, with counts |
-| `docs/m1-boot.log` | the boot narration M1 reaches, captured |
+| `docs/m1-boot.log` | the boot narration M1 reaches on the host, captured |
+| `docs/g4-boot.log` | the same, on the real G4, with the host diff |
 | `Makefile` | the whole build, `TARGET=host` or `TARGET=ppc-darwin` |
 | `build-ppc.sh` | the Docker wrapper around the PowerPC cross build |
 | `patches.txt` | every change the port makes to game sources, as exact text |
 | `include/override/` | SDK headers the port replaces wholesale |
+| `tools/make_bundle.sh` | wraps the PowerPC binary into `MarioParty4.app` for the G4 |
+| `tools/g4_install.sh` | ships that bundle, and the disc image, to the G4 |
 | `tools/inventory.py` | generates `docs/inventory.md`; re-run after any upstream merge |
 | `tools/mirror_src.py` | builds the source mirror: patches, Metrowerks asm, overrides |
 | `tools/widen_ptr_casts.py` | widens the game's pointer-through-`u32` casts, compiler-driven |

@@ -12,9 +12,15 @@
  */
 #include "port.h"
 
+#include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#endif
 
 PortOptions port_opt;
 
@@ -32,8 +38,10 @@ static void usage(const char* argv0) {
             "usage: %s --image <disc.iso | dir> [options]\n"
             "\n"
             "  --image PATH      the user's own disc image, or a directory holding an\n"
-            "                    extracted files/ tree.  Required: the game resolves all\n"
-            "                    138 data files at boot and panics on the first miss.\n"
+            "                    extracted files/ tree.  The game resolves all 138 data\n"
+            "                    files at boot and panics on the first miss.  Without it,\n"
+            "                    $MARIOPARTY4_IMAGE, then the .app's Contents/Resources,\n"
+            "                    then ~/MarioParty4 are searched for an .iso or files/.\n"
             "  --log PATH        also write the OSReport narration to PATH\n"
             "  --frames N        stop after N retraces and print the stub report\n"
             "  --watchdog SEC    give up after SEC seconds and report where\n"
@@ -54,6 +62,91 @@ static void usage(const char* argv0) {
             "  --shotdir DIR     where --dumpframe writes (default: .)\n"
             "  --scale N         window scale over 640x480 (default 1)\n",
             argv0);
+}
+
+/* Finding the disc without being told where it is.
+ *
+ * On the development Mac the image is always passed with --image.  On the G4
+ * the game is launched by the isle-ppc-tools console runner, which hands the
+ * bundle a fixed argument line, so the bundle has to be able to find its own
+ * disc.  Three places are searched, in order, and the first `*.iso`/`*.nkit.iso`
+ * or `files/` tree found wins:
+ *
+ *   1. $MARIOPARTY4_IMAGE          -- an explicit override, for scripts
+ *   2. <the .app>/Contents/Resources  -- a self-contained bundle
+ *   3. ~/MarioParty4               -- the shared folder, which survives
+ *                                     replacing the .app (the same arrangement
+ *                                     the Snowboard Kids ports use for ROMs)
+ *
+ * Nothing here is G4-specific in itself; it is just the only way a
+ * double-clicked bundle can work on any Mac.
+ */
+static char default_image[1024];
+
+static int dir_holds_disc(const char* dir) {
+    DIR* d;
+    struct dirent* e;
+    struct stat st;
+    char probe[1024];
+
+    snprintf(probe, sizeof(probe), "%s/files", dir);
+    if (stat(probe, &st) == 0 && S_ISDIR(st.st_mode)) {
+        snprintf(default_image, sizeof(default_image), "%s", dir);
+        return 1;
+    }
+    d = opendir(dir);
+    if (!d) {
+        return 0;
+    }
+    while ((e = readdir(d)) != NULL) {
+        const char* dot = strrchr(e->d_name, '.');
+        if (dot && !strcasecmp(dot, ".iso")) {
+            snprintf(default_image, sizeof(default_image), "%s/%s", dir, e->d_name);
+            closedir(d);
+            return 1;
+        }
+    }
+    closedir(d);
+    return 0;
+}
+
+static const char* port_find_default_image(void) {
+    const char* env = getenv("MARIOPARTY4_IMAGE");
+    const char* home;
+    char buf[1024];
+
+    if (env && *env) {
+        return env;
+    }
+#if defined(__APPLE__)
+    {
+        char exe[1024];
+        uint32_t n = (uint32_t)sizeof(exe);
+        if (_NSGetExecutablePath(exe, &n) == 0) {
+            /* .../Foo.app/Contents/MacOS/isle -> .../Foo.app/Contents/Resources */
+            char* slash = strrchr(exe, '/');
+            if (slash) {
+                *slash = '\0';
+                slash = strrchr(exe, '/'); /* strip MacOS */
+                if (slash) {
+                    *slash = '\0';
+                    snprintf(buf, sizeof(buf), "%s/Resources", exe);
+                    if (dir_holds_disc(buf)) {
+                        return default_image;
+                    }
+                }
+            }
+        }
+    }
+#endif
+    home = getenv("HOME");
+    if (home && *home) {
+        snprintf(buf, sizeof(buf), "%s/MarioParty4", home);
+        if (dir_holds_disc(buf)) {
+            return default_image;
+        }
+    }
+    return NULL;
 }
 
 int port_parse_args(int argc, char** argv) {
@@ -123,6 +216,9 @@ static void run_game(void) {
 int main(int argc, char** argv) {
     if (!port_parse_args(argc, argv)) {
         return 1;
+    }
+    if (!port_opt.image) {
+        port_opt.image = port_find_default_image();
     }
     port_log_open(port_opt.log);
     port_crash_handler_install();
