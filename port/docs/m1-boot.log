@@ -1,0 +1,202 @@
+Mario Party 4 -- native port, milestone M1
+port> DVD: disc image ../orig/GMPE01_01/Mario Party 4 (USA) (Rev 1).nkit.iso, 357 files in the FST
+port> entering the game's own main()
+
+port> OSInit: MEM1 24 MB, ARAM 16 MB, bus 162 MHz
+port> DVDInit
+port> VIInit
+stub> PADInit (first call)
+port> OSCreateHeap 0: 0x108338000..0x109a0c000 (23375 KB)
+port> VIConfigure: 640x480 xfb, 640x480 efb, tv mode 0
+stub> GXInit (first call)
+stub> GXSetViewport (first call)
+stub> GXSetScissor (first call)
+stub> GXSetDispCopySrc (first call)
+stub> GXSetDispCopyDst (first call)
+stub> GXSetDispCopyYScale (first call)
+stub> GXSetCopyFilter (first call)
+stub> GXSetPixelFmt (first call)
+stub> GXCopyDisp (first call)
+stub> GXSetDispCopyGamma (first call)
+stub> PADRead (first call)
+port> OSCreateThread 0x102cc7c70 func 0x102be6db4 (the soft-reset watcher; not started)
+HuMem> left memory space 2383KB(2441120)
+stub> sndIsInstalled (first call)
+MSM(Sound Manager) Error:Error Code -121
+port> little-endian host: the game's own MSM parser cannot read the disc's big-endian sound bank; continuing without audio
+port> ARInit: 16 MB of ARAM
+stub> CARDInit (first call)
+stub> PADSetSpec (first call)
+stub> SISetSamplingRate (first call)
+stub> PADClamp (first call)
+stub> PADControlMotor (first call)
+stub> PADReset (first call)
+stub> GXSetFog (first call)
+stub> GXSetDrawSyncCallback (first call)
+DLL DBG OUT
+objman>Call New Ovl 1(1)
+stub> GXInvalidateVtxCache (first call)
+stub> GXInvalidateTexAll (first call)
+stub> GXSetGPMetric (first call)
+stub> GXClearGPMetric (first call)
+stub> GXSetVCacheMetric (first call)
+stub> GXClearVCacheMetric (first call)
+stub> GXClearPixMetric (first call)
+stub> GXClearMemMetric (first call)
+stub> GXSetCopyClear (first call)
+stub> GXSetDrawSync (first call)
+stub> GXSetCurrentMtx (first call)
+stub> GXSetProjection (first call)
+stub> GXClearVtxDesc (first call)
+stub> GXSetVtxDesc (first call)
+stub> GXSetVtxAttrFmt (first call)
+stub> GXSetCullMode (first call)
+stub> GXSetZMode (first call)
+stub> GXLoadPosMtxImm (first call)
+stub> GXSetChanMatColor (first call)
+stub> GXSetNumChans (first call)
+stub> GXSetChanCtrl (first call)
+stub> GXSetTevOrder (first call)
+stub> GXSetTevOp (first call)
+stub> GXSetNumTexGens (first call)
+stub> GXSetNumTevStages (first call)
+stub> GXSetAlphaUpdate (first call)
+stub> GXSetColorUpdate (first call)
+stub> GXSetAlphaCompare (first call)
+stub> GXSetBlendMode (first call)
+stub> GXBegin (first call)
+stub> GXPosition2u16 (first call)
+stub> GXEnd (first call)
+stub> GXSetArray (first call)
+stub> GXInitTexObj (first call)
+stub> GXInitTexObjLOD (first call)
+stub> GXLoadTexObj (first call)
+stub> GXSetTexCoordGen2 (first call)
+stub> GXSetZCompLoc (first call)
+stub> GXDrawDone (first call)
+stub> GXReadGPMetric (first call)
+stub> GXReadVCacheMetric (first call)
+stub> GXReadPixMetric (first call)
+stub> GXReadMemMetric (first call)
+++++++++++++++++++++ Start New OVL 1 (EVT:0 STAT:0x00000000) ++++++++++++++++++
+======== HuMem heap dump 08438020 ========
+MCB-----+Size----+MG+FL+Prev----+Next----+UNum----+Body----+Call----
+08438020 0000a020 a5 01 0844a220 08442040 ffffff00 08438040 02bb17f4
+08442040 000081e0 a5 01 08438020 0844a220 ffffff00 08442060 02be1a28
+0844a220 0022de00 cd 00 08442040 08438020 00000000 0844a240 02be1a28
+MCB:3(2/1) MEM:00240000(00012200/0022de00)
+======== HuMem heap dump 08438020 end =====
+======== HuMem heap dump 087b8040 ========
+MCB-----+Size----+MG+FL+Prev----+Next----+UNum----+Body----+Call----
+087b8040 00a80000 cd 00 087b8040 087b8040 ffffff00 087b8060 cdcdcdcd
+MCB:1(0/1) MEM:00a80000(00000000/00a80000)
+======== HuMem heap dump 087b8040 end =====
+======== HuMem heap dump 09238050 ========
+MCB-----+Size----+MG+FL+Prev----+Next----+UNum----+Body----+Call----
+09238050 00580000 cd 00 09238050 09238050 ffffff00 09238070 cdcdcdcd
+MCB:1(0/1) MEM:00580000(00000000/00580000)
+======== HuMem heap dump 09238050 end =====
+objman>Used Memory Size:00012200
+objman>Used Memory Cnt:2
+objman>Init esp
+objman>Call objectsetup
+DLLStart 1 0
+Search:dll/bootdll.rel
+objdll>Link DLL:dll/bootdll.rel
+Rest Memory 580000
+port> OSLink(0x10844a5a0): REL relocation is M2 (one dlopen'ed bundle per module); returning FALSE
+objdll>++++++++++++++++ DLL Link Failed
+===== DLL Module Info dump ====
+                   ID:0x01000000
+             LinkPrev:0x48000000
+             LinkNext:0x00000000
+          Section num:788529152
+Section info tbl ofst:0x02000000
+           nameOffset:0x5c000000
+             nameSize:-1654915072
+              version:0x4d7a0000
+===============================
+==== DLL Module Header dump ====
+          bss Size:0x00000101
+        rel Offset:0x00000000
+        imp Offset:0x54000000
+    prolog Section:0
+    epilog Section:0
+unresolved Section:0
+       prolog func:0x08000000
+       epilog func:0x00000000
+   unresolved func:0x00000000
+================================
+objman>ObjectSetup end
+
+*** port: watchdog fired (the game is not making progress): signal 14 at address 0x102bde808
+    pc   0000000102bde808  (image base 0000000102bac000, offset 32808)
+    sp   000000010844a140
+    atos -o <binary> -l 0x102bac000 0x102bde808
+
+---- SDK surface hit at boot: 64 distinct stubs, in first-call order ----
+   1  PADInit                                 2
+   2  GXInit                                  1
+   3  GXSetViewport                           6
+   4  GXSetScissor                            4
+   5  GXSetDispCopySrc                        1
+   6  GXSetDispCopyDst                        1
+   7  GXSetDispCopyYScale                     1
+   8  GXSetCopyFilter                         1
+   9  GXSetPixelFmt                           1
+  10  GXCopyDisp                              2
+  11  GXSetDispCopyGamma                      1
+  12  PADRead                                 5
+  13  sndIsInstalled                          1
+  14  CARDInit                                1
+  15  PADSetSpec                              1
+  16  SISetSamplingRate                       1
+  17  PADClamp                                4
+  18  PADControlMotor                         6
+  19  PADReset                                4
+  20  GXSetFog                                1
+  21  GXSetDrawSyncCallback                   1
+  22  GXInvalidateVtxCache                    2
+  23  GXInvalidateTexAll                      4
+  24  GXSetGPMetric                           2
+  25  GXClearGPMetric                         2
+  26  GXSetVCacheMetric                       2
+  27  GXClearVCacheMetric                     2
+  28  GXClearPixMetric                        2
+  29  GXClearMemMetric                        2
+  30  GXSetCopyClear                          2
+  31  GXSetDrawSync                           2
+  32  GXSetCurrentMtx                         3
+  33  GXSetProjection                         3
+  34  GXClearVtxDesc                          3
+  35  GXSetVtxDesc                            6
+  36  GXSetVtxAttrFmt                         6
+  37  GXSetCullMode                           1
+  38  GXSetZMode                              4
+  39  GXLoadPosMtxImm                         2
+  40  GXSetChanMatColor                       2
+  41  GXSetNumChans                           2
+  42  GXSetChanCtrl                           2
+  43  GXSetTevOrder                           2
+  44  GXSetTevOp                              2
+  45  GXSetNumTexGens                         2
+  46  GXSetNumTevStages                       2
+  47  GXSetAlphaUpdate                        2
+  48  GXSetColorUpdate                        2
+  49  GXSetAlphaCompare                       2
+  50  GXSetBlendMode                          2
+  51  GXBegin                                 1
+  52  GXPosition2u16                          4
+  53  GXEnd                                   1
+  54  GXSetArray                              1
+  55  GXInitTexObj                            1
+  56  GXInitTexObjLOD                         1
+  57  GXLoadTexObj                            1
+  58  GXSetTexCoordGen2                       1
+  59  GXSetZCompLoc                           1
+  60  GXDrawDone                              1
+  61  GXReadGPMetric                          1
+  62  GXReadVCacheMetric                      1
+  63  GXReadPixMetric                         1
+  64  GXReadMemMetric                         1
+---- 135 stub calls total ----

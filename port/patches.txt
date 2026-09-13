@@ -1,0 +1,93 @@
+# Exact-text substitutions applied to the port's source mirror by
+# port/tools/mirror_src.py.  The decomp's own files are never edited.
+#
+#   [target:]relative/path<TAB>old text<TAB>new text
+#
+# `\n` and `\t` are unescaped in both texts.  Each patch must match its file
+# exactly once or the build fails, so an upstream edit that moves the text is
+# a loud error rather than a silent no-op.  `host:` / `ppc:` restricts a patch
+# to one target.
+#
+# Metrowerks `asm { }` blocks and whole-function `asm` definitions are removed
+# by the mirror itself, not from here -- see mirror_src.py step 2.
+
+# ---------------------------------------------------------------- game/malloc.c
+# Four `mflr r3` blocks tag each allocation with its caller's return address.
+# The mirror strips the asm; these restore the value the portable way.  (The
+# tag is only ever printed by HuMemHeapDump, so truncating a 64-bit host
+# address to the u32 field is harmless.)
+x4:src/game/malloc.c	    register u32 retaddr;\n    asm {\n        mflr retaddr\n    }\n	    u32 retaddr = (u32)(uintptr_t)__builtin_return_address(0);\n
+
+# ------------------------------------------------------------- game/hsfmotion.c
+# `__declspec(weak)` is Metrowerks/clang-only; GCC spells it __attribute__.
+src/game/hsfmotion.c	__declspec(weak) float *GetObjTRXPtr	__attribute__((weak)) float *GetObjTRXPtr
+src/game/hsfmotion.c	__declspec(weak) float GetBezier	__attribute__((weak)) float GetBezier
+
+# --------------------------------------------------------------- game/process.c
+# HUPROCESS coroutine stacks.  The default is 2,048 bytes and `base_sp` leaves
+# only 8 bytes of headroom above the top of the allocation, which is exactly
+# enough for the Metrowerks EABI prologue and not enough for a Darwin one
+# (PowerPC Darwin stores LR at 8(r1) of the caller's frame; arm64 wants 16-byte
+# alignment).  Multiply the stacks -- a GCC 14 frame is fatter than a
+# Metrowerks EABI frame -- and give the fake frame real headroom.  The game's
+# own "stack overlap error" guard byte in HuPrcCall still checks the result.
+src/game/process.c	    if(stack_size == 0) {\n        stack_size = 2048;\n    }\n	    if(stack_size == 0) {\n        stack_size = 2048;\n    }\n    stack_size *= PORT_PRC_STACK_MUL;\n
+src/game/process.c	process->base_sp = ((u32)HuMemMemoryAlloc(heap, stack_size, FAKE_RETADDR))+stack_size-8;	process->base_sp = (u32)((((uintptr_t)HuMemMemoryAlloc(heap, stack_size, FAKE_RETADDR))+stack_size-PORT_PRC_STACK_GUARD) & ~(uintptr_t)0xF);
+
+# ---------------------------------------------------------------- game/memory.c
+# Pointer arithmetic done through u32.  Fine on the GameCube and on the G4,
+# a truncation on a 64-bit host, so both targets get uintptr_t.
+src/game/memory.c	(struct memory_block *)(((u32)block)+alloc_size)	(struct memory_block *)(((uintptr_t)block)+alloc_size)
+
+# ----------------------------------------------------- include/dolphin/os.h
+# OSRoundUp32B/OSRoundDown32B round a *pointer* at 12 sites in init.c alone,
+# through a u32.  Fine on the GameCube and on the G4, a truncation on a 64-bit
+# host; uintptr_t is the same 32-bit type on both real targets.
+include/dolphin/os.h	#define OSRoundUp32B(x) (((u32)(x) + 0x1F) & ~(0x1F))\n#define OSRoundDown32B(x) (((u32)(x)) & ~(0x1F))	#define OSRoundUp32B(x) (((uintptr_t)(x) + 0x1F) & ~(uintptr_t)(0x1F))\n#define OSRoundDown32B(x) (((uintptr_t)(x)) & ~(uintptr_t)(0x1F))
+include/dolphin/os.h	#define OSRoundUpPtr(x, align) ((void*)((((u32)(x)) + (align)-1) & (~((align)-1))))	#define OSRoundUpPtr(x, align) ((void*)((((uintptr_t)(x)) + (align)-1) & (~(uintptr_t)((align)-1))))
+include/dolphin/os.h	#define OSRoundDownPtr(x, align) ((void*)(((u32)(x)) & (~((align)-1))))	#define OSRoundDownPtr(x, align) ((void*)(((uintptr_t)(x)) & (~(uintptr_t)((align)-1))))
+
+# --------------------------------------------------- include/dolphin/gx/GXGeometry.h
+# The decomp's TARGET_PC build of GXSetArray takes an extra `size` argument
+# that the game's own 159 call sites do not pass.  The port defines TARGET_PC
+# for the vertex writers (which would otherwise be write-gather-pipe stores to
+# 0xCC008000), so keep the console signature for this one.
+include/dolphin/gx/GXGeometry.h	#ifdef TARGET_PC\nvoid GXSetArray(GXAttr attr, const void* data, u32 size, u8 stride);\n#else\nvoid GXSetArray(GXAttr attr, const void* data, u8 stride);\n#endif	void GXSetArray(GXAttr attr, const void* data, u8 stride);
+
+# ----------------------------------------------------------------- game/fault.c
+# fault.c defines OSPanic itself: it draws the message straight into the
+# external framebuffer and then PPCHalts.  The port wants the message on
+# stdout, where M1 can read it, so its own OSPanic wins and this one is renamed
+# out of the way rather than deleted -- M2's GX layer can put the panic screen
+# back.
+src/game/fault.c	void OSPanic(const char* file, int line, const char* msg, ...) {	void HuFaultPanicScreen(const char* file, int line, const char* msg, ...) {
+
+# ------------------------------------------------------------------ game/init.c
+# InitMem carves the two external framebuffers off the arena with explicit
+# (u32) casts of pointers, which the OSRoundUp32B macro patch above cannot
+# reach.  Same reasoning: identical on the G4, a truncation on a 64-bit host.
+x4:src/game/init.c	(u32)arena_lo	(uintptr_t)arena_lo
+x3:src/game/init.c	(u32)arena_hi	(uintptr_t)arena_hi
+src/game/init.c	(u32)DemoFrameBuffer1+fb_size	(uintptr_t)DemoFrameBuffer1+fb_size
+src/game/init.c	(u32)DemoFrameBuffer2+fb_size	(uintptr_t)DemoFrameBuffer2+fb_size
+src/game/init.c	OSRoundUp32B((u32)buf)	OSRoundUp32B((uintptr_t)buf)
+
+# ----------------------------------------------------------------- game/audio.c
+# HOST BUILD ONLY.  The GameCube, the G4 and the disc are all big endian, so the
+# real target reads the game's own data files in place -- that is the port's
+# largest single dividend over a PC port (partyboard needs a 1,087-line
+# byteswap.cpp; we need none).  The development host is little endian, so the
+# game's own parsers see byte-swapped values: msmSysInit reads version 0x02000000
+# out of sound/mpgcsnd.msm, returns MSM_ERR_INVALIDFILE, and HuAudInit spins in
+# `while (1)`.  On the host the port declines to hang there and boots on without
+# audio.  Nothing is patched for the PowerPC build.
+host:src/game/audio.c	        while (1);\n    }\n    if (OSGetSoundMode()	        OSReport("port> little-endian host: the game's own MSM parser cannot read the disc's big-endian sound bank; continuing without audio\\n");\n        return;\n    }\n    if (OSGetSoundMode()
+
+# ---------------------------------------------------------------- game/objdll.c
+# The REL loader's failure path falls through and calls the module's prolog
+# anyway, at whatever `module->prolog` happened to contain -- which, with no
+# relocation done, is a wild jump.  M1's OSLink deliberately fails (the real
+# loader is one dlopen'ed Mach-O bundle per REL, which is M2), so the failure
+# has to be survivable: report it, dump the module info, and return without
+# entering the module.  This is also exactly the seam M2 replaces.
+src/game/objdll.c	\tif(OSLink(&dll->module->info, dll->bss) != TRUE) {\n\t\tOSReport("objdll>++++++++++++++++ DLL Link Failed\\n");\n\t}\n\tomDLLInfoDump(&dll->module->info);\n	\tif(OSLink(&dll->module->info, dll->bss) != TRUE) {\n\t\tOSReport("objdll>++++++++++++++++ DLL Link Failed\\n");\n\t\tomDLLInfoDump(&dll->module->info);\n\t\tomDLLHeaderDump(dll->module);\n\t\tdll->ret = 0;\n\t\treturn dll;\n\t}\n\tomDLLInfoDump(&dll->module->info);\n

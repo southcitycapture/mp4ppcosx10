@@ -1412,3 +1412,258 @@ source and `dolsdk2001` is the cross-check. What the survey pinned down:
   the authoritative statement of *which BP/CP/XF register each GX call
   writes*, which is exactly the table a fixed-function backend has to invert.
   Read it alongside our own `src/dolphin/gx/`.
+
+
+---
+
+## 9. M1 log — it links and it talks *(done, 2026-09-13)*
+
+Both done-means are met, and the boot goes further than the milestone asked:
+past `objdll>Link DLL:dll/bootdll.rel` and on into the game's own frame loop,
+which issues real GX draw calls before it runs out of things to do without a
+REL.
+
+### 9.1 The two binaries
+
+| binary | how | size |
+|---|---|---:|
+| `port/build-ppc-darwin/marioparty4` | `port/build-ppc.sh -j8` — GCC 14.2, `powerpc-apple-darwin8`, MacOSX10.4u SDK, `-malign-natural -mone-byte-bool` | 1,093,116 bytes |
+| `port/build-host/marioparty4` | `make -C port TARGET=host -j8` — the Mac's clang, arm64 | 1,078,232 bytes |
+
+93 game translation units (50 `src/game`, 30 `src/game/board`, 6 `src/msm`,
+2 `src/libhu`, 5 `src/dolphin/mtx`), 10 port sources, one assembly file, and
+one generated stub pair. Both targets stub **exactly the same 204 symbols** —
+the two `missing.txt` files are identical, which is the cheapest possible check
+that the host build is not diverging from the real one.
+
+The G4 was not available on the day, so the PowerPC binary is verified only to
+compile and link clean; everything below was run on the host build.
+
+### 9.2 The boot narration
+
+Captured in full in [`m1-boot.log`](m1-boot.log) (202 lines, with `--verbose` so
+each stub is marked where it is first reached). The shape of it:
+
+```
+port> OSInit: MEM1 24 MB, ARAM 16 MB, bus 162 MHz
+port> DVDInit / VIInit / OSCreateHeap 0: ... (23375 KB) / VIConfigure: 640x480
+port> OSCreateThread ... (the soft-reset watcher; not started)
+HuMem> left memory space 2383KB(2441120)
+port> ARInit: 16 MB of ARAM
+DLL DBG OUT
+objman>Call New Ovl 1(1)
+++++++++++++++++++++ Start New OVL 1 (EVT:0 STAT:0x00000000) +++++++++++++++++
+======== HuMem heap dump 059a0020 ========          <- three real heap dumps
+objman>Used Memory Size:00012200
+objman>Init esp
+objman>Call objectsetup
+DLLStart 1 0
+Search:dll/bootdll.rel
+objdll>Link DLL:dll/bootdll.rel                     <- M1's target line
+Rest Memory 580000
+port> OSLink(...): REL relocation is M2; returning FALSE
+objdll>++++++++++++++++ DLL Link Failed
+objman>ObjectSetup end
+*** port: watchdog fired: ... omWatchOverlayProc
+```
+
+Two things worth reading twice. `HuMem> left memory space 2383KB(2441120)` and
+`Rest Memory 580000` are the game's *own* accounting of the arena it was given,
+so the 24 MB MEM1 and the OSAlloc heap underneath it are behaving. And
+`bootDll.rel` is genuinely read off the disc image — 30.6 KB through the FST —
+before `OSLink` declines it.
+
+Where it stops is not a crash but a spin, and it is the right one:
+`omWatchOverlayProc` reaches `HuPrcChildWatch()`, finds no child object because
+`bootDll` never ran, and loops without yielding. That loop is exactly what M2
+removes. `--watchdog N` exists for it: it prints the program counter to look up
+with `atos` and the stub table, and exits.
+
+### 9.3 The SDK surface the boot actually hit
+
+64 distinct stubs, 135 calls, in first-call order — 55 of them GX, which is the
+best possible argument for §3 being the next milestone rather than anything
+else:
+
+```
+   1  PADInit                                 2
+   2  GXInit                                  1
+   3  GXSetViewport                           6
+   4  GXSetScissor                            4
+   5  GXSetDispCopySrc                        1
+   6  GXSetDispCopyDst                        1
+   7  GXSetDispCopyYScale                     1
+   8  GXSetCopyFilter                         1
+   9  GXSetPixelFmt                           1
+  10  GXCopyDisp                              2
+  11  GXSetDispCopyGamma                      1
+  12  PADRead                                 5
+  13  sndIsInstalled                          1
+  14  CARDInit                                1
+  15  PADSetSpec                              1
+  16  SISetSamplingRate                       1
+  17  PADClamp                                4
+  18  PADControlMotor                         6
+  19  PADReset                                4
+  20  GXSetFog                                1
+  21  GXSetDrawSyncCallback                   1
+  22  GXInvalidateVtxCache                    2
+  23  GXInvalidateTexAll                      4
+  24  GXSetGPMetric                           2
+  25  GXClearGPMetric                         2
+  26  GXSetVCacheMetric                       2
+  27  GXClearVCacheMetric                     2
+  28  GXClearPixMetric                        2
+  29  GXClearMemMetric                        2
+  30  GXSetCopyClear                          2
+  31  GXSetDrawSync                           2
+  32  GXSetCurrentMtx                         3
+  33  GXSetProjection                         3
+  34  GXClearVtxDesc                          3
+  35  GXSetVtxDesc                            6
+  36  GXSetVtxAttrFmt                         6
+  37  GXSetCullMode                           1
+  38  GXSetZMode                              4
+  39  GXLoadPosMtxImm                         2
+  40  GXSetChanMatColor                       2
+  41  GXSetNumChans                           2
+  42  GXSetChanCtrl                           2
+  43  GXSetTevOrder                           2
+  44  GXSetTevOp                              2
+  45  GXSetNumTexGens                         2
+  46  GXSetNumTevStages                       2
+  47  GXSetAlphaUpdate                        2
+  48  GXSetColorUpdate                        2
+  49  GXSetAlphaCompare                       2
+  50  GXSetBlendMode                          2
+  51  GXBegin                                 1
+  52  GXPosition2u16                          4
+  53  GXEnd                                   1
+  54  GXSetArray                              1
+  55  GXInitTexObj                            1
+  56  GXInitTexObjLOD                         1
+  57  GXLoadTexObj                            1
+  58  GXSetTexCoordGen2                       1
+  59  GXSetZCompLoc                           1
+  60  GXDrawDone                              1
+  61  GXReadGPMetric                          1
+  62  GXReadVCacheMetric                      1
+  63  GXReadPixMetric                         1
+  64  GXReadMemMetric                         1
+```
+
+Everything not in that list is implemented for real: OSReport, the arena and
+OSAlloc heaps, time and the stopwatch, interrupts and caches as no-ops, the one
+OSThread, the DVD file system, ARAM and ARQ, VI, `gcsetjmp`/`gclongjmp`, and
+the `PSMTX*`/`C_VEC*` surface.
+
+Note that the HUPROCESS coroutines are proven working by this log, on arm64 as
+well as in principle on PowerPC: `Start New OVL 1` is printed *after*
+`HuPrcSleep(0)`, so a full `gclongjmp` out to the scheduler and back happened
+before it.
+
+### 9.4 patches.txt — 18 entries, four of them predicted
+
+The plan predicted three (`malloc.c`'s `mflr`, `hsfmotion.c`'s `__declspec`, the
+HUPROCESS stack size) and all three were needed. The rest divide cleanly:
+
+| patch | why |
+|---|---|
+| `malloc.c` x4 `mflr retaddr` → `__builtin_return_address(0)` | predicted |
+| `hsfmotion.c` x2 `__declspec(weak)` → `__attribute__((weak))` | predicted |
+| `process.c` stack multiplier + a 64-byte guard on `base_sp` | predicted. `base_sp` left only 8 bytes above the allocation, which is enough for a Metrowerks EABI prologue and not for a Darwin one (PowerPC Darwin stores LR at `8(r1)` of the *caller's* frame), and arm64 additionally wants 16-byte alignment |
+| `fault.c` `OSPanic` → `HuFaultPanicScreen` | new. fault.c defines `OSPanic` itself, draws it into the external framebuffer and `PPCHalt`s; the port wants it on stdout where M1 can read it |
+| `objdll.c` failure path returns instead of falling through | new. The loader reports "DLL Link Failed" and then calls `module->prolog` anyway, at whatever un-relocated garbage it holds. This is also the exact seam M2 replaces with `dlopen` |
+| `memory.c`, `init.c` x5, `dolphin/os.h` x3 | new. Pointer arithmetic done through `u32` — `OSRoundUp32B((u32)arena_lo)` and friends. Identical on the G4, a truncation on a 64-bit host |
+| `include/dolphin/gx/GXGeometry.h` | new. The decomp's own `TARGET_PC` build of `GXSetArray` takes an extra `size` argument that the game's 159 call sites do not pass |
+| `audio.c`, **host only** | new, and the interesting one — see §9.6 |
+
+The mirror also does two things automatically, so they are not patches:
+
+- **it drops every top-level definition containing Metrowerks assembly**, and
+  says which: 29 in the MTX sources (`PSMTXConcat`, `PSVECNormalize`, …),
+  `gcsetjmp`/`gclongjmp` in `jmp.c`, and `_kerent` in `kerent.c`. Dropping the
+  *whole function* matters: stripping only the `asm { }` out of a
+  `PSMTXIdentity` written as C-with-an-asm-body would leave behind an identity
+  that identities nothing. If the port forgets to supply one, the link fails.
+- **it removes `inline` from the 11 column-0 `inline` definitions** in
+  `hsfman.c` and `hsfdraw.c` (`Hu3DLightCreateV`, `SetupGX`, …). Metrowerks
+  emitted an out-of-line copy of those and other translation units call them;
+  C99 `inline` emits nothing.
+
+### 9.5 Darwin ABI issues actually met
+
+- **`gcsetjmp` / `gclongjmp` port verbatim to PowerPC Darwin.** r13-r31 are
+  non-volatile exactly as in EABI and r2 is volatile, so saving it is harmless.
+  Both functions must stay leaf and frameless so the sp they save is the
+  caller's — which is what `HuPrcCreate` assumes when it overwrites `lr` and
+  `sp` by hand.
+- **`__OSBusClock` / `__OSCoreClock` are tentative definitions** in every
+  translation unit that includes `<dolphin/os.h>` (on the console they are
+  fixed addresses in low memory). `-fcommon` on the game sources, filled in
+  from `OSInit`.
+- **`clock_gettime` is not in the 10.4 SDK** — it arrived in 10.12.
+  `mach_absolute_time` is the same call on both targets;
+  `port/src/platform/clock.c`.
+- **`-DTARGET_PC` is required, not optional.** It is the decomp's own porting
+  switch and it does three things the port needs: makes the fixed-width types
+  actually fixed width (`u32` is `unsigned long` otherwise — 64 bits on the
+  host), turns the `GXPosition*`/`GXColor*` vertex writers from write-gather
+  pipe stores at `0xCC008000` into ordinary function calls, and widens a few
+  parameters to `const void*`.
+- **The decomp ships Metrowerks C-library headers** (`include/string.h` and
+  friends, whose prototypes do not match a real libc — `strcat` takes three
+  arguments there). The mirror leaves them out so the host's own are found.
+- **`-std=gnu11`, not gnu99**: MusyX's `musyx.h` typedefs `bool` as
+  `unsigned long` when `__STDC_VERSION__ <= 199901L`, which collides with
+  `<stdbool.h>` that `dolphin/types.h` has already pulled in.
+
+### 9.6 The one real host-only divergence: endianness
+
+The GameCube, the G4 and the disc are all big endian, which is the port's
+largest single structural dividend (§2.6, and partyboard's 1,087-line
+`byteswap.cpp` that we do not need). The development host is little endian, so
+**the game's own file parsers read byte-swapped values there**. It shows up at
+the first parse: `msmSysInit` reads version `0x02000000` out of
+`sound/mpgcsnd.msm`, returns `MSM_ERR_INVALIDFILE`, and `HuAudInit` spins in
+`while (1)`. One `host:`-prefixed patch declines to hang there.
+
+It is also visible, harmlessly and rather usefully, in the REL module dump in
+the boot log: `version:0x4d7a0000` is `0x00007a4d` byte-swapped.
+
+The consequence to plan around: **the host build is a development
+convenience for the port layer, not a second reference implementation.**
+Anything downstream of a disc-data parse — HSF models, the MSM sound bank, REL
+relocation — is only correct on the PowerPC target. Two ways out, both M2 or
+later: byteswap on read in the DVD layer for the host only (partyboard's
+route), or accept the host build as a boot/plumbing harness and do all visual
+comparison against the G4. The second is cheaper and matches how the two
+Snowboard Kids ports were tested; decide at M2.
+
+### 9.7 Two more things found, both deferred
+
+- **`window.h`'s `MAKE_MESSID_PTR(ptr)` packs either a message id or a string
+  pointer into a `u32`.** 28 call sites. On the G4 that is fine. On a 64-bit
+  host it truncates, and unlike the other 234 pointer-through-`u32` casts (all
+  widened automatically by `tools/widen_ptr_casts.py`, which asks the compiler
+  which casts are pointer casts rather than guessing) this one cannot be fixed
+  at the call site — the parameter type would have to change. Nothing in the M1
+  boot reaches it. M3, with the window system.
+- **`kerent.c`'s `_kerent`** is a 2,047-line Metrowerks `asm` trampoline table:
+  `entry _kerjmp_X` / `b X`, the DOL's export thunks that RELs branch through.
+  The mirror drops it and nothing in the DOL misses it. M2 needs it back, and
+  it is about thirty lines of generator: each pair becomes
+  `.globl __kerjmp_X ; __kerjmp_X: b _X`, which assembles identically on
+  PowerPC and arm64.
+
+### 9.8 Open for M2
+
+1. **REL loading by `dlopen`** (§2.4b): one Mach-O bundle per REL, the
+   `omDLLLink` patch seam is already cut, and the "load and unload all 99
+   bundles twice" smoke test still has to be written.
+2. **The first frame**: 55 GX entry points are already exercised before the
+   port runs out of REL, and the list in §9.3 is the order to implement them in.
+3. `kerent.c`'s trampolines, as above.
+4. The soft-reset thread currently never runs. It blocks on `OSSleepThread`
+   immediately, so this is behaviour-preserving until something posts to its
+   queue; the host loop should poll it once per retrace.

@@ -1,0 +1,173 @@
+# Mario Party 4 -- native port build.
+#
+#   port/build-ppc.sh -j8            cross-build for the Power Mac G4 (Docker)
+#   make -C port TARGET=host -j8     build and run on this Mac
+#   make -C port list                show what the port compiles
+#
+# Two targets, one set of sources.  `ppc-darwin` is the real one: GCC 14.2 for
+# powerpc-apple-darwin8 against the MacOSX10.4u SDK, inside
+# ghcr.io/variantxyz/gcc-powerpc-apple-darwin8.  `host` is the development
+# build -- the Mac's own clang, same mirror, same port layer -- so the port can
+# be run and compared against Dolphin without touching the G4.
+#
+# The decomp's sources are never edited.  They are copied into $(GEN) by
+# tools/mirror_src.py, which applies patches.txt and drops the Metrowerks
+# assembly; see port/docs/PLAN.md.
+
+TARGET ?= host
+ROOT   := ..
+PYTHON ?= python3
+
+# ---- toolchain ---------------------------------------------------------------
+ifeq ($(TARGET),ppc-darwin)
+  BUILD    := build-ppc-darwin
+  CROSS    := /usr/local/bin/powerpc-apple-darwin8-
+  SYSROOT  := /usr/local/MacOSX10.4u.sdk
+  CC       := $(CROSS)gcc
+  AS       := $(CROSS)as
+  NM       := $(CROSS)nm
+  TARGET_CFLAGS  := -isysroot $(SYSROOT) -mmacosx-version-min=10.4 -malign-natural \
+                    -mone-byte-bool
+  TARGET_LDFLAGS := -isysroot $(SYSROOT) -mmacosx-version-min=10.4 -static-libgcc
+  CTX_ASM  := src/os/jmp_ppc_darwin.s
+  MIRROR_TARGET := ppc
+else ifeq ($(TARGET),host)
+  BUILD    := build-host
+  CC       := clang
+  AS       := clang -c -x assembler
+  NM       := nm
+  TARGET_CFLAGS  :=
+  TARGET_LDFLAGS :=
+  CTX_ASM  := src/os/jmp_arm64.s
+  MIRROR_TARGET := host
+else
+  $(error unknown TARGET $(TARGET) -- use host or ppc-darwin)
+endif
+
+GEN := $(BUILD)/gen
+EXE := $(BUILD)/marioparty4
+
+# ---- sources -----------------------------------------------------------------
+# Exactly what configure.py compiles into the DOL from `Game`, `libhu` and
+# `msm`, plus the pure-C half of the SDK's matrix library.  The mirror decides
+# the list (tools/mirror_src.py: SRC_GLOBS, MTX_SRCS); we glob its output so the
+# two can never drift.
+GAME_C   := $(patsubst $(ROOT)/%,%,$(wildcard $(ROOT)/src/game/*.c $(ROOT)/src/game/board/*.c \
+                        $(ROOT)/src/msm/*.c $(ROOT)/src/libhu/*.c)) \
+            src/dolphin/mtx/mtx.c src/dolphin/mtx/mtxvec.c src/dolphin/mtx/mtx44.c \
+            src/dolphin/mtx/vec.c src/dolphin/mtx/quat.c
+PORT_C   := $(wildcard src/platform/*.c src/os/*.c src/gx/*.c src/dvd/*.c \
+                       src/card/*.c src/pad/*.c src/audio/*.c src/debug/*.c)
+STUBS_C  := $(BUILD)/sdk_stubs.c
+STUBS_U_C := $(BUILD)/sdk_stubs_untyped.c
+
+GAME_OBJS := $(patsubst %.c,$(BUILD)/game/%.o,$(GAME_C))
+PORT_OBJS := $(patsubst %.c,$(BUILD)/port/%.o,$(PORT_C)) $(BUILD)/port/jmp.o
+STUBS_OBJ := $(BUILD)/port/sdk_stubs.o $(BUILD)/port/sdk_stubs_untyped.o
+
+# ---- flags -------------------------------------------------------------------
+# TARGET_PC is the decomp's own porting switch.  It matters for three reasons:
+# it makes the fixed-width types actually fixed width (`u32` is `unsigned long`
+# otherwise, which is 64 bits on the host), it turns the GXPosition*/GXColor*
+# vertex writers from write-gather-pipe stores at 0xCC008000 into ordinary
+# function calls, and it widens a few pointer parameters to `const void*`.
+GAME_DEFS := -DTARGET_PC -DVERSION=1 -DNDEBUG=1 -DMTX_USE_C \
+             -DMUSY_TARGET=MUSY_TARGET_PC \
+             -DPORT_PRC_STACK_MUL=4 -DPORT_PRC_STACK_GUARD=64
+GAME_INC  := -I$(GEN)/include -I$(ROOT)/extern/musyx/include \
+             -I$(ROOT)/build/GMPE01_01/include -Iinclude
+# -fcommon: <dolphin/os.h> makes a tentative definition of __OSBusClock and
+#  __OSCoreClock in every translation unit (on the console they are fixed
+#  addresses in low memory); the port fills them in from OSInit.
+# The warnings that are switched off are all things Metrowerks accepted and
+# C99 does not; none of them changes code generation.
+GAME_WARN := -w -Wno-implicit-function-declaration -Wno-return-mismatch \
+             -Wno-int-conversion -Wno-incompatible-pointer-types \
+             -Wno-incompatible-function-pointer-types -Wno-unknown-pragmas
+GAME_CFLAGS = -std=gnu11 -O2 -g -fno-strict-aliasing -fwrapv -fcommon \
+              $(GAME_WARN) $(GAME_DEFS) $(GAME_INC) $(TARGET_CFLAGS)
+PORT_CFLAGS = -std=gnu11 -O2 -g -fno-strict-aliasing -fcommon \
+              -Wall -Wno-unused-parameter -Wno-unknown-pragmas \
+              $(GAME_DEFS) $(GAME_INC) $(TARGET_CFLAGS)
+LDFLAGS   = $(TARGET_LDFLAGS) -lm
+
+# Only these families are stubbed.  Everything else left undefined is the
+# host's libc (memcpy, sinf, __stack_chk_fail) and resolves at link time; if
+# something genuinely missing slips through, the link says so.
+SDK_PREFIXES := ^(GX|OS|VI|DVD|CARD|PAD|AI|AR|ARQ|SI|DSP|THP|DEMO|PS|MTX|VEC|QUAT|C_|snd|DC|IC|LC|PPC|__GX|__OS|__AI|__DVD)
+
+# ---- rules -------------------------------------------------------------------
+.PHONY: all clean list mirror stubs
+.SECONDARY:
+
+all: $(EXE)
+
+# One mirror for the whole tree; a stamp because it writes hundreds of files.
+MIRROR_STAMP := $(BUILD)/mirror.stamp
+$(MIRROR_STAMP): tools/mirror_src.py patches.txt $(wildcard include/override/*/*/*.h)
+	@mkdir -p $(BUILD)
+	$(PYTHON) tools/mirror_src.py --out $(GEN) --target $(MIRROR_TARGET) --quiet
+	$(PYTHON) tools/widen_ptr_casts.py --gen $(GEN) --cc "$(CC)" \
+	    --cflags "$(GAME_DEFS) $(GAME_INC) $(TARGET_CFLAGS) -std=gnu11 -fcommon"
+	@touch $@
+
+mirror: $(MIRROR_STAMP)
+
+# The game's entry point is called main(); keep it out of the host's way.
+$(BUILD)/game/src/game/main.o: GAME_CFLAGS += -Dmain=mp4_game_main
+
+# The mirror writes every game source in one go; tell make so, or it will look
+# for a rule per file.
+GEN_C := $(patsubst %,$(GEN)/%,$(GAME_C))
+$(GEN_C): $(MIRROR_STAMP)
+	@true
+
+$(BUILD)/game/%.o: $(GEN)/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(GAME_CFLAGS) -c -o $@ $<
+
+$(BUILD)/port/%.o: %.c $(MIRROR_STAMP)
+	@mkdir -p $(dir $@)
+	$(CC) $(PORT_CFLAGS) -c -o $@ $<
+
+$(BUILD)/port/jmp.o: $(CTX_ASM)
+	@mkdir -p $(dir $@)
+	$(AS) -o $@ $<
+
+# The stub list is the link's own undefined-symbol set, so nothing is missed by
+# hand and nothing dead is generated.
+$(BUILD)/missing.txt: $(GAME_OBJS) $(PORT_OBJS)
+	@mkdir -p $(dir $@)
+	@$(NM) -g $(GAME_OBJS) $(PORT_OBJS) | awk 'NF==2 && $$1=="U"{print substr($$2,2)}' \
+	    | sort -u > $(BUILD)/undef.txt
+	@$(NM) -g $(GAME_OBJS) $(PORT_OBJS) | awk 'NF==3{print substr($$3,2)}' \
+	    | sort -u > $(BUILD)/defined.txt
+	@comm -23 $(BUILD)/undef.txt $(BUILD)/defined.txt > $(BUILD)/undefined-all.txt
+	@grep -E '$(SDK_PREFIXES)' $(BUILD)/undefined-all.txt > $@ || true
+	@grep -vE '$(SDK_PREFIXES)' $(BUILD)/undefined-all.txt > $(BUILD)/left-to-libc.txt || true
+	@echo "link: $$(wc -l < $@) SDK symbols to stub, $$(wc -l < $(BUILD)/left-to-libc.txt) left to libc"
+
+$(STUBS_C) $(STUBS_U_C): $(BUILD)/missing.txt tools/gen_stubs.py $(MIRROR_STAMP)
+	$(PYTHON) tools/gen_stubs.py --missing $(BUILD)/missing.txt --headers $(GEN)/include \
+	    --out $(STUBS_C) --out-untyped $(STUBS_U_C)
+
+$(BUILD)/port/sdk_stubs.o: $(STUBS_C)
+	@mkdir -p $(dir $@)
+	$(CC) $(PORT_CFLAGS) -c -o $@ $<
+
+$(BUILD)/port/sdk_stubs_untyped.o: $(STUBS_U_C)
+	@mkdir -p $(dir $@)
+	$(CC) -std=gnu11 -O2 -g -Iinclude $(TARGET_CFLAGS) -c -o $@ $<
+
+stubs: $(STUBS_C)
+
+$(EXE): $(GAME_OBJS) $(PORT_OBJS) $(STUBS_OBJ)
+	$(CC) -o $@ $(GAME_OBJS) $(PORT_OBJS) $(STUBS_OBJ) $(LDFLAGS)
+	@echo "built $@ ($$(wc -c < $@) bytes)"
+
+list: $(MIRROR_STAMP)
+	@echo "GAME_C ($(words $(GAME_C))):"; printf '  %s\n' $(GAME_C) | head -20; echo "  ..."
+	@echo "PORT_C ($(words $(PORT_C))):"; printf '  %s\n' $(PORT_C)
+
+clean:
+	rm -rf $(BUILD)
