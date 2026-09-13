@@ -136,7 +136,7 @@ LDFLAGS   = $(TARGET_LDFLAGS) -lm $(SDL_LIBS) \
 SDK_PREFIXES := ^(GX|OS|VI|DVD|CARD|PAD|AI|AR|ARQ|SI|DSP|THP|DEMO|PS|MTX|VEC|QUAT|C_|snd|DC|IC|LC|PPC|__GX|__OS|__AI|__DVD)
 
 # ---- rules -------------------------------------------------------------------
-.PHONY: all clean list mirror stubs rels
+.PHONY: all clean list mirror stubs rels mtxtest
 .SECONDARY:
 
 all: $(EXE) rels
@@ -284,6 +284,20 @@ rels: $(REL_LIBS)
 
 reltest: all
 	$(EXE) --reltest
+
+# The matrix library, checked against itself: every constructor writes all
+# twelve elements, every in-place form matches the out-of-place answer, every
+# PS* replacement matches the C_* body it stands in for.  See tests/mtx_test.c;
+# this is the test that would have found PLAN.md 15.1 in one run.
+MTXTEST := $(BUILD)/mtx_test
+$(MTXTEST): tests/mtx_test.c $(BUILD)/game/src/dolphin/mtx/mtx.o \
+        $(BUILD)/game/src/dolphin/mtx/mtxvec.o $(BUILD)/game/src/dolphin/mtx/vec.o \
+        $(BUILD)/game/src/dolphin/mtx/quat.o $(BUILD)/port/src/os/psmtx_c.o
+	@mkdir -p $(dir $@)
+	$(CC) $(PORT_CFLAGS) -o $@ $^ -lm
+
+mtxtest: $(MTXTEST)
+	$(MTXTEST)
 
 list: $(MIRROR_STAMP)
 	@echo "GAME_C ($(words $(GAME_C))):"; printf '  %s\n' $(GAME_C) | head -20; echo "  ..."

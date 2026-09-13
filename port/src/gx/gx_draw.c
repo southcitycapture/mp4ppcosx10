@@ -129,6 +129,12 @@ static u16 want_verts;
 static float byte_scale[256];
 
 static unsigned stat_prims, stat_verts, stat_draws, stat_dls;
+/* Draws whose position matrix puts the object further from the origin than any
+ * Mario Party 4 scene ever goes.  M4 had to bolt a throwaway instrument on to
+ * count these (1,264 of 1,756 on the character select); it is one compare per
+ * primitive, so it stays.  Zero is the answer PLAN.md 15.1's fix is judged by. */
+#define GX_OFFWORLD_LIMIT 10000.0f
+static unsigned stat_offworld;
 static int dl_shown;
 
 void gx_draw_reset(void) {
@@ -148,6 +154,9 @@ void gx_draw_report(void) {
     port_log("port> GX draw: %u primitives, %u vertices, %u glDrawArrays, "
              "%u display lists replayed\n",
              stat_prims, stat_verts, stat_draws, stat_dls);
+    port_log("port> GX draw: %u primitive(s) off-world (|position matrix "
+             "translation| over %.0f)\n",
+             stat_offworld, (double)GX_OFFWORLD_LIMIT);
 }
 
 /* ---- display-list record mode --------------------------------------------- */
@@ -357,6 +366,11 @@ static void begin_attr_order(void) {
         int t;
         pi.pos_mtx = gx.pos_mtx[slot];
         pi.nrm_mtx = gx.nrm_mtx[slot];
+        if (pi.pos_mtx[3] > GX_OFFWORLD_LIMIT || pi.pos_mtx[3] < -GX_OFFWORLD_LIMIT ||
+            pi.pos_mtx[7] > GX_OFFWORLD_LIMIT || pi.pos_mtx[7] < -GX_OFFWORLD_LIMIT ||
+            pi.pos_mtx[11] > GX_OFFWORLD_LIMIT || pi.pos_mtx[11] < -GX_OFFWORLD_LIMIT) {
+            stat_offworld++;
+        }
         pi.have_nrm = gx.vcd[GX_VA_NRM] != GX_NONE;
         pi.no_clr0 = gx.vcd[GX_VA_CLR0] == GX_NONE;
         if (gx.num_chans == 0) {

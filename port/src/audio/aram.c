@@ -5,6 +5,11 @@
  * allocator over plain `u32` offsets (`AMEM_PTR`) above HU_AMEM_BASE, and every
  * transfer goes through `ARQPostRequest`, which becomes a memcpy.
  *
+ * The one thing that is not free on a 64-bit host is that a `u32` in this
+ * interface is sometimes an ARAM offset and sometimes a main-memory address;
+ * patches.txt widens the latter to `uintptr_t` in the SDK's own headers, which
+ * is the identity on the G4.
+ *
  * MusyX owns everything below HU_AMEM_BASE (8.03 MB of sample data) and the
  * game the 8.39 MB above it, and neither cares that the "DMA" completed before
  * the call returned -- armem.c counts outstanding requests in `arqCnt` and
@@ -48,15 +53,15 @@ ARCallback ARRegisterDMACallback(ARCallback cb) {
     return old;
 }
 
-void ARStartDMA(u32 type, u32 mainmem_addr, u32 aram_addr, u32 length) {
+void ARStartDMA(u32 type, uintptr_t mainmem_addr, u32 aram_addr, u32 length) {
     u8* aram = (u8*)port_aram();
     if (aram_addr + length > PORT_ARAM_SIZE) {
         port_fatal("ARStartDMA out of range: %08x + %u", aram_addr, length);
     }
     if (type == ARAM_DIR_MRAM_TO_ARAM) {
-        memcpy(aram + aram_addr, (void*)(uintptr_t)mainmem_addr, length);
+        memcpy(aram + aram_addr, (void*)mainmem_addr, length);
     } else {
-        memcpy((void*)(uintptr_t)mainmem_addr, aram + aram_addr, length);
+        memcpy((void*)mainmem_addr, aram + aram_addr, length);
     }
     dma_bytes += length;
     if (dma_callback) {
@@ -80,8 +85,8 @@ void ARQRemoveRequest(ARQRequest* task) { (void)task; }
 void ARQRemoveOwnerRequest(u32 owner) { (void)owner; }
 void ARQFlushQueue(void) {}
 
-void ARQPostRequest(ARQRequest* task, u32 owner, u32 type, u32 priority, u32 source, u32 dest,
-                    u32 length, ARQCallback callback) {
+void ARQPostRequest(ARQRequest* task, u32 owner, u32 type, u32 priority, uintptr_t source,
+                    uintptr_t dest, u32 length, ARQCallback callback) {
     task->next = NULL;
     task->owner = owner;
     task->type = type;
@@ -96,7 +101,7 @@ void ARQPostRequest(ARQRequest* task, u32 owner, u32 type, u32 priority, u32 sou
         ARStartDMA(ARAM_DIR_ARAM_TO_MRAM, dest, source, length);
     }
     if (callback) {
-        callback((u32)(uintptr_t)task);
+        callback((uintptr_t)task);
     }
 }
 

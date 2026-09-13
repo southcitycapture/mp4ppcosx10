@@ -198,3 +198,31 @@ src/game/thpmain.c	    while (THPSimpleOpen(THPFileName) == 0) {\n        OSRepo
 # with the top bit already set.
 include/game/window.h	#define MAKE_MESSID_PTR(ptr) ((u32)(ptr))	u32 portMessTag(const void* p);   /* port: see port/src/os/os_arena.c */\nu8* portMessPtr(u32 mess);\n#define MAKE_MESSID_PTR(ptr) portMessTag(ptr)
 x4:src/game/window.c	(u8 *)mess;	portMessPtr(mess);
+
+# --------------------------------------- dolphin/ar.h, dolphin/arq.h, game/armem.c
+# ARAM transfers carry main-memory *addresses* in `u32` fields, and one of them
+# is a callback token the game casts straight back to a pointer
+# (`ArqCallBackAM` reads `req_ptr->dst`).  Every cast on the game's side is
+# already widened by tools/widen_ptr_casts.py; the truncation that remains is
+# in the SDK's own prototypes, so widen those too.  `uintptr_t` is `u32` on the
+# GameCube and on the G4, so this is the identity for the real target -- on a
+# 64-bit host it is the difference between reaching the title screen and a
+# memmove from the low half of a MEM1 pointer (`CharInit` -> `HuAR_DVDtoARAM`,
+# the first thing the boot object does).
+include/dolphin/ar.h	void ARStartDMA(u32 type, u32 mainmem_addr, u32 aram_addr, u32 length);	void ARStartDMA(u32 type, uintptr_t mainmem_addr, u32 aram_addr, u32 length);
+include/dolphin/arq.h	typedef void (*ARQCallback)(u32 pointerToARQRequest);	typedef void (*ARQCallback)(uintptr_t pointerToARQRequest);
+include/dolphin/arq.h	  u32 source;\n  u32 dest;	  uintptr_t source;\n  uintptr_t dest;
+include/dolphin/arq.h	void ARQPostRequest(ARQRequest* task, u32 owner, u32 type, u32 priority, u32 source, u32 dest,\n                    u32 length, ARQCallback callback);	void ARQPostRequest(ARQRequest* task, u32 owner, u32 type, u32 priority, uintptr_t source,\n                    uintptr_t dest, u32 length, ARQCallback callback);
+x6:src/game/armem.c	(u32 pointerToARQRequest)	(uintptr_t pointerToARQRequest)
+
+# --------------------------------------------------------- dolphin/mtx/mtx.c
+# `C_MTXIdentity` writes the 3x3 and leaves the translation column alone.  On
+# the console nothing ever called it -- `MTXIdentity` is `PSMTXIdentity`, six
+# paired-single stores that cover all twelve elements, translation included --
+# so the omission never mattered and the decomp matches the DOL either way.
+# `-DMTX_USE_C` makes it the one that runs, and `src/game/hsfdraw.c:mtxRot`
+# hands it an uninitialised stack `Mtx` whenever the x rotation is zero.  The
+# stale translation then survives into the model's placement matrix and is
+# added to on the next call from the same stack slot, which is where the
+# off-world second pass came from (PLAN.md 15.1).
+src/dolphin/mtx/mtx.c	    mtx[0][0] = 1.0f;\n    mtx[0][1] = 0.0f;\n    mtx[0][2] = 0.0f;\n    mtx[1][0] = 0.0f;\n    mtx[1][1] = 1.0f;\n    mtx[1][2] = 0.0f;\n    mtx[2][0] = 0.0f;\n    mtx[2][1] = 0.0f;\n    mtx[2][2] = 1.0f;\n}	    mtx[0][0] = 1.0f;\n    mtx[0][1] = 0.0f;\n    mtx[0][2] = 0.0f;\n    mtx[0][3] = 0.0f;\n    mtx[1][0] = 0.0f;\n    mtx[1][1] = 1.0f;\n    mtx[1][2] = 0.0f;\n    mtx[1][3] = 0.0f;\n    mtx[2][0] = 0.0f;\n    mtx[2][1] = 0.0f;\n    mtx[2][2] = 1.0f;\n    mtx[2][3] = 0.0f;\n}

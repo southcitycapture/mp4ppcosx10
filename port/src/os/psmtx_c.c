@@ -102,6 +102,10 @@ f32 C_VECDistance(const Vec* a, const Vec* b) { return sqrtf(C_VECSquareDistance
 
 /* ---- PS* forwarders ------------------------------------------------------ */
 
+/* PSMTXIdentity is six paired-single stores and therefore writes all twelve
+ * elements, translation column included.  C_MTXIdentity used to write only the
+ * 3x3 -- patches.txt fixes that in the mirror, and port/tests/mtx_test.c holds
+ * it fixed, because a caller with an uninitialised stack Mtx cannot tell. */
 void PSMTXIdentity(Mtx m) { C_MTXIdentity(m); }
 void PSMTXCopy(const Mtx src, Mtx dst) { C_MTXCopy(src, dst); }
 void PSMTXConcat(const Mtx a, const Mtx b, Mtx ab) { C_MTXConcat(a, b, ab); }
