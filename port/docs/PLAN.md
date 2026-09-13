@@ -1058,7 +1058,7 @@ produces `build/GMPE01_01/main.dol` matching `config/GMPE01_01/build.sha1`, plus
 99 RELs.
 **Done means:** it already does, on this Mac.
 
-### M1 — it links and it talks
+### M1 — it links and it talks *(done, §9)*
 Cross-compile the DOL's game code (`src/game`, `src/game/board`, `src/msm`,
 `src/libhu`) plus `src/dolphin/mtx` with `-DMTX_USE_C`, against a `port/` layer
 in which every one of the ~280 non-GX SDK symbols and all 128 GX symbols exist —
@@ -1082,7 +1082,7 @@ Concretely, M1 needs (see §6):
 7. a generated `port/gen/sdk_stubs.c` from `inventory.py`'s symbol table, so
    nothing is missed by hand.
 
-### M2 — the first frame
+### M2 — the first frame *(M2a done, §10)*
 An SDL2 window with a **GL-1.3-restricted context** on the development Mac
 (a debug layer that rejects any call outside the GL 1.3 + named-extension set,
 so we cannot accidentally depend on something the Radeon 9000 lacks), the GX
@@ -1668,7 +1668,7 @@ Snowboard Kids ports were tested; decide at M2.
   `.globl __kerjmp_X ; __kerjmp_X: b _X`, which assembles identically on
   PowerPC and arm64.
 
-### 9.8 Open for M2
+### 9.8 Open for M2 *(all five answered in §10)*
 
 1. **REL loading by `dlopen`** (§2.4b): one Mach-O bundle per REL, the
    `omDLLLink` patch seam is already cut, and the "load and unload all 99
@@ -1679,3 +1679,322 @@ Snowboard Kids ports were tested; decide at M2.
 4. The soft-reset thread currently never runs. It blocks on `OSSleepThread`
    immediately, so this is behaviour-preserving until something posts to its
    queue; the host loop should poll it once per retrace.
+
+---
+
+## 10. M2a log — REL modules, the trampoline table, the reset poll, and the first slice of GX *(2026-09-13)*
+
+M2's done-means is "the Hudson and Nintendo logos render, and a screenshot
+from the Mac and one from the G4 are the same picture". This is the first
+half of it, developed and tested on the Mac with the G4 unavailable. Four of
+the five open items from §9.8 are closed; the fifth — the logos themselves —
+turns out to be blocked on the host for a reason worth stating carefully, and
+that is §10.6.
+
+### 10.1 REL loading: all 99, twice, clean
+
+Every one of the 99 relocatable modules is now a Mach-O bundle beside the
+binary, built from the same mirror as the DOL:
+
+| target | what | size |
+|---|---|---:|
+| `port/build-host/rels/*.dylib` | 99 `MH_BUNDLE`, arm64 | 9.0 MB |
+| `port/build-ppc-darwin/rels/*.bundle` | 99 `MH_BUNDLE`, `powerpc` | 6.1 MB |
+
+`port/tools/gen_rels.py` reads which translation units belong to which module
+out of the decomp's own `config/GMPE01_00/rels/<mod>/splits.txt`, so the port
+cannot drift from an upstream re-split. Three details the splits files do not
+answer, answered by inspection:
+
+- **18 modules do not list `REL/executor.c`.** Three of them (`mentDll`,
+  `mstory4Dll`, `safDll`) wrote `_prolog`/`_epilog` out into their own source;
+  the other 15 have the same 0xA0 bytes inside their own `.text` range where
+  the split never separated it. The generator gives the 15 the shared
+  `executor.c`, or `board_executor.c` when the module defines `BoardCreate`.
+- **Six modules are 144-byte placeholder RELs** (`m300Dll`, `m302Dll`,
+  `m303Dll`, `m330Dll`, `m333Dll`, `msetupDll`) with nothing but empty
+  `.ctors`/`.dtors` — no code, no prolog. They get
+  `port/src/relmod/rel_placeholder.c`, whose prolog returns 0, so all 99 load
+  through one path.
+- **`safDll` has no `ObjectSetup` anywhere.** A weak one in
+  `rel_runtime.c` supplies the symbol and says so if it is ever entered.
+
+Each bundle exports exactly three symbols — `_prolog`, `_epilog`,
+`_unresolved` — through `resources/rel_exports.txt`, which makes everything
+else `private_extern`. That is what dissolves the 899 names that collide
+between modules (`ObjectSetup` in 90 of them, `_ctors`/`_dtors` in all 99)
+without renaming a single one. The main binary is linked with
+`-exported_symbols_list` over **3,080 symbols**, generated from the link's own
+`nm` output rather than kept by hand as partyboard's 1,106-entry `dol.def` is;
+each bundle is linked `-bundle -bundle_loader marioparty4`, so a module that
+imports something the port has not implemented is a **build** error rather
+than a crash.
+
+**`dlclose` really unloads, on this host.** `--reltest` loads and unloads all
+99 twice and asks dyld after every single unload whether the image is gone:
+
+```
+port> --reltest: 99 module bundles, two load/unload rounds each
+port> --reltest: 198/198 load+unload cycles clean, 0 failed,
+                 0 missing an entry point, 0 still resident after dlclose
+```
+
+That closes §4 risk 2 for the host and leaves it open only for Mac OS X 10.5,
+where the same check runs on every unload at run time. The fallback is written
+and testable now with `--relzerobss`: find the loaded image through the
+module's own `_prolog` address (`dladdr` once per load, never in a hot path)
+and zero its `__DATA,__bss` and `__DATA,__common` sections by hand, which is
+exactly what `omDLLStart`'s re-entry branch used to do with
+`memset(dll->bss, 0, module->bssSize)`.
+
+`objdll.c` keeps its shape. Six exact-text patches replace `OSLink` with
+`portDLLOpen`, `OSUnlink` with `portDLLClose`, the two prolog calls with
+`portDLLProlog` and the re-entry `memset` with `portDLLReenter` — and the
+module header is still read off the real disc, so `omDLLInfoDump` and
+`omDLLHeaderDump` still narrate the true REL. The `dlopen` handle lives in
+`omDllData.bss`, which held the module's bss block on the console and which
+nothing outside the loader ever dereferences.
+
+**`bootDll` runs.** `objdll> dll/bootdll.rel prolog start` /
+`******* Boot ObjectSetup *********` / `prolog end` — the module's own code,
+compiled from the decomp, executing inside the port.
+
+### 10.2 The nine Metrowerks-isms in `src/REL`
+
+Compiling 254 REL translation units with clang and GCC 14 found nine places
+the Metrowerks compiler accepted and neither of ours will. None is a port
+decision; each is rewritten to the meaning the compiled REL plainly has, as
+exact text in `patches.txt` so an upstream fix breaks the build rather than
+double-applying:
+
+| what | where |
+|---|---|
+| chained lvalue casts, `var_r31 = (Vec*)*arg0 = malloc(...)` | `m438Dll/fire.c` ×3 |
+| a five-way chained assignment through `(void*)` casts | `w06Dll/main.c` |
+| a struct passed by value to `memset` (the decomp's own `NON_MATCHING` branch passes its address) | `m406Dll/map.c`, `m413Dll/main.c` |
+| a call with too few arguments (the decomp comments one of them `// Bug:`) | `m404Dll/main.c`, `m447dll/main.c` |
+| `static` definition of a function already declared `extern` in the same file | `w01Dll/main.c` |
+
+Two mirror-level changes went with them: `src/REL/**` joined the mirror, and a
+column-0 `inline` definition in a REL becomes a **weak** definition rather than
+a plain external one, because the same helper is sometimes written out in two
+translation units of the *same* module (`fabs2` in `m430Dll`'s `player.c` and
+`water.c`).
+
+One header patch was needed for the bundles rather than for the DOL:
+`u32 __OSBusClock AT_ADDRESS(...)` in `<dolphin/os.h>` is a tentative
+definition in every translation unit that includes it, and a bundle that
+merged its own copy would read zero for `OS_BUS_CLOCK` — which five modules,
+`bootDll` among them, use. The declarations become `extern` and the port owns
+the one definition.
+
+### 10.3 `kerent.c`'s trampoline table
+
+`port/tools/gen_kerent.py` regenerates the 2,047-line Metrowerks `asm`
+function as **1,011** entries of
+
+```
+	.globl __kerjmp_OSReport
+__kerjmp_OSReport:
+	b _OSReport
+```
+
+which assembles identically for arm64 and for 32-bit PowerPC. Six entries are
+skipped: the `_savegpr_14/15/16` and `_restgpr_14/15/16` Metrowerks EABI
+register-save helpers, which have no GCC/clang equivalent and which no REL
+imports through the table. 35 of the 1,011 targets are not defined by the game
+or the port; 29 of those are SDK symbols the stub generator picks up
+automatically (the table's object is part of the undefined-symbol scan), and
+the rest are libm.
+
+The table is not *needed*: with one bundle per REL, dyld binds each module's
+imports straight to the real symbols. It is regenerated because `_kerent` is
+in `config.yml`'s `force_active` list and is therefore part of what the DOL
+is, because it is the authoritative statement of which 1,011 symbols the DOL
+exports to modules, and because the single-binary fallback of §2.4a would need
+exactly this table.
+
+### 10.4 The soft-reset watcher, polled
+
+`sreset.c`'s `ToeThreadFunc` is `while (1) { OSSleepThread(...); <body> }`,
+woken once per field by `HuDvdErrDispIntFunc`, which the game installs as VI's
+pre-retrace callback. The obvious way to run that as a callback is a second
+stack and a context switch. It does not need one: **the loop body carries no
+state between iterations** — its only local is assigned before it is read — so
+re-entering the function from the top once per retrace is indistinguishable
+from letting it come round the loop. The port makes the *first*
+`OSSleepThread` of each tick return normally, so the body runs, and the
+*second* one (the loop coming back around) `longjmp` out. One `setjmp` per
+retrace, no second stack, nothing that behaves differently on PowerPC.
+
+Measured over a 40-frame boot: `soft-reset watcher: running, body polled 36
+times` — one per retrace from the frame the game installs the callback.
+
+The reset button is a **pulse**, not a level: `OSGetResetButtonState` returns
+TRUE for three polls and then FALSE, because `ToeThreadFunc` sets
+`H_ResetReady` on the press and only acts on the release. Ctrl-C, the window's
+close button and Escape all request it; a second Ctrl-C leaves immediately.
+The quit then goes out through the game's own `HuSoftResetPostProc` /
+`HuRestartSystem` / `OSResetSystem`, and `port_shutdown` is the single exit
+path so `--frames`, a reset and a normal return all report the same things in
+the same order.
+
+### 10.5 The GX slice
+
+`port/src/gx/` is 5 files and about 2,300 lines, and it implements **all 114**
+GX entry points the game's link needs — the boot's 55 (§9.3) and the 59 more
+the RELs pull in. The stub table is down from 188 symbols to 95, and
+**the host and PowerPC builds stub exactly the same 95**, which remains the
+cheapest check that the two are not diverging.
+
+| file | what |
+|---|---|
+| `gx_state.c` | the state entry points. Matrices (`GXSetProjection` keeps the six elements GX keeps, per the decomp's own `GXTransform.c`, not the whole 4×4), viewport and scissor with GX's top-down y flipped, cull with GX's inverted winding, z, blend, alpha compare, fog, TEV state, channels, lights, copies |
+| `gx_draw.c` | vertex assembly in descriptor order; direct and indexed attributes decoded against the VAT's component count, type and fractional shift; **CPU transform and CPU per-vertex lighting**; texgen; display lists |
+| `gx_tex.c` | all ten formats de-tiled and expanded to RGBA8, with a **content-keyed** cache |
+| `gx_tev.c` | the TEV chain compiled into a GL 1.3 texture-environment chain |
+| `gl13.c` | the only file that touches GL, plus the SDL2 window, `--glcheck` and the PPM writer |
+
+Three decisions worth recording:
+
+- **Lighting and the modelview are done on the CPU.** GL's modelview stays
+  identity and `gx_draw.c` transforms positions by the loaded position matrix
+  and normals by the loaded *normal* matrix. That is not laziness: the game
+  loads normal matrices that are not the inverse transpose of the position
+  matrix, and GL's fixed function has no way to say so. Lighting followed for
+  the same reason — GX's `GX_DF_CLAMP`/`GX_DF_SIGN` diffuse functions and its
+  ratio-of-quadratics attenuation are not GL's, and a party game with a
+  handful of lights can afford the C.
+- **Display lists are recorded in the real GX byte encoding** — one opcode
+  byte with the vertex format in its low three bits, a big-endian `u16` count,
+  packed attributes in descriptor order, padded to 32 bytes. The demo's
+  eight-index strip records as 19 bytes padded to 32, and replays. Byte-exact
+  sizes are what keep the game's own `dlSize` accounting (a 0x20000 cap in
+  `hsfdraw.c`) from overrunning a buffer it sized for the console.
+- **The TEV compiler recognises five shapes**, which cover the GX lerp
+  `out = d + a*(1-c) + b*c` exactly: `REPLACE`, `MODULATE`, `ADD`,
+  `INTERPOLATE`, and `MODULATE_ADD_ATI`. Anything outside them — a
+  four-input stage with no combiner, a `±0.5` bias, `GX_CS_DIVIDE_2`, a
+  non-identity swap table, an indirect stage — is counted and named once each
+  by `--gxwarn` rather than drawn silently wrong.
+
+`--glcheck` validates every GL entry point the backend calls against a written
+list of GL 1.3 plus the four named extensions; the list is maintained by hand
+because adding a GL call without adding it to the list is precisely the
+mistake worth catching. The extension flags are answered from the **card's**
+feature set (six texture units, not the host's eight) so the paths the G4 will
+take are the paths exercised on the Mac.
+
+**`--gxdemo` is how the slice is verified.** It drives the same public GX
+entry points the game calls with data the port builds in memory and writes the
+frame as a PPM: direct `GX_QUADS` with `GXPosition3f32`/`GXColor4u8`, alpha
+blending, an indexed `GX_TRIANGLESTRIP` through `GXSetArray` +
+`GXPosition1x16` with an S16 array and a fractional shift, recorded into a
+display list and replayed, a two-stage konst-modulated chain, and one quad in
+each of RGB565, RGB5A3, RGBA8, I8, I4, IA8, CMPR and C8-through-a-TLUT. The
+result is [`m2a-gxdemo.png`](m2a-gxdemo.png), and it is correct: the tiling,
+the fractional fixed point, the TLUT, the CMPR blocks, the blend and the
+display-list round trip all come out right.
+
+### 10.6 The host cannot render the logos, and the reason is not (only) endianness
+
+§9.6 predicted that the little-endian host would stop at the first parse of
+disc data and left the decision of what to do about it to M2. M2 measured it,
+and the answer is larger than endianness.
+
+The game's on-disc structures contain **32-bit fields that its own headers
+declare as pointers**. `ANIMDATA`, the sprite bank, is the smallest example:
+
+```c
+typedef struct AnimData_s {
+    s16 bankNum, patNum, bmpNum, useNum;
+    ANIMBANK *bank;      /* a 4-byte file offset, relocated in place */
+    ANIMPAT  *pat;
+    ANIMBMP  *bmp;
+} ANIMDATA;              /* sizeof 0x14 */
+```
+
+and `HuSprAnimRead` fixes them up with
+`bank = (ANIMBANK *)((u32)anim->bank + (u32)data)`. On the GameCube and on the
+G4 that struct is 0x14 bytes and the arithmetic is exact. On a 64-bit host
+each pointer field is eight bytes, the struct is 0x20, and every field after
+`bankNum` lands on the wrong bytes — **before endianness is even
+considered**. HSF models, animation banks and the message data all have the
+same shape. partyboard needs 1,087 lines of shadow "32b" struct definitions
+for exactly this; that work buys this port nothing, because the G4 is 32-bit
+*and* big-endian and every one of these parses is correct as written there.
+
+So the decision §9.6 left open is taken, with evidence: **the host build is a
+plumbing harness, not a second reference implementation.** All host-only
+divergences go through `port/src/dvd/host_data.c` and the four `host:` patches
+that call into it, so the list is one grep long.
+
+Where a byteswap-on-read shim is cheap *and* unambiguously correct, it is
+done. There is exactly one so far and it is worth having: `GetFileInfo` in
+`data.c` reads three big-endian `u32` **scalars** — a file's offset inside its
+`data/*.bin` archive, its raw length and its compression type — and every data
+file in the game passes through it. Those are not pointers, so nothing is
+structural, and swapping them opens the whole decode path (`HuDecodeSlide` and
+friends already read their own headers a byte at a time and are endian-clean
+as written). `portBE32` is the identity on the G4 and the compiler deletes it.
+
+### 10.7 host vs G4
+
+What the development Mac can and cannot do, so the frame-comparison work knows
+where it stands. Everything in the right-hand column is correct on the G4 with
+no port code at all: it is 32-bit and big-endian, like the disc.
+
+| step | host (arm64, 64-bit, little-endian) | G4 (PowerPC, 32-bit, big-endian) |
+|---|---|---|
+| the DVD file system and the FST | works — the FST is parsed byte-wise | works |
+| REL bundles: load, prolog, epilog, unload, re-entry | works, 198/198 | expected to work; `--reltest` is the check to run first |
+| the archive directory (`GetFileInfo`) | works, via the `portBE32` shim | native |
+| file decompression (`HuDecodeSlide`/`Lz`/`Fslide`) | works — byte-wise headers | native |
+| sprite banks (`ANIMDATA`/`ANIMBANK`/`ANIMPAT`/`ANIMBMP`) | **skipped** — 0x14 vs 0x20 struct, embedded 32-bit offsets | native |
+| the Nintendo/Hudson logos (`nintendoData`, `TITLE_HUDSON_ANM`) | **skipped**, same reason | expected to work |
+| message data (`messdata.c`'s bank tables) | **fails** — big-endian `u32` offsets read natively; this is what ends the host boot at frame 41 | native |
+| HSF models (`hsfload.c`) | not reached yet; same struct-layout problem is expected | native |
+| the MSM sound bank (`msmSysInit`) | fails; `--noaudio` carries on | native, but audio itself is M6 |
+| THP movies | not started | not started |
+| GX state, vertex decode, texture decode, TEV, display lists | works, verified by `--gxdemo` | expected to work; `--gxdemo` is the check to run first |
+| vertex arrays through `GXSetArray` | read **big-endian**, which is right for the disc and for the G4 and wrong for arrays the game builds itself on the host | native either way |
+| the frame loop, the retrace gate, the reset watcher | works | expected to work |
+
+### 10.8 Where the host boot ends, exactly
+
+40 frames, then a fault. In detail: the whole of `HuSysInit`, `omMasterInit`,
+`bootDll.rel` loaded as a bundle and its `_prolog` run, `BootExec` created as a
+`HUPROCESS`, the wipe running, 33 primitives and 132 vertices decoded and
+drawn through the real GX path, the soft-reset watcher polled 36 times, and
+two data files read off the disc image. Then, on frame 41, a fault inside
+`_platform_memmove` reached from the message-data path, which reads
+big-endian `u32` bank offsets natively (§10.7). It is host-only; there is
+nothing to fix for the G4.
+
+The frame the host does present is black, and correctly so — the wipe draws a
+full-screen quad over sprites that were skipped. It is not comparable against
+`port/ref/frames/boot-0001.png` and later, which show the Nintendo logo; that
+comparison is a G4 job.
+
+### 10.9 What the G4 session should do first
+
+In order, because each one gates the next:
+
+1. `port/build-ppc.sh -j8`, then copy `port/build-ppc-darwin/marioparty4` and
+   the whole `port/build-ppc-darwin/rels/` directory (99 bundles, 6.1 MB) next
+   to each other on the G4 — the loader looks for `rels/` beside the
+   executable, or wherever `--reldir` says.
+2. `./marioparty4 --reltest`. If any module reports "still resident after
+   dlclose", note which and run the game with `--relzerobss`; that is the
+   §4 risk-2 fallback and it is already written.
+3. `./marioparty4 --gxdemo --shotdir .` and compare `gxdemo.ppm` against
+   [`m2a-gxdemo.png`](m2a-gxdemo.png) by eye. This is the one test that
+   separates "the GX layer is wrong" from "the Radeon 9000 is different", and
+   it needs no disc.
+4. `./marioparty4 --image <disc> --frames 400 --noaudio --gxwarn --dumpframe N`.
+   On the G4 the sprite banks parse, so this is where the Nintendo and Hudson
+   logos should appear. Compare against `port/ref/frames/boot-*.png` — the
+   logos are frames 1–186 there, but wall-clock timed, so shoot a spread and
+   find the matching pair once.
+5. Whatever `--gxwarn` names, in the order of how much of the screen it covers.
+

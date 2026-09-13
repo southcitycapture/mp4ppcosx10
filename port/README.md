@@ -22,30 +22,45 @@ the GameCube, so nothing needs byteswapping, and the game addresses memory
 through ordinary pointers and ARAM through plain offsets, so there is no
 pinned-globals scheme.
 
-**Status: M1 done — it links and it talks.** Two binaries build from one
-Makefile: `port/build-ppc.sh -j8` produces a `powerpc-apple-darwin8` executable
-for the G4, and `make -C port TARGET=host -j8` produces an arm64 one for the
-development Mac. Running the host build against your own disc image boots the
-game's own `main()`, narrates `HuSysInit` through `omMasterInit` on stdout, and
-reaches `objdll>Link DLL:dll/bootdll.rel` -- the point where it asks for the
-first relocatable module, which is M2's job. The full narration is in
-[`docs/m1-boot.log`](docs/m1-boot.log) and what M1 found is §9 of
-[`docs/PLAN.md`](docs/PLAN.md); the design, the measured inventory, the
-milestones and the risks are the rest of that file, with the numbers behind
-them in [`docs/inventory.md`](docs/inventory.md).
+**Status: M2a done — the 99 modules load, and GX draws.** Two binaries and two
+sets of modules build from one Makefile: `port/build-ppc.sh -j8` produces a
+`powerpc-apple-darwin8` executable plus 99 Mach-O bundles for the G4, and
+`make -C port TARGET=host -j8` produces an arm64 pair for the development Mac.
+Every relocatable module is one `dlopen`'ed bundle, which maps exactly onto
+`objdll.c`'s own five-point loader contract; `--reltest` loads and unloads all
+99 twice and reports 198/198 clean, with `dlclose` genuinely unloading each
+one. `bootDll` runs its `_prolog` and its `ObjectSetup`. The GX layer is real:
+all 114 entry points, vertex assembly and decode, the ten texture formats,
+display lists recorded in the console's own byte encoding, and the TEV chain
+compiled into OpenGL 1.3 fixed function on an SDL2 window.
+
+The development Mac cannot render the game's logos, and the reason is worth
+knowing before reading further: the game's file formats embed 32-bit fields
+its own headers call pointers, so on a 64-bit host the structs are the wrong
+size before endianness is even considered. That is free on the G4, which is
+32-bit and big-endian like the disc. The host build is therefore a plumbing
+harness, and `--gxdemo` is how the graphics layer is verified on it — it
+drives GX with data the port builds itself and writes the frame out. See
+[`docs/m2a-gxdemo.png`](docs/m2a-gxdemo.png), the M2a log in §10 of
+[`docs/PLAN.md`](docs/PLAN.md), and the host-vs-G4 table in §10.7.
 
 ```sh
-port/build-ppc.sh -j8                       # the G4 binary
-make -C port TARGET=host -j8                # the development binary
+port/build-ppc.sh -j8                       # the G4 binary and its 99 bundles
+make -C port TARGET=host -j8                # the development pair
+port/build-host/marioparty4 --reltest       # load and unload all 99, twice
+port/build-host/marioparty4 --gxdemo --shotdir .      # the GX self-test frame
 port/build-host/marioparty4 \
     --image "orig/GMPE01_01/Mario Party 4 (USA) (Rev 1).nkit.iso" \
-    --watchdog 5 --log boot.log
+    --noaudio --frames 40 --dumpframe 30
 ```
 
 `--image` takes the disc image directly (the FST is parsed at boot; an
 NKit-trimmed ISO keeps every file at its original offset) or a directory
 holding an extracted `files/` tree. Other flags: `--frames N`, `--watchdog SEC`,
-`--turbo`, `--gxlog`, `--stub-trace`, `--deterministic`, `--verbose`.
+`--turbo`, `--gxlog`, `--stub-trace`, `--deterministic`, `--verbose`,
+`--reldir DIR`, `--reltest`, `--relzerobss`, `--noaudio`, `--headless`,
+`--glcheck`, `--gxwarn`, `--gxdemo`, `--dumpframe N`, `--shotdir DIR`,
+`--scale N`.
 
 ## Layout
 
@@ -54,6 +69,9 @@ holding an extracted `files/` tree. Other flags: `--frames N`, `--watchdog SEC`,
 | `docs/PLAN.md` | the plan and the engineering log |
 | `docs/inventory.md` | generated: every SDK symbol the game calls, with counts |
 | `docs/m1-boot.log` | the boot narration M1 reaches, captured |
+| `docs/m2a-boot.log` | the boot narration M2a reaches, captured |
+| `docs/m2a-reltest.log` | all 99 REL bundles loaded and unloaded twice |
+| `docs/m2a-gxdemo.png` | the GX self-test frame, the graphics layer's reference |
 | `Makefile` | the whole build, `TARGET=host` or `TARGET=ppc-darwin` |
 | `build-ppc.sh` | the Docker wrapper around the PowerPC cross build |
 | `patches.txt` | every change the port makes to game sources, as exact text |
@@ -62,10 +80,13 @@ holding an extracted `files/` tree. Other flags: `--frames N`, `--watchdog SEC`,
 | `tools/mirror_src.py` | builds the source mirror: patches, Metrowerks asm, overrides |
 | `tools/widen_ptr_casts.py` | widens the game's pointer-through-`u32` casts, compiler-driven |
 | `tools/gen_stubs.py` | generates one loud stub per unimplemented SDK symbol |
+| `tools/gen_rels.py` | works out which sources go in which of the 99 modules |
+| `tools/gen_kerent.py` | regenerates `kerent.c`'s 1,011 export thunks as assembly |
 | `src/platform/` | `main`, the host loop, window and GL context, settings, argv |
 | `src/os/` | OS shims, the `HUPROCESS` context switch, `PSMTX*` in C, cache no-ops |
 | `src/gx/` | the GX state machine, vertex decode, texture decode, the GL 1.3 backend |
-| `src/dvd/` | DVD over an extracted `files/` tree or a disc image |
+| `src/dvd/` | DVD over an extracted `files/` tree or a disc image; `host_data.c` is the one place every host-only divergence goes through |
+| `src/relmod/` | the other side of the fence: compiled into every REL bundle, never into the main binary |
 | `src/card/` | CARD over host files |
 | `src/pad/` | PAD over SDL2 and the IOKit Xbox One driver; `.dtm` and script playback |
 | `src/audio/` | AI, the MusyX SAL replacement, the DSP command interpreter |

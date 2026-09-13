@@ -1,0 +1,88 @@
+Mario Party 4 -- native port, milestone M2a
+port> DVD: disc image ../orig/GMPE01_01/Mario Party 4 (USA) (Rev 1).nkit.iso, 357 files in the FST
+port> --headless: the GX pipeline runs, nothing is presented
+port> entering the game's own main()
+
+port> OSInit: MEM1 24 MB, ARAM 16 MB, bus 162 MHz
+port> DVDInit
+port> VIInit
+port> PADInit: no controllers (M3 brings SDL2 + the Xbox One driver)
+port> OSCreateHeap 0: 0x108fe0000..0x10a6b4000 (23375 KB)
+port> VIConfigure: 640x480 xfb, 640x480 efb, tv mode 0
+port> GXInit: FIFO 0x108fe0010, 1048576 bytes (the port keeps no FIFO; the write-gather writers are ordinary calls under TARGET_PC)
+port> OSCreateThread 0x1030dd4f0 func 0x102feaf48 (the soft-reset watcher; polled once per retrace, not run on a thread)
+HuMem> left memory space 2383KB(2441120)
+MSM(Sound Manager) Error:Error Code -121
+port> little-endian host: the game's own MSM parser cannot read the disc's big-endian sound bank; continuing without audio (pass --noaudio to say so deliberately)
+port> ARInit: 16 MB of ARAM
+port> CARDInit: no card in either slot
+port> PADInit: no controllers (M3 brings SDL2 + the Xbox One driver)
+port> host: the game's sprite banks are 32-bit big-endian file images and this host is neither; drawing them empty.  See port/src/dvd/host_data.c and the host-vs-G4 table in PLAN.md
+DLL DBG OUT
+objman>Call New Ovl 1(1)
+++++++++++++++++++++ Start New OVL 1 (EVT:0 STAT:0x00000000) ++++++++++++++++++
+======== HuMem heap dump 090e0020 ========
+MCB-----+Size----+MG+FL+Prev----+Next----+UNum----+Body----+Call----
+090e0020 0000a020 a5 01 090f2220 090ea040 ffffff00 090e0040 02fb5904
+090ea040 000081e0 a5 01 090e0020 090f2220 ffffff00 090ea060 02fe5b8c
+090f2220 0022de00 cd 00 090ea040 090e0020 00000000 090f2240 02fe5b8c
+MCB:3(2/1) MEM:00240000(00012200/0022de00)
+======== HuMem heap dump 090e0020 end =====
+======== HuMem heap dump 09460040 ========
+MCB-----+Size----+MG+FL+Prev----+Next----+UNum----+Body----+Call----
+09460040 00a80000 cd 00 09460040 09460040 ffffff00 09460060 cdcdcdcd
+MCB:1(0/1) MEM:00a80000(00000000/00a80000)
+======== HuMem heap dump 09460040 end =====
+======== HuMem heap dump 09ee0050 ========
+MCB-----+Size----+MG+FL+Prev----+Next----+UNum----+Body----+Call----
+09ee0050 00580000 cd 00 09ee0050 09ee0050 ffffff00 09ee0070 cdcdcdcd
+MCB:1(0/1) MEM:00580000(00000000/00580000)
+======== HuMem heap dump 09ee0050 end =====
+objman>Used Memory Size:00012200
+objman>Used Memory Cnt:2
+objman>Init esp
+objman>Call objectsetup
+DLLStart 1 0
+Search:dll/bootdll.rel
+objdll>Link DLL:dll/bootdll.rel
+Rest Memory 580000
+port> REL bundles: 99 in /Users/zachjack/Apps/marioparty4/port/build-host/rels
+===== DLL Module Info dump ====
+                   ID:0x01000000
+             LinkPrev:0x48000000
+             LinkNext:0x00000000
+          Section num:788529152
+Section info tbl ofst:0x02000000
+           nameOffset:0x5c000000
+             nameSize:-1654915072
+              version:0x4d7a0000
+===============================
+==== DLL Module Header dump ====
+          bss Size:0x00000101
+        rel Offset:0x00000000
+        imp Offset:0x54000000
+    prolog Section:0
+    epilog Section:0
+unresolved Section:0
+       prolog func:0x08000000
+       epilog func:0x00000000
+   unresolved func:0x00000000
+================================
+objdll>LinkOK 090f25a0 66441490
+objdll> dll/bootdll.rel prolog start
+******* Boot ObjectSetup *********
+objman>InitObjMan start
+objman>InitObjMan end
+objdll> dll/bootdll.rel prolog end
+objman>ObjectSetup end
+DLL DBG OUT
+
+port> --frames 40 reached: 40 retraces in 0.08 s wall (game clock 0.67 s)
+port> GX draw: 33 primitives, 132 vertices, 0 glDrawArrays, 0 display lists replayed
+port> DVD: 2 reads, 31421 bytes
+port> REL bundles: 1 loads, 0 unloads, 0 re-entries, 0 modules dlclose would not unload
+port> soft-reset watcher: running, body polled 36 times
+
+---- SDK surface hit at boot: 1 distinct stubs, in first-call order ----
+   1  sndIsInstalled                          1
+---- 1 stub calls total ----

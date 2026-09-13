@@ -1,0 +1,4 @@
+Mario Party 4 -- native port, milestone M2a
+port> REL bundles: 99 in /Users/zachjack/Apps/marioparty4/port/build-host/rels
+port> --reltest: 99 module bundles, two load/unload rounds each
+port> --reltest: 198/198 load+unload cycles clean, 0 failed, 0 missing an entry point, 0 still resident after dlclose
