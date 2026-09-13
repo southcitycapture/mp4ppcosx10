@@ -57,10 +57,28 @@ port/build-host/marioparty4 \
 `--image` takes the disc image directly (the FST is parsed at boot; an
 NKit-trimmed ISO keeps every file at its original offset) or a directory
 holding an extracted `files/` tree. Other flags: `--frames N`, `--watchdog SEC`,
-`--turbo`, `--gxlog`, `--stub-trace`, `--deterministic`, `--verbose`,
-`--reldir DIR`, `--reltest`, `--relzerobss`, `--noaudio`, `--headless`,
-`--glcheck`, `--gxwarn`, `--gxdemo`, `--dumpframe N`, `--shotdir DIR`,
-`--scale N`.
+`--turbo`, `--gxlog`, `--stub-trace`, `--deterministic`, `--seed N`,
+`--verbose`, `--reldir DIR`, `--reltest`, `--relzerobss`, `--noaudio`,
+`--headless`, `--glcheck`, `--glinfo`, `--gxwarn`, `--gxdemo`, `--perf`,
+`--drawlog N`, `--dumptex`, `--texhash-full`, `--dumpframe SPEC`,
+`--shotdir DIR`, `--scale N`.
+
+`--dumpframe` takes a frame *set*, not a frame: `187`, `1,90,186`, or
+`1-400/20`. Comparing against Dolphin needs a spread, because the two sides do
+not agree on absolute frame numbers -- the port skips the console's DVD seek
+and the opening movie -- so you shoot a spread on both and find the matching
+pair once.
+
+Four flags exist because "the draw is right and the screen is black" has too
+many causes to reason about from the source, and each of them is one line of
+output:
+
+| flag | answers |
+|---|---|
+| `--glinfo` | what the driver actually is: strings, twelve limits, every extension |
+| `--drawlog N` | what the first N draws submitted: geometry after the CPU transform, raster colour, the texture actually bound, projection, TEV inputs, alpha compare, blend, z, scissor, and any pending GL error |
+| `--dumptex` | what a texture decoded to -- colour as a PPM and alpha as a PGM, because an alpha test judges the alpha |
+| `--perf` | where the frame went: game, gx and present, with mean/median/p95/worst, and the game clock against the wall clock (an idle-gated retrace hides overruns) |
 
 ## Running on the G4
 
@@ -90,7 +108,19 @@ straight over SSH:
 ssh g4 './MarioParty4.app/Contents/MacOS/isle --watchdog 6'
 ```
 
-**What it does there today:** boots, loads `bootDll`, and runs the boot
+**What it does there today (M2b):** the whole logo sequence and the title
+screen render on the Radeon 9000 -- the Nintendo logo, the wipes, the Hudson
+logo, and then MARIO PARTY 4 with its starburst background, PRESS START and
+both copyright lines, pixel-for-pixel against the Dolphin reference. The
+title's 3D character models are submitted (27,041 vertices a frame through 358
+display lists) but do not yet appear, and that is where M3 starts. The opening
+THP movie is skipped deliberately and says so. `--reltest` is 198/198 on
+hardware with nothing left resident, and `--gxdemo` on the real card is the
+same picture as the host's to within 6/255 of interpolator rounding. The logo
+sequence holds 60 fps exactly; the title screen runs at 10.4, all of it in
+per-draw GL state changes. See [`docs/PLAN.md`](docs/PLAN.md) §12.
+
+**What M1 did there:** booted, loaded `bootDll`, and ran the boot
 sequence at 56.7 fps — 900 retraces in 15.88 s of wall clock for 1.17 s of CPU,
 because GX still draws nothing. `--reltest` loads and unloads all 99 REL
 bundles twice with 0 left resident after `dlclose`, which closes the plan's
@@ -114,6 +144,10 @@ and [`docs/g4-m2a-boot.log`](docs/g4-m2a-boot.log) (M2a); §10 of
 | `docs/m2a-gxdemo.png` | the GX self-test frame, the graphics layer's reference |
 | `docs/g4-boot.log` | the M1 boot on the real G4, with the host diff |
 | `docs/g4-m2a-boot.log` | the G4 again once RELs loaded: --reltest, ARAM, 900 frames |
+| `docs/g4-glinfo.log` | the Radeon 9000's own GL strings, limits and 77 extensions |
+| `docs/g4-gxdemo.png` | the GX self-test as the real card draws it |
+| `docs/g4-audio-first-sound.log` | the audio path on the G4 with audio on: the M6 hand-off |
+| `docs/screenshots/` | the first real frames: both logos, the title screen |
 | `Makefile` | the whole build, `TARGET=host` or `TARGET=ppc-darwin` |
 | `build-ppc.sh` | the Docker wrapper around the PowerPC cross build |
 | `patches.txt` | every change the port makes to game sources, as exact text |

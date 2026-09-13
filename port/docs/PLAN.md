@@ -2176,3 +2176,347 @@ the build image, because the host's own refuses these binaries with "malformed
 load command 0". And `--watchdog` is a plain `alarm(N)` whose message says "the
 game is not making progress"; at M2a it says that after 541 healthy frames, so
 `--frames` is the way to end a run now.
+
+---
+
+## 12. M2b log — the first real frames on the Radeon 9000 *(2026-09-13)*
+
+M2's done-means was "the Hudson and Nintendo logos render, and a screenshot
+from the Mac and one from the G4 are the same picture". **Both logos render on
+the G4, and so does the title screen.** The Mac half of that sentence turned
+out to be the wrong test and §12.7 says why.
+
+This session merged the G4 branch into `ppc-port`, ran the module and GX
+self-tests on hardware, and then spent almost all of its time on a single
+class of bug: the port had copied GX's *shape* faithfully and its *timing*
+carelessly, in five separate places.
+
+### 12.1 The merge, and the two self-tests on hardware
+
+`fork/ppc-port-g4` merged into `ppc-port` with three conflicts, all resolved
+by keeping both sides (the log entry is in the commit). The M2a log stays §10;
+the G4 first-run log became §11.
+
+**`--reltest`: 198/198 on the real machine**, 0 failed, 0 missing an entry
+point, **0 still resident after `dlclose`**. That is §4's risk 2 closed on the
+only machine that could answer it, and `--relzerobss` — the fallback that
+zeroes a bundle's `__bss`/`__common` by hand — has still never been needed.
+
+**`--gxdemo` on the Radeon 9000 is the same picture as the host's**, which is
+the result that mattered most and the one there was least reason to expect.
+17,397 of 307,200 pixels differ (5.7%) and **the largest difference in any
+channel is 6/255**; the deltas are ±1 on interpolated gradients and inside
+filtered texels, i.e. the two rasterisers' interpolation rounding. Every quad,
+every one of the ten texture formats, the TLUT, the CMPR blocks, the S16
+fractional-fixed-point array, the alpha blend and the display-list round trip
+land in the same place with the same colours. **No GL-1.3 or Radeon difference
+needed fixing in `gl13.c`** — the emulated feature set the host had been
+exercising was honest.
+
+`--glcheck` passes on the real ATI driver: no GL call the backend makes falls
+outside the written GL 1.3 + named-extension list.
+
+### 12.2 The card, recorded rather than remembered
+
+`--glinfo` is new — the equivalent of the N64 ports' `--glinfo` — and dumps the
+driver's strings, twelve limits and every extension. The full output is
+[`docs/g4-glinfo.log`](g4-glinfo.log). The card is exactly what §0 assumed:
+
+```
+GL_VENDOR    ATI Technologies Inc.
+GL_RENDERER  ATI Radeon 9000 OpenGL Engine
+GL_VERSION   1.3 ATI-1.5.28
+GL_MAX_TEXTURE_UNITS 6      GL_MAX_TEXTURE_SIZE 2048    GL_MAX_LIGHTS 8
+77 extensions
+```
+
+with `ATI_texture_env_combine3`, `ARB_texture_env_crossbar`,
+`EXT_texture_compression_s3tc`, `EXT_blend_subtract`, `EXT_fog_coord`,
+`ARB_multisample` and `ATI_text_fragment_shader` all present, and no
+`ARB_fragment_program`, no FBO, no NPOT.
+
+One capability the host had wrong: **the Radeon 9000 has no
+`ARB_depth_texture`** (the host reported 1, the card reports 0). Nothing has
+needed it yet, but the game does three `GX_TF_Z24X8` and one `GX_TF_Z8` depth
+copy (§1.14), and those four sites now have no obvious GL 1.3 home. That is a
+real item for whoever reaches them.
+
+### 12.3 Five bugs between a correct draw and a black screen
+
+The GX slice was right. The C8-through-a-TLUT decode of the 576×480 big-endian
+Nintendo logo is pixel-perfect the first time it runs. The ortho projection,
+the vertex assembly, the `MODULATE` TEV chain, the raster colour out of the
+channel register: all correct. The screen was black anyway, five times over.
+
+1. **`GXLoadTexObj` aliased the caller's `GXTexObj` instead of copying it.**
+   The hardware loads the object into the texture registers and the caller's
+   object is dead the instant it returns — and the game leans on exactly that:
+   `HuSprTexLoad` (`src/game/sprput.c`) builds its `GXTexObj` as a **stack
+   local**, loads it, and returns before a single vertex is emitted. The port
+   was reading a dead stack frame at draw time; the magic word no longer
+   matched and `gx_tex_bind` returned without binding anything. Textures are
+   now held **by value** in `GXState` and `gx_bound_tex()` is the only way to
+   ask what a unit holds.
+
+2. **Non-power-of-two textures.** The Radeon has no NPOT support, and an NPOT
+   `glTexImage2D` makes the texture *incomplete*, which silently disables
+   texturing for that unit — no GL error, nothing in the log. The Nintendo logo
+   is 576×480. Decoded images are padded up to the next power of two with the
+   edge replicated, and the fraction holding real texels is folded into that
+   unit's `GL_TEXTURE` matrix, which this backend was not otherwise using
+   because texgen is done on the CPU. The vertex decoder still emits the game's
+   own 0..1 texcoords and knows nothing about it.
+
+3. **`GXCopyDisp` cleared the back buffer before the swap.** On the console
+   `GXCopyDisp` copies the EFB to the XFB and only *then* clears the EFB for
+   the next frame, so the clear never touches the image being shown. Here the
+   back buffer *is* the image and the swap happens later, at the retrace gate —
+   so the game's own `HuSysDoneRender` was throwing each frame away
+   microseconds after drawing it. **Every frame rendered correctly and every
+   frame was black.** The clear is now queued and run immediately after the
+   swap. This also corrects §10.8, which blamed the host's black frame on the
+   wipe drawing over skipped sprites: true about the sprites, but not why the
+   frame was black. This was, on both targets.
+
+4. **`__OSBusClock` was zero inside every REL, so `OSTicksToMilliseconds`
+   divided by zero.** `<dolphin/os.h>` does not `extern` it — on the console it
+   is a fixed address in low memory, so the header simply declares it, which
+   off the console is a tentative definition in every translation unit that
+   includes it. Built with `-fno-common` and an exported-symbols list, each
+   bundle linked its own private zero copy (`nm` showed `s ___OSBusClock`).
+   `OS_TIMER_CLOCK` is `OS_BUS_CLOCK / 4`, so inside all 99 modules every
+   `OSTicks*` conversion was `x / 0`, which PowerPC does not trap. `bootDll`
+   paces the Nintendo logo with
+   `while (OSTicksToMilliseconds(OSGetTick() - t0) < 3000) HuPrcVSleep();`, so
+   the boot sat on that logo for as long as you cared to watch, at a healthy
+   60 fps, with nothing in the log. §10.2 describes this patch as already made;
+   it was not in `patches.txt`, and that paragraph was ahead of the tree.
+
+5. **The wall-clock tick rate was 40 kHz, not 40.5 MHz.**
+   `us * (PORT_TIMER_CLOCK / 1000000) / 1000` truncates 40.5 to 40 and then
+   divides by a thousand more than it should. It is now `ns * 81 / 2000`,
+   exactly 40.5 MHz. `--deterministic` advances `PORT_TIMER_CLOCK/60` per
+   retrace and was right all along, which is why nothing had caught it.
+
+`port> OS clock: N ticks in W s = R MHz (console 40.500)` is now printed at
+shutdown and says `*** WRONG` if it is not. A clock wrong by a factor is not a
+small error in this game — a dozen places pace themselves off it — and it
+presents as a hang that looks like a rendering bug.
+
+### 12.4 What renders, and how it compares to Dolphin
+
+| what | port | against Dolphin |
+|---|---|---|
+| the wipe-in over the Nintendo logo | correct, 30 frames | matches `boot-0011`..`0031` in content |
+| **the Nintendo logo** | **correct** — [`screenshots/mp4-logo-nintendo.png`](screenshots/mp4-logo-nintendo.png) | same image as `boot-0091`..`0181` |
+| the wipe-out, the 60-frame gap | correct | matches |
+| **the Hudson logo** | **correct** — [`screenshots/mp4-logo-hudson.png`](screenshots/mp4-logo-hudson.png) | same image |
+| the opening THP movie | **skipped**, cleanly and deliberately — §12.5 | Dolphin's frames 187–4381; the port takes zero frames |
+| **the title screen, 2D layer** | **correct** — [`screenshots/mp4-title.png`](screenshots/mp4-title.png): the starburst background, the MARIO PARTY 4 logo, PRESS START, both copyright lines | pixel-for-pixel the same as `boot-5025`'s 2D content |
+| the title screen, 3D layer | **missing**: Peach, Wario, Mario, Daisy, Goomba, Toad, Boo, Koopa, DK and the present boxes do not appear | `boot-5025` has all of them |
+
+Frame numbers do not correspond between the two sides and were never going to:
+the port skips the console's DVD seek and, now, seventy seconds of movie. The
+comparison is by content, which is what `--dumpframe`'s new frame-*set*
+argument (`850,900,950` or `1-400/20`) is for.
+
+**The 3D layer is the M3 opener, and it is not silent.** 27,041 vertices per
+frame are being assembled and submitted through 358 display lists and 360
+`glDrawArrays` — the HSF models *are* being drawn, and they are invisible. So
+this is not a missing code path; it is a state bug, and the two obvious
+suspects are the depth configuration (the 2D layer runs with `GXSetZMode`
+false and the models do not) and the `GXInitSpecularDir` / two-konst /
+alpha-compare degradations §12.6 names. `--drawlog` was written for exactly
+this and should be pointed at the first model draw.
+
+### 12.5 The opening movie, skipped on purpose
+
+THP decode is M8: `THPDec.c` is 352 paired-single sites of JPEG inverse DCT,
+the densest concentration of Gekko-only code in the tree. What M2b found is
+that the game cannot survive simply being told so. `THPTestProc` retries
+`THPSimpleOpen` **forever**, and `HuTHPEndCheck` asks
+`THPSimpleGetTotalFrame()`, whose stub returns 0 — which its own
+`if (temp_r31 <= 0) return FALSE;` reads as "not finished". `BootExec` then
+waits on `while (!HuTHPEndCheck())` and the boot stops at the movie, at 60 fps,
+printing `THPSimpleOpen fail` a few thousand times a second: two processes each
+waiting on the other's impossible condition.
+
+Rather than fake a movie — a frame count the port would have to advance, a
+decode buffer it would have to size, an audio track it would have to pretend to
+mix — the port says plainly that it cannot play one.
+[`port/src/dvd/thp_stub.c`](../src/dvd/thp_stub.c) holds the policy in one
+function, `portTHPAvailable()`, and two exact-text patches ask it:
+`HuTHPEndCheck` returns TRUE at once, and `THPTestProc` tears itself down
+exactly as its own tail does (kill the sprite it was drawing into, clear
+`THPProc` so a later `HuTHPSprCreateVol` still works, `HuPrcKill` itself). A
+movie takes zero frames and leaves nothing behind. Every skip is named in the
+log and counted at shutdown, so a missing cut-scene is never a silent
+difference from the console. When the decoder lands, `portTHPAvailable()`
+returns 1 and both patches fall through to the original code.
+
+### 12.6 What `--gxwarn` names at the title screen
+
+Four distinct degradations, in order of how much of the screen they cover:
+
+| warning | count in 999 frames | what it means |
+|---|---:|---|
+| `GXSetAlphaCompare: two live OR comparisons, the first is used` | 79,488 | GL has one alpha test; GX has two combined by AND/OR. Both AND cases seen so far are the same comparison twice (`GEQUAL 1 AND GEQUAL 1`), so the first is exact. The OR cases are not, and 79,488 of them is every draw. |
+| `GXInitSpecularDir: specular is approximated by the diffuse term` | 9,108 | the title models' specular highlights |
+| `TEV: a stage needs two different constants; the first wins` | 8,280 | one `GL_TEXTURE_ENV_COLOR` per unit against GX's four konst registers |
+| `indirect texturing … direct stage only` + `GXSetTevIndTile: dropped` | 48 each | `HuSprDisp`'s background-tiling path (`sprite->bg`), §3.4 case 3 |
+
+The first three are all on the invisible 3D layer, which is suggestive.
+
+### 12.7 Performance on the G4, and the honest ratio
+
+`--perf` is new and reports both clocks, because §2.5's lesson is that an
+idle-gated retrace **hides overruns**: the game clock stays at 60 on paper
+while the wall clock falls behind.
+
+**The logo sequence keeps up exactly.** 400 frames:
+
+```
+  game     mean   0.75  median   0.30  p95   0.53  worst 144.98 ms
+  gx       mean   1.66  median   1.50  p95   1.82  worst  52.29 ms
+  present  mean   4.07  median   0.26  p95  38.77  worst  43.03 ms
+  clocks   game 6.66 s vs wall 6.66 s -- ratio 1.000  (keeping up)
+```
+
+**The title screen does not.** 1,000 frames, ending on the title:
+
+```
+  game     mean   1.29  median   0.23  p95   3.44  worst 144.95 ms
+  gx       mean  83.00  median   0.15  p95 301.26  worst 636.85 ms
+  present  mean   0.54  median   0.24  p95   0.70  worst  67.79 ms
+  frame    mean  84.83  median   0.62  p95 305.75  worst 643.18 ms
+  budget   16.68 ms/frame at 59.94 Hz; 282 of 999 frames over it (28.2%)
+  clocks   game 16.67 s vs wall 95.95 s -- ratio 5.757  (WALL CLOCK IS BEHIND)
+  fps      10.4 effective
+```
+
+**Everything is in `gx`, and it is not the geometry.** 27,041 vertices per
+frame across 360 draws is 75 vertices a draw, and 83 ms / 360 draws is
+**230 µs of fixed cost per draw**. A G4 transforms and lights 75 vertices in
+single-digit microseconds. The cost is per-draw state: `gl13_apply_transform`,
+`gl13_apply_raster_state` and `gx_tev_apply` re-emit the entire GL pipeline
+configuration — six texture units of `glTexEnv*`, matrices, blend, alpha, z —
+for every single `glDrawArrays`, and on this driver each of those provokes
+validation. **The fix is state caching: track what GL already has and emit only
+the difference.** That is a well-understood piece of work, it is the single
+largest speed item in the project, and M3 should do it before anything else.
+
+One cost was already found and removed. The texture cache is content-keyed on
+purpose — the game reuses one buffer for different images and calls
+`GXInvalidateTexAll` on every sprite pass, so there is no invalidation signal
+worth honouring — but it was hashing every texture **in full on every bind**,
+and at 427 binds a frame with a 270 KB logo that is megabytes of FNV per frame
+on a 1 GHz machine. After a buffer's first sight the hash is now sampled:
+header, tail and a bounded spread of interior points, 4 KB total, with the
+first sight always hashed in full so a texture is never wrong when it appears.
+`--texhash-full` restores the exhaustive hash, which is how to prove a
+suspected staleness bug is or is not this. The run above reports 99 MB hashed
+in full against 1.4 GB sampled.
+
+### 12.8 Determinism, proved
+
+`--seed N` is the deterministic clock started at a chosen reading, and it is
+the port's whole RNG-seed story. The game has exactly two random sources and
+**both seed from `OSGetTime` and from nothing else**:
+
+- `src/game/frand.c:13` — `frandom(0)` is `rand8() ^ (s64)OSGetTime() ^ 0xD826BC89`, reached once from `init.c:77`;
+- `src/game/board/main.c:1432` — `BoardRandInit()` sets `boardRandSeed = OSGetTime()`;
+
+and `rand8`'s own `rnd_seed` is the literal `0x0000D9ED` in `main.c:134`. So
+moving the clock's origin moves both generators together, through the game's
+own seed sites — no patch to game source, no second seeding path to keep in
+step, and the two RNGs keep the relationship to each other that they have on
+the console. `--seed` implies `--deterministic`.
+
+Two independent runs on the G4, `--frames 260 --noaudio --seed 12345
+--dumpframe 120,200,250`:
+
+```
+run A  757e95efaf39876580f6852102be0072  frame-00120.ppm
+       757e95efaf39876580f6852102be0072  frame-00200.ppm
+       80a2f1dee0d65d8e175289184fe4b84f  frame-00250.ppm
+run B  757e95efaf39876580f6852102be0072  frame-00120.ppm
+       757e95efaf39876580f6852102be0072  frame-00200.ppm
+       80a2f1dee0d65d8e175289184fe4b84f  frame-00250.ppm
+```
+
+Byte-identical. (The two 120/200 hashes matching each other is the logo
+holding still, not a bug.)
+
+### 12.9 Audio on the G4, and what M6 actually needs first
+
+Run deliberately **without** `--noaudio`; the whole narration is
+[`docs/g4-audio-first-sound.log`](g4-audio-first-sound.log). Three results.
+
+**`msmSysInit` succeeds on the G4.** No failure, no hang in `HuAudInit`, and
+`--noaudio` is not needed: the boot reaches the title screen with the sound
+manager live. `src/msm` reads `/sound/mpgcsnd.msm` correctly because the file
+is big-endian and so is the machine — the same story as the sprite banks.
+
+**There is no `dspSlave` command batch to log yet, and the reason is
+structural.** MusyX's DSP command list is built by `extern/musyx`'s
+`hw_dspctrl.c` and handed over by `hw_dolphin.c`, and **`extern/musyx` is not in
+the build**: all 52 `snd*` entry points are generated stubs, so nothing
+downstream of `sndInit` exists to emit a batch. M6's first task is therefore not
+"interpret the DSP command list" but "compile `extern/musyx` above the SAL and
+write `port/src/audio/musyx_sal.c`"; the command list appears the moment that
+happens, and `hw_dspctrl.c` is its own specification.
+
+**The first sound is a stream, not a sequence.** The first sound the game asks
+for is `MSM_SE_SEL_01` / `SE Num 0`, the title screen's selection effect, and
+what it reaches is `sndStreamMixParameterEx`, `sndStreamFrq`,
+`sndStreamADPCMParameter`, `sndStreamARAMUpdate`, `sndStreamActivate` — twice.
+That is `msmstream.c`'s ADPCM streaming path into ARAM, not the sequencer. So
+the first thing M6 has to make audible is the ADPCM stream; the sequencer,
+voice and ADSR machinery can follow. The 18 stubs' first-call order in that log
+is the implementation order.
+
+### 12.10 Tooling added, and one build bug worth naming
+
+| flag | what |
+|---|---|
+| `--glinfo` | the driver's strings, twelve limits and every extension, one per line |
+| `--perf` | per-frame game/gx/present with mean, median, p95 and worst, plus both clocks and the ratio between them |
+| `--drawlog N` | explains the first N draws in full: geometry after the CPU transform, raster colour, the texture actually bound, projection, TEV inputs, alpha compare, blend, z, scissor, and any pending GL error — and the first N display-list replays, opcode by opcode |
+| `--dumptex` | every decoded texture as it was decoded: colour as PPM, alpha as PGM, because an alpha test judges the alpha |
+| `--seed N` | §12.8 |
+| `--texhash-full` | §12.7 |
+| `--dumpframe SPEC` | now a frame *set*: `187`, `1,90,186`, or `1-400/20` |
+
+`--watchdog` was a stopwatch pretending to be a watchdog: a plain `alarm(N)`
+that fired after N seconds whether or not the game was healthy and then
+reported "the game is not making progress". When the game is merely slower than
+N seconds that is a lie, and it cost an hour here — it fired inside
+`GXCallDisplayList` and sent this session hunting an infinite loop in a
+display-list parser that turned out to be correct. It now re-arms every period
+and reports only when the retrace count has not moved.
+
+**The build had no header dependencies.** `$(BUILD)/port/%.o: %.c` and nothing
+else, so editing `port/include/port.h` rebuilt *nothing*. Adding fields to
+`PortOptions` therefore left every object but `main.c` on the old struct
+layout, and `--gxwarn` set whatever field used to live at that offset — which
+was `headless`. The run then quietly skipped the window and reported a full set
+of `--perf` numbers for a pipeline that never drew, which is a wonderfully
+misleading thing to measure. Compiles now pass `-MMD -MP` and the Makefile
+includes the `.d` files. If any single change in this session will save the
+most time later, it is that one.
+
+### 12.11 What M3 needs
+
+In order:
+
+1. **Per-draw GL state caching** (§12.7). 230 µs of fixed cost per draw is the
+   whole performance story, and menus draw more than the title does.
+2. **The 3D layer at the title** (§12.4). The draws happen; the pixels do not.
+   `--drawlog` on the first model draw, then the depth configuration.
+3. **PAD.** `port/src/pad/pad_none.c` is still a stub, so nothing can press
+   START and the title screen is where the boot ends. SDL2 game controller plus
+   the SBK ports' IOKit Xbox One driver, per §2.3.
+4. **CARD.** `card_none.c` likewise; the memory card is mandatory past the
+   title (`port/ref/notes.md`), so M3 cannot finish without it.
+5. The four `GX_TF_Z24X8`/`GX_TF_Z8` depth copies, which have no obvious GL 1.3
+   home now that `ARB_depth_texture` is known absent (§12.2).
