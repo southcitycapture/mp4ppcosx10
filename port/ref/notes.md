@@ -101,6 +101,14 @@ DLL_bootdll        src/REL/bootDll/          logos, opening THP, title, attract 
        └─ Option ──► DLL_option
 ```
 
+Observed on the rig (see `movies/key-frames.md` §B), holding START from boot skips both
+logos and the 70 s opening movie and lands on the title in ~300 frames. Accepting the
+title gives, in order: **SELECT A FILE** (three save slots) → new-file opening scene
+(letter, card fan, "Pick a card to get this party started!") → **PARTY MODE** stage →
+"Would you like to hear the rules for the Board Map?" → "One human player and three
+computer players are joining this party." → **character select** → **board settings**
+(Teams / Turns 20 / Mini-Games ALL / Bonus ON / Handicap).
+
 Character/handicap selection is `src/REL/selmenuDll/`. Minigame metadata (overlay id,
 type, record index, name, data dir, instruction pictures) is the table `mgInfoTbl[]` at
 `src/game/objsub.c:11`, address `0x80131350`.
@@ -119,7 +127,8 @@ char *diffStr[] = { "EASY", "NORMAL", "HARD", "VERYHARD" };
 ```
 
 So difficulty is chosen **per CPU player on the character-select screen**, not once for
-the match. It can also be changed mid-board from the pause menu
+the match — confirmed on the rig: at `menu-2800.png` the three CPU slots each carry a
+`COM` badge above an `EASY` badge, and player 1 carries `1P`. `EASY` is the default. It can also be changed mid-board from the pause menu
 (`src/game/board/pause.c:948`, which writes both `GWPlayer[i].diff` and
 `GWPlayerCfg[i].diff`). **Very Hard is locked** behind `GWGameStat.veryHardUnlock`,
 which is set only by finishing Story mode (`src/REL/mstory2Dll/ending.c:106`) — so on a
@@ -153,9 +162,16 @@ The AI consumes `GWPlayer[p].diff` in `src/game/board/com.c` (lines 386, 415, 44
   `WRONGDEVICE` → msg 7, `FATAL_ERROR` → msg 1, `NOCARD` → msg 0, `BROKEN` → offer to
   format (msg 5).
 
-The rig runs with **no card in either slot** (`SlotA = SlotB = 255`), which is the
-simplest reproducible state: no save is ever written, so every capture starts from
-identical game state.
+**A card is mandatory to get past the title.** With both slots empty the rig reaches
+SELECT A FILE, prints "No valid Memory Card is inserted.", and stops there — pressing A
+for thousands of frames does nothing. So the "degraded state" the code describes is
+degraded enough to be a dead end in practice: the pinned config uses `SlotA = 1`
+(`EXIDeviceType::MemoryCard`) with Dolphin's auto-created `.raw`.
+
+The card is therefore part of the reproducibility surface. A capture that must be
+repeatable has to **delete the card before each run** so `GWGameStat` comes back at its
+`GWInit` defaults (`veryHardUnlock = 0`, no records, no unlocks) and the menus take the
+same branches. The card image is not committed.
 
 ## 6. Determinism — what the port must get right
 
@@ -242,7 +258,12 @@ to stay aligned:
   input array, nothing to reuse. The clean insertion point for a port-side replay layer
   is `HuPadRead()` (`src/game/pad.c:130`) — everything downstream reads only the
   `HuPadBtn` / `HuPadBtnDown` / `HuPadBtnRep` / `HuPadStkX` … globals, so a shim there
-  covers the whole game.
+  covers the whole game. The reference rig injects at exactly the mirror-image point:
+  it writes the *private* `_PadBtn` / `_PadBtnDown` / `_PadDStk` arrays from a Dolphin
+  Gecko code at the VI hook, which `HuPadRead` then latches on the next frame. Writing
+  the public `HuPad*` globals does **not** work — `HuPadRead` runs after the hook and
+  overwrites them. Build the port's replay layer to feed `_Pad*`, not `HuPad*`, and the
+  same input scripts drive both.
 * Button auto-repeat is 20 frames of delay then every frame (`pad.c:187`); stick repeat
   is 20 then every 2. A replay layer must feed `HuPadRead` raw state and let the repeat
   logic run, not synthesise `BtnDown` itself.

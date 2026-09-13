@@ -1,0 +1,61 @@
+# menu-walk -- boot to the Party Mode board-settings screen.
+#
+# Compile:  ../tools/mkgecko.py menu-walk.txt "$MP4_USERDIR/GameSettings/GMPE01.ini" --name RefMenuWalk
+# Capture:  ../tools/capture.sh 150 /tmp/walk -C Dolphin.Core.EnableCheats=True
+#
+# Frame numbers are the game's own GlobalCounter (0x801D3A54).
+# Requires a memory card in slot A -- the game cannot pass SELECT A FILE without one --
+# and a FRESHLY CREATED one, or the save state changes what the menus do.
+#
+# Verified to reach: title -> file select -> new-file scene -> Party Mode ->
+# character select (1P + 3 COM, all EASY) -> board settings. See key-frames.md.
+
+# Hold START through the logos and the 70 s opening movie, which are both skippable.
+at 10 320 START
+
+# Accept the title. Three pulses because the exact frame the title starts taking
+# input was not pinned down; a single pulse at 380 is enough in practice.
+at 380 6 START
+at 430 6 START
+at 480 6 START
+
+# Walk forward with A: file select, the new-file scene, and the Party Mode prompts.
+at 560 6 A
+at 650 6 A
+at 740 6 A
+at 830 6 A
+at 920 6 A
+at 1010 6 A
+at 1100 6 A
+at 1190 6 A
+at 1280 6 A
+at 1370 6 A
+at 1460 6 A
+at 1550 6 A
+at 1640 6 A
+at 1730 6 A
+at 1820 6 A
+at 1910 6 A
+at 2000 6 A
+at 2090 6 A
+at 2180 6 A
+at 2270 6 A
+at 2360 6 A
+at 2450 6 A
+at 2540 6 A
+at 2630 6 A
+at 2720 6 A
+at 2810 6 A
+at 2900 6 A
+at 2990 6 A
+at 3080 6 A
+at 3170 6 A
+at 3260 6 A
+at 3350 6 A
+at 3440 6 A
+at 3530 6 A
+at 3620 6 A
+at 3710 6 A
+at 3800 6 A
+at 3890 6 A
+at 3980 6 A

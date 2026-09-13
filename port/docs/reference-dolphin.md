@@ -25,7 +25,8 @@ Where upstream Dolphin differs from this build, that is called out.
 | Video (AVI/MP4) frame dump | **No** — the binary is built without FFmpeg |
 | Audio dump (`Dolphin.DSP.DumpAudio`) | Untested; the FFmpeg-less build still writes raw WAV |
 | Input movie record (`.dtm`) | GUI only (Movie ▸ Start Recording Input) |
-| Input movie playback (`.dtm`) | **Yes, from the CLI** — `-m <file>` |
+| Input movie playback (`.dtm`) | **No — `-m <file>` is silently ignored in this build.** See §5.1 |
+| Frame-exact input injection | **Yes**, via Gecko codes conditioned on the game's frame counter — see §5.2 |
 | Load savestate from CLI | **Yes** — `-s <file>` |
 | Save savestate from CLI | **No** — hotkey/GUI only |
 | Take screenshot from CLI | **No** — hotkey (F9) or GUI only |
@@ -35,10 +36,10 @@ Where upstream Dolphin differs from this build, that is called out.
 | Debugger UI (`-d`) | **Yes** — memory view, watches, breakpoints, "Dump MRAM" |
 | MemoryWatcher UNIX socket | Compiled path present in the binary; **needs verification** (see §7) |
 
-Consequences for the rig: **PNG-sequence frame dumping plus CLI `.dtm` playback is the
-whole automation surface.** There is no scripting hook, so anything that needs to be
-"pressed" has to arrive as movie input, and anything that needs to be read out of RAM
-has to come from the debugger UI or an external memory reader.
+Consequences for the rig: **PNG-sequence frame dumping plus Gecko-code input injection
+is the whole automation surface.** `.dtm` playback, the obvious choice, does not work
+here (§5.1). Anything that needs to be read out of RAM has to come from the debugger UI
+or an external memory reader.
 
 ## 2. Launching from the command line
 
@@ -184,45 +185,105 @@ with no CLI trigger. Ignore them; the frame dump is strictly better for this pur
 
 ## 5. Input movies (`.dtm`)
 
-### Playing one
+### 5.1 `-m` does not work in this build
+
+In principle:
 
 ```sh
 Dolphin -u "$MP4_USERDIR" -b -e "$ISO" -m /path/to/movie.dtm
 ```
 
-The header carries a `bSaveConfig` flag; when set, Dolphin applies the emulation
-settings recorded in the header (dual-core, DSPHLE, CPU core, EFB/XFB options, memcards,
-language, RTC) on top of everything else, which is what makes a movie reproducible
-across machines. `Dolphin.Movie.PauseMovie=True` pauses at the end of playback rather
-than letting the game run on with dead input.
+In practice, on Dolphin 2506-433 for macOS, **this silently does nothing.** The movie is
+opened and its header is validated, but the movie never becomes active. Evidence, all
+reproducible with `port/ref/tools/capture.sh`:
 
-### Recording one
+1. A movie holding START from poll 4460 through the title screen changes nothing — the
+   captured frames are **md5-identical** to an unattended run at frames 4500/5000/6000.
+2. A movie setting the `reset` bit does not reset the console (`PlayController` calls
+   `ProcessorInterface::ResetButton_Tap()` on that bit).
+3. `Dolphin.Movie.PauseMovie=True` with a 1,210-poll movie does not pause: the run kept
+   dumping to 1,632 frames.
+4. **The decisive test.** `ReadHeader()` installs a movie config layer that sets
+   `MAIN_GFX_BACKEND` from the header's `videoBackend` field, and the movie layer
+   outranks the command-line layer. Patching a movie's `videoBackend` to `Null` and
+   launching with `-v Vulkan` should therefore produce **zero** frames. It produced
+   1,447. The movie config layer is never installed, so `PlayInput()` is failing.
+5. It is not a bad header: corrupting `filetype` to `XXXX` and enabling panic handlers
+   *does* raise the "Invalid recording file" modal (44 frames before the modal blocked
+   the run) while the valid file raises nothing. So the file is read and the magic
+   passes.
+6. It is not the RetroAchievements hardcore-mode gate (`PlayInput` returns false
+   silently when `IsHardcoreModeActive()`): disabling it via `Config/RetroAchievements.ini`
+   *and* `-C Achievements.Achievements.HardcoreEnabled=False` changed nothing, and in
+   any case `ReadHeader()` runs *before* that check, so test 4 would still have fired.
+
+Reading the 2506 tag's `MainWindow.cpp:301` and `Movie.cpp:904`, there is no remaining
+silent-false path, so the cause is specific to this binary. **Do not build the rig on
+`.dtm` playback until this is retested on a newer Dolphin.** Verifying it through the
+GUI (Movie ▸ Play Input Recording…) would settle it in a minute and was not possible
+here.
+
+`port/ref/tools/mkdtm.py` is kept because the writer itself is correct and verified
+against the format, and because the moment `-m` works (or a movie is loaded through the
+GUI) it becomes the better mechanism — a `.dtm` pins the emulation settings and the RTC
+in the file, which Gecko codes cannot.
+
+### 5.2 What is used instead: Gecko-code input injection
+
+`port/ref/tools/mkgecko.py` compiles a frame-numbered input script into Dolphin Gecko
+codes that write the game's own pad globals. This works, and for a port reference it is
+arguably the better mechanism, because the schedule is expressed in **the game's own
+`GlobalCounter`** rather than an emulator-side poll index.
+
+Why it is sound rather than a hack: `HuPadRead()` (`src/game/pad.c:130`) copies the
+private `_Pad*` arrays into the public `HuPad*` globals once per frame and then clears
+`_PadBtnDown`. Dolphin's Gecko handler runs at the VI hook, which lands between
+`PadReadVSync()` filling `_Pad*` and the next `HuPadRead()` reading them, so a write to
+`_PadBtn` / `_PadBtnDown` / `_PadDStk` is indistinguishable from a real press.
+
+Writing the *public* `HuPadBtn` / `HuPadBtnDown` does **not** work — `HuPadRead` runs
+after the hook and overwrites them. That was tested and produced no effect.
+
+Script syntax:
+
+```
+at 10 320 START        # hold START for 320 frames from GlobalCounter == 10
+at 560 6  A            # tap A for 6 frames at frame 560
+at 900 4  dstk:DOWN    # menu cursor down (writes _PadDStk / _PadDStkRep)
+mark 380 title_accept
+```
+
+```sh
+port/ref/tools/mkgecko.py walk.txt "$MP4_USERDIR/GameSettings/GMPE01.ini" --name RefWalk
+port/ref/tools/capture.sh 150 out/walk -C Dolphin.Core.EnableCheats=True
+```
+
+Each event compiles to a `24`/`26` unsigned compare pair on `GlobalCounter`
+(`0x801D3A54`), the 8- or 16-bit writes, and an `E0000000 80008000` full terminator.
+
+Limits: Gecko codes do **not** pin the emulation settings or the RTC the way a `.dtm`
+header does, so the pinned config in `port/ref/dolphin-user/` is doing that job and must
+travel with any capture. And the codes fire on `GlobalCounter`, so a run that drops a
+frame relative to the reference shifts every subsequent input — which is a feature when
+comparing against a port (the port's own counter drives it identically) and a nuisance
+when the emulator hiccups.
+
+### Recording a `.dtm`
 
 Only through the GUI: **Movie ▸ Start Recording Input**, play, then **Movie ▸ Export
-Recording…**. There is no CLI or scripted recorder.
-
-### Authoring one — the approach this rig uses
-
-Because the format is stable, documented, and trivially packable, the rig **generates**
-`.dtm` files from a text script instead of recording them:
-`port/ref/tools/mkdtm.py`. That makes an input sequence a diffable, reviewable,
-regenerable source file rather than an opaque binary, and it removes the GUI from the
-loop entirely.
+Recording…**. There is no CLI or scripted recorder. `port/ref/tools/mkdtm.py` generates
+one from the same kind of text script instead:
 
 ```
 frames 900          # 900 polls of neutral input
 mark   title
 press  START
 frames 120
-hold   LEFT
-frames 10
-release all
 stick  128 255      # main stick fully up
 tap    A 3
 ```
 
-`mkdtm.py script.txt out.dtm` writes the movie and a sidecar `out.dtm.marks` mapping
-labels to poll numbers, which is what the frame-comparison list is keyed on.
+It writes the movie plus a sidecar `out.dtm.marks` mapping labels to poll numbers.
 
 ### The format
 
@@ -362,7 +423,8 @@ Everything lives in `port/ref/tools/`.
 | Tool | Purpose |
 | --- | --- |
 | `capture.sh <secs> <outdir> [args…]` | Headless run with the pinned config; dumps PNGs, SIGTERMs the emulator, moves `Dump/Frames` to `<outdir>/frames`. Pass `-m movie.dtm` through to replay a movie. |
-| `mkdtm.py <script> <out.dtm>` | Compile a text input script to a `.dtm` plus a `.marks` sidecar. |
+| `mkgecko.py <script> <out.ini>` | **The working input path.** Compile a frame-numbered input script to a Dolphin per-game Gecko code list. |
+| `mkdtm.py <script> <out.dtm>` | Compile a text input script to a `.dtm` plus a `.marks` sidecar. Correct, but playback is broken in this build (§5.1). |
 | `contact.sh <framedir> <a> <b> <step> <out.png> [cols]` | Numbered contact sheet, for scanning thousands of frames quickly. |
 | `pick.sh <framedir> <dest> <prefix> <a> <b> <step>` | Downscale selected frames to 320×264 and name them by their original frame number. |
 
@@ -378,9 +440,10 @@ port/ref/tools/capture.sh 480 /tmp/mp4-ref/boot
 # scan it
 port/ref/tools/contact.sh /tmp/mp4-ref/boot/frames 1 6000 100 /tmp/cs.png 6
 
-# replay a scripted movie
-port/ref/tools/mkdtm.py port/ref/movies/first-minigame.txt /tmp/first.dtm
-port/ref/tools/capture.sh 600 /tmp/mp4-ref/mg -m /tmp/first.dtm
+# replay a scripted input sequence
+port/ref/tools/mkgecko.py port/ref/movies/menu-walk.txt \
+    "$MP4_USERDIR/GameSettings/GMPE01.ini" --name RefWalk
+port/ref/tools/capture.sh 150 /tmp/mp4-ref/walk -C Dolphin.Core.EnableCheats=True
 
 # promote the frames that matter into the repo
 port/ref/tools/pick.sh /tmp/mp4-ref/boot/frames port/ref/frames boot 1 6000 100
@@ -388,6 +451,25 @@ port/ref/tools/pick.sh /tmp/mp4-ref/boot/frames port/ref/frames boot 1 6000 100
 
 Full-size 640×528 PNGs stay outside the repo (they are ~150 KB each); only the 320×264
 selections are committed.
+
+## 8a. A memory card is required past the title
+
+With both EXI slots empty the game reaches **SELECT A FILE**, prints "No valid Memory
+Card is inserted.", and cannot go any further — no amount of A will get past it. The
+pinned config therefore uses:
+
+```ini
+[Core]
+SlotA = 1            # ExpansionInterface::EXIDeviceType::MemoryCard
+MemcardAPath = <userdir>/GC/MemoryCardA.USA.raw
+SlotB = 255          # None
+```
+
+Dolphin creates the `.raw` on first use. Keep it **out of the repo** and delete it to
+return to a virgin save state — `GWGameStat` defaults (including `veryHardUnlock = 0`)
+come back with it, which is what makes a capture reproducible. Note that a run which
+gets as far as saving will mutate the card, so a capture script that must be repeatable
+should delete the card before each run.
 
 ## 9. Known limitations
 
@@ -397,11 +479,18 @@ selections are committed.
   Anything that must end at a precise frame should be driven by a `.dtm` of exactly
   that length with `Dolphin.Movie.PauseMovie=True`.
 * **No CLI screenshot and no CLI savestate save**, so a capture cannot checkpoint itself.
-* **No scripting**, so the input script cannot branch on what is on screen. Authoring a
-  movie is an offline loop: write script → replay → look at frames → adjust.
-* **A movie is only valid against one disc revision and one set of emulation settings.**
-  Changing `SIDevice*`, dual-core, or DSP settings between authoring and replay will
-  desynchronise it.
+* **No scripting**, so the input script cannot branch on what is on screen. Authoring an
+  input sequence is an offline loop: write script → replay → look at frames → adjust,
+  at roughly 30 emulated frames per second of wall clock. Reaching a board and a
+  minigame from boot is on the order of 12,000 frames, i.e. ~7 minutes per attempt.
+* **`.dtm` playback is broken in this build** (§5.1), so the reproducibility guarantees
+  a movie header provides (pinned RTC and emulation settings travelling *with* the
+  input) are not available. The pinned user directory has to carry them instead.
+* **An input sequence is only valid against one disc revision and one set of emulation
+  settings.** Changing `SIDevice*`, dual-core, DSP settings, or the memory-card contents
+  between authoring and replay will desynchronise it.
+* **Gecko codes require `Dolphin.Core.EnableCheats=True`**, which is a global switch; do
+  not leave it on in a configuration used to validate anything else.
 * **The disc is an NKit image.** Dolphin reads it natively but requires
   `Interface.SkipNKitWarning=True`; the recovered image is bit-identical for emulation
   purposes but its MD5 does not match the original ISO, so leave the `.dtm` `md5` field

@@ -1,0 +1,7 @@
+# Full-size 640x528 captures and Dolphin runtime state never belong in the repo.
+dolphin-user/Dump/
+dolphin-user/GC/
+dolphin-user/StateSaves/
+dolphin-user/Cache/
+dolphin-user/Logs/
+dolphin-user/GameSettings/
