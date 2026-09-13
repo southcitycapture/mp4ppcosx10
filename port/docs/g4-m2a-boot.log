@@ -1,0 +1,276 @@
+Mario Party 4 -- M2a (REL modules as dlopen'ed bundles) on the real Power Mac G4
+================================================================================
+
+Captured 2026-09-13, an hour after docs/g4-boot.log, on the same bench: Power
+Mac G4, Mac OS X 10.5.4 (9E25), big endian.  This is the M2a work rebased and
+cross-built for PowerPC, with 99 REL bundles in the .app next to the executable.
+
+    ./MarioParty4.app/Contents/MacOS/isle --reltest
+    ./MarioParty4.app/Contents/MacOS/isle --frames 900
+
+--------------------------------------------------------------------------------
+1.  --reltest: PLAN risk #2 is closed on hardware
+--------------------------------------------------------------------------------
+
+Mario Party 4 -- native port, milestone M2a
+port> REL bundles: 99 in /Users/zach/./MarioParty4.app/Contents/MacOS/rels
+port> --reltest: 99 module bundles, two load/unload rounds each
+port> --reltest: 198/198 load+unload cycles clean, 0 failed, 0 missing an entry point, 0 still resident after dlclose
+
+The whole test takes 0.241 s: 99 PowerPC MH_BUNDLEs, dlopen'ed and dlclose'd
+twice each, and dyld on 10.5.4 really unloaded every one of them -- checked
+per unload with dlopen(RTLD_NOLOAD), not assumed.  The by-hand bss-zeroing
+fallback in dll_load.c was never needed.  Identical to the host result
+(198/198, 0 still resident), which is the answer PLAN.md §4 risk 2 wanted and
+could not get anywhere but here.
+
+One PowerPC-only build fix was needed to get there: dll_load.c called
+getsegbynamefromheader(), which the MacOSX10.4u SDK does not have.  The 32-bit
+branch now walks the load commands for __TEXT itself (five lines, no SDK
+version needed at all).  The 64-bit host branch is untouched.
+
+--------------------------------------------------------------------------------
+2.  The boot, 900 frames
+--------------------------------------------------------------------------------
+
+`stub>` first-call lines removed for length; the full stub tally is at the end.
+
+Mario Party 4 -- native port, milestone M2a
+port> DVD: disc image /Users/zach/MarioParty4/mp4.nkit.iso, 357 files in the FST
+port> entering the game's own main()
+
+port> OSInit: MEM1 24 MB, ARAM 16 MB, bus 162 MHz
+port> DVDInit
+port> VIInit
+port> PADInit: no controllers (M3 brings SDL2 + the Xbox One driver)
+port> OSCreateHeap 0: 0x192c000..0x3000000 (23375 KB)
+port> VIConfigure: 640x480 xfb, 640x480 efb, tv mode 0
+port> OSCreateThread 0x144508 func 0x417dc (the soft-reset watcher; not started)
+HuMem> left memory space 2383KB(2441120)
+port> ARInit: 16 MB of ARAM
+port> CARDInit: no card in either slot
+port> PADInit: no controllers (M3 brings SDL2 + the Xbox One driver)
+DLL DBG OUT
+objman>Call New Ovl 1(1)
+++++++++++++++++++++ Start New OVL 1 (EVT:0 STAT:0x00000000) ++++++++++++++++++
+======== HuMem heap dump 01a2c018 ========
+MCB-----+Size----+MG+FL+Prev----+Next----+UNum----+Body----+Call----
+01a2c018 0000a020 a5 01 01a3e1f8 01a36038 ffffff00 01a2c038 00007fd8
+01a36038 000081c0 a5 01 01a2c018 01a3e1f8 ffffff00 01a36058 0003bf00
+01a3e1f8 0022de20 cd 00 01a36038 01a2c018 00000000 01a3e218 0003bf00
+MCB:3(2/1) MEM:00240000(000121e0/0022de20)
+======== HuMem heap dump 01a2c018 end =====
+======== HuMem heap dump 01dac030 ========
+MCB-----+Size----+MG+FL+Prev----+Next----+UNum----+Body----+Call----
+01dac030 00a80000 cd 00 01dac030 01dac030 ffffff00 01dac050 cdcdcdcd
+MCB:1(0/1) MEM:00a80000(00000000/00a80000)
+======== HuMem heap dump 01dac030 end =====
+======== HuMem heap dump 0282c03c ========
+MCB-----+Size----+MG+FL+Prev----+Next----+UNum----+Body----+Call----
+0282c03c 00580000 cd 00 0282c03c 0282c03c ffffff00 0282c05c cdcdcdcd
+MCB:1(0/1) MEM:00580000(00000000/00580000)
+======== HuMem heap dump 0282c03c end =====
+objman>Used Memory Size:000121e0
+objman>Used Memory Cnt:2
+objman>Init esp
+objman>Call objectsetup
+DLLStart 1 0
+Search:dll/bootdll.rel
+objdll>Link DLL:dll/bootdll.rel
+Rest Memory 580000
+port> REL bundles: 99 in /Users/zach/./MarioParty4.app/Contents/MacOS/rels
+===== DLL Module Info dump ====
+                   ID:0x00000001
+             LinkPrev:0x00000000
+             LinkNext:0x00000000
+          Section num:14
+Section info tbl ofst:0x00000048
+           nameOffset:0x00000000
+             nameSize:47
+              version:0x00000002
+===============================
+==== DLL Module Header dump ====
+          bss Size:0x0000005c
+        rel Offset:0x00005c9d
+        imp Offset:0x00007a4d
+    prolog Section:1
+    epilog Section:1
+unresolved Section:0
+       prolog func:0x00000000
+       epilog func:0x00000054
+   unresolved func:0x00000000
+================================
+objdll>LinkOK 01a3e578 0030b5c0
+objdll> dll/bootdll.rel prolog start
+******* Boot ObjectSetup *********
+objman>InitObjMan start
+objman>InitObjMan end
+objdll> dll/bootdll.rel prolog end
+objman>ObjectSetup end
+DLL DBG OUT
+Rest Memory 57d540
+ARAM Trans 808000
+Rest Memory 55d020
+ARAM Trans 80aaa0
+Rest Memory 506400
+ARAM Trans 82da60
+Rest Memory 564f40
+ARAM Trans 8a7640
+Rest Memory 5395a0
+data num 74000b
+Rest Memory 1f08c0
+
+port> --frames 900 reached: 900 retraces in 15.87 s wall (game clock 15.02 s)
+
+---- SDK surface hit at boot: 83 distinct stubs, in first-call order ----
+   1  GXInit                                  1
+   2  GXSetViewport                        4465
+   3  GXSetScissor                         4463
+   4  GXSetDispCopySrc                        1
+   5  GXSetDispCopyDst                        1
+   6  GXSetDispCopyYScale                     1
+   7  GXSetCopyFilter                         1
+   8  GXSetPixelFmt                           1
+   9  GXCopyDisp                            894
+  10  GXSetDispCopyGamma                      1
+  11  sndIsInstalled                          1
+  12  AIInit                                  1
+  13  sndSetHooks                             1
+  14  sndInit                                 1
+  15  AIRegisterDMACallback                   1
+  16  sndStreamAllocEx                        2
+  17  sndAuxCallbackPrepareReverbHI           1
+  18  sndAuxCallbackPrepareDelay              1
+  19  sndSetAuxProcessingCallbacks            1
+  20  sndOutputMode                           2
+  21  sndVolume                               1
+  22  GXSetFog                                1
+  23  GXSetDrawSyncCallback                   1
+  24  GXInvalidateVtxCache                 1785
+  25  GXInvalidateTexAll                   3571
+  26  GXSetGPMetric                         893
+  27  GXClearGPMetric                       893
+  28  GXSetVCacheMetric                     893
+  29  GXClearVCacheMetric                   893
+  30  GXClearPixMetric                      893
+  31  GXClearMemMetric                      893
+  32  GXSetCopyClear                        893
+  33  GXSetDrawSync                        1786
+  34  GXSetCurrentMtx                      1819
+  35  GXSetProjection                      3571
+  36  GXClearVtxDesc                       2711
+  37  GXSetVtxDesc                         6282
+  38  GXSetVtxAttrFmt                      6282
+  39  GXSetCullMode                        1785
+  40  GXSetZMode                           3604
+  41  GXLoadPosMtxImm                      1817
+  42  GXSetChanMatColor                     957
+  43  GXSetNumChans                        1817
+  44  GXSetChanCtrl                        1817
+  45  GXSetTevOrder                        2708
+  46  GXSetTevOp                           1817
+  47  GXSetNumTexGens                      1817
+  48  GXSetNumTevStages                    1817
+  49  GXSetAlphaUpdate                      926
+  50  GXSetColorUpdate                      926
+  51  GXSetAlphaCompare                    1817
+  52  GXSetBlendMode                       1817
+  53  GXBegin                              2244
+  54  GXPosition2u16                        132
+  55  GXEnd                                 924
+  56  GXSetArray                            893
+  57  GXInitTexObj                          893
+  58  GXInitTexObjLOD                      1784
+  59  GXLoadTexObj                         1784
+  60  GXSetTexCoordGen2                    1784
+  61  GXSetZCompLoc                        1784
+  62  GXDrawDone                            893
+  63  GXReadGPMetric                        892
+  64  GXReadVCacheMetric                    892
+  65  GXReadPixMetric                       892
+  66  GXReadMemMetric                       892
+  67  GXSetChanAmbColor                     891
+  68  GXSetTevColorIn                       891
+  69  GXSetTevColorOp                       891
+  70  GXSetTevAlphaIn                       891
+  71  GXSetTevAlphaOp                       891
+  72  GXInitTlutObj                         891
+  73  GXLoadTlut                            891
+  74  GXInitTexObjCI                        891
+  75  GXPosition3f32                       3564
+  76  GXTexCoord2f32                       3564
+  77  GXBeginDisplayList                   1320
+  78  GXResetWriteGatherPipe               1320
+  79  GXPosition1x16                      97944
+  80  GXNormal1x16                        97944
+  81  GXTexCoord1x16                      97268
+  82  GXEndDisplayList                     1320
+  83  GXColor1x16                          1344
+---- 398743 stub calls total ----
+
+--------------------------------------------------------------------------------
+3.  What changed against docs/g4-boot.log
+--------------------------------------------------------------------------------
+
+bootDll loads and runs.  Where the M1 log stopped at
+`OSLink ... returning FALSE`, this one reads
+
+    objdll>LinkOK 01a3e578 0030b5b0
+    objdll> dll/bootdll.rel prolog start
+    ******* Boot ObjectSetup *********
+    objman>InitObjMan start
+    objman>InitObjMan end
+    objdll> dll/bootdll.rel prolog end
+
+and then the game simply runs.  Everything below is new on this target.
+
+ARAM IS NOW EXERCISED.  The G4 M1 log had to admit that `ARInit` was the only
+ARAM line and nothing ever transferred.  bootDll's asset load does four real
+transfers --
+
+    ARAM Trans 808000 / 80aaa0 / 82da60 / 8a7640
+
+-- interleaved with the game's own `Rest Memory` accounting, ending at
+`data num 74000b` and 0x1f08c0 free.  The 16 MB block is written and read on
+hardware, through the port's offset-indexed ARAM, with no fault.
+
+THE GX SURFACE OPENS UP.  66 distinct stubs at the M1 seam, 83 now, and the
+call counts stop being ones and twos: 97,944 GXPosition1x16, 97,944
+GXNormal1x16, 97,268 GXTexCoord1x16 inside 1,320 display lists, 891 TLUT
+loads, 893 GXDrawDone.  398,743 stub calls in 900 frames.  Seventeen entry
+points appear that the M1 boot never reached -- GXSetChanAmbColor, the four
+GXSetTev{Color,Alpha}{In,Op}, GXInitTlutObj, GXLoadTlut, GXInitTexObjCI,
+GXPosition3f32, GXTexCoord2f32, GXBeginDisplayList, GXResetWriteGatherPipe,
+GXPosition1x16, GXNormal1x16, GXTexCoord1x16, GXEndDisplayList, GXColor1x16 --
+and that indexed-vertex, display-list, colour-index-texture shape is the real
+work M3's GL 1.3 backend has to do.  §9.3's implementation order should be
+re-read against these counts rather than against M1's.
+
+SPEED.  900 retraces in 15.88 s wall against a 15.02 s game clock -- 56.7 fps
+where the target is 60 -- for 1.17 s of user CPU, about 7% of one 
+processor.  That number means nothing about the finished port (GX draws
+nothing yet) but it does say the engine, the coroutines, the DVD reads and the
+ARAM traffic together are not the problem: essentially the entire frame budget
+on this machine is still unspent and available to the GL backend.
+
+--------------------------------------------------------------------------------
+4.  One thing to fix in the tooling, and one wording nit
+--------------------------------------------------------------------------------
+
+M2a links SDL2 dynamically from the Docker mount path
+(/work/panther-sdl2/.../libSDL2-2.0.0.dylib), which does not exist on the G4,
+so the first push produced only
+
+    dyld: Library not loaded: /work/panther-sdl2/build-tiger-joy/prefix/lib/libSDL2-2.0.0.dylib
+
+make_bundle.sh now copies the dylib into Contents/Frameworks and rewrites the
+reference to @executable_path.  That rewrite has to be done by the *cross*
+toolchain's install_name_tool inside the build image -- the host's own refuses
+these binaries with "malformed load command 0 (cmdsize is zero)".  The two
+Snowboard Kids ports link SDL2 statically and avoid all of this; if this port
+does the same later, the block in make_bundle.sh becomes a no-op.
+
+`--watchdog` is `alarm(N)`, a hard deadline, and its message still says "the
+game is not making progress".  At M1 that was true.  At M2a a --watchdog 10
+run reports it after 541 perfectly healthy frames, which reads as a failure
+and is not one.  Use --frames to end a run now that the game runs.

@@ -25,6 +25,15 @@ import sys
 # boot sequence tests plenty of them.  Anything not listed returns zero.
 RETURN_OVERRIDES = {
     "GXGetTexBufferSize": "0x1000",
+    # MusyX's aux-effect setup functions answer TRUE on success, and msm reads
+    # that answer: msmSysSetAuxParam does `if (result == FALSE) return TRUE;`,
+    # so a stub answering 0 makes msmSysSetAux fail with MSM_ERR_INVALID_AUXPARAM
+    # (-31) and HuAudInit spin in `while (1)`.  Found on the G4 -- on the
+    # little-endian host msmSysInit never gets far enough to call them (§9.6).
+    "sndAuxCallbackPrepareReverbHI": "1",
+    "sndAuxCallbackPrepareReverbSTD": "1",
+    "sndAuxCallbackPrepareChorus": "1",
+    "sndAuxCallbackPrepareDelay": "1",
 }
 
 DECL_RE = re.compile(
@@ -188,8 +197,8 @@ def main():
                 % len(unknown))
         o.write('#include "port.h"\n\n')
         for sym in unknown:
-            o.write("long %s(void);\nlong %s(void) { port_stub(\"%s\"); return 0; }\n"
-                    % (sym, sym, sym))
+            o.write("long %s(void);\nlong %s(void) { port_stub(\"%s\"); return %s; }\n"
+                    % (sym, sym, sym, RETURN_OVERRIDES.get(sym, "0")))
     print("gen_stubs: %d stubs (%d typed, %d untyped) -> %s"
           % (len(wanted), len(known), len(unknown), args.out))
 

@@ -224,19 +224,29 @@ static void zero_bss(void* handle, const char* name) {
 #else
     {
         /* 32-bit Mach-O: the section header gives a link-time vmaddr, so it
-         * needs the image's slide.  `getsegbynamefromheader` is not in the
-         * 10.4 SDK, so find the image by its header address and ask dyld. */
+         * needs the image's slide, which is the loaded header address minus
+         * __TEXT's vmaddr. */
         const struct mach_header* mh = (const struct mach_header*)info.dli_fbase;
-        static const char* const names[2] = { "__bss", "__common" };
-        long slide = 0;
-        uint32_t i, n = _dyld_image_count();
-        int k;
-        for (i = 0; i < n; i++) {
-            if (_dyld_get_image_header(i) == mh) {
-                slide = (long)_dyld_get_image_vmaddr_slide(i);
-                break;
+        /* The MacOSX10.4u SDK the PowerPC cross build uses has no
+         * getsegbynamefromheader(), so walk the load commands for __TEXT
+         * directly -- five lines, and it needs no SDK version at all. */
+        const struct segment_command* seg = NULL;
+        {
+            const struct load_command* lc =
+                (const struct load_command*)((const char*)mh + sizeof(*mh));
+            uint32_t ci;
+            for (ci = 0; ci < mh->ncmds; ci++) {
+                if (lc->cmd == LC_SEGMENT &&
+                    !strncmp(((const struct segment_command*)lc)->segname, "__TEXT", 16)) {
+                    seg = (const struct segment_command*)lc;
+                    break;
+                }
+                lc = (const struct load_command*)((const char*)lc + lc->cmdsize);
             }
         }
+        long slide = seg ? (long)((char*)mh - (long)seg->vmaddr) : 0;
+        static const char* const names[2] = { "__bss", "__common" };
+        int k;
         for (k = 0; k < 2; k++) {
             const struct section* sec =
                 getsectbynamefromheader((struct mach_header*)mh, "__DATA", names[k]);

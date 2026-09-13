@@ -216,7 +216,16 @@ long OSCheckHeap(OSHeapHandle heap) {
             free_bytes += b->size;
         }
     }
-    return free_bytes;
+    /* Round down to the allocation granularity.  HuMemInitAll's last act is
+     * `ptr = OSAlloc(OSCheckHeap(h))` -- it asks how much is left and then asks
+     * for exactly that -- so an answer OSAlloc cannot honour is a wrong answer.
+     * OSAllocFromHeap rounds requests *up* to 32, and on the 32-bit target the
+     * block header is 12 bytes, so a free total is generically 20 (mod 32) and
+     * the round-up overshoots by 12.  On the 64-bit host the 16-byte header
+     * happened to leave the total already 32-aligned, which is why this only
+     * showed up on the G4: heap 4 was never created there and the boot logged
+     * "HuMem> Failed OSAlloc left space". */
+    return free_bytes & ~(long)(OS_ALLOC_ALIGN - 1);
 }
 
 void OSDumpHeap(OSHeapHandle heap) {

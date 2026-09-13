@@ -1998,3 +1998,181 @@ In order, because each one gates the next:
    find the matching pair once.
 5. Whatever `--gxwarn` names, in the order of how much of the screen it covers.
 
+
+---
+
+## 11. G4 first run — the M1 binary on real PowerPC hardware
+
+2026-09-13. Everything in §9 was measured on the little-endian development
+host. This section is the same binary's first outing on the machine it is for:
+the Power Mac G4, Mac OS X 10.5.4 (9E25), Radeon 9000, big endian. The whole
+narration is in [`docs/g4-boot.log`](g4-boot.log), with the host/G4 diff and
+the field-by-field REL header table at the bottom of it; this is the summary.
+
+### 11.1 The workflow
+
+Two scripts, both new, both modelled on the Snowboard Kids ports:
+
+- `port/tools/make_bundle.sh` wraps `build-ppc-darwin/marioparty4` into
+  `MarioParty4.app`. The executable inside is named **`isle`**, because the
+  isle-ppc-tools console runner on the G4 hard-codes
+  `~/isle.app/Contents/MacOS/isle` and `~/isle.app` is a symlink that
+  `g4 use NAME.app` flips between projects. `--with-image` puts the disc image
+  in `Contents/Resources` for a self-contained bundle.
+- `port/tools/g4_install.sh` ships the bundle to `~/MarioParty4.app` (its own
+  name, *not* the shared `~/isle.app` slot, which `g4 push` would overwrite and
+  break for every other project) and, with `--image`, the 598 MB NKit ISO to
+  `~/MarioParty4/mp4.nkit.iso` once.
+
+`main()` gained a disc search so a bundle the runner launches with a fixed
+argument line can find its own image: `$MARIOPARTY4_IMAGE`, then the .app's
+`Contents/Resources`, then `~/MarioParty4`, first `*.iso` or `files/` wins.
+`--image` still overrides everything.
+
+    port/build-ppc.sh -j8
+    port/tools/make_bundle.sh
+    port/tools/g4_install.sh          # add --image the first time
+    g4 use MarioParty4.app
+    g4 run --watchdog 8 ; g4 log 60
+
+M1 has no window, so the binary also runs straight over SSH
+(`ssh g4 './MarioParty4.app/Contents/MacOS/isle --watchdog 6'`), which is how
+these numbers were taken; the console runner is only needed once there is
+something to draw.
+
+Note for anyone rebuilding in a git worktree: `extern/musyx` (a submodule) and
+`build/GMPE01_01/include` (the decomp's generated headers) are not materialised
+by `git worktree add`. Copy them in — 1.6 MB total — or the PPC build stops at
+`musyx/musyx.h: No such file`.
+
+### 11.2 What the G4 does that the host cannot
+
+**`msmSysInit` passes.** This was the one prediction §9.6 made about hardware
+and it came true exactly: no `Error Code -121`, no
+`port> little-endian host: ...` line, no `host:`-prefixed patch in play. The
+game's own MSM parser reads `sound/mpgcsnd.msm` in place, loads the base group,
+and brings MusyX up — ten SDK entry points (`AIInit`, `sndInit`,
+`sndStreamAllocEx`, the aux callbacks, `sndOutputMode`, `sndVolume`) that the
+host build has never once reached. The audio surface can only be measured here.
+
+**The REL headers are right.** The failure path's module dump is the game
+reading `dll/bootdll.rel` through `-malign-natural` structs from a PowerPC
+`FILE*`, and all sixteen fields of `OSModuleInfo` + `OSModuleHeader` match the
+raw disc bytes (`id=1`, `numSections=14`, `nameSize=47`, `version=2`,
+`relOffset=0x5c9d`, `impOffset=0x7a4d`, …). On the host all sixteen are
+garbage. Alignment and endianness proved in one table.
+
+**The coroutines work.** `++++ Start New OVL 1 ++++` is printed after
+`HuPrcSleep` yields and the scheduler resumes, so `gcsetjmp`/`gclongjmp` in
+`port/src/os/jmp_ppc_darwin.s` complete a round trip under the real Darwin PPC
+ABI, and the three heap dumps and `objectsetup` that follow all run on the
+fabricated HUPROCESS stack.
+
+**The numbers get closer to the console.** `objman>Used Memory Size` is
+`0x121E0` on the G4 against `0x12200` on the host — two live objects, sixteen
+bytes smaller each, because the game's structures hold pointers and here they
+are the width the GameCube's are. Heap sizes, `Rest Memory` and
+`left memory space` are identical on both.
+
+### 11.3 Two port bugs the host build could not see
+
+The first G4 run stopped forty lines earlier than the host, at
+`HuMem> Failed OSAlloc left space` and `MSM(Sound Manager) Error:Error Code -31`.
+Both were one-liners, both are fixed, and neither is G4-specific in principle —
+only in reachability.
+
+1. **`OSCheckHeap` returned a number `OSAlloc` could not honour.**
+   `HuMemInitAll` ends with `OSAlloc(OSCheckHeap(h))`. Requests round up to 32;
+   the free-block header is 12 bytes on a 32-bit target, so a free total is
+   generically 20 (mod 32) and the round-up overshoots. The 64-bit host's
+   16-byte header left the total already aligned, by luck. `OSCheckHeap` now
+   rounds its answer down to the allocation granularity
+   (`port/src/os/os_arena.c`); host output is byte-identical, and the G4 now
+   creates heap 4.
+2. **A generated stub answered FALSE where MusyX answers TRUE.** Reachable only
+   because (1) was fixed: `msmSysSetAuxParam` treats a FALSE from
+   `sndAuxCallbackPrepareReverbHI` as failure, which becomes
+   `MSM_ERR_INVALID_AUXPARAM` and a `while (1)` in `HuAudInit`. The four
+   `sndAuxCallbackPrepare*` symbols are now in `gen_stubs.py`'s existing
+   `RETURN_OVERRIDES` table, and the untyped generator honours that table too
+   (it previously always emitted `return 0`). A placeholder answer, not an
+   implementation.
+
+With both in, the G4 narration reaches the same seam as the host —
+`objdll>Link DLL:dll/bootdll.rel` → `OSLink … returning FALSE` →
+`objman>ObjectSetup end` — and spins in `omWatchOverlayProc` as documented.
+
+### 11.4 Timings and footprint
+
+| | |
+|---|---|
+| boot, `main()` to `objman>ObjectSetup end` | under 1 s |
+| process overhead outside the watchdog | ~10 ms (`--watchdog 2` exits at 2.010 s, three runs) |
+| after the seam | 100% of one CPU, spinning in `omWatchOverlayProc` |
+| resident / virtual | 1,104 KB / 126,176 KB (8 MB game stack + 24 MB MEM1 + 16 MB ARAM + libs) |
+| PowerPC binary | 1,094,304 bytes |
+| SDK surface at boot | 66 distinct stubs, 123 calls (host: 56 / 111) |
+
+### 11.5 Still unproved on hardware
+
+- **ARAM does no work at boot.** `ARInit` is the only ARAM line; nothing in M1
+  issues an ARQ transfer, so the block is allocated and indexed but never
+  touched. First real traffic is MusyX sample upload, at M3.
+- **`dlclose` on 10.5 — PLAN risk #2 — is untested.** `--reltest` needs the REL
+  loader, which was not yet on `fork/ppc-port` when this was captured. It is
+  the first thing to run on the G4 once it lands; the workflow above is in
+  place and takes about a minute end to end.
+- **The crash handler** links and installs but nothing crashed, so its
+  backtrace path is unexercised on this target.
+- **Anything visual.** M1 has no window; the 66 GX entry points are counted,
+  not drawn.
+
+### 11.6 Same day, an hour later: M2a on the G4, and risk #2 closed
+
+The REL loader landed on `ppc-port` while the M1 run above was being written
+up, so this worktree was rebased onto it and the whole thing went round again.
+The full narration is in [`docs/g4-m2a-boot.log`](g4-m2a-boot.log).
+
+**`--reltest`: 198/198 clean, 0 still resident after `dlclose`, in 0.241 s.**
+Ninety-nine PowerPC `MH_BUNDLE`s, opened and closed twice each, with
+`dlopen(RTLD_NOLOAD)` asked after every single unload whether the image really
+went away. It always had. Identical to the host result, and it is the answer
+**§4 risk 2** has been waiting for since the plan was written: dyld on Mac OS X
+10.5.4 genuinely unloads a bundle, so the game's re-entry contract — fresh,
+zeroed bss on every re-load — holds without the by-hand fallback, which was
+never reached.
+
+One PowerPC-only build fix was needed first: `dll_load.c`'s 32-bit branch
+called `getsegbynamefromheader()`, absent from the MacOSX10.4u SDK. It now
+walks the load commands for `__TEXT` itself. Five lines; the 64-bit branch is
+untouched.
+
+**bootDll runs, and so does the game.** `objdll>LinkOK`, `Boot ObjectSetup`,
+`InitObjMan`, prolog end — and then 900 frames of the real boot sequence.
+
+- **ARAM is finally exercised on hardware.** §11.5 had to record that `ARInit`
+  was the only ARAM line in the M1 boot. bootDll's asset load does four real
+  transfers (`ARAM Trans 808000 / 80aaa0 / 82da60 / 8a7640`) against the game's
+  own `Rest Memory` accounting, ending at `data num 74000b`. Written and read
+  on the G4, no fault.
+- **The GX surface triples and changes shape.** 83 distinct stubs against 66,
+  and the counts stop being ones and twos: 97,944 `GXPosition1x16`, 97,944
+  `GXNormal1x16`, 97,268 `GXTexCoord1x16` inside 1,320 display lists, 891 TLUT
+  loads, 893 `GXDrawDone`, 398,743 calls in 900 frames. Indexed vertices,
+  display lists and colour-index textures — that is what M3's GL 1.3 backend
+  actually has to do, and §9.3's implementation order should be re-derived from
+  these counts rather than from M1's.
+- **Speed: 900 retraces in 15.88 s wall against a 15.02 s game clock (56.7 fps)
+  for 1.17 s of user CPU — about 7% of one processor.** Meaningless as a
+  finished-port number, because GX draws nothing; meaningful as a statement
+  that the engine, the coroutines, the DVD reads and the ARAM traffic together
+  leave essentially the whole frame budget on this machine to the GL backend.
+
+Two tooling notes. M2a links SDL2 dynamically from the Docker mount path, which
+does not exist on the G4, so the first push died in dyld; `make_bundle.sh` now
+copies the dylib into `Contents/Frameworks` and rewrites the reference to
+`@executable_path` — using the **cross** toolchain's `install_name_tool` inside
+the build image, because the host's own refuses these binaries with "malformed
+load command 0". And `--watchdog` is a plain `alarm(N)` whose message says "the
+game is not making progress"; at M2a it says that after 541 healthy frames, so
+`--frames` is the way to end a run now.
