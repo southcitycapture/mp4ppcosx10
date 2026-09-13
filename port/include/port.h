@@ -77,6 +77,8 @@ void port_perf_present_end(void);
 void port_perf_slept(double seconds);
 void port_perf_frame(void);
 void port_perf_report(void);
+void port_clock_mark(void);
+void port_clock_report(void);
 
 /* ---- the clock ----------------------------------------------------------- */
 /* mach_absolute_time, because clock_gettime is not in the 10.4 SDK. */

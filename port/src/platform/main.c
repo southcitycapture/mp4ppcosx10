@@ -234,6 +234,7 @@ void GXInit_demo_bootstrap(void);
  * through the end of main() all report the same things in the same order. */
 void port_shutdown(int code) {
     port_perf_report();
+    port_clock_report();
     port_gx_shutdown();
     port_dvd_stats();
     port_dll_report();
@@ -243,6 +244,7 @@ void port_shutdown(int code) {
 }
 
 static void run_game(void) {
+    port_clock_mark();
     port_log("port> entering the game's own main()\n\n");
     mp4_game_main();
     port_log("\nport> the game's main() returned\n");

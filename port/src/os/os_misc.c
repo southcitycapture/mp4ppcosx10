@@ -63,7 +63,41 @@ static OSTime host_ticks(void) {
     if (port_opt.deterministic) {
         return port_opt.seed + det_ticks;
     }
-    return (OSTime)(port_now_ns() / 1000ULL) * (PORT_TIMER_CLOCK / 1000000) / 1000;
+    /* 40.5 MHz exactly, as ns * 81/2000 -- integer, and it does not lose the
+     * half.  The obvious `us * (PORT_TIMER_CLOCK / 1000000) / 1000` is wrong
+     * twice: PORT_TIMER_CLOCK / 1000000 truncates 40.5 to 40, and the trailing
+     * /1000 leaves the counter running at 40 kHz, a thousand times slow.  The
+     * game notices.  `bootDll` waits out the Nintendo logo with
+     * `while (OSTicksToMilliseconds(OSGetTick() - t0) < 3000)`, and at 40 kHz
+     * that is fifty minutes, so the boot sat on the logo forever while the
+     * frame loop ran perfectly at 60 fps.  (--deterministic advances 40.5e6/60
+     * per retrace and was right all along, which is why it did not show there.) */
+    return (OSTime)((port_now_ns() * 81ULL) / 2000ULL);
+}
+
+/* A sanity line for the one clock the game reads directly.  `bootDll` and a
+ * dozen other places pace themselves with
+ * `while (OSTicksToMilliseconds(OSGetTick() - t0) < N)`, so a tick rate that
+ * is wrong by a factor is not a small error -- it is a hang that looks like a
+ * rendering problem.  Printed at shutdown next to the frame counts. */
+static OSTime clock_t0;
+static double clock_w0;
+
+void port_clock_mark(void) {
+    clock_t0 = host_ticks();
+    clock_w0 = port_now_seconds();
+}
+
+void port_clock_report(void) {
+    double w = port_now_seconds() - clock_w0;
+    OSTime d = host_ticks() - clock_t0;
+    if (w <= 0.0) {
+        return;
+    }
+    port_log("port> OS clock: %.0f ticks in %.2f s = %.3f MHz (console 40.500)%s\n",
+             (double)d, w, (double)d / w / 1e6,
+             ((double)d / w / 1e6) > 40.0 && ((double)d / w / 1e6) < 41.0 ? ""
+                                                                         : "  *** WRONG");
 }
 
 OSTime OSGetTime(void) { return host_ticks(); }

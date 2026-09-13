@@ -47,6 +47,24 @@ include/dolphin/os.h	#define OSRoundUp32B(x) (((u32)(x) + 0x1F) & ~(0x1F))\n#def
 include/dolphin/os.h	#define OSRoundUpPtr(x, align) ((void*)((((u32)(x)) + (align)-1) & (~((align)-1))))	#define OSRoundUpPtr(x, align) ((void*)((((uintptr_t)(x)) + (align)-1) & (~(uintptr_t)((align)-1))))
 include/dolphin/os.h	#define OSRoundDownPtr(x, align) ((void*)(((u32)(x)) & (~((align)-1))))	#define OSRoundDownPtr(x, align) ((void*)(((uintptr_t)(x)) & (~(uintptr_t)((align)-1))))
 
+# `__OSBusClock` and `__OSCoreClock` are *tentative definitions* here -- on the
+# console they are fixed addresses in low memory, so the header declares them
+# rather than externs them.  Off the console, and built with -fno-common, every
+# translation unit that includes <dolphin/os.h> gets a real definition, and a
+# REL bundle therefore links its OWN zero-valued copy instead of binding to the
+# port's.  That is not a small error: OS_TIMER_CLOCK is OS_BUS_CLOCK / 4, so
+# inside all 99 modules
+#
+#     OSTicksToMilliseconds(x) == (x) / (OS_TIMER_CLOCK / 1000) == x / 0
+#
+# and PowerPC integer division by zero does not trap -- it quietly yields
+# garbage.  `bootDll` paces the Nintendo logo with
+# `while (OSTicksToMilliseconds(OSGetTick() - t0) < 3000) HuPrcVSleep();`, so
+# the boot sat on the logo for as long as you cared to watch, at a healthy
+# 60 fps, with nothing in the log.  The declarations become extern and
+# port/src/os/os_misc.c owns the one definition.
+include/dolphin/os.h	u32 __OSBusClock AT_ADDRESS(OS_BASE_CACHED | 0x00F8); // sync with OSLoMem.h\nu32 __OSCoreClock AT_ADDRESS(OS_BASE_CACHED | 0x00FC); // sync with OSLoMem.h	extern u32 __OSBusClock;\nextern u32 __OSCoreClock;
+
 # --------------------------------------------------- include/dolphin/gx/GXGeometry.h
 # The decomp's TARGET_PC build of GXSetArray takes an extra `size` argument
 # that the game's own 159 call sites do not pass.  The port defines TARGET_PC
