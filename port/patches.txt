@@ -84,10 +84,38 @@ src/game/init.c	OSRoundUp32B((u32)buf)	OSRoundUp32B((uintptr_t)buf)
 host:src/game/audio.c	        while (1);\n    }\n    if (OSGetSoundMode()	        OSReport("port> little-endian host: the game's own MSM parser cannot read the disc's big-endian sound bank; continuing without audio\\n");\n        return;\n    }\n    if (OSGetSoundMode()
 
 # ---------------------------------------------------------------- game/objdll.c
-# The REL loader's failure path falls through and calls the module's prolog
-# anyway, at whatever `module->prolog` happened to contain -- which, with no
-# relocation done, is a wild jump.  M1's OSLink deliberately fails (the real
-# loader is one dlopen'ed Mach-O bundle per REL, which is M2), so the failure
-# has to be survivable: report it, dump the module info, and return without
-# entering the module.  This is also exactly the seam M2 replaces.
-src/game/objdll.c	\tif(OSLink(&dll->module->info, dll->bss) != TRUE) {\n\t\tOSReport("objdll>++++++++++++++++ DLL Link Failed\\n");\n\t}\n\tomDLLInfoDump(&dll->module->info);\n	\tif(OSLink(&dll->module->info, dll->bss) != TRUE) {\n\t\tOSReport("objdll>++++++++++++++++ DLL Link Failed\\n");\n\t\tomDLLInfoDump(&dll->module->info);\n\t\tomDLLHeaderDump(dll->module);\n\t\tdll->ret = 0;\n\t\treturn dll;\n\t}\n\tomDLLInfoDump(&dll->module->info);\n
+# M2: OSLink becomes dlopen.  One Mach-O bundle per REL is the only mechanism
+# that answers all five points of objdll.c's own loader contract (PLAN.md
+# §1.4, §2.4b), and it maps onto the file almost without disturbing it: the
+# module header is still read off the real disc, so both dumps still narrate
+# the true REL, and `omDllData.bss` -- which held the module's bss block on the
+# console -- holds the dlopen handle, which nothing outside the loader ever
+# dereferences.  The failure path also has to return rather than fall through
+# into `module->prolog`, which with no relocation done is a wild jump.
+src/game/objdll.c	#include "game/memory.h"	#include "game/memory.h"\n\n/* port: REL loading is one dlopen'ed Mach-O bundle per module, PLAN.md §2.4b.\n * The handle lives in omDllData.bss. */\nvoid *portDLLOpen(const char *relpath);\nvoid *portDLLReenter(const char *relpath, void *handle);\ns32 portDLLClose(void *handle);\ns32 portDLLProlog(void *handle);\nvoid portDLLEpilog(void *handle);
+src/game/objdll.c	\tdll->module = HuDvdDataReadDirect(dllFile->name, HEAP_HEAP);\n\tdll->bss = HuMemDirectMalloc(HEAP_HEAP, dll->module->bssSize);\n\tif(OSLink(&dll->module->info, dll->bss) != TRUE) {\n\t\tOSReport("objdll>++++++++++++++++ DLL Link Failed\\n");\n\t}\n\tomDLLInfoDump(&dll->module->info);\n	\tdll->module = HuDvdDataReadDirect(dllFile->name, HEAP_HEAP);\n\tdll->bss = portDLLOpen(dllFile->name);\n\tif(dll->bss == NULL) {\n\t\tOSReport("objdll>++++++++++++++++ DLL Link Failed\\n");\n\t\tomDLLInfoDump(&dll->module->info);\n\t\tomDLLHeaderDump(dll->module);\n\t\tdll->ret = 0;\n\t\treturn dll;\n\t}\n\tomDLLInfoDump(&dll->module->info);\n
+src/game/objdll.c	\t\tmemset(dll->bss, 0, dll->module->bssSize);\n	\t\tdll->bss = portDLLReenter(dll->name, dll->bss);\n
+x2:src/game/objdll.c	dll->ret = ((DLLProlog)dll->module->prolog)();	dll->ret = portDLLProlog(dll->bss);
+src/game/objdll.c	\t\t((DLLEpilog)dll->module->epilog)();	\t\tportDLLEpilog(dll->bss);
+src/game/objdll.c	\t\t((DLLEpilog)dll_ptr->module->epilog)();	\t\tportDLLEpilog(dll_ptr->bss);
+src/game/objdll.c	\tif(OSUnlink(&dll_ptr->module->info) != TRUE) {\n\t\tOSReport("objdll>+++++++++++++++++ DLL Unlink Failed\\n");\n\t}\n\tHuMemDirectFree(dll_ptr->bss);\n	\tif(portDLLClose(dll_ptr->bss) != TRUE) {\n\t\tOSReport("objdll>+++++++++++++++++ DLL Unlink Failed\\n");\n\t}\n
+
+# ------------------------------------------------------------------- src/REL (M2)
+# Nine places in the 254 REL translation units that Metrowerks accepted and
+# GCC/clang reject outright.  None is a port decision: three are chained
+# lvalue casts (`var_r31 = (Vec*)*arg0 = malloc(...)`, and w06Dll's five-way
+# NULL assignment), two pass a struct by value to memset where the decomp's own
+# NON_MATCHING branch passes its address, two are calls with too few arguments
+# (m447dll's is even commented `// Bug:` in the decomp), and one is a `static`
+# definition of a function already declared `extern` in the same file.  Each is
+# rewritten to the meaning the compiled REL plainly has, and each is exact text
+# so an upstream fix breaks the build rather than silently double-applying.
+src/REL/m404Dll/main.c	espEntry(lbl_1_data_86C[var_r27->unk_02[5]])	espEntry(lbl_1_data_86C[var_r27->unk_02[5]], 0, 0)
+src/REL/m447dll/main.c	HuAudSeqFadeOut(arg0->unk70);	HuAudSeqFadeOut(arg0->unk70, 0);
+src/REL/m406Dll/map.c	    memset(lbl_1_bss_48, 0, sizeof(UnkM406Struct5));	    memset(&lbl_1_bss_48, 0, sizeof(UnkM406Struct5));
+src/REL/m413Dll/main.c	    memset(lbl_1_bss_B8, 0, sizeof(lbl_1_bss_B8));	    memset(&lbl_1_bss_B8, 0, sizeof(lbl_1_bss_B8));
+src/REL/m438Dll/fire.c	    var_r31 = (Vec*)*arg0 = HuMemDirectMallocNum(HEAP_HEAP, arg1 * sizeof(M438FireStruct), 0x10000000);	    *arg0 = HuMemDirectMallocNum(HEAP_HEAP, arg1 * sizeof(M438FireStruct), 0x10000000);\n    var_r31 = (Vec*)*arg0;
+src/REL/m438Dll/fire.c	    var_r31 = (GXColor*)*arg0 = HuMemDirectMallocNum(HEAP_HEAP, arg1 * sizeof(M438FireStruct2), 0x10000000U);	    *arg0 = HuMemDirectMallocNum(HEAP_HEAP, arg1 * sizeof(M438FireStruct2), 0x10000000U);\n    var_r31 = (GXColor*)*arg0;
+src/REL/m438Dll/fire.c	    var_r31 = (HuVec2f*)*arg0 = HuMemDirectMallocNum(HEAP_HEAP, arg1 * sizeof(M438FireStruct3), 0x10000000);	    *arg0 = HuMemDirectMallocNum(HEAP_HEAP, arg1 * sizeof(M438FireStruct3), 0x10000000);\n    var_r31 = (HuVec2f*)*arg0;
+src/REL/w01Dll/main.c	static void CoasterHostComKeySet(s32 playerNo)	void CoasterHostComKeySet(s32 playerNo)
+src/REL/w06Dll/main.c	    boardTurnFunc\n        = (void*) boardStarShowNextHook\n        = (void*) boardTurnStartFunc\n        = (void*) boardStarGiveHook\n        = (void*) boardBowserHook = NULL;	    boardBowserHook = NULL;\n    boardStarGiveHook = NULL;\n    boardTurnStartFunc = NULL;\n    boardStarShowNextHook = NULL;\n    boardTurnFunc = NULL;

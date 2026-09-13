@@ -32,6 +32,18 @@ typedef struct PortOptions {
     int turbo;              /* --turbo          do not pace to 60 Hz          */
     int watchdog;           /* --watchdog SEC   report and quit if it hangs   */
     int verbose;
+    /* ---- M2 ---- */
+    const char* reldir;     /* --reldir  where the 99 REL bundles live        */
+    int reltest;            /* --reltest load and unload all 99 twice, report */
+    int relzerobss;         /* --relzerobss  always zero a module's bss by
+                             *   hand on load, as if dlclose never unloaded   */
+    int noaudio;            /* --noaudio  HuAudInit/msm succeed as silent stubs */
+    int glcheck;            /* --glcheck  assert no GL call outside GL 1.3    */
+    int gxwarn;             /* --gxwarn   name every degraded GX feature      */
+    int headless;           /* --headless no window; still decodes and logs   */
+    int dumpframe;          /* --dumpframe N  write frame N as a PPM          */
+    const char* shotdir;    /* --shotdir  where --dumpframe writes            */
+    int scale;              /* --scale N  window scale over 640x480           */
 } PortOptions;
 
 extern PortOptions port_opt;
@@ -76,6 +88,22 @@ void port_host_service(void); /* called from VIWaitForRetrace, once per frame */
 void port_dvd_init(void);
 void port_dvd_service(void);
 void port_arq_service(void);
+
+/* ---- REL modules (port/src/os/dll_load.c) -------------------------------- */
+void* portDLLOpen(const char* relpath);
+void* portDLLReenter(const char* relpath, void* handle);
+int port_dll_selftest(void);
+void port_dll_report(void);
+
+/* ---- the soft-reset watcher (port/src/os/sreset_poll.c) ------------------- */
+void port_reset_thread_tick(void);
+int port_reset_requested(void);
+void port_request_reset(void);
+
+/* ---- GX / the window (port/src/gx, port/src/platform/window_sdl.c) -------- */
+void port_gx_init(void);
+void port_gx_present(void);   /* called at the retrace gate when a swap is due */
+void port_gx_frame_number(unsigned n);
 
 /* the game's own entry point, renamed by -Dmain=mp4_game_main */
 void mp4_game_main(void);

@@ -23,8 +23,8 @@
  * unit that includes <dolphin/os.h> (on the console they are fixed addresses
  * in low memory).  The port compiles game code with -fcommon so they merge,
  * and fills them in here. */
-extern u32 __OSBusClock;
-extern u32 __OSCoreClock;
+u32 __OSBusClock;
+u32 __OSCoreClock;
 
 void OSInit(void) {
     __OSBusClock = PORT_BUS_CLOCK;

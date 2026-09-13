@@ -53,7 +53,12 @@ LIBC_SHIMS = {
 # the pure-C half of the SDK's matrix library.  Mirrors configure.py's `Game`,
 # `libhu`, `msm` and `mtx` libraries; `psmtx.c` is 100% paired singles with no
 # C equivalent and is replaced wholesale by port/src/os/psmtx_c.c.
-SRC_GLOBS = ["src/game/*.c", "src/game/board/*.c", "src/msm/*.c", "src/libhu/*.c"]
+#
+# `src/REL/**` joined the list at M2: each of the 99 modules is compiled into
+# its own Mach-O bundle out of the same mirror, from the source list
+# `port/tools/gen_rels.py` reads out of the decomp's own splits files.
+SRC_GLOBS = ["src/game/*.c", "src/game/board/*.c", "src/msm/*.c", "src/libhu/*.c",
+             "src/REL/*.c", "src/REL/*/*.c"]
 MTX_SRCS = ["src/dolphin/mtx/mtx.c", "src/dolphin/mtx/mtxvec.c",
             "src/dolphin/mtx/mtx44.c", "src/dolphin/mtx/vec.c",
             "src/dolphin/mtx/quat.c"]
@@ -147,9 +152,16 @@ def strip_mwasm(text, rel, log):
         # hsfdraw.c) emits no out-of-line copy under C99 rules, but Metrowerks
         # emitted one and other translation units call it.  Drop the keyword.
         if chunk[0].startswith("inline ") and seen_brace:
+            # Inside a REL the same helper is sometimes written out at column 0
+            # in two translation units of the *same* module (`fabs2` in
+            # m430Dll's player.c and water.c), which an ordinary external
+            # definition would make a duplicate symbol.  A weak definition is
+            # both: externally callable from a sibling TU, and coalesced when
+            # two of them meet.
+            keep = "__attribute__((weak)) " if rel.startswith("src/REL/") else ""
             log.append("%s:%d: dropped `inline` from %s"
                        % (rel, i + 1, chunk[0].strip()[:70]))
-            chunk[0] = chunk[0][len("inline "):]
+            chunk[0] = keep + chunk[0][len("inline "):]
         head = chunk[0].strip()
         has_asm = head.startswith("asm ") or any(
             l.strip() in ("asm {", "asm{", "asm") for l in chunk)

@@ -1,0 +1,8 @@
+# The only three symbols a REL bundle exports.  Everything else it defines
+# becomes private_extern, which is what makes one-bundle-per-REL the answer to
+# the 899 symbol names that collide between the 99 modules: `ObjectSetup` is
+# defined by 90 of them, `_ctors`/`_dtors` by all 99, and none of them can see
+# another's.  (Mach-O spells a C symbol with a leading underscore.)
+__prolog
+__epilog
+__unresolved

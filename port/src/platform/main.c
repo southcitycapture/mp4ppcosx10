@@ -41,7 +41,18 @@ static void usage(const char* argv0) {
             "  --gxlog           log every GX call, not just the first of each\n"
             "  --stub-trace      log every stub call, not just the first of each\n"
             "  --deterministic   fixed 60 Hz tick and no wall-clock pacing\n"
-            "  --verbose         print each stub the first time it is called\n",
+            "  --verbose         print each stub the first time it is called\n"
+            "\n"
+            "  --reldir DIR      where the 99 REL bundles live (default: <exe dir>/rels)\n"
+            "  --reltest         load and unload all 99 REL bundles twice and report\n"
+            "  --relzerobss      always zero a module's bss by hand on load\n"
+            "  --noaudio         HuAudInit and msm succeed as silent stubs\n"
+            "  --headless        decode and log GX, but open no window\n"
+            "  --glcheck         assert that no GL call leaves the GL 1.3 subset\n"
+            "  --gxwarn          name every GX feature the backend degraded\n"
+            "  --dumpframe N     write the presented frame N as a PPM\n"
+            "  --shotdir DIR     where --dumpframe writes (default: .)\n"
+            "  --scale N         window scale over 640x480 (default 1)\n",
             argv0);
 }
 
@@ -65,6 +76,26 @@ int port_parse_args(int argc, char** argv) {
             port_opt.stub_trace = 1;
         } else if (!strcmp(a, "--deterministic")) {
             port_opt.deterministic = 1;
+        } else if (!strcmp(a, "--reldir") && i + 1 < argc) {
+            port_opt.reldir = argv[++i];
+        } else if (!strcmp(a, "--reltest")) {
+            port_opt.reltest = 1;
+        } else if (!strcmp(a, "--relzerobss")) {
+            port_opt.relzerobss = 1;
+        } else if (!strcmp(a, "--noaudio")) {
+            port_opt.noaudio = 1;
+        } else if (!strcmp(a, "--glcheck")) {
+            port_opt.glcheck = 1;
+        } else if (!strcmp(a, "--gxwarn")) {
+            port_opt.gxwarn = 1;
+        } else if (!strcmp(a, "--headless")) {
+            port_opt.headless = 1;
+        } else if (!strcmp(a, "--dumpframe") && i + 1 < argc) {
+            port_opt.dumpframe = atoi(argv[++i]);
+        } else if (!strcmp(a, "--shotdir") && i + 1 < argc) {
+            port_opt.shotdir = argv[++i];
+        } else if (!strcmp(a, "--scale") && i + 1 < argc) {
+            port_opt.scale = atoi(argv[++i]);
         } else if (!strcmp(a, "--verbose") || !strcmp(a, "-v")) {
             port_opt.verbose = 1;
         } else if (!strcmp(a, "--help") || !strcmp(a, "-h")) {
@@ -84,6 +115,7 @@ static void run_game(void) {
     mp4_game_main();
     port_log("\nport> the game's main() returned\n");
     port_dvd_stats();
+    port_dll_report();
     port_stub_report();
     exit(0);
 }
@@ -97,10 +129,14 @@ int main(int argc, char** argv) {
     if (port_opt.watchdog) {
         port_watchdog_arm(port_opt.watchdog);
     }
-    port_log("Mario Party 4 -- native port, milestone M1\n");
+    port_log("Mario Party 4 -- native port, milestone M2a\n");
+    if (port_opt.reltest) {
+        return port_dll_selftest();
+    }
     port_mem_init();
     port_vi_init();
     port_dvd_init();
+    port_gx_init();
     port_call_on_stack(run_game, port_game_stack_top());
     return 0;
 }

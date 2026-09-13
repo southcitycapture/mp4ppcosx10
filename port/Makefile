@@ -15,6 +15,7 @@
 # assembly; see port/docs/PLAN.md.
 
 TARGET ?= host
+.DEFAULT_GOAL := all
 ROOT   := ..
 PYTHON ?= python3
 
@@ -31,6 +32,12 @@ ifeq ($(TARGET),ppc-darwin)
   TARGET_LDFLAGS := -isysroot $(SYSROOT) -mmacosx-version-min=10.4 -static-libgcc
   CTX_ASM  := src/os/jmp_ppc_darwin.s
   MIRROR_TARGET := ppc
+  REL_EXT  := bundle
+  SDL2_PREFIX ?= /work/sdl2
+  SDL_CFLAGS  := -I$(SDL2_PREFIX)/include/SDL2 -D_THREAD_SAFE
+  SDL_LIBS    := -L$(SDL2_PREFIX)/lib -lSDL2 -framework OpenGL -framework Cocoa \
+                 -framework Carbon -framework IOKit -framework AGL -framework QuickTime \
+                 -framework AudioToolbox -framework AudioUnit
 else ifeq ($(TARGET),host)
   BUILD    := build-host
   CC       := clang
@@ -40,6 +47,9 @@ else ifeq ($(TARGET),host)
   TARGET_LDFLAGS :=
   CTX_ASM  := src/os/jmp_arm64.s
   MIRROR_TARGET := host
+  REL_EXT  := dylib
+  SDL_CFLAGS  := $(shell sdl2-config --cflags)
+  SDL_LIBS    := $(shell sdl2-config --libs | sed 's/-lSDL2main//') -framework OpenGL
 else
   $(error unknown TARGET $(TARGET) -- use host or ppc-darwin)
 endif
@@ -58,6 +68,31 @@ GAME_C   := $(patsubst $(ROOT)/%,%,$(wildcard $(ROOT)/src/game/*.c $(ROOT)/src/g
             src/dolphin/mtx/vec.c src/dolphin/mtx/quat.c
 PORT_C   := $(wildcard src/platform/*.c src/os/*.c src/gx/*.c src/dvd/*.c \
                        src/card/*.c src/pad/*.c src/audio/*.c src/debug/*.c)
+# src/relmod/ is the other side of the fence: compiled into every REL bundle,
+# never into the main binary.
+RELMOD_C := src/relmod/rel_runtime.c src/relmod/rel_placeholder.c
+# ---- the 99 REL modules ------------------------------------------------------
+# One Mach-O bundle per relocatable module (PLAN.md §2.4b).  Which translation
+# units go in which module is not a list the port maintains: gen_rels.py reads
+# it out of the decomp's own config/GMPE01_00/rels/*/splits.txt, so an upstream
+# commit that splits a new file into a module is picked up on the next build.
+RELS_MK  := $(BUILD)/rels.mk
+REL_DIR  := $(BUILD)/rels
+
+$(RELS_MK): tools/gen_rels.py $(wildcard $(ROOT)/config/GMPE01_00/rels/*/splits.txt)
+	@mkdir -p $(BUILD)
+	$(PYTHON) tools/gen_rels.py --out $@
+
+-include $(RELS_MK)
+
+REL_ALL_SRCS := $(sort $(foreach m,$(REL_MODULES),$(REL_SRCS_$(m))))
+REL_OBJS     := $(patsubst %.c,$(BUILD)/rel/%.o,$(REL_ALL_SRCS))
+REL_RT_OBJ   := $(BUILD)/rel/relmod/rel_runtime.o
+REL_PH_OBJ   := $(BUILD)/rel/relmod/rel_placeholder.o
+REL_LIBS     := $(foreach m,$(REL_MODULES),$(REL_DIR)/$(m).$(REL_EXT))
+GEN_REL_C    := $(patsubst %,$(GEN)/%,$(REL_ALL_SRCS))
+
+
 STUBS_C  := $(BUILD)/sdk_stubs.c
 STUBS_U_C := $(BUILD)/sdk_stubs_untyped.c
 
@@ -83,13 +118,15 @@ GAME_INC  := -I$(GEN)/include -I$(ROOT)/extern/musyx/include \
 # C99 does not; none of them changes code generation.
 GAME_WARN := -w -Wno-implicit-function-declaration -Wno-return-mismatch \
              -Wno-int-conversion -Wno-incompatible-pointer-types \
-             -Wno-incompatible-function-pointer-types -Wno-unknown-pragmas
+             -Wno-incompatible-function-pointer-types -Wno-unknown-pragmas \
+             -Wno-implicit-int
 GAME_CFLAGS = -std=gnu11 -O2 -g -fno-strict-aliasing -fwrapv -fcommon \
               $(GAME_WARN) $(GAME_DEFS) $(GAME_INC) $(TARGET_CFLAGS)
 PORT_CFLAGS = -std=gnu11 -O2 -g -fno-strict-aliasing -fcommon \
               -Wall -Wno-unused-parameter -Wno-unknown-pragmas \
-              $(GAME_DEFS) $(GAME_INC) $(TARGET_CFLAGS)
-LDFLAGS   = $(TARGET_LDFLAGS) -lm
+              $(GAME_DEFS) $(GAME_INC) $(SDL_CFLAGS) $(TARGET_CFLAGS)
+LDFLAGS   = $(TARGET_LDFLAGS) -lm $(SDL_LIBS) \
+            -Wl,-exported_symbols_list,$(BUILD)/exports.txt
 
 # Only these families are stubbed.  Everything else left undefined is the
 # host's libc (memcpy, sinf, __stack_chk_fail) and resolves at link time; if
@@ -97,10 +134,10 @@ LDFLAGS   = $(TARGET_LDFLAGS) -lm
 SDK_PREFIXES := ^(GX|OS|VI|DVD|CARD|PAD|AI|AR|ARQ|SI|DSP|THP|DEMO|PS|MTX|VEC|QUAT|C_|snd|DC|IC|LC|PPC|__GX|__OS|__AI|__DVD)
 
 # ---- rules -------------------------------------------------------------------
-.PHONY: all clean list mirror stubs
+.PHONY: all clean list mirror stubs rels
 .SECONDARY:
 
-all: $(EXE)
+all: $(EXE) rels
 
 # One mirror for the whole tree; a stamp because it writes hundreds of files.
 MIRROR_STAMP := $(BUILD)/mirror.stamp
@@ -136,11 +173,11 @@ $(BUILD)/port/jmp.o: $(CTX_ASM)
 
 # The stub list is the link's own undefined-symbol set, so nothing is missed by
 # hand and nothing dead is generated.
-$(BUILD)/missing.txt: $(GAME_OBJS) $(PORT_OBJS)
+$(BUILD)/missing.txt: $(GAME_OBJS) $(PORT_OBJS) $(REL_OBJS) $(REL_RT_OBJ)
 	@mkdir -p $(dir $@)
-	@$(NM) -g $(GAME_OBJS) $(PORT_OBJS) | awk 'NF==2 && $$1=="U"{print substr($$2,2)}' \
+	@$(NM) -g $(GAME_OBJS) $(PORT_OBJS) $(REL_OBJS) $(REL_RT_OBJ) | awk 'NF==2 && $$1=="U"{print substr($$2,2)}' \
 	    | sort -u > $(BUILD)/undef.txt
-	@$(NM) -g $(GAME_OBJS) $(PORT_OBJS) | awk 'NF==3{print substr($$3,2)}' \
+	@$(NM) -g $(GAME_OBJS) $(PORT_OBJS) $(REL_OBJS) $(REL_RT_OBJ) | awk 'NF==3{print substr($$3,2)}' \
 	    | sort -u > $(BUILD)/defined.txt
 	@comm -23 $(BUILD)/undef.txt $(BUILD)/defined.txt > $(BUILD)/undefined-all.txt
 	@grep -E '$(SDK_PREFIXES)' $(BUILD)/undefined-all.txt > $@ || true
@@ -161,9 +198,52 @@ $(BUILD)/port/sdk_stubs_untyped.o: $(STUBS_U_C)
 
 stubs: $(STUBS_C)
 
-$(EXE): $(GAME_OBJS) $(PORT_OBJS) $(STUBS_OBJ)
+# Everything the main binary defines is exported, because a REL bundle may
+# import any of it: partyboard needed a hand-maintained 1,106-symbol dol.def,
+# but the link's own symbol table is both exact and free.  Without this the
+# executable exports nothing and every bundle fails to link.
+$(BUILD)/exports.txt: $(GAME_OBJS) $(PORT_OBJS) $(STUBS_OBJ)
+	@$(NM) -g $^ | awk 'NF==3 && $$2 != "U" {print $$3}' | sort -u > $@
+	@echo "link: $$(wc -l < $@) symbols exported to the REL bundles"
+
+$(EXE): $(GAME_OBJS) $(PORT_OBJS) $(STUBS_OBJ) $(BUILD)/exports.txt
 	$(CC) -o $@ $(GAME_OBJS) $(PORT_OBJS) $(STUBS_OBJ) $(LDFLAGS)
 	@echo "built $@ ($$(wc -c < $@) bytes)"
+
+$(BUILD)/rel/%.o: $(GEN)/%.c $(MIRROR_STAMP)
+	@mkdir -p $(dir $@)
+	$(CC) $(GAME_CFLAGS) -c -o $@ $<
+
+$(BUILD)/rel/relmod/%.o: src/relmod/%.c $(MIRROR_STAMP)
+	@mkdir -p $(dir $@)
+	$(CC) $(GAME_CFLAGS) -c -o $@ $<
+
+$(GEN_REL_C): $(MIRROR_STAMP)
+	@true
+
+# -bundle_loader resolves each module's imports against the main binary at
+# build time, so a module that calls something the port has not implemented is
+# a link error here rather than a crash later; -exported_symbols_list hides
+# everything but the three entry points, which is what gives each module the
+# private namespace the 899 colliding names need.
+REL_LDFLAGS = -bundle -bundle_loader $(EXE) $(TARGET_LDFLAGS) \
+              -Wl,-exported_symbols_list,resources/rel_exports.txt
+
+define REL_MODULE_RULE
+$$(REL_DIR)/$(1).$$(REL_EXT): $$(patsubst %.c,$$(BUILD)/rel/%.o,$$(REL_SRCS_$(1))) \
+        $$(REL_RT_OBJ) $$(if $$(REL_SRCS_$(1)),,$$(REL_PH_OBJ)) $$(EXE) resources/rel_exports.txt
+	@mkdir -p $$(REL_DIR)
+	@$$(CC) $$(REL_LDFLAGS) -o $$@ \
+	    $$(patsubst %.c,$$(BUILD)/rel/%.o,$$(REL_SRCS_$(1))) $$(REL_RT_OBJ) \
+	    $$(if $$(REL_SRCS_$(1)),,$$(REL_PH_OBJ))
+endef
+$(foreach m,$(REL_MODULES),$(eval $(call REL_MODULE_RULE,$(m))))
+
+rels: $(REL_LIBS)
+	@echo "built $(words $(REL_LIBS)) REL bundles in $(REL_DIR)"
+
+reltest: all
+	$(EXE) --reltest
 
 list: $(MIRROR_STAMP)
 	@echo "GAME_C ($(words $(GAME_C))):"; printf '  %s\n' $(GAME_C) | head -20; echo "  ..."
