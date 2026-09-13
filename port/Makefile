@@ -172,6 +172,26 @@ $(BUILD)/game/%.o: $(GEN)/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(GAME_CFLAGS) -MMD -MP -c -o $@ $<
 
+# the Xbox One driver includes the 10.4 SDK USB headers through a patched copy
+# (compat/): GCC 14 rejects the 10.4u SDK's own IOKit/usb/USB.h, whose three
+# pack(1)/align=reset pairs are unbalanced. Same fix as the Snowboard Kids
+# ports' port/src/platform/compat/. Only ppc-darwin needs it -- the host
+# build's own (much newer) system SDK already compiles IOUSBLib.h as-is, and
+# the patched copy's older struct definitions collide with it there.
+# PAD_XONE_REAL selects the real IOUSBLib implementation; the host target
+# leaves it undefined and pad_xone.c falls back to its stub (no IOKit symbols
+# to link), because SDL_LIBS on TARGET=host does not carry -framework IOKit
+# and this rule may not change link flags -- only ppc-darwin's real Xbox One
+# support needs it, host is compile-checked with SDL/keyboard input instead.
+ifeq ($(TARGET),ppc-darwin)
+PAD_XONE_CFLAGS := -Isrc/pad/compat -DPAD_XONE_REAL
+else
+PAD_XONE_CFLAGS :=
+endif
+$(BUILD)/port/src/pad/pad_xone.o: src/pad/pad_xone.c $(MIRROR_STAMP)
+	@mkdir -p $(dir $@)
+	$(CC) $(PORT_CFLAGS) $(PAD_XONE_CFLAGS) -MMD -MP -c -o $@ $<
+
 $(BUILD)/port/%.o: %.c $(MIRROR_STAMP)
 	@mkdir -p $(dir $@)
 	$(CC) $(PORT_CFLAGS) -MMD -MP -c -o $@ $<

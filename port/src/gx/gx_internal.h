@@ -175,6 +175,27 @@ void gl13_apply_transform(void);
 void gl13_clear(GXColor c, u32 z);
 void gl13_clear_at_swap(GXColor c, u32 z); /* run it after the swap, not before */
 int gl13_check(const char* fn);   /* --glcheck; returns 0, for the GL() macro */
+
+/* The shadow of the GL state (M3 §1).  Everything that sets GL state goes
+ * through these; they emit only the difference and count what they elided.
+ * `glc_invalidate` forgets the lot, and must be called after anything that
+ * changes GL behind the cache's back. */
+void glc_invalidate(void);
+void glc_stats(unsigned* emitted, unsigned* elided);
+void glc_active_texture(int unit);
+void glc_client_active_texture(int unit);
+void glc_bind_texture(int unit, unsigned name);
+void glc_note_bind(int unit, unsigned name);
+void glc_unit_enable_tex2d(int unit, int on);
+void glc_texenvi(int unit, unsigned pname, int v);
+void glc_texenvf(int unit, unsigned pname, float v);
+void glc_texenv_color(int unit, const float* rgba);
+void glc_tex_matrix(int unit, float su, float sv);
+void glc_projection(const float* m16);
+void glc_modelview_identity(void);
+void glc_vertex_array(const void* p, int stride);
+void glc_color_array(const void* p, int stride);
+void glc_coord_array(int unit, const void* p, int stride); /* NULL turns it off */
 int gl13_live(void);
 void gl13_write_ppm(const char* path);
 extern int gl13_have_combine3;

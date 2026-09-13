@@ -361,6 +361,11 @@ typedef struct CacheEntry {
      * is uploaded into the next power of two up and these are the fractions of
      * it that hold real texels.  1.0 for the overwhelmingly common POT case. */
     float su, sv;
+    /* glTexParameter belongs to the texture object, so what GL already holds
+     * for this name is remembered here rather than in gl13.c's per-unit
+     * shadow.  -1 is "unknown", which is what a fresh glGenTextures name and
+     * a re-upload both leave behind. */
+    int param_wrap_s, param_wrap_t, param_min, param_mag;
 } CacheEntry;
 
 #define CACHE_MAX 2048
@@ -407,7 +412,14 @@ static GLenum gl_filter(u8 f, int is_min) {
 }
 
 /* How much of a large texture the sampled hash looks at, in bytes. */
-#define TEX_HASH_SAMPLE 4096
+/* The sampled content hash's budget, in bytes.  M2b set it at 4096 and M3's
+ * profile put `gx_tex_bind` at 512 of 4,200 in-thread samples on the G4 --
+ * 427 binds a frame times four kilobytes of FNV is four megabytes a frame of
+ * pure pointer-chasing on a 1 GHz machine.  1024 is still a header, a tail and
+ * a spread of interior points, still catches every in-place rewrite the boot
+ * and the menus do, and costs a quarter as much.  `--texhash-full` is how to
+ * prove a suspected staleness bug is or is not this. */
+#define TEX_HASH_SAMPLE 1024
 
 /* Every image buffer this cache has ever hashed in full.  A buffer's first
  * sight always gets the exhaustive hash; only repeats are sampled. */
@@ -627,9 +639,19 @@ void gx_tex_bind(int unit, GXTexObjPort* o) {
                     GL(glGenTextures)(1, &name);
                     cache[slot].gl_name = name;
                 }
+                /* An upload has to bind the name it is about to fill, and
+                 * it does that on whichever unit is current; tell the shadow
+                 * rather than let it guess.  `unit` is where this bind is
+                 * headed anyway, so the bind below usually elides. */
+                glc_active_texture(unit);
                 GL(glBindTexture)(GL_TEXTURE_2D, name);
+                glc_note_bind(unit, name);
                 GL(glTexImage2D)(GL_TEXTURE_2D, 0, GL_RGBA8, pw, ph, 0, GL_RGBA,
                                  GL_UNSIGNED_BYTE, up);
+                /* A fresh name has the GL default filter state, which is
+                 * mipmapped and therefore incomplete here; force the
+                 * parameters to be re-emitted for it. */
+                cache[slot].param_wrap_s = -1;
             }
             if (up != rgba) {
                 free(up);
@@ -641,31 +663,37 @@ void gx_tex_bind(int unit, GXTexObjPort* o) {
     if (!gl13_live() || !o->gl_name) {
         return;
     }
-    GL(glActiveTexture)(GL_TEXTURE0 + unit);
-    GL(glBindTexture)(GL_TEXTURE_2D, o->gl_name);
+    glc_bind_texture(unit, o->gl_name);
     /* Fold the NPOT padding into this unit's texture matrix, so the vertex
      * decoder keeps emitting the game's own 0..1 texcoords and knows nothing
      * about it.  GL_TEXTURE is otherwise unused by this backend -- texgen is
      * done on the CPU (PLAN.md §10.5) -- so the matrix is ours to spend. */
+    glc_tex_matrix(unit, cache[slot].su, cache[slot].sv);
+    /* glTexParameter belongs to the texture *object*, not the unit, so the
+     * remembered copy lives in the cache entry -- and a bind of a texture
+     * whose parameters have not changed emits nothing at all.  This is four
+     * calls a bind and 427 binds a frame; it was the third-largest block of
+     * per-draw GL traffic after the TEV chain and the raster state. */
     {
-        float m[16];
-        memset(m, 0, sizeof(m));
-        m[0] = cache[slot].su;
-        m[5] = cache[slot].sv;
-        m[10] = 1.0f;
-        m[15] = 1.0f;
-        GL(glMatrixMode)(GL_TEXTURE);
-        GL(glLoadMatrixf)(m);
-        GL(glMatrixMode)(GL_MODELVIEW);
+        CacheEntry* e = &cache[slot];
+        int ws = (int)gl_wrap(o->wrap_s);
+        int wt = (int)gl_wrap(o->wrap_t);
+        /* No mip levels are uploaded, so a mipmapped min filter would make the
+         * texture incomplete; fall back to its non-mipmapped equivalent. */
+        int mn = o->min_filt == GX_NEAR ? GL_NEAREST : GL_LINEAR;
+        int mg = (int)gl_filter(o->mag_filt, 0);
+        if (e->param_wrap_s != ws || e->param_wrap_t != wt || e->param_min != mn ||
+            e->param_mag != mg) {
+            e->param_wrap_s = ws;
+            e->param_wrap_t = wt;
+            e->param_min = mn;
+            e->param_mag = mg;
+            GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, (GLint)ws);
+            GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, (GLint)wt);
+            GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, (GLint)mn);
+            GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, (GLint)mg);
+        }
     }
-    GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, (GLint)gl_wrap(o->wrap_s));
-    GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, (GLint)gl_wrap(o->wrap_t));
-    /* No mip levels are uploaded, so a mipmapped min filter would make the
-     * texture incomplete; fall back to its non-mipmapped equivalent. */
-    GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
-                        (GLint)(o->min_filt == GX_NEAR ? GL_NEAREST : GL_LINEAR));
-    GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER,
-                        (GLint)gl_filter(o->mag_filt, 0));
 }
 
 /* ---- the GX texture-object entry points ----------------------------------- */

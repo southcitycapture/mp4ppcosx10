@@ -51,6 +51,11 @@ typedef struct PortOptions {
     const char* dumpframe;  /* --dumpframe SPEC  frames to write: N, a,b, a-b/s */
     const char* shotdir;    /* --shotdir  where --dumpframe writes            */
     int scale;              /* --scale N  window scale over 640x480           */
+    /* ---- M3: PAD ---- */
+    int nopad;              /* --nopad  no controller 1 at all (keyboard too) */
+    int pad_debug;          /* --paddbg  log raw pad reports/buttons/axes     */
+    const char* pad_play;   /* --play SCRIPT  scripted controller 1 input     */
+    const char* pad_record; /* --record FILE  record controller 1's raw input */
 } PortOptions;
 
 extern PortOptions port_opt;

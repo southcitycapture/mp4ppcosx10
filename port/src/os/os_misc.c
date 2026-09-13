@@ -56,6 +56,7 @@ void OSInit(void) {
 #define GC_EPOCH_UNIX 946684800LL /* 2000-01-01T00:00:00Z */
 
 static OSTime det_ticks;
+static OSTime wall_origin;
 
 void port_time_tick(void) { det_ticks += PORT_TIMER_CLOCK / 60; }
 
@@ -72,7 +73,18 @@ static OSTime host_ticks(void) {
      * that is fifty minutes, so the boot sat on the logo forever while the
      * frame loop ran perfectly at 60 fps.  (--deterministic advances 40.5e6/60
      * per retrace and was right all along, which is why it did not show there.) */
-    return (OSTime)((port_now_ns() * 81ULL) / 2000ULL);
+    /* port_now_ns() counts from the port's own first reading, not from the
+     * epoch (see port/src/platform/clock.c -- the alternative overflows on
+     * PowerPC every nine minutes of uptime).  So the *origin* comes from the
+     * host's calendar clock instead, once, which is both what the console does
+     * -- OSGetTime is ticks since 2000-01-01 -- and what keeps `frandom(0)`
+     * and `BoardRandInit()` seeded differently from one run to the next.
+     * --deterministic replaces the whole thing with --seed. */
+    if (wall_origin == 0) {
+        wall_origin = (OSTime)((s64)(time(NULL) - GC_EPOCH_UNIX) *
+                               (s64)PORT_TIMER_CLOCK);
+    }
+    return wall_origin + (OSTime)((port_now_ns() * 81ULL) / 2000ULL);
 }
 
 /* A sanity line for the one clock the game reads directly.  `bootDll` and a

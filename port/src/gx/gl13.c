@@ -92,6 +92,317 @@ int gl13_check(const char* fn) {
 #define GL_MODULATE_SUBTRACT_ATI 0x8746
 #endif
 
+/* ---- the shadow of the GL state ------------------------------------------
+ *
+ * M2b measured 230 microseconds of fixed cost per `glDrawArrays` at the title
+ * screen -- 83 ms of a 16.7 ms budget, 10.4 fps, and *none* of it geometry:
+ * 27,041 vertices across 360 draws is 75 vertices a draw, which a G4
+ * transforms in single-digit microseconds.  The cost was that
+ * `gl13_apply_transform`, `gl13_apply_raster_state` and `gx_tev_apply`
+ * re-emitted the **entire** pipeline configuration before every single draw:
+ * a projection matrix, twenty raster calls, and six texture units' worth of
+ * `glTexEnv*` -- roughly 130 GL calls per draw, 47,000 a frame -- and on this
+ * driver each one re-runs a slice of state validation.
+ *
+ * So the backend now remembers what GL already has and emits only the
+ * difference.  Everything below is that memory.  Three rules keep it honest:
+ *
+ *  - **one door.**  Nothing in the port calls a state-setting GL function
+ *    directly any more; `gx_tev.c` and `gx_tex.c` go through the `glc_*`
+ *    entry points, so there is exactly one place where the shadow can drift
+ *    from the driver.
+ *  - **write through, always.**  A cache miss sets the shadow *and* calls GL;
+ *    a hit does neither.  There is no lazy flush and no ordering to get wrong.
+ *  - **invalidate on anything the shadow cannot see.**  `glc_invalidate()`
+ *    forgets everything, and is called at context creation and after any
+ *    operation that touches GL behind the cache's back.
+ *
+ * `--glstats` prints calls emitted against calls elided, which is how a
+ * regression here shows up as a number rather than as a slow afternoon.
+ */
+
+#define GLC_UNITS 8
+
+typedef struct GlcUnit {
+    unsigned tex_name;
+    signed char tex2d_on;
+    signed char coord_array_on;
+    int env_mode;
+    int combine_rgb, combine_a;
+    int src_rgb[3], op_rgb[3];
+    int src_a[3], op_a[3];
+    float scale_rgb, scale_a;
+    float env_color[4];
+    float su, sv;          /* the NPOT fold, this unit's GL_TEXTURE matrix */
+    const void* coord_ptr;
+} GlcUnit;
+
+typedef struct Glc {
+    int valid;
+    GlcUnit unit[GLC_UNITS];
+    int active_tex, client_active_tex;
+
+    int vp[4];
+    double dr_near, dr_far;
+    int sc[4];
+
+    signed char cull_on;
+    int cull_face, front_face;
+    signed char depth_on;
+    int depth_func;
+    signed char depth_mask;
+    signed char color_mask[4];
+    signed char blend_on;
+    int blend_src, blend_dst, blend_eq;
+    signed char alpha_on;
+    int alpha_func;
+    float alpha_ref;
+    signed char fog_on;
+    int fog_mode;
+    float fog_color[4], fog_density, fog_start, fog_end;
+
+    float proj[16];
+    signed char proj_valid;
+    signed char modelview_identity;
+
+    signed char vertex_array_on, color_array_on;
+    const void* vertex_ptr;
+    const void* color_ptr;
+} Glc;
+
+static Glc glc;
+static unsigned glc_emitted, glc_elided;
+
+#define HIT(cond)                                                                        \
+    do {                                                                                 \
+        if (cond) {                                                                      \
+            glc_elided++;                                                                \
+            return;                                                                      \
+        }                                                                                \
+        glc_emitted++;                                                                   \
+    } while (0)
+
+void glc_invalidate(void) {
+    memset(&glc, 0, sizeof(glc));
+    /* -1 is "unknown": no GL enum or boolean is -1, so the first write of
+     * every field is guaranteed to miss. */
+    {
+        int i, j;
+        glc.active_tex = -1;
+        glc.client_active_tex = -1;
+        glc.cull_on = glc.depth_on = glc.blend_on = glc.alpha_on = glc.fog_on = -1;
+        glc.depth_mask = -1;
+        glc.vertex_array_on = glc.color_array_on = -1;
+        glc.proj_valid = 0;
+        glc.modelview_identity = 0;
+        for (i = 0; i < 4; i++) {
+            glc.color_mask[i] = -1;
+            glc.vp[i] = -1;
+            glc.sc[i] = -1;
+        }
+        glc.dr_near = glc.dr_far = -1.0;
+        for (i = 0; i < GLC_UNITS; i++) {
+            GlcUnit* u = &glc.unit[i];
+            u->tex_name = 0xFFFFFFFFu;
+            u->tex2d_on = -1;
+            u->coord_array_on = -1;
+            u->env_mode = u->combine_rgb = u->combine_a = -1;
+            u->scale_rgb = u->scale_a = -1.0f;
+            u->su = u->sv = -1.0f;
+            u->coord_ptr = (const void*)-1;
+            for (j = 0; j < 3; j++) {
+                u->src_rgb[j] = u->op_rgb[j] = -1;
+                u->src_a[j] = u->op_a[j] = -1;
+            }
+            for (j = 0; j < 4; j++) {
+                u->env_color[j] = -1.0f;
+            }
+        }
+        glc.vertex_ptr = glc.color_ptr = (const void*)-1;
+    }
+    glc.valid = 1;
+}
+
+void glc_stats(unsigned* emitted, unsigned* elided) {
+    *emitted = glc_emitted;
+    *elided = glc_elided;
+}
+
+void glc_active_texture(int unit) {
+    HIT(glc.active_tex == unit);
+    glc.active_tex = unit;
+    GL(glActiveTexture)((GLenum)(GL_TEXTURE0 + unit));
+}
+
+void glc_client_active_texture(int unit) {
+    HIT(glc.client_active_tex == unit);
+    glc.client_active_tex = unit;
+    GL(glClientActiveTexture)((GLenum)(GL_TEXTURE0 + unit));
+}
+
+void glc_bind_texture(int unit, unsigned name) {
+    HIT(glc.unit[unit].tex_name == name);
+    glc.unit[unit].tex_name = name;
+    glc_active_texture(unit);
+    GL(glBindTexture)(GL_TEXTURE_2D, (GLuint)name);
+}
+
+/* The binding a texture *upload* leaves behind: gx_tex.c has to bind the name
+ * it is about to fill, and the shadow has to be told rather than guess. */
+void glc_note_bind(int unit, unsigned name) { glc.unit[unit].tex_name = name; }
+
+void glc_unit_enable_tex2d(int unit, int on) {
+    HIT(glc.unit[unit].tex2d_on == (signed char)on);
+    glc.unit[unit].tex2d_on = (signed char)on;
+    glc_active_texture(unit);
+    if (on) {
+        GL(glEnable)(GL_TEXTURE_2D);
+    } else {
+        GL(glDisable)(GL_TEXTURE_2D);
+    }
+}
+
+/* One switch rather than a `glc_` entry point per texture-environment
+ * parameter: gx_tev.c names the GL enum it wants and this decides where the
+ * remembered copy lives.  A pname that is not in the table is passed straight
+ * through uncached, which is the safe direction to be wrong in. */
+static int* glc_env_slot_i(GlcUnit* u, unsigned pname) {
+    switch (pname) {
+        case GL_TEXTURE_ENV_MODE: return &u->env_mode;
+        case GL_COMBINE_RGB: return &u->combine_rgb;
+        case GL_COMBINE_ALPHA: return &u->combine_a;
+        case GL_SOURCE0_RGB: return &u->src_rgb[0];
+        case GL_SOURCE1_RGB: return &u->src_rgb[1];
+        case GL_SOURCE2_RGB: return &u->src_rgb[2];
+        case GL_OPERAND0_RGB: return &u->op_rgb[0];
+        case GL_OPERAND1_RGB: return &u->op_rgb[1];
+        case GL_OPERAND2_RGB: return &u->op_rgb[2];
+        case GL_SOURCE0_ALPHA: return &u->src_a[0];
+        case GL_SOURCE1_ALPHA: return &u->src_a[1];
+        case GL_SOURCE2_ALPHA: return &u->src_a[2];
+        case GL_OPERAND0_ALPHA: return &u->op_a[0];
+        case GL_OPERAND1_ALPHA: return &u->op_a[1];
+        case GL_OPERAND2_ALPHA: return &u->op_a[2];
+        default: return NULL;
+    }
+}
+
+void glc_texenvi(int unit, unsigned pname, int v) {
+    int* slot = glc_env_slot_i(&glc.unit[unit], pname);
+    HIT(slot != NULL && *slot == v);
+    if (slot) {
+        *slot = v;
+    }
+    glc_active_texture(unit);
+    GL(glTexEnvi)(GL_TEXTURE_ENV, (GLenum)pname, (GLint)v);
+}
+
+void glc_texenvf(int unit, unsigned pname, float v) {
+    GlcUnit* u = &glc.unit[unit];
+    float* slot = pname == GL_RGB_SCALE ? &u->scale_rgb
+                : pname == GL_ALPHA_SCALE ? &u->scale_a
+                : NULL;
+    HIT(slot != NULL && *slot == v);
+    if (slot) {
+        *slot = v;
+    }
+    glc_active_texture(unit);
+    GL(glTexEnvf)(GL_TEXTURE_ENV, (GLenum)pname, (GLfloat)v);
+}
+
+void glc_texenv_color(int unit, const float* c) {
+    GlcUnit* u = &glc.unit[unit];
+    HIT(memcmp(u->env_color, c, sizeof(float) * 4) == 0);
+    memcpy(u->env_color, c, sizeof(float) * 4);
+    glc_active_texture(unit);
+    GL(glTexEnvfv)(GL_TEXTURE_ENV, GL_TEXTURE_ENV_COLOR, (const GLfloat*)c);
+}
+
+/* The only thing this backend spends GL_TEXTURE on is the NPOT fold, so the
+ * whole matrix is two numbers and the cache can key on them. */
+void glc_tex_matrix(int unit, float su, float sv) {
+    GLfloat m[16];
+    GlcUnit* u = &glc.unit[unit];
+    HIT(u->su == su && u->sv == sv);
+    u->su = su;
+    u->sv = sv;
+    glc_active_texture(unit);
+    memset(m, 0, sizeof(m));
+    m[0] = su;
+    m[5] = sv;
+    m[10] = 1.0f;
+    m[15] = 1.0f;
+    GL(glMatrixMode)(GL_TEXTURE);
+    GL(glLoadMatrixf)(m);
+    GL(glMatrixMode)(GL_MODELVIEW);
+}
+
+static void glc_enable(GLenum cap, int on, signed char* shadow) {
+    HIT(*shadow == (signed char)on);
+    *shadow = (signed char)on;
+    if (on) {
+        GL(glEnable)(cap);
+    } else {
+        GL(glDisable)(cap);
+    }
+}
+
+void glc_projection(const float* m) {
+    HIT(glc.proj_valid && memcmp(glc.proj, m, sizeof(float) * 16) == 0);
+    memcpy(glc.proj, m, sizeof(float) * 16);
+    glc.proj_valid = 1;
+    GL(glMatrixMode)(GL_PROJECTION);
+    GL(glLoadMatrixf)((const GLfloat*)m);
+    GL(glMatrixMode)(GL_MODELVIEW);
+}
+
+void glc_modelview_identity(void) {
+    HIT(glc.modelview_identity);
+    glc.modelview_identity = 1;
+    GL(glMatrixMode)(GL_MODELVIEW);
+    GL(glLoadIdentity)();
+}
+
+/* The vertex arrays never move: `verts` is a static buffer and every draw
+ * reads it from index zero, so the pointers are set once for the life of the
+ * process and only the per-unit enables change. */
+void glc_vertex_array(const void* p, int stride) {
+    HIT(glc.vertex_array_on == 1 && glc.vertex_ptr == p);
+    if (glc.vertex_array_on != 1) {
+        glc.vertex_array_on = 1;
+        GL(glEnableClientState)(GL_VERTEX_ARRAY);
+    }
+    glc.vertex_ptr = p;
+    GL(glVertexPointer)(3, GL_FLOAT, (GLsizei)stride, p);
+}
+
+void glc_color_array(const void* p, int stride) {
+    HIT(glc.color_array_on == 1 && glc.color_ptr == p);
+    if (glc.color_array_on != 1) {
+        glc.color_array_on = 1;
+        GL(glEnableClientState)(GL_COLOR_ARRAY);
+    }
+    glc.color_ptr = p;
+    GL(glColorPointer)(4, GL_UNSIGNED_BYTE, (GLsizei)stride, p);
+}
+
+void glc_coord_array(int unit, const void* p, int stride) {
+    GlcUnit* u = &glc.unit[unit];
+    HIT(u->coord_array_on == (signed char)(p != NULL) && u->coord_ptr == p);
+    glc_client_active_texture(unit);
+    if (p) {
+        if (u->coord_array_on != 1) {
+            GL(glEnableClientState)(GL_TEXTURE_COORD_ARRAY);
+        }
+        GL(glTexCoordPointer)(2, GL_FLOAT, (GLsizei)stride, p);
+    } else if (u->coord_array_on != 0) {
+        GL(glDisableClientState)(GL_TEXTURE_COORD_ARRAY);
+    }
+    u->coord_array_on = (signed char)(p != NULL);
+    u->coord_ptr = p;
+}
+
+
 /* ---- bring-up ------------------------------------------------------------- */
 
 static void report_caps(void) {
@@ -219,6 +530,7 @@ int gl13_init(void) {
     }
     SDL_GL_SetSwapInterval(0); /* the game paces itself at the retrace gate */
     gl_on = 1;
+    glc_invalidate();
     report_caps();
     GL(glPixelStorei)(GL_UNPACK_ALIGNMENT, 1);
     GL(glEnable)(GL_SCISSOR_TEST);
@@ -280,6 +592,9 @@ void gl13_clear(GXColor c, u32 z) {
     GL(glClearColor)(c.r / 255.0f, c.g / 255.0f, c.b / 255.0f, c.a / 255.0f);
     GL(glClearDepth)((double)z / (double)0xFFFFFF);
     GL(glClear)(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    /* The clear sets scissor, both masks and the clear colour behind the
+     * shadow's back, so the shadow forgets.  Once a frame, which is nothing. */
+    glc_invalidate();
 }
 
 /* ---- the raster state, straight out of GXState ---------------------------- */
@@ -322,61 +637,131 @@ void gl13_apply_raster_state(void) {
     }
     /* viewport and scissor: GX's y runs down from the top of a 640x480 EFB,
      * GL's runs up from the bottom. */
-    GL(glViewport)((GLint)gx.vp[0], (GLint)(EFB_H - (gx.vp[1] + gx.vp[3])),
-                   (GLsizei)gx.vp[2], (GLsizei)gx.vp[3]);
-    GL(glDepthRange)(gx.vp[4], gx.vp[5]);
-    GL(glScissor)((GLint)gx.scissor[0],
-                  (GLint)(EFB_H - (GLint)(gx.scissor[1] + gx.scissor[3])),
-                  (GLsizei)gx.scissor[2], (GLsizei)gx.scissor[3]);
+    {
+        int vp[4];
+        vp[0] = (int)gx.vp[0];
+        vp[1] = (int)(EFB_H - (gx.vp[1] + gx.vp[3]));
+        vp[2] = (int)gx.vp[2];
+        vp[3] = (int)gx.vp[3];
+        if (memcmp(glc.vp, vp, sizeof(vp)) != 0) {
+            memcpy(glc.vp, vp, sizeof(vp));
+            glc_emitted++;
+            GL(glViewport)(vp[0], vp[1], (GLsizei)vp[2], (GLsizei)vp[3]);
+        } else {
+            glc_elided++;
+        }
+        if (glc.dr_near != (double)gx.vp[4] || glc.dr_far != (double)gx.vp[5]) {
+            glc.dr_near = gx.vp[4];
+            glc.dr_far = gx.vp[5];
+            glc_emitted++;
+            GL(glDepthRange)(gx.vp[4], gx.vp[5]);
+        } else {
+            glc_elided++;
+        }
+        vp[0] = (int)gx.scissor[0];
+        vp[1] = (int)(EFB_H - (int)(gx.scissor[1] + gx.scissor[3]));
+        vp[2] = (int)gx.scissor[2];
+        vp[3] = (int)gx.scissor[3];
+        if (memcmp(glc.sc, vp, sizeof(vp)) != 0) {
+            memcpy(glc.sc, vp, sizeof(vp));
+            glc_emitted++;
+            GL(glScissor)(vp[0], vp[1], (GLsizei)vp[2], (GLsizei)vp[3]);
+        } else {
+            glc_elided++;
+        }
+    }
 
     /* GX's front face is the opposite of GL's default. */
-    switch (gx.cull) {
-        case GX_CULL_NONE:
-            GL(glDisable)(GL_CULL_FACE);
-            break;
-        case GX_CULL_FRONT:
-            GL(glEnable)(GL_CULL_FACE);
-            GL(glCullFace)(GL_BACK);
-            break;
-        case GX_CULL_BACK:
-            GL(glEnable)(GL_CULL_FACE);
-            GL(glCullFace)(GL_FRONT);
-            break;
-        default:
-            GL(glEnable)(GL_CULL_FACE);
-            GL(glCullFace)(GL_FRONT_AND_BACK);
-            break;
-    }
-    GL(glFrontFace)(GL_CCW);
-
-    if (gx.z_enable) {
-        GL(glEnable)(GL_DEPTH_TEST);
-        GL(glDepthFunc)(gl_compare(gx.z_func));
-    } else {
-        GL(glDisable)(GL_DEPTH_TEST);
-    }
-    GL(glDepthMask)(gx.z_update ? GL_TRUE : GL_FALSE);
-    GL(glColorMask)(gx.color_update ? GL_TRUE : GL_FALSE,
-                    gx.color_update ? GL_TRUE : GL_FALSE,
-                    gx.color_update ? GL_TRUE : GL_FALSE,
-                    gx.alpha_update ? GL_TRUE : GL_FALSE);
-
-    if (gx.blend_mode == GX_BM_BLEND || gx.blend_mode == GX_BM_SUBTRACT) {
-        GL(glEnable)(GL_BLEND);
-        if (gx.blend_mode == GX_BM_SUBTRACT) {
-            /* GX_BM_SUBTRACT is dst - src with both factors one. */
-            GL(glBlendFunc)(GL_ONE, GL_ONE);
-            if (gl13_have_blend_subtract) {
-                GL(glBlendEquation)(GL_FUNC_REVERSE_SUBTRACT);
-            }
-        } else {
-            if (gl13_have_blend_subtract) {
-                GL(glBlendEquation)(GL_FUNC_ADD);
-            }
-            GL(glBlendFunc)(gl_blend_src(gx.blend_src), gl_blend_dst(gx.blend_dst));
+    {
+        int on = gx.cull != GX_CULL_NONE;
+        GLenum face = GL_FRONT;
+        switch (gx.cull) {
+            case GX_CULL_FRONT: face = GL_BACK; break;
+            case GX_CULL_BACK: face = GL_FRONT; break;
+            default: face = GL_FRONT_AND_BACK; break;
         }
+        glc_enable(GL_CULL_FACE, on, &glc.cull_on);
+        if (on) {
+            if (glc.cull_face != (int)face) {
+                glc.cull_face = (int)face;
+                glc_emitted++;
+                GL(glCullFace)(face);
+            } else {
+                glc_elided++;
+            }
+            if (glc.front_face != GL_CCW) {
+                glc.front_face = GL_CCW;
+                glc_emitted++;
+                GL(glFrontFace)(GL_CCW);
+            } else {
+                glc_elided++;
+            }
+        }
+    }
+
+    glc_enable(GL_DEPTH_TEST, gx.z_enable ? 1 : 0, &glc.depth_on);
+    if (gx.z_enable) {
+        GLenum f = gl_compare(gx.z_func);
+        if (glc.depth_func != (int)f) {
+            glc.depth_func = (int)f;
+            glc_emitted++;
+            GL(glDepthFunc)(f);
+        } else {
+            glc_elided++;
+        }
+    }
+    if (glc.depth_mask != (signed char)(gx.z_update ? 1 : 0)) {
+        glc.depth_mask = (signed char)(gx.z_update ? 1 : 0);
+        glc_emitted++;
+        GL(glDepthMask)(gx.z_update ? GL_TRUE : GL_FALSE);
     } else {
-        GL(glDisable)(GL_BLEND);
+        glc_elided++;
+    }
+    {
+        signed char cm[4];
+        cm[0] = cm[1] = cm[2] = (signed char)(gx.color_update ? 1 : 0);
+        cm[3] = (signed char)(gx.alpha_update ? 1 : 0);
+        if (memcmp(glc.color_mask, cm, 4) != 0) {
+            memcpy(glc.color_mask, cm, 4);
+            glc_emitted++;
+            GL(glColorMask)(cm[0] ? GL_TRUE : GL_FALSE, cm[1] ? GL_TRUE : GL_FALSE,
+                            cm[2] ? GL_TRUE : GL_FALSE, cm[3] ? GL_TRUE : GL_FALSE);
+        } else {
+            glc_elided++;
+        }
+    }
+
+    {
+        int on = (gx.blend_mode == GX_BM_BLEND || gx.blend_mode == GX_BM_SUBTRACT);
+        glc_enable(GL_BLEND, on, &glc.blend_on);
+        if (on) {
+            GLenum src, dst, eq;
+            if (gx.blend_mode == GX_BM_SUBTRACT) {
+                /* GX_BM_SUBTRACT is dst - src with both factors one. */
+                src = GL_ONE;
+                dst = GL_ONE;
+                eq = GL_FUNC_REVERSE_SUBTRACT;
+            } else {
+                src = gl_blend_src(gx.blend_src);
+                dst = gl_blend_dst(gx.blend_dst);
+                eq = GL_FUNC_ADD;
+            }
+            if (gl13_have_blend_subtract && glc.blend_eq != (int)eq) {
+                glc.blend_eq = (int)eq;
+                glc_emitted++;
+                GL(glBlendEquation)(eq);
+            } else {
+                glc_elided++;
+            }
+            if (glc.blend_src != (int)src || glc.blend_dst != (int)dst) {
+                glc.blend_src = (int)src;
+                glc.blend_dst = (int)dst;
+                glc_emitted++;
+                GL(glBlendFunc)(src, dst);
+            } else {
+                glc_elided++;
+            }
+        }
     }
 
     /* Alpha compare.  GX combines two comparisons with AND/OR/XOR/XNOR; GL
@@ -391,7 +776,11 @@ void gl13_apply_raster_state(void) {
             if (c0 == GX_ALWAYS) {
                 use = c1;
                 ref = gx.alpha_ref1;
-            } else if (c1 != GX_ALWAYS) {
+            } else if (c1 == GX_ALWAYS || (c1 == c0 && gx.alpha_ref1 == gx.alpha_ref0)) {
+                /* exact: the second half is either vacuous or the same test */
+            } else if (c0 == GX_NEVER || c1 == GX_NEVER) {
+                use = GX_NEVER;
+            } else {
                 gx_warn("GXSetAlphaCompare: two live AND comparisons, the first is used");
             }
         } else if (gx.alpha_op == GX_AOP_OR) {
@@ -400,46 +789,87 @@ void gl13_apply_raster_state(void) {
             } else if (c0 == GX_NEVER) {
                 use = c1;
                 ref = gx.alpha_ref1;
-            } else if (c1 != GX_NEVER) {
+            } else if (c1 == GX_NEVER || (c1 == c0 && gx.alpha_ref1 == gx.alpha_ref0)) {
+                /* Exact, and this is the common one.  The game's own idiom is
+                 * `GXSetAlphaCompare(GX_GEQUAL, 1, GX_AOP_OR, GX_GEQUAL, 1)` --
+                 * the same comparison written twice because GX has no way to
+                 * say "just this one".  M2b counted 79,488 of these in 999
+                 * frames, i.e. every draw, and reported each as a degradation;
+                 * it never was one. */
+            } else {
                 gx_warn("GXSetAlphaCompare: two live OR comparisons, the first is used");
             }
         } else {
             gx_warn("GXSetAlphaCompare: XOR/XNOR is reduced to its first test");
         }
         if (pass_all || use == GX_ALWAYS) {
-            GL(glDisable)(GL_ALPHA_TEST);
+            glc_enable(GL_ALPHA_TEST, 0, &glc.alpha_on);
         } else {
-            GL(glEnable)(GL_ALPHA_TEST);
-            GL(glAlphaFunc)(gl_compare(use), ref / 255.0f);
+            GLenum f = gl_compare(use);
+            float r = ref / 255.0f;
+            glc_enable(GL_ALPHA_TEST, 1, &glc.alpha_on);
+            if (glc.alpha_func != (int)f || glc.alpha_ref != r) {
+                glc.alpha_func = (int)f;
+                glc.alpha_ref = r;
+                glc_emitted++;
+                GL(glAlphaFunc)(f, r);
+            } else {
+                glc_elided++;
+            }
         }
     }
 
     /* Fog.  Nine sites in the whole game, all of them linear or exponential
      * in eye z, which is what GL_FOG is. */
     if (gx.fog_type == GX_FOG_NONE) {
-        GL(glDisable)(GL_FOG);
+        glc_enable(GL_FOG, 0, &glc.fog_on);
     } else {
         GLfloat c[4];
+        int mode;
+        float density = 0.0f;
         c[0] = gx.fog_color.r / 255.0f;
         c[1] = gx.fog_color.g / 255.0f;
         c[2] = gx.fog_color.b / 255.0f;
         c[3] = gx.fog_color.a / 255.0f;
-        GL(glEnable)(GL_FOG);
-        GL(glFogfv)(GL_FOG_COLOR, c);
+        glc_enable(GL_FOG, 1, &glc.fog_on);
+        if (memcmp(glc.fog_color, c, sizeof(c)) != 0) {
+            memcpy(glc.fog_color, c, sizeof(c));
+            glc_emitted++;
+            GL(glFogfv)(GL_FOG_COLOR, c);
+        } else {
+            glc_elided++;
+        }
         switch (gx.fog_type & 7) {
-            case 4: /* EXP  */
-                GL(glFogi)(GL_FOG_MODE, GL_EXP);
-                GL(glFogf)(GL_FOG_DENSITY, 1.0f / (gx.fog_endz - gx.fog_startz + 1.0f));
-                break;
-            case 5: /* EXP2 */
-                GL(glFogi)(GL_FOG_MODE, GL_EXP2);
-                GL(glFogf)(GL_FOG_DENSITY, 1.0f / (gx.fog_endz - gx.fog_startz + 1.0f));
-                break;
-            default:
-                GL(glFogi)(GL_FOG_MODE, GL_LINEAR);
+            case 4: mode = GL_EXP; break;
+            case 5: mode = GL_EXP2; break;
+            default: mode = GL_LINEAR; break;
+        }
+        if (glc.fog_mode != mode) {
+            glc.fog_mode = mode;
+            glc_emitted++;
+            GL(glFogi)(GL_FOG_MODE, mode);
+        } else {
+            glc_elided++;
+        }
+        if (mode == GL_LINEAR) {
+            if (glc.fog_start != gx.fog_startz || glc.fog_end != gx.fog_endz) {
+                glc.fog_start = gx.fog_startz;
+                glc.fog_end = gx.fog_endz;
+                glc_emitted++;
                 GL(glFogf)(GL_FOG_START, gx.fog_startz);
                 GL(glFogf)(GL_FOG_END, gx.fog_endz);
-                break;
+            } else {
+                glc_elided++;
+            }
+        } else {
+            density = 1.0f / (gx.fog_endz - gx.fog_startz + 1.0f);
+            if (glc.fog_density != density) {
+                glc.fog_density = density;
+                glc_emitted++;
+                GL(glFogf)(GL_FOG_DENSITY, density);
+            } else {
+                glc_elided++;
+            }
         }
     }
 }
@@ -450,7 +880,7 @@ void gl13_apply_raster_state(void) {
  * are row major and GL's are column major, so the load transposes. */
 
 void gl13_apply_transform(void) {
-    GLfloat m[16];
+    float m[16];
     const f32* p;
     if (!gl_on) {
         return;
@@ -474,15 +904,13 @@ void gl13_apply_transform(void) {
         m[14] = 2.0f * p[5] + 1.0f;
         m[15] = 1.0f;
     }
-    GL(glMatrixMode)(GL_PROJECTION);
-    GL(glLoadMatrixf)(m);
+    glc_projection(m);
 
     /* The modelview is identity: gx_draw.c transforms positions and normals on
      * the CPU with the loaded position/normal matrices, because the game loads
      * normal matrices that are not the inverse transpose of the position
      * matrix and GL would compute its own. */
-    GL(glMatrixMode)(GL_MODELVIEW);
-    GL(glLoadIdentity)();
+    glc_modelview_identity();
 }
 
 /* ---- present -------------------------------------------------------------- */
@@ -613,3 +1041,13 @@ void gl13_present(void) {
 }
 
 unsigned gl13_frame_number(void) { return frame_no; }
+
+void gl13_state_report(void) {
+    unsigned e, l;
+    glc_stats(&e, &l);
+    if (!e && !l) {
+        return;
+    }
+    port_log("port> GL state: %u calls emitted, %u elided (%.1f%% of %u)\n", e, l,
+             (e + l) ? 100.0 * (double)l / (double)(e + l) : 0.0, e + l);
+}

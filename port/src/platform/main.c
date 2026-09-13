@@ -68,7 +68,14 @@ static void usage(const char* argv0) {
             "  --dumpframe SPEC  write these presented frames as PPMs:\n"
             "                    N, or a,b,c, or first-last/step (e.g. 1-400/20)\n"
             "  --shotdir DIR     where --dumpframe writes (default: .)\n"
-            "  --scale N         window scale over 640x480 (default 1)\n",
+            "  --scale N         window scale over 640x480 (default 1)\n"
+            "\n"
+            "  --nopad           no controller 1 at all, not even the keyboard\n"
+            "  --paddbg          log raw pad reports/buttons/axes as they arrive\n"
+            "  --play SCRIPT     scripted controller 1 input (port/src/pad/pad_play.c\n"
+            "                    format); see port/tools/gecko2play.py to convert a\n"
+            "                    port/ref/tools/mkgecko.py reference script\n"
+            "  --record FILE     record controller 1's raw input in the --play format\n",
             argv0);
 }
 
@@ -214,6 +221,14 @@ int port_parse_args(int argc, char** argv) {
             port_opt.shotdir = argv[++i];
         } else if (!strcmp(a, "--scale") && i + 1 < argc) {
             port_opt.scale = atoi(argv[++i]);
+        } else if (!strcmp(a, "--nopad")) {
+            port_opt.nopad = 1;
+        } else if (!strcmp(a, "--paddbg")) {
+            port_opt.pad_debug = 1;
+        } else if (!strcmp(a, "--play") && i + 1 < argc) {
+            port_opt.pad_play = argv[++i];
+        } else if (!strcmp(a, "--record") && i + 1 < argc) {
+            port_opt.pad_record = argv[++i];
         } else if (!strcmp(a, "--verbose") || !strcmp(a, "-v")) {
             port_opt.verbose = 1;
         } else if (!strcmp(a, "--help") || !strcmp(a, "-h")) {

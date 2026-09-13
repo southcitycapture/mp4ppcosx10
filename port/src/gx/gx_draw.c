@@ -37,6 +37,7 @@
  * -- every one of its 42 call sites sets the state immediately before.
  */
 #include "gx_internal.h"
+#include "gx_math.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -67,18 +68,33 @@ static u8 have[GX_MAX_ATTR];
 static int active[GX_MAX_ATTR]; /* attributes in descriptor order */
 static int nactive;
 static int last_active;
+static int tex_slots;
 static int in_prim;
 static u8 prim;
 static u8 vtxfmt;
 static u16 want_verts;
 
+/* (float)b / 255.0f for every byte value, built once with the real division
+ * so the table is bit-for-bit what the divide produced.  It removes two
+ * expensive things at a stroke: an `fdivs`, which on a 7450 is 14-21 cycles
+ * and does not pipeline, and the integer-to-float conversion, which on
+ * PowerPC before ISA 2.06 is a store-load-subtract dance.  CPU lighting does
+ * up to thirteen of these per vertex -- four for the material, three for the
+ * ambient and three per light -- and after the square roots went, they were
+ * what was left. */
+static float byte_scale[256];
+
 static unsigned stat_prims, stat_verts, stat_draws, stat_dls;
 static int dl_shown;
 
 void gx_draw_reset(void) {
+    int i;
     nverts = 0;
     in_prim = 0;
     nactive = 0;
+    for (i = 0; i < 256; i++) {
+        byte_scale[i] = (float)i / 255.0f;
+    }
 }
 
 void gx_draw_report(void) {
@@ -151,17 +167,46 @@ u32 GXEndDisplayList(void) {
 
 /* ---- reading an attribute out of an array --------------------------------- */
 
+/* 1 / (1 << n), exactly.  The fractional shift is a power of two, so the
+ * reciprocal is exact and multiplying by it is the same number the divide
+ * produced -- at a fifteenth of the cost on a 7450, where `fdivs` is 14-21
+ * cycles and does not pipeline.  This reader runs up to eight times per
+ * vertex and the profile put it, with `indexed`, at 995 of 4,300 samples. */
+const float gx_frac_scale[32] = {
+    1.0f / 1.0f,          1.0f / 2.0f,          1.0f / 4.0f,
+    1.0f / 8.0f,          1.0f / 16.0f,         1.0f / 32.0f,
+    1.0f / 64.0f,         1.0f / 128.0f,        1.0f / 256.0f,
+    1.0f / 512.0f,        1.0f / 1024.0f,       1.0f / 2048.0f,
+    1.0f / 4096.0f,       1.0f / 8192.0f,       1.0f / 16384.0f,
+    1.0f / 32768.0f,      1.0f / 65536.0f,      1.0f / 131072.0f,
+    1.0f / 262144.0f,     1.0f / 524288.0f,     1.0f / 1048576.0f,
+    1.0f / 2097152.0f,    1.0f / 4194304.0f,    1.0f / 8388608.0f,
+    1.0f / 16777216.0f,   1.0f / 33554432.0f,   1.0f / 67108864.0f,
+    1.0f / 134217728.0f,  1.0f / 268435456.0f,  1.0f / 536870912.0f,
+    1.0f / 1073741824.0f, 1.0f / 2147483648.0f,
+};
+
+/* On a big-endian machine the disc's own byte order is the machine's, so a
+ * 16- or 32-bit attribute is a load rather than a shift-and-or.  PowerPC
+ * handles the unaligned case in hardware.  The portable path stays for the
+ * little-endian development host, which is the only place it is needed. */
 static f32 read_component(const u8* p, u8 type, u8 frac, int i) {
+    const float sc = gx_frac_scale[frac & 31];
     switch (type) {
-        case GX_U8: return (f32)p[i] / (f32)(1u << frac);
-        case GX_S8: return (f32)(s8)p[i] / (f32)(1u << frac);
+        case GX_U8: return (f32)p[i] * sc;
+        case GX_S8: return (f32)(s8)p[i] * sc;
+#if defined(__BIG_ENDIAN__) || (defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
+        case GX_U16: return (f32)*(const u16*)(p + i * 2) * sc;
+        case GX_S16: return (f32)*(const s16*)(p + i * 2) * sc;
+        default: return *(const f32*)(p + i * 4);
+#else
         case GX_U16: {
             u16 v = (u16)((p[i * 2] << 8) | p[i * 2 + 1]);
-            return (f32)v / (f32)(1u << frac);
+            return (f32)v * sc;
         }
         case GX_S16: {
             s16 v = (s16)((p[i * 2] << 8) | p[i * 2 + 1]);
-            return (f32)v / (f32)(1u << frac);
+            return (f32)v * sc;
         }
         default: {
             union { f32 f; u32 u; } c;
@@ -169,6 +214,7 @@ static f32 read_component(const u8* p, u8 type, u8 frac, int i) {
             c.u = ((u32)q[0] << 24) | ((u32)q[1] << 16) | ((u32)q[2] << 8) | q[3];
             return c.f;
         }
+#endif
     }
 }
 
@@ -241,6 +287,25 @@ static void begin_attr_order(void) {
     }
     last_active = nactive ? active[nactive - 1] : -1;
     memset(have, 0, sizeof(have));
+
+    /* How many texcoord slots this primitive's vertices must actually hold.
+     * transform_and_store no longer copies the whole 96-byte Vtx, so a slot
+     * nobody writes is stale rather than zero -- and a TEV stage is allowed to
+     * name a coord the texgen state does not generate.  Writing the gap is a
+     * couple of stores in the rare case and nothing in the common one. */
+    {
+        int t;
+        tex_slots = gx.num_texgens;
+        for (t = 0; t < gx.num_tev && t < GX_TEV_STAGES; t++) {
+            int c = gx.tev[t].coord;
+            if (c < GX_TEXCOORDS && c + 1 > tex_slots) {
+                tex_slots = c + 1;
+            }
+        }
+        if (tex_slots > GX_TEXCOORDS) {
+            tex_slots = GX_TEXCOORDS;
+        }
+    }
 }
 
 static void transform_and_store(void);
@@ -272,24 +337,24 @@ static void light_channel(int c, const float* wpos, const float* wnrm,
         return;
     }
     if (cc->mat_src == GX_SRC_REG) {
-        mat[0] = cc->mat.r / 255.0f;
-        mat[1] = cc->mat.g / 255.0f;
-        mat[2] = cc->mat.b / 255.0f;
-        mat[3] = cc->mat.a / 255.0f;
+        mat[0] = byte_scale[cc->mat.r];
+        mat[1] = byte_scale[cc->mat.g];
+        mat[2] = byte_scale[cc->mat.b];
+        mat[3] = byte_scale[cc->mat.a];
     } else {
-        mat[0] = io[0] / 255.0f;
-        mat[1] = io[1] / 255.0f;
-        mat[2] = io[2] / 255.0f;
-        mat[3] = io[3] / 255.0f;
+        mat[0] = byte_scale[io[0]];
+        mat[1] = byte_scale[io[1]];
+        mat[2] = byte_scale[io[2]];
+        mat[3] = byte_scale[io[3]];
     }
     if (cc->amb_src == GX_SRC_REG) {
-        acc[0] = cc->amb.r / 255.0f;
-        acc[1] = cc->amb.g / 255.0f;
-        acc[2] = cc->amb.b / 255.0f;
+        acc[0] = byte_scale[cc->amb.r];
+        acc[1] = byte_scale[cc->amb.g];
+        acc[2] = byte_scale[cc->amb.b];
     } else {
-        acc[0] = io[0] / 255.0f;
-        acc[1] = io[1] / 255.0f;
-        acc[2] = io[2] / 255.0f;
+        acc[0] = byte_scale[io[0]];
+        acc[1] = byte_scale[io[1]];
+        acc[2] = byte_scale[io[2]];
     }
     for (i = 0; i < 8; i++) {
         const GXLight* l;
@@ -305,10 +370,17 @@ static void light_channel(int c, const float* wpos, const float* wnrm,
         dy = l->pos[1] - wpos[1];
         dz = l->pos[2] - wpos[2];
         d2 = dx * dx + dy * dy + dz * dz;
-        d = d2 > 0.0f ? sqrtf(d2) : 1.0f;
-        dx /= d;
-        dy /= d;
-        dz /= d;
+        /* One reciprocal square root does the normalisation and the distance
+         * both, and the 74xx has no fsqrt to call anyway (gx_math.h). */
+        if (d2 > 0.0f) {
+            float rd = gx_rsqrtf(d2);
+            d = d2 * rd;
+            dx *= rd;
+            dy *= rd;
+            dz *= rd;
+        } else {
+            d = 1.0f;
+        }
         ndl = wnrm[0] * dx + wnrm[1] * dy + wnrm[2] * dz;
         if (cc->diff_fn == GX_DF_CLAMP) {
             ndl = ndl < 0.0f ? 0.0f : ndl;
@@ -325,9 +397,9 @@ static void light_channel(int c, const float* wpos, const float* wnrm,
                 att = 1.0f;
             }
         }
-        acc[0] += (l->color.r / 255.0f) * ndl * att;
-        acc[1] += (l->color.g / 255.0f) * ndl * att;
-        acc[2] += (l->color.b / 255.0f) * ndl * att;
+        acc[0] += byte_scale[l->color.r] * ndl * att;
+        acc[1] += byte_scale[l->color.g] * ndl * att;
+        acc[2] += byte_scale[l->color.b] * ndl * att;
     }
     for (i = 0; i < 3; i++) {
         float v = acc[i] * mat[i];
@@ -348,7 +420,18 @@ static void transform_and_store(void) {
         return;
     }
     v = &verts[nverts++];
-    *v = pending;
+    /* Not `*v = pending`.  A Vtx is 96 bytes and every one of its fields is
+     * either overwritten below or unread by the draw; copying the whole thing
+     * per vertex was pure memory traffic in the hottest loop in the port.
+     * Only the two colours are carried across verbatim. */
+    v->clr[0][0] = pending.clr[0][0];
+    v->clr[0][1] = pending.clr[0][1];
+    v->clr[0][2] = pending.clr[0][2];
+    v->clr[0][3] = pending.clr[0][3];
+    v->clr[1][0] = pending.clr[1][0];
+    v->clr[1][1] = pending.clr[1][1];
+    v->clr[1][2] = pending.clr[1][2];
+    v->clr[1][3] = pending.clr[1][3];
 
     px = pending.pos[0];
     py = pending.pos[1];
@@ -359,17 +442,20 @@ static void transform_and_store(void) {
 
     if (gx.vcd[GX_VA_NRM] != GX_NONE) {
         float nx = pending.nrm[0], ny = pending.nrm[1], nz = pending.nrm[2];
-        float len;
+        float len2;
         v->nrm[0] = n[0] * nx + n[1] * ny + n[2] * nz;
         v->nrm[1] = n[3] * nx + n[4] * ny + n[5] * nz;
         v->nrm[2] = n[6] * nx + n[7] * ny + n[8] * nz;
-        len = sqrtf(v->nrm[0] * v->nrm[0] + v->nrm[1] * v->nrm[1] +
-                    v->nrm[2] * v->nrm[2]);
-        if (len > 0.0f) {
-            v->nrm[0] /= len;
-            v->nrm[1] /= len;
-            v->nrm[2] /= len;
+        len2 = v->nrm[0] * v->nrm[0] + v->nrm[1] * v->nrm[1] + v->nrm[2] * v->nrm[2];
+        if (len2 > 0.0f) {
+            float rl = gx_rsqrtf(len2);
+            v->nrm[0] *= rl;
+            v->nrm[1] *= rl;
+            v->nrm[2] *= rl;
         }
+    } else {
+        v->nrm[0] = v->nrm[1] = 0.0f;
+        v->nrm[2] = 1.0f;
     }
 
     if (gx.vcd[GX_VA_CLR0] == GX_NONE) {
@@ -426,6 +512,10 @@ static void transform_and_store(void) {
         }
         v->tex[i][0] = s;
         v->tex[i][1] = t;
+    }
+    for (; i < tex_slots; i++) {
+        v->tex[i][0] = 0.0f;
+        v->tex[i][1] = 0.0f;
     }
 }
 
@@ -714,25 +804,23 @@ static void draw_now(void) {
      * sends you hunting for a texture upload that already happened. */
     draw_log();
 
-    GL(glEnableClientState)(GL_VERTEX_ARRAY);
-    GL(glVertexPointer)(3, GL_FLOAT, sizeof(Vtx), &verts[0].pos[0]);
-    GL(glEnableClientState)(GL_COLOR_ARRAY);
-    GL(glColorPointer)(4, GL_UNSIGNED_BYTE, sizeof(Vtx), &verts[0].clr[0][0]);
+    /* `verts` is a static buffer and every draw reads it from index zero, so
+     * these three pointers never change for the life of the process; the
+     * cache turns 18 client-state calls a draw into none. */
+    glc_vertex_array(&verts[0].pos[0], (int)sizeof(Vtx));
+    glc_color_array(&verts[0].clr[0][0], (int)sizeof(Vtx));
     {
         int i;
         for (i = 0; i < gl13_max_tex_units; i++) {
             int stage = i < gx.num_tev ? i : -1;
-            GL(glClientActiveTexture)(GL_TEXTURE0 + i);
             if (stage >= 0 && gx.tev[stage].coord < GX_TEXCOORDS &&
                 gx_bound_tex(gx.tev[stage].map) != NULL) {
-                GL(glEnableClientState)(GL_TEXTURE_COORD_ARRAY);
-                GL(glTexCoordPointer)(2, GL_FLOAT, sizeof(Vtx),
-                                      &verts[0].tex[gx.tev[stage].coord][0]);
+                glc_coord_array(i, &verts[0].tex[gx.tev[stage].coord][0],
+                                (int)sizeof(Vtx));
             } else {
-                GL(glDisableClientState)(GL_TEXTURE_COORD_ARRAY);
+                glc_coord_array(i, NULL, 0);
             }
         }
-        GL(glClientActiveTexture)(GL_TEXTURE0);
     }
     GL(glDrawArrays)(gl_prim(prim), 0, nverts);
     stat_draws++;
@@ -893,8 +981,11 @@ void port_gx_init(void) {
 
 void port_gx_present(void) { gl13_present(); }
 
+void gl13_state_report(void);
+
 void port_gx_shutdown(void) {
     gx_draw_report();
+    gl13_state_report();
     gx_tex_report();
     gx_warn_report();
     gl13_shutdown();

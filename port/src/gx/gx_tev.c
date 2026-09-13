@@ -167,8 +167,8 @@ static Arg alpha_arg(const GXTevStage* s, u8 a) {
 }
 
 /* Choose the combiner for one channel and write it to the current unit. */
-static void emit_channel(int rgb, Arg a, Arg b, Arg c, Arg d, u8 op, u8 bias, u8 scale,
-                         float* konst_out, int* konst_set) {
+static void emit_channel(int unit, int rgb, Arg a, Arg b, Arg c, Arg d, u8 op, u8 bias,
+                         u8 scale, float* konst_out, int* konst_set) {
     GLenum combine = rgb ? GL_COMBINE_RGB : GL_COMBINE_ALPHA;
     GLenum s0 = rgb ? GL_SOURCE0_RGB : GL_SOURCE0_ALPHA;
     GLenum s1 = rgb ? GL_SOURCE1_RGB : GL_SOURCE1_ALPHA;
@@ -238,19 +238,19 @@ static void emit_channel(int rgb, Arg a, Arg b, Arg c, Arg d, u8 op, u8 bias, u8
     if (!gl13_live()) {
         return;
     }
-    GL(glTexEnvi)(GL_TEXTURE_ENV, (GLenum)combine, (GLint)mode);
-    GL(glTexEnvi)(GL_TEXTURE_ENV, s0, (GLint)args[0].src);
-    GL(glTexEnvi)(GL_TEXTURE_ENV, o0, (GLint)args[0].operand);
+    glc_texenvi(unit, (unsigned)combine, (int)mode);
+    glc_texenvi(unit, (unsigned)s0, (int)args[0].src);
+    glc_texenvi(unit, (unsigned)o0, (int)args[0].operand);
     if (n > 1) {
-        GL(glTexEnvi)(GL_TEXTURE_ENV, s1, (GLint)args[1].src);
-        GL(glTexEnvi)(GL_TEXTURE_ENV, o1, (GLint)args[1].operand);
+        glc_texenvi(unit, (unsigned)s1, (int)args[1].src);
+        glc_texenvi(unit, (unsigned)o1, (int)args[1].operand);
     }
     if (n > 2) {
-        GL(glTexEnvi)(GL_TEXTURE_ENV, s2, (GLint)args[2].src);
-        GL(glTexEnvi)(GL_TEXTURE_ENV, o2, (GLint)args[2].operand);
+        glc_texenvi(unit, (unsigned)s2, (int)args[2].src);
+        glc_texenvi(unit, (unsigned)o2, (int)args[2].operand);
     }
-    GL(glTexEnvf)(GL_TEXTURE_ENV, scale_e,
-                  scale == GX_CS_SCALE_2 ? 2.0f : scale == GX_CS_SCALE_4 ? 4.0f : 1.0f);
+    glc_texenvf(unit, (unsigned)scale_e,
+                scale == GX_CS_SCALE_2 ? 2.0f : scale == GX_CS_SCALE_4 ? 4.0f : 1.0f);
     if (scale == GX_CS_DIVIDE_2) {
         gx_warn("TEV: GX_CS_DIVIDE_2 has no GL equivalent; drawn at scale 1");
     }
@@ -268,9 +268,8 @@ void gx_tev_apply(void) {
         if (!gl13_live()) {
             break;
         }
-        GL(glActiveTexture)(GL_TEXTURE0 + i);
         if (i >= stages) {
-            GL(glDisable)(GL_TEXTURE_2D);
+            glc_unit_enable_tex2d(i, 0);
             continue;
         }
         {
@@ -280,30 +279,27 @@ void gx_tev_apply(void) {
             GXTexObjPort* bound = gx_bound_tex(s->map);
             int have_tex = bound != NULL && s->coord < GX_TEXCOORDS;
             if (have_tex) {
-                GL(glEnable)(GL_TEXTURE_2D);
+                glc_unit_enable_tex2d(i, 1);
                 gx_tex_bind(i, bound);
             } else {
                 /* A stage with no texture still has to run its combiner, and
                  * a disabled unit in GL passes the previous colour through
                  * untouched -- which is only right when the stage is a pass.
                  * Keep the unit enabled against a 1x1 white texture instead. */
-                GL(glDisable)(GL_TEXTURE_2D);
+                glc_unit_enable_tex2d(i, 0);
             }
-            GL(glTexEnvi)(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
-            emit_channel(1, color_arg(s, s->cin[0]), color_arg(s, s->cin[1]),
+            glc_texenvi(i, GL_TEXTURE_ENV_MODE, GL_COMBINE);
+            emit_channel(i, 1, color_arg(s, s->cin[0]), color_arg(s, s->cin[1]),
                          color_arg(s, s->cin[2]), color_arg(s, s->cin[3]), s->cop,
                          s->cbias, s->cscale, konst, &konst_set);
-            emit_channel(0, alpha_arg(s, s->ain[0]), alpha_arg(s, s->ain[1]),
+            emit_channel(i, 0, alpha_arg(s, s->ain[0]), alpha_arg(s, s->ain[1]),
                          alpha_arg(s, s->ain[2]), alpha_arg(s, s->ain[3]), s->aop,
                          s->abias, s->ascale, konst, &konst_set);
-            GL(glTexEnvfv)(GL_TEXTURE_ENV, GL_TEXTURE_ENV_COLOR, konst);
+            glc_texenv_color(i, konst);
             if (s->ras_swap || s->tex_swap) {
                 gx_warn("GXSetTevSwapMode: a non-identity swap table is ignored");
             }
         }
-    }
-    if (gl13_live()) {
-        GL(glActiveTexture)(GL_TEXTURE0);
     }
 }
 
