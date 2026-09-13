@@ -1025,6 +1025,7 @@ void gl13_present(void) {
     frame_no++;
     port_scenelog();
     port_ovllog();
+    port_nanwatch();
     if (frame_wanted(frame_no)) {
         char path[1024];
         snprintf(path, sizeof(path), "%s/frame-%05u.ppm",

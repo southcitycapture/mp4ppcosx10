@@ -63,6 +63,9 @@ typedef struct PortOptions {
     /* ---- M4 ---- */
     const char* scenelog;   /* --scenelog F[,F...]  the 3D scene's own state */
     int ovllog;             /* --ovllog  name the scene every time it changes  */
+    /* ---- M5 ---- */
+    int nanwatch;           /* --nanwatch  name the first frame each camera,
+                             *   model or board-camera field turns NaN         */
 } PortOptions;
 
 extern PortOptions port_opt;
@@ -93,6 +96,7 @@ void port_perf_report(void);
 
 /* --scenelog, src/debug/scenelog.c */
 void port_scenelog(void);
+void port_nanwatch(void);
 void port_ovllog(void);
 const char* port_drawobj_name(const void* mtx, int* model_index);
 void port_clock_mark(void);

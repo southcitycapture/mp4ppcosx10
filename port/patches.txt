@@ -226,3 +226,21 @@ x6:src/game/armem.c	(u32 pointerToARQRequest)	(uintptr_t pointerToARQRequest)
 # added to on the next call from the same stack slot, which is where the
 # off-world second pass came from (PLAN.md 15.1).
 src/dolphin/mtx/mtx.c	    mtx[0][0] = 1.0f;\n    mtx[0][1] = 0.0f;\n    mtx[0][2] = 0.0f;\n    mtx[1][0] = 0.0f;\n    mtx[1][1] = 1.0f;\n    mtx[1][2] = 0.0f;\n    mtx[2][0] = 0.0f;\n    mtx[2][1] = 0.0f;\n    mtx[2][2] = 1.0f;\n}	    mtx[0][0] = 1.0f;\n    mtx[0][1] = 0.0f;\n    mtx[0][2] = 0.0f;\n    mtx[0][3] = 0.0f;\n    mtx[1][0] = 0.0f;\n    mtx[1][1] = 1.0f;\n    mtx[1][2] = 0.0f;\n    mtx[1][3] = 0.0f;\n    mtx[2][0] = 0.0f;\n    mtx[2][1] = 0.0f;\n    mtx[2][2] = 1.0f;\n    mtx[2][3] = 0.0f;\n}
+
+# --------------------------------------------------------- dolphin/mtx/vec.c
+# `C_VECScale` ignores its `scale` argument and normalises instead -- it is
+# `C_VECNormalize`'s body under the wrong name.  Same story as C_MTXIdentity
+# above: on the console `VECScale` is `PSVECScale`, four paired-single
+# instructions that are right, so the DOL never called this and the decomp
+# matches either way.  `-DMTX_USE_C` makes it the one that runs, and it does
+# not merely scale wrongly -- on a zero vector it is `1.0f / sqrtf(0.0f)`,
+# which is `inf`, and `0.0f * inf` is NaN.
+#
+# `src/game/board/main.c:CalcCameraTarget` does exactly that on the first frame
+# the board camera is marked `moving` while it is already sitting on its
+# target: `offset = pos - target` is the zero vector, `VECScale(&offset,
+# &offset, 0.15f)` is NaN, and `target += offset` puts NaN in the board camera
+# for the rest of the run.  Nothing crashes and nothing warns; every
+# transformed vertex is NaN, so Toad's Midway Madness rendered as a black
+# screen with a working sprite HUD over it (PLAN.md 15.2).
+src/dolphin/mtx/vec.c	    f32 s;\n\n    s = 1.0f / sqrtf(src->z * src->z + src->x * src->x + src->y * src->y);\n    dst->x = src->x * s;\n    dst->y = src->y * s;\n    dst->z = src->z * s;	    dst->x = src->x * scale;\n    dst->y = src->y * scale;\n    dst->z = src->z * scale;

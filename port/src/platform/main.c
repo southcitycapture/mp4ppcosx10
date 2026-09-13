@@ -225,6 +225,8 @@ int port_parse_args(int argc, char** argv) {
             port_opt.drawlog_frame = atoi(argv[++i]);
         } else if (!strcmp(a, "--ovllog")) {
             port_opt.ovllog = 1;
+        } else if (!strcmp(a, "--nanwatch")) {
+            port_opt.nanwatch = 1;
         } else if (!strcmp(a, "--scenelog") && i + 1 < argc) {
             port_opt.scenelog = argv[++i];
         } else if (!strcmp(a, "--nocard")) {

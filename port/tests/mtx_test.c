@@ -22,6 +22,13 @@
  *      times per call.  The test runs every in-place form against the
  *      out-of-place answer.
  *
+ *   3. **A C body that computes the wrong thing entirely.**  Nothing on the
+ *      console ever called these, so nothing ever checked them:
+ *      `C_VECScale` was `C_VECNormalize`'s body under the wrong name, which is
+ *      `1/sqrtf(0)` on a zero vector and therefore NaN (PLAN.md 15.2).  Each
+ *      one is checked against the arithmetic written out by hand, and fed the
+ *      zero vector.
+ *
  * Plus the two functions with no C original at all -- `PSMTXReorder` and
  * `PSMTXROMultVecArray` -- against `C_MTXMultVecArray`, which is the identity
  * the pair is supposed to preserve.
@@ -300,12 +307,86 @@ static void test_reorder(void) {
     }
 }
 
+/* ---- 5. the VEC family against arithmetic written out by hand ------------ */
+/* The `PS*` vector functions the game calls are paired-single assembly the
+ * mirror drops, so what actually runs is either a `C_VEC*` body or a port
+ * forwarder -- and a `C_VEC*` body the console never called can be quietly
+ * wrong.  `C_VECScale` was: it ignored `scale` and normalised, which is
+ * `1/sqrtf(0)` on a zero vector and therefore NaN (PLAN.md 15.2).  So each one
+ * is checked against the arithmetic spelled out here, and every one is also
+ * fed the zero vector, because that is the input that turns a wrong body from
+ * a wrong answer into a NaN that spreads. */
+
+static int close3(const Vec* got, float x, float y, float z, float tol) {
+    return fabsf(got->x - x) <= tol && fabsf(got->y - y) <= tol &&
+           fabsf(got->z - z) <= tol;
+}
+
+static void test_vec(void) {
+    int trial;
+    Vec zero = { 0.0f, 0.0f, 0.0f };
+    Vec r;
+    printf("the VEC family computes what it says, and the zero vector is finite:\n");
+    for (trial = 0; trial < 2000; trial++) {
+        Vec a, b;
+        float s = frand();
+        a.x = frand(); a.y = frand(); a.z = frand();
+        b.x = frand(); b.y = frand(); b.z = frand();
+
+        C_VECScale(&a, &r, s);
+        if (!close3(&r, a.x * s, a.y * s, a.z * s, 1e-4f)) {
+            fail("C_VECScale", "does not multiply by the scale");
+            break;
+        }
+        C_VECAdd(&a, &b, &r);
+        if (!close3(&r, a.x + b.x, a.y + b.y, a.z + b.z, 1e-5f)) {
+            fail("C_VECAdd", "differs"); break;
+        }
+        C_VECSubtract(&a, &b, &r);
+        if (!close3(&r, a.x - b.x, a.y - b.y, a.z - b.z, 1e-5f)) {
+            fail("C_VECSubtract", "differs"); break;
+        }
+        C_VECCrossProduct(&a, &b, &r);
+        if (!close3(&r, a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z,
+                    a.x * b.y - a.y * b.x, 1e-4f)) {
+            fail("C_VECCrossProduct", "differs"); break;
+        }
+        if (fabsf(C_VECDotProduct(&a, &b) - (a.x * b.x + a.y * b.y + a.z * b.z)) > 1e-4f) {
+            fail("C_VECDotProduct", "differs"); break;
+        }
+        if (fabsf(C_VECMag(&a) - sqrtf(a.x * a.x + a.y * a.y + a.z * a.z)) > 1e-4f) {
+            fail("C_VECMag", "differs"); break;
+        }
+    }
+    /* the zero vector, everywhere it can reach */
+    C_VECScale(&zero, &r, 0.15f);
+    if (r.x != r.x || r.y != r.y || r.z != r.z) {
+        fail("C_VECScale(0)", "produced NaN");
+    }
+    C_VECNormalize(&zero, &r);
+    if (r.x != r.x || r.y != r.y || r.z != r.z) {
+        fail("C_VECNormalize(0)", "produced NaN");
+    }
+    C_VECHalfAngle(&zero, &zero, &r);
+    if (r.x != r.x || r.y != r.y || r.z != r.z) {
+        fail("C_VECHalfAngle(0,0)", "produced NaN");
+    }
+    C_VECReflect(&zero, &zero, &r);
+    if (r.x != r.x || r.y != r.y || r.z != r.z) {
+        fail("C_VECReflect(0,0)", "produced NaN");
+    }
+    if (C_VECMag(&zero) != 0.0f) {
+        fail("C_VECMag(0)", "is not zero");
+    }
+}
+
 int main(void) {
     printf("---- port/tests/mtx_test ----\n");
     test_constructors();
     test_aliasing();
     test_forwarders();
     test_reorder();
+    test_vec();
     printf("---- %d failure(s) ----\n", failures);
     return failures ? 1 : 0;
 }

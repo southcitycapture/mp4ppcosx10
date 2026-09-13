@@ -16,6 +16,10 @@
 #include "game/hu3d.h"
 #include "game/hsfformat.h"
 #include "game/object.h"
+#include "game/board/main.h"
+
+/* w01dll, Toad's Midway Madness: the index of dll/w01dll.rel in include/ovl_table.h. */
+#define PORT_BOARD_OVL_W01 89
 
 #include <math.h>
 
@@ -307,4 +311,105 @@ const char* port_drawobj_name(const void* mtx, int* model_index) {
         return NULL;
     }
     return d->object->name;
+}
+
+/* --nanwatch: the first frame each 3D slot turns NaN, and nothing after.
+ *
+ * A NaN in a camera position is silent: nothing crashes, nothing warns, every
+ * comparison against it is false, and the whole 3D layer simply stops drawing
+ * because every transformed vertex is NaN.  The board looked like "the map
+ * does not render" for exactly that reason (PLAN.md 15.2).  Once a NaN is in
+ * a persistent struct it stays, so the useful thing is the *first* frame -- one
+ * line per slot, then silence -- which turns "somewhere in w01dll" into a
+ * window of a few frames and the overlay that owned them.
+ *
+ * The board's own camera is behind `static BoardCameraData boardCamera` in
+ * src/game/board/main.c, which the port cannot name; its getters are exported,
+ * they only copy out of that struct, and they are the difference between "the
+ * target model moved to NaN" and "the interpolator produced NaN". */
+
+static int nan_f(float v) { return v != v; }
+
+static void port_boardcam_dump(const BoardCameraData* c) {
+    const BoardFocusData* k = &c->focus;
+    port_log("        target %g %g %g   pos %g %g %g   offset %g %g %g\n", c->target.x,
+             c->target.y, c->target.z, c->pos.x, c->pos.y, c->pos.z, c->offset.x,
+             c->offset.y, c->offset.z);
+    port_log("        rot %g %g %g  zoom %g fov %g near %g far %g  target_mdl %d "
+             "target_space %d moving %u\n",
+             c->rot.x, c->rot.y, c->rot.z, c->zoom, c->fov, c->near, c->far,
+             (int)c->target_mdl, (int)c->target_space, (unsigned)c->moving);
+    port_log("        focus type %d time %d/%d  target_start %g %g %g  target_end %g %g %g\n",
+             (int)k->view_type, (int)k->time, (int)k->max_time, k->target_start.x,
+             k->target_start.y, k->target_start.z, k->target_end.x, k->target_end.y,
+             k->target_end.z);
+    port_log("        focus zoom %g->%g fov %g->%g rot_start %g %g %g rot_end %g %g %g\n",
+             k->zoom_start, k->zoom_end, k->fov_start, k->fov_end, k->rot_start.x,
+             k->rot_start.y, k->rot_start.z, k->rot_end.x, k->rot_end.y, k->rot_end.z);
+}
+
+static int nan_vec(const HuVecF* v) { return nan_f(v->x) || nan_f(v->y) || nan_f(v->z); }
+
+void port_nanwatch(void) {
+    static u8 cam_said[HU3D_CAM_MAX];
+    static u8 mdl_said[HU3D_MODEL_MAX];
+    static u8 board_said;
+    unsigned f;
+    int i;
+    if (!port_opt.nanwatch) {
+        return;
+    }
+    f = gl13_frame_number();
+    for (i = 0; i < HU3D_CAM_MAX; i++) {
+        const HU3DCAMERA* c = &Hu3DCamera[i];
+        if (c->fov == -1.0f || cam_said[i]) {
+            continue;
+        }
+        if (nan_vec(&c->pos) || nan_vec(&c->target) || nan_vec(&c->up) ||
+            nan_f(c->fov) || nan_f(c->near) || nan_f(c->far)) {
+            cam_said[i] = 1;
+            port_log("port> nanwatch frame %u overlay %d: cam%d pos %g %g %g "
+                     "target %g %g %g up %g %g %g fov %g\n",
+                     f, (int)omcurovl, i, c->pos.x, c->pos.y, c->pos.z, c->target.x,
+                     c->target.y, c->target.z, c->up.x, c->up.y, c->up.z, c->fov);
+        }
+    }
+    for (i = 0; i < HU3D_MODEL_MAX; i++) {
+        const HU3DMODEL* d = &Hu3DData[i];
+        if (d->hsf == 0 || mdl_said[i]) {
+            continue;
+        }
+        if (nan_vec(&d->pos) || nan_vec(&d->rot) || nan_vec(&d->scale) ||
+            nan_f(d->mtx[0][3]) || nan_f(d->mtx[1][3]) || nan_f(d->mtx[2][3])) {
+            mdl_said[i] = 1;
+            port_log("port> nanwatch frame %u overlay %d: mdl%d pos %g %g %g "
+                     "rot %g %g %g scale %g %g %g mtxT %g %g %g\n",
+                     f, (int)omcurovl, i, d->pos.x, d->pos.y, d->pos.z, d->rot.x,
+                     d->rot.y, d->rot.z, d->scale.x, d->scale.y, d->scale.z,
+                     d->mtx[0][3], d->mtx[1][3], d->mtx[2][3]);
+        }
+    }
+    if (omcurovl == PORT_BOARD_OVL_W01) {
+        /* `boardCamera` is extern, so the port can read the whole thing rather
+         * than the four values the getters expose -- and the useful pair is
+         * this frame's and the previous one's, because the interesting question
+         * is which field went first. */
+        static BoardCameraData prev;
+        static int have_prev;
+        const BoardCameraData* c = &boardCamera;
+        int bad = nan_vec((const HuVecF*)&c->target) || nan_vec((const HuVecF*)&c->pos) ||
+                  nan_vec((const HuVecF*)&c->offset) || nan_vec((const HuVecF*)&c->rot) ||
+                  nan_f(c->zoom) || nan_f(c->fov);
+        if (bad && !board_said) {
+            board_said = 1;
+            if (have_prev) {
+                port_log("port> nanwatch frame %u: boardCamera the frame BEFORE:\n", f - 1);
+                port_boardcam_dump(&prev);
+            }
+            port_log("port> nanwatch frame %u: boardCamera NOW:\n", f);
+            port_boardcam_dump(c);
+        }
+        prev = *c;
+        have_prev = 1;
+    }
 }

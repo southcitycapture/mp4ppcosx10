@@ -24,7 +24,21 @@ Script syntax -- one directive per line, '#' starts a comment:
     at <frame> <frames> <btn>[,<btn>...]   # hold buttons for <frames> frames
                                            #   starting at GlobalCounter == <frame>
     at <frame> <frames> dstk:<dir>         # hold a stick direction (menu movement)
+    every <period> <frames> <from> <btn> [<phase>]
+                                           # hold buttons for <frames> frames out of
+                                           #   every <period>, from <from> onwards,
+                                           #   offset <phase> frames into the period
     mark <frame> <label>                   # emit a comment; also written to .marks
+
+`every` exists because the code list has to fit in Dolphin's Gecko region.  The
+handler is injected at 0x80001800 and the codes live behind it in the same
+few-kilobyte window; a list that does not fit is **silently not installed**, and
+the run then looks exactly like a run with no codes at all -- the attract loop.
+An `at` costs five lines, so an A press every 90 frames out of 13,000 is 715
+lines and over the edge, while the same metronome as one `every` is five lines
+in total.  It is compiled as a bit test on the low half of `GlobalCounter`
+(Gecko `28`, "if (u16 & ~mask) == value"), so <period> must be a power of two
+and <frames> a power of two no greater than it.
 
 Buttons: A B X Y Z L R START.  Directions: UP DOWN LEFT RIGHT.
 
@@ -72,6 +86,49 @@ def block(first, last, writes):
     return out
 
 
+def every_block(period, hold, first, writes, phase=0):
+    """A metronome, as one masked bit test rather than one block per press.
+
+    `GlobalCounter % period < hold` is a test on the counter's low bits when
+    both are powers of two: the bits from `hold` up to `period` must all be
+    zero.  Gecko's 16-bit conditional takes a mask of bits to *ignore*, so the
+    mask is the complement of that band, tested against zero, on the low half
+    of the counter (big-endian, so +2)."""
+    if period & (period - 1) or hold & (hold - 1) or hold > period:
+        raise ValueError('every: period and frames must be powers of two, frames <= period')
+    if phase % hold or phase >= period:
+        raise ValueError('every: phase must be a multiple of frames and below period')
+    band = (period - 1) & ~(hold - 1)          # the bits that select the slot
+    ignore = 0xFFFF & ~band                    # Gecko's mask is what to ignore
+    out = [f'24{off(GLOBAL_COUNTER):06X} {first - 1:08X}',
+           f'28{off(GLOBAL_COUNTER) + 2:06X} {ignore:04X}{phase:04X}']
+    for addr, size, value in writes:
+        if size == 1:
+            out.append(f'00{off(addr):06X} 0000{value:02X}')
+        elif size == 2:
+            out.append(f'02{off(addr):06X} 0000{value:04X}')
+        else:
+            raise ValueError(size)
+    out.append('E0000000 80008000')
+    return out
+
+
+def pad_writes(what):
+    writes = []
+    if what.lower().startswith('dstk:'):
+        for d in what.split(':', 1)[1].upper().split(','):
+            v = DSTK[d]
+            writes.append((PAD_DSTK, 1, v))
+            writes.append((PAD_DSTK_REP, 1, v))
+    else:
+        mask = 0
+        for b in what.upper().split(','):
+            mask |= BTN[b]
+        writes.append((PAD_BTN, 2, mask))
+        writes.append((PAD_BTN_DOWN, 2, mask))
+    return writes
+
+
 def compile_script(path):
     lines, marks = [], []
     with open(path) as f:
@@ -85,23 +142,16 @@ def compile_script(path):
                     marks.append((int(p[1]), ' '.join(p[2:])))
                     lines.append(f'* frame {int(p[1])}: {" ".join(p[2:])}')
                     continue
+                if p[0].lower() == 'every':
+                    period, hold, first, what = int(p[1]), int(p[2]), int(p[3]), p[4]
+                    phase = int(p[5]) if len(p) > 5 else 0
+                    lines += every_block(period, hold, first, pad_writes(what), phase)
+                    continue
                 if p[0].lower() != 'at':
                     raise ValueError(f'unknown directive {p[0]!r}')
                 first, count, what = int(p[1]), int(p[2]), p[3]
                 last = first + count - 1
-                writes = []
-                if what.lower().startswith('dstk:'):
-                    for d in what.split(':', 1)[1].upper().split(','):
-                        v = DSTK[d]
-                        writes.append((PAD_DSTK, 1, v))
-                        writes.append((PAD_DSTK_REP, 1, v))
-                else:
-                    mask = 0
-                    for b in what.upper().split(','):
-                        mask |= BTN[b]
-                    writes.append((PAD_BTN, 2, mask))
-                    writes.append((PAD_BTN_DOWN, 2, mask))
-                lines += block(first, last, writes)
+                lines += block(first, last, pad_writes(what))
             except Exception as e:
                 sys.exit(f'{path}:{lineno}: {e}')
     return lines, marks
