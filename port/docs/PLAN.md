@@ -1439,6 +1439,26 @@ that the host build is not diverging from the real one.
 The G4 was not available on the day, so the PowerPC binary is verified only to
 compile and link clean; everything below was run on the host build.
 
+### 9.2 The disc: the NKit-trimmed ISO is read in place
+
+Checked before writing a line of the DVD layer, because the plan left it open.
+`orig/GMPE01_01/Mario Party 4 (USA) (Rev 1).nkit.iso` is 0x23AA9800 bytes
+against a 1.36 GB full disc, so NKit has removed the trailing junk -- but it has
+**relocated nothing**. The FST is byte-identical to `dtk vfs cp sys/fst.bin` at
+the raw offset the header names (0x160100), and seven files read straight out of
+the image at their FST offsets -- the first, the last, the highest-offset one
+(`sound/mpgcstr.pdt` at 0x22FD0080) and four at random -- are byte-identical to
+`dtk vfs cp`. The highest byte any file reaches, 0x23AA95B8, is inside the
+image. So `port/src/dvd/dvd_fs.c` parses the FST at boot and reads the image
+directly: nothing to install, and the 357 files are exactly the ones the disc
+has.
+
+The extracted-`files/`-tree fallback works too and is chosen automatically when
+`--image` names a directory. Pointing it at this repository's `orig/GMPE01_01`,
+which holds only `files/dll/`, produces exactly the right failure --
+`data.c: Data File Error(data/E3setup.bin)` and `OSPanic in "data.c" on line
+65` -- which is the check that the FST is real rather than permissive.
+
 ### 9.2 The boot narration
 
 Captured in full in [`m1-boot.log`](m1-boot.log) (202 lines, with `--verbose` so
