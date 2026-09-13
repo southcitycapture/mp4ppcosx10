@@ -45,6 +45,7 @@ static void usage(const char* argv0) {
             "\n"
             "  --reldir DIR      where the 99 REL bundles live (default: <exe dir>/rels)\n"
             "  --reltest         load and unload all 99 REL bundles twice and report\n"
+            "  --gxdemo          draw the GX self-test frame instead of the game\n"
             "  --relzerobss      always zero a module's bss by hand on load\n"
             "  --noaudio         HuAudInit and msm succeed as silent stubs\n"
             "  --headless        decode and log GX, but open no window\n"
@@ -78,6 +79,8 @@ int port_parse_args(int argc, char** argv) {
             port_opt.deterministic = 1;
         } else if (!strcmp(a, "--reldir") && i + 1 < argc) {
             port_opt.reldir = argv[++i];
+        } else if (!strcmp(a, "--gxdemo")) {
+            port_opt.gxdemo = 1;
         } else if (!strcmp(a, "--reltest")) {
             port_opt.reltest = 1;
         } else if (!strcmp(a, "--relzerobss")) {
@@ -110,14 +113,27 @@ int port_parse_args(int argc, char** argv) {
     return 1;
 }
 
+void port_gx_shutdown(void);
+void port_gx_demo(void);
+void gl13_write_ppm(const char* path);
+void GXInit_demo_bootstrap(void);
+
+/* One exit path, so a quit through the game's own reset, through --frames and
+ * through the end of main() all report the same things in the same order. */
+void port_shutdown(int code) {
+    port_gx_shutdown();
+    port_dvd_stats();
+    port_dll_report();
+    port_reset_report();
+    port_stub_report();
+    exit(code);
+}
+
 static void run_game(void) {
     port_log("port> entering the game's own main()\n\n");
     mp4_game_main();
     port_log("\nport> the game's main() returned\n");
-    port_dvd_stats();
-    port_dll_report();
-    port_stub_report();
-    exit(0);
+    port_shutdown(0);
 }
 
 int main(int argc, char** argv) {
@@ -133,6 +149,20 @@ int main(int argc, char** argv) {
     if (port_opt.reltest) {
         return port_dll_selftest();
     }
+    if (port_opt.gxdemo) {
+        char path[1024];
+        port_mem_init();
+        port_vi_init();
+        port_gx_init();
+        GXInit_demo_bootstrap();
+        port_gx_demo();
+        snprintf(path, sizeof(path), "%s/gxdemo.ppm",
+                 port_opt.shotdir ? port_opt.shotdir : ".");
+        gl13_write_ppm(path);
+        port_gx_present();
+        port_shutdown(0);
+    }
+    port_reset_init();
     port_mem_init();
     port_vi_init();
     port_dvd_init();

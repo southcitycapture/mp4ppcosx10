@@ -34,6 +34,7 @@ typedef struct PortOptions {
     int verbose;
     /* ---- M2 ---- */
     const char* reldir;     /* --reldir  where the 99 REL bundles live        */
+    int gxdemo;             /* --gxdemo  draw the GX self-test frame          */
     int reltest;            /* --reltest load and unload all 99 twice, report */
     int relzerobss;         /* --relzerobss  always zero a module's bss by
                              *   hand on load, as if dlclose never unloaded   */
@@ -61,6 +62,7 @@ void port_stub_report(void);
 void port_log(const char* fmt, ...);
 void port_logv(const char* fmt, va_list ap);
 void port_fatal(const char* fmt, ...);
+void port_shutdown(int code); /* the one exit path: report, flush, close SDL */
 
 /* ---- the clock ----------------------------------------------------------- */
 /* mach_absolute_time, because clock_gettime is not in the 10.4 SDK. */
@@ -96,7 +98,9 @@ int port_dll_selftest(void);
 void port_dll_report(void);
 
 /* ---- the soft-reset watcher (port/src/os/sreset_poll.c) ------------------- */
+void port_reset_init(void);
 void port_reset_thread_tick(void);
+void port_reset_report(void);
 int port_reset_requested(void);
 void port_request_reset(void);
 

@@ -73,15 +73,16 @@ src/game/init.c	(u32)DemoFrameBuffer2+fb_size	(uintptr_t)DemoFrameBuffer2+fb_siz
 src/game/init.c	OSRoundUp32B((u32)buf)	OSRoundUp32B((uintptr_t)buf)
 
 # ----------------------------------------------------------------- game/audio.c
-# HOST BUILD ONLY.  The GameCube, the G4 and the disc are all big endian, so the
-# real target reads the game's own data files in place -- that is the port's
-# largest single dividend over a PC port (partyboard needs a 1,087-line
-# byteswap.cpp; we need none).  The development host is little endian, so the
-# game's own parsers see byte-swapped values: msmSysInit reads version 0x02000000
-# out of sound/mpgcsnd.msm, returns MSM_ERR_INVALIDFILE, and HuAudInit spins in
-# `while (1)`.  On the host the port declines to hang there and boots on without
-# audio.  Nothing is patched for the PowerPC build.
-host:src/game/audio.c	        while (1);\n    }\n    if (OSGetSoundMode()	        OSReport("port> little-endian host: the game's own MSM parser cannot read the disc's big-endian sound bank; continuing without audio\\n");\n        return;\n    }\n    if (OSGetSoundMode()
+# `HuAudInit` spins in `while (1)` when `msmSysInit` fails, which is right on a
+# console with a real disc and wrong for a port that has not written its MusyX
+# SAL yet (M6).  `--noaudio` makes the failure survivable on either target, and
+# on a little-endian development host it is taken automatically, because the
+# failure there is structural: the GameCube, the G4 and the disc are all big
+# endian -- the port's largest single dividend, partyboard needs a 1,087-line
+# byteswap.cpp and we need none -- so on the host `msmSysInit` reads version
+# 0x02000000 out of sound/mpgcsnd.msm and returns MSM_ERR_INVALIDFILE.
+src/game/audio.c	        while (1);\n    }\n    if (OSGetSoundMode()	        if (portNoAudioContinue()) {\n            return;\n        }\n        while (1);\n    }\n    if (OSGetSoundMode()
+src/game/audio.c	#include "game/audio.h"	#include "game/audio.h"\n\n/* port: --noaudio, and the little-endian host, see port/src/audio/audio_none.c */\nint portNoAudioContinue(void);
 
 # ---------------------------------------------------------------- game/objdll.c
 # M2: OSLink becomes dlopen.  One Mach-O bundle per REL is the only mechanism
@@ -119,3 +120,24 @@ src/REL/m438Dll/fire.c	    var_r31 = (GXColor*)*arg0 = HuMemDirectMallocNum(HEAP
 src/REL/m438Dll/fire.c	    var_r31 = (HuVec2f*)*arg0 = HuMemDirectMallocNum(HEAP_HEAP, arg1 * sizeof(M438FireStruct3), 0x10000000);	    *arg0 = HuMemDirectMallocNum(HEAP_HEAP, arg1 * sizeof(M438FireStruct3), 0x10000000);\n    var_r31 = (HuVec2f*)*arg0;
 src/REL/w01Dll/main.c	static void CoasterHostComKeySet(s32 playerNo)	void CoasterHostComKeySet(s32 playerNo)
 src/REL/w06Dll/main.c	    boardTurnFunc\n        = (void*) boardStarShowNextHook\n        = (void*) boardTurnStartFunc\n        = (void*) boardStarGiveHook\n        = (void*) boardBowserHook = NULL;	    boardBowserHook = NULL;\n    boardStarGiveHook = NULL;\n    boardTurnStartFunc = NULL;\n    boardStarShowNextHook = NULL;\n    boardTurnFunc = NULL;
+
+# ---------------------------------------------- host: the 32-bit file formats
+# HOST BUILD ONLY, and the port's one real divergence.  The game's on-disc
+# structures hold 32-bit fields its own headers declare as pointers --
+# ANIMDATA's bank/pat/bmp are file offsets relocated in place -- so on a
+# 64-bit host the struct is 0x20 bytes where the file says 0x14 and every
+# field after the first lands on the wrong bytes.  That is not an endianness
+# problem and byte swapping does not fix it; on the G4, which is 32-bit and
+# big-endian, every one of these parses is correct exactly as written.  So the
+# host draws sprite banks empty and carries on.  See port/src/dvd/host_data.c.
+
+host:src/game/sprman.c	ANIMDATA *HuSprAnimRead(void *data)\n{\n    s16 i;	void *portHostEmptyAnim(void);\nint portHostDataUsable(void);\n\nANIMDATA *HuSprAnimRead(void *data)\n{\n    s16 i;\n    if(!portHostDataUsable()) {\n        return portHostEmptyAnim();\n    }
+host:src/REL/bootDll/main.c	    u32 *src = (u32 *)nintendoData;\n    u32 size = *src++;	    u32 *src = (u32 *)nintendoData;\n    u32 size;\n    if(!portHostDataUsable()) {\n        return portHostEmptyAnim();\n    }\n    size = *src++;
+host:src/REL/bootDll/main.c	void *NintendoDataDecode(void);\n\nvoid ObjectSetup(void)	void *NintendoDataDecode(void);\nvoid *portHostEmptyAnim(void);\nint portHostDataUsable(void);\n\nvoid ObjectSetup(void)
+
+# GetFileInfo is the archive-directory read every data file passes through:
+# three big-endian u32 scalars (offset, raw length, compression type).  Unlike
+# the pointer-bearing structs above there is nothing structural in the way, so
+# the host swaps them on read and the whole decode path opens up.  portBE32 is
+# the identity on the G4.
+host:src/game/data.c	static void GetFileInfo(HUDATASTAT *readStat, s32 fileNum)\n{\n    u32 *ptr;\n    ptr = (u32 *)PTR_OFFSET(readStat->dirP, (fileNum * 4))+1;\n    readStat->fileDataP = PTR_OFFSET(readStat->dirP, *ptr);\n    ptr = readStat->fileDataP;\n    readStat->rawLen = *ptr++;\n    readStat->decodeType = *ptr++;	u32 portBE32(u32 v);\n\nstatic void GetFileInfo(HUDATASTAT *readStat, s32 fileNum)\n{\n    u32 *ptr;\n    ptr = (u32 *)PTR_OFFSET(readStat->dirP, (fileNum * 4))+1;\n    readStat->fileDataP = PTR_OFFSET(readStat->dirP, portBE32(*ptr));\n    ptr = readStat->fileDataP;\n    readStat->rawLen = portBE32(*ptr); ptr++;\n    readStat->decodeType = portBE32(*ptr); ptr++;

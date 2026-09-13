@@ -110,6 +110,7 @@ static double first_retrace_at;
 
 void VIWaitForRetrace(void) {
     if (swap_pending) {
+        port_gx_present();
         swap_pending = 0;
     }
     if (pre_cb) {
@@ -118,6 +119,7 @@ void VIWaitForRetrace(void) {
 
     port_dvd_service();
     port_arq_service();
+    port_reset_thread_tick();
 
     {
         double now = now_seconds();
@@ -149,7 +151,6 @@ void VIWaitForRetrace(void) {
         port_log("\nport> --frames %d reached: %u retraces in %.2f s wall "
                  "(game clock %.2f s)\n",
                  port_opt.max_frames, retrace_count, wall, retrace_count / 59.94);
-        port_stub_report();
-        exit(0);
+        port_shutdown(0);
     }
 }

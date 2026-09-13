@@ -248,6 +248,7 @@ BOOL DVDClose(DVDFileInfo* fi) {
 static s32 do_read(DVDFileInfo* fi, void* addr, s32 length, s32 offset) {
     int n = (int)fi->cb.command;
     size_t got;
+    if (port_opt.verbose) { port_log("port> dvd read entry %d -> %p len %d ofs %d\n", n, addr, length, offset); }
     if (n < 0 || n >= entry_count) {
         return DVD_RESULT_FATAL_ERROR;
     }
@@ -279,6 +280,7 @@ static s32 do_read(DVDFileInfo* fi, void* addr, s32 length, s32 offset) {
     }
     reads++;
     bytes_read += got;
+    if (port_opt.verbose) { port_log("port> dvd read done, got %u\n", (unsigned)got); }
     return (s32)got;
 }
 

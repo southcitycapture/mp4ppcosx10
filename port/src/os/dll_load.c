@@ -224,20 +224,25 @@ static void zero_bss(void* handle, const char* name) {
 #else
     {
         /* 32-bit Mach-O: the section header gives a link-time vmaddr, so it
-         * needs the image's slide, which is the loaded header address minus
-         * __TEXT's vmaddr. */
+         * needs the image's slide.  `getsegbynamefromheader` is not in the
+         * 10.4 SDK, so find the image by its header address and ask dyld. */
         const struct mach_header* mh = (const struct mach_header*)info.dli_fbase;
-        const struct segment_command* seg = getsegbynamefromheader(
-            (struct mach_header*)mh, "__TEXT");
-        long slide = seg ? (long)((char*)mh - (long)seg->vmaddr) : 0;
         static const char* const names[2] = { "__bss", "__common" };
+        long slide = 0;
+        uint32_t i, n = _dyld_image_count();
         int k;
+        for (i = 0; i < n; i++) {
+            if (_dyld_get_image_header(i) == mh) {
+                slide = (long)_dyld_get_image_vmaddr_slide(i);
+                break;
+            }
+        }
         for (k = 0; k < 2; k++) {
-            const struct section* s =
+            const struct section* sec =
                 getsectbynamefromheader((struct mach_header*)mh, "__DATA", names[k]);
-            if (s && s->size) {
-                memset((void*)((char*)(long)s->addr + slide), 0, s->size);
-                zeroed += (int)s->size;
+            if (sec && sec->size) {
+                memset((void*)((char*)(long)sec->addr + slide), 0, sec->size);
+                zeroed += (int)sec->size;
             }
         }
     }

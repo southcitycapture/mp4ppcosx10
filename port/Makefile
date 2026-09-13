@@ -97,7 +97,8 @@ STUBS_C  := $(BUILD)/sdk_stubs.c
 STUBS_U_C := $(BUILD)/sdk_stubs_untyped.c
 
 GAME_OBJS := $(patsubst %.c,$(BUILD)/game/%.o,$(GAME_C))
-PORT_OBJS := $(patsubst %.c,$(BUILD)/port/%.o,$(PORT_C)) $(BUILD)/port/jmp.o
+PORT_OBJS := $(patsubst %.c,$(BUILD)/port/%.o,$(PORT_C)) $(BUILD)/port/jmp.o \
+             $(BUILD)/port/kerent_tramp.o
 STUBS_OBJ := $(BUILD)/port/sdk_stubs.o $(BUILD)/port/sdk_stubs_untyped.o
 
 # ---- flags -------------------------------------------------------------------
@@ -106,7 +107,8 @@ STUBS_OBJ := $(BUILD)/port/sdk_stubs.o $(BUILD)/port/sdk_stubs_untyped.o
 # otherwise, which is 64 bits on the host), it turns the GXPosition*/GXColor*
 # vertex writers from write-gather-pipe stores at 0xCC008000 into ordinary
 # function calls, and it widens a few pointer parameters to `const void*`.
-GAME_DEFS := -DTARGET_PC -DVERSION=1 -DNDEBUG=1 -DMTX_USE_C \
+VERSION_NUM ?= 1
+GAME_DEFS := -DTARGET_PC -DVERSION=$(VERSION_NUM) -DNDEBUG=1 -DMTX_USE_C \
              -DMUSY_TARGET=MUSY_TARGET_PC \
              -DPORT_PRC_STACK_MUL=4 -DPORT_PRC_STACK_GUARD=64
 GAME_INC  := -I$(GEN)/include -I$(ROOT)/extern/musyx/include \
@@ -168,6 +170,17 @@ $(BUILD)/port/%.o: %.c $(MIRROR_STAMP)
 	$(CC) $(PORT_CFLAGS) -c -o $@ $<
 
 $(BUILD)/port/jmp.o: $(CTX_ASM)
+	@mkdir -p $(dir $@)
+	$(AS) -o $@ $<
+
+# kerent.c's 1,011-entry export-thunk table, which the mirror drops with the
+# rest of the Metrowerks assembly, regenerated as `b` instructions that
+# assemble identically on arm64 and on 32-bit PowerPC.  See tools/gen_kerent.py.
+$(BUILD)/kerent_tramp.s: tools/gen_kerent.py $(ROOT)/src/game/kerent.c
+	@mkdir -p $(BUILD)
+	$(PYTHON) tools/gen_kerent.py --out $@ --version $(VERSION_NUM)
+
+$(BUILD)/port/kerent_tramp.o: $(BUILD)/kerent_tramp.s
 	@mkdir -p $(dir $@)
 	$(AS) -o $@ $<
 

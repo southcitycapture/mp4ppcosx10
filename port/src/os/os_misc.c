@@ -5,9 +5,8 @@
  * has no caches to keep coherent, so the 284 DC/IC call sites and the 20
  * interrupt-mask sites become no-ops -- but real, callable ones, because the
  * SDK calls some of them itself.  The game creates exactly one OSThread, the
- * soft-reset watcher, and its very first act is to block on OSSleepThread, so
- * never starting it is behaviour-preserving for as long as nothing posts to
- * its queue.
+ * soft-reset watcher; it and the reset button live in
+ * port/src/os/sreset_poll.c.
  */
 #include "port.h"
 
@@ -21,8 +20,9 @@
 
 /* __OSBusClock / __OSCoreClock are tentative definitions in every translation
  * unit that includes <dolphin/os.h> (on the console they are fixed addresses
- * in low memory).  The port compiles game code with -fcommon so they merge,
- * and fills them in here. */
+ * in low memory).  A REL bundle that merged its own copy would read zero, and
+ * five modules use OS_BUS_CLOCK, so patches.txt makes the header declarations
+ * `extern` and this is the one definition. */
 u32 __OSBusClock;
 u32 __OSCoreClock;
 
@@ -164,44 +164,11 @@ void PPCSync(void) {}
 void PPCHalt(void) { port_fatal("PPCHalt"); }
 
 /* ---- threads ------------------------------------------------------------- */
-/* One thread in the whole game (sreset.c's reset watcher), and it blocks on
- * OSSleepThread before doing anything.  Recording it is enough for M1; M2's
- * host loop will poll it. */
-
-static OSThread* reset_thread;
-
-BOOL OSCreateThread(OSThread* thread, void* (*func)(void*), void* param, void* stack,
-                    u32 stackSize, OSPriority prio, u16 attr) {
-    (void)param;
-    (void)stack;
-    (void)stackSize;
-    (void)prio;
-    (void)attr;
-    memset(thread, 0, sizeof(*thread));
-    reset_thread = thread;
-    port_log("port> OSCreateThread %p func %p (the soft-reset watcher; not started)\n",
-             (void*)thread, (void*)func);
-    return TRUE;
-}
-
-s32 OSResumeThread(OSThread* thread) { (void)thread; return 0; }
-void OSCancelThread(OSThread* thread) { (void)thread; }
-void OSYieldThread(void) {}
-void OSSleepThread(OSThreadQueue* queue) { (void)queue; }
-void OSWakeupThread(OSThreadQueue* queue) { (void)queue; }
-OSThread* OSSetIdleFunction(OSIdleFunction f, void* param, void* stack, u32 size) {
-    (void)f;
-    (void)param;
-    (void)stack;
-    (void)size;
-    return NULL;
-}
-
-void OSInitMessageQueue(OSMessageQueue* mq, OSMessage* msgArray, s32 msgCount) {
-    memset(mq, 0, sizeof(*mq));
-    mq->msgArray = msgArray;
-    mq->msgCount = msgCount;
-}
+/* The game creates one OSThread, the soft-reset watcher, and the port polls
+ * its body once per retrace instead of running it on a thread.  That whole
+ * surface -- OSCreateThread, OSResumeThread, OSSleepThread, OSWakeupThread,
+ * OSInitMessageQueue and the reset button -- lives in
+ * port/src/os/sreset_poll.c. */
 
 /* ---- reset, sound and video mode ----------------------------------------- */
 
@@ -212,28 +179,19 @@ u32 OSGetSoundMode(void) { return sound_mode; }
 void OSSetSoundMode(u32 mode) { sound_mode = mode; }
 u32 OSGetProgressiveMode(void) { return progressive; }
 void OSSetProgressiveMode(u32 on) { progressive = on; }
-BOOL OSGetResetButtonState(void) { return FALSE; }
-u32 OSGetResetCode(void) { return 0; }
-
-void OSResetSystem(BOOL reset, u32 resetCode, BOOL forceMenu) {
-    (void)reset;
-    (void)resetCode;
-    (void)forceMenu;
-    port_log("port> OSResetSystem: quitting\n");
-    port_stub_report();
-    exit(0);
-}
 
 /* ---- OSLink -------------------------------------------------------------- */
-/* M1 stops here on purpose.  The real loader is one dlopen'ed Mach-O bundle
- * per REL, which maps 1:1 onto objdll.c's five-point contract; that is M2.
- * Returning FALSE makes objdll.c report the failure through its own OSReport
- * and carry on as far as it can. */
+/* Nothing calls these any more: objdll.c's three OSLink/OSUnlink sites are the
+ * seam the bundle loader replaced (port/src/os/dll_load.c), and no other
+ * caller exists in the game.  They stay defined, and loud, because a REL
+ * bundle could import them and because a future single-binary build mode
+ * (PLAN.md §2.4a) would route through here. */
 
 BOOL OSLink(OSModuleInfo* newModule, void* bss) {
     (void)bss;
-    port_log("port> OSLink(%p): REL relocation is M2 (one dlopen'ed bundle per "
-             "module); returning FALSE\n", (void*)newModule);
+    port_log("port> OSLink(%p) called directly: the port loads RELs as Mach-O "
+             "bundles through omDLLLink, not by relocating the .rel\n",
+             (void*)newModule);
     return FALSE;
 }
 
