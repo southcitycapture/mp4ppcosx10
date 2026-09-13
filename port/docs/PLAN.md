@@ -3517,11 +3517,16 @@ after this one.
 **Frame rates**, measured as wall clock over a segment of a `--turbo` run
 (the port's own `--frames N reached` line):
 
-| screen | frames | wall | fps |
+| segment | frames | wall | fps |
 |---|---:|---:|---:|
-| boot + the whole menu walk to the board settings | 5,150 | 351.6 s | 14.6 |
-| the board and its minigame (the 5,150–15,400 segment) | 10,250 | 690.1 s | 14.9 |
-| the title screen alone (M4, §14.3, unchanged) | — | — | 22.9 |
+| boot, the menu walk, and the first 500 frames of the board | 5,600 | 370.8 s | 15.1 |
+| the board and its minigame (frames 5,600–15,400 of the same walk) | 9,800 | 670.9 s | 14.6 |
+| the reference menu walk on its own (boot to board settings) | 5,150 | 351.6 s | 14.6 |
+| the title screen alone (M4 §14.3, unchanged) | — | — | 22.9 |
+
+*(Segments, because `--perf` reports one mean for a whole run; the board figure
+is the difference between two runs of the same script with the same seed, one
+stopped at 5,600 frames and one at 15,400.)*
 
 The 60 fps target is not met and is not close. The board is a heavier scene
 than any menu — 10.9 million primitives and 568 million vertices over
