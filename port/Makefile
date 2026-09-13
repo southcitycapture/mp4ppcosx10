@@ -161,13 +161,20 @@ GEN_C := $(patsubst %,$(GEN)/%,$(GAME_C))
 $(GEN_C): $(MIRROR_STAMP)
 	@true
 
+# -MMD -MP writes a .d beside every .o naming the headers it included, and the
+# -include at the bottom of this file feeds them back to make.  Without it a
+# change to port/include/port.h rebuilt *nothing*: the objects kept the old
+# PortOptions layout while main.c got the new one, so `--gxwarn` set the field
+# that used to be there and the run went headless.  A struct that two
+# translation units disagree about is the worst kind of stale build, because
+# every symptom points somewhere else.
 $(BUILD)/game/%.o: $(GEN)/%.c
 	@mkdir -p $(dir $@)
-	$(CC) $(GAME_CFLAGS) -c -o $@ $<
+	$(CC) $(GAME_CFLAGS) -MMD -MP -c -o $@ $<
 
 $(BUILD)/port/%.o: %.c $(MIRROR_STAMP)
 	@mkdir -p $(dir $@)
-	$(CC) $(PORT_CFLAGS) -c -o $@ $<
+	$(CC) $(PORT_CFLAGS) -MMD -MP -c -o $@ $<
 
 $(BUILD)/port/jmp.o: $(CTX_ASM)
 	@mkdir -p $(dir $@)
@@ -264,3 +271,7 @@ list: $(MIRROR_STAMP)
 
 clean:
 	rm -rf $(BUILD)
+
+# Header dependencies written by -MMD above (see the compile rules).
+DEPFILES := $(shell find $(BUILD) -name '*.d' 2>/dev/null)
+-include $(DEPFILES)

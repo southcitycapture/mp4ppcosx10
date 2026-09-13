@@ -254,7 +254,12 @@ void port_gx_demo(void) {
     GXSetScissor(0, 0, 640, 480);
     ortho();
     identity_pos();
-    GXCopyDisp(NULL, GX_TRUE); /* clears */
+    /* Clear now, not through GXCopyDisp.  GXCopyDisp queues its clear until
+     * after the swap, because on the console the EFB-to-XFB copy happens first
+     * and the clear is for the *next* frame -- see gl13_clear_at_swap.  The
+     * demo renders exactly one frame and then dumps it, so it has no previous
+     * frame to have been cleared by, and asks for the clear directly. */
+    { void gl13_clear(GXColor, u32); gl13_clear(clear, 0xFFFFFF); }
 
     plain_state();
     quad(20.0f, 20.0f, 200.0f, 60.0f, 220, 60, 60, 255);

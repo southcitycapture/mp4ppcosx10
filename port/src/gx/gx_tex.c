@@ -367,6 +367,7 @@ typedef struct CacheEntry {
 static CacheEntry cache[CACHE_MAX];
 static int cache_used;
 static unsigned stat_hit, stat_miss, stat_evict, stat_bytes, stat_npot;
+static unsigned stat_hash_full, stat_hash_sampled;
 
 void gx_tex_init(void) {
     memset(cache, 0, sizeof(cache));
@@ -381,6 +382,9 @@ void gx_tex_report(void) {
              "%u KB decoded, %u padded to a power of two\n",
              stat_hit, stat_miss, stat_evict, (unsigned)cache_used, stat_bytes / 1024,
              stat_npot);
+    port_log("port> texture hash: %u KB hashed in full, %u KB sampled%s\n",
+             stat_hash_full / 1024, stat_hash_sampled / 1024,
+             port_opt.texhash_full ? " (--texhash-full: sampling disabled)" : "");
 }
 
 static GLenum gl_wrap(u8 w) {
@@ -400,6 +404,28 @@ static GLenum gl_filter(u8 f, int is_min) {
         case GX_NEAR_MIP_LIN: return is_min ? GL_NEAREST_MIPMAP_LINEAR : GL_NEAREST;
         default: return is_min ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR;
     }
+}
+
+/* How much of a large texture the sampled hash looks at, in bytes. */
+#define TEX_HASH_SAMPLE 4096
+
+/* Every image buffer this cache has ever hashed in full.  A buffer's first
+ * sight always gets the exhaustive hash; only repeats are sampled. */
+#define SEEN_MAX 4096
+static const void* seen[SEEN_MAX];
+static int seen_n;
+
+static int seen_before(const void* p) {
+    int i;
+    for (i = 0; i < seen_n; i++) {
+        if (seen[i] == p) {
+            return 1;
+        }
+    }
+    if (seen_n < SEEN_MAX) {
+        seen[seen_n++] = p;
+    }
+    return 0;
 }
 
 static int pot(int v) { return v > 0 && (v & (v - 1)) == 0; }
@@ -459,12 +485,48 @@ void gx_tex_bind(int unit, GXTexObjPort* o) {
                 "to a power of two and will repeat over the padding");
     }
 
+    /* The cache is content-keyed because the game reuses one buffer for
+     * different images and GX has no "this texture changed" call we could
+     * trust -- HuSprDispInit calls GXInvalidateTexAll on every single sprite
+     * pass, so honouring that literally would mean re-uploading everything
+     * several times a frame.
+     *
+     * But hashing the *whole* image on every bind is what makes the title
+     * screen crawl.  The Nintendo logo alone is 576x480 C8 = 270 KB, and a
+     * 1 GHz G4 walking a few megabytes of FNV per frame has nothing left.  So
+     * the hash is **sampled** after the first sight of a buffer: the header,
+     * the tail, and a bounded spread of interior points, capped at
+     * TEX_HASH_SAMPLE bytes.  The first time a (image, format, size, tlut) key
+     * is seen the whole thing is hashed, so a texture is never wrong when it
+     * first appears; afterwards a change is caught if it touches any sampled
+     * point, which for real texture animation -- whole images swapped in, or
+     * decoded afresh into the buffer -- it always does.
+     *
+     * --texhash-full turns the exhaustive hash back on, which is the way to
+     * prove that a suspected texture-staleness bug is or is not this. */
     content = fnv(&o->format, sizeof(o->format), 2166136261u);
     content = fnv(&o->width, sizeof(o->width), content);
     content = fnv(&o->height, sizeof(o->height), content);
     if (o->image) {
         size_t n = encoded_size(o->format, o->width, o->height);
-        content = fnv(o->image, n, content);
+        if (port_opt.texhash_full || n <= TEX_HASH_SAMPLE || !seen_before(o->image)) {
+            content = fnv(o->image, n, content);
+            stat_hash_full += (unsigned)n;
+        } else {
+            const u8* q = (const u8*)o->image;
+            size_t chunk = TEX_HASH_SAMPLE / 4;
+            size_t step = (n - chunk) / 3;
+            int k;
+            content = fnv(&n, sizeof(n), content);
+            for (k = 0; k < 4; k++) {
+                size_t at = (size_t)k * step;
+                if (at + chunk > n) {
+                    at = n - chunk;
+                }
+                content = fnv(q + at, chunk, content);
+            }
+            stat_hash_sampled += (unsigned)(chunk * 4);
+        }
     }
     if (tlut && tlut->lut) {
         content = fnv(tlut->lut, (size_t)tlut->n * 2, content);

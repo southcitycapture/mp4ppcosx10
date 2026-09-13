@@ -73,6 +73,7 @@ static u8 vtxfmt;
 static u16 want_verts;
 
 static unsigned stat_prims, stat_verts, stat_draws, stat_dls;
+static int dl_shown;
 
 void gx_draw_reset(void) {
     nverts = 0;
@@ -765,6 +766,16 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
     dl_replaying = 1;
     stat_dls++;
     port_perf_gx_begin();
+    /* --drawlog also explains display-list replays: the list's size and, per
+     * opcode, the primitive, the vertex count and how many attributes the
+     * current descriptor says each vertex carries.  `nactive == 0` is the
+     * dangerous one -- the parser then cannot know the stride, so it consumes
+     * nothing and the list never advances. */
+    if (port_opt.drawlog && dl_shown < port_opt.drawlog) {
+        dl_shown++;
+        port_log("---- display list %d: %u bytes at %p ----\n", dl_shown,
+                 (unsigned)nbytes, list);
+    }
     while (p < end) {
         u8 op = *p++;
         u32 count;
@@ -787,6 +798,21 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
         nverts = 0;
         in_prim = 1;
         begin_attr_order();
+        if (port_opt.drawlog && dl_shown < port_opt.drawlog) {
+            port_log("   op %02x prim %02x fmt %d count %u nactive %d, %u bytes left\n",
+                     op, prim, vtxfmt, count, nactive, (unsigned)(end - p));
+        }
+        if (nactive == 0) {
+            /* No attribute in the descriptor means no bytes per vertex, so the
+             * parser cannot step over this primitive's data and the outer loop
+             * would re-read the same opcode forever.  This is always a bug
+             * upstream of here -- the game sets the descriptor immediately
+             * before every one of its 42 GXCallDisplayList sites -- so name it
+             * and abandon the list rather than hang. */
+            gx_warn("GXCallDisplayList: the vertex descriptor is empty, so the "
+                    "list cannot be stepped through; it is abandoned");
+            break;
+        }
         for (i = 0; i < count && p < end; i++) {
             for (k = 0; k < nactive; k++) {
                 int attr = active[k];

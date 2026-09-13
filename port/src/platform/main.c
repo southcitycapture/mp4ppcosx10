@@ -63,6 +63,7 @@ static void usage(const char* argv0) {
             "  --perf            per-frame game/gx/present timing, both clocks\n"
             "  --drawlog N       explain the first N draws: geometry, texture, state\n"
             "  --dumptex         write every decoded texture (colour + alpha) to shotdir\n"
+            "  --texhash-full    hash whole textures on every bind (slow; a correctness check)\n"
             "  --gxwarn          name every GX feature the backend degraded\n"
             "  --dumpframe SPEC  write these presented frames as PPMs:\n"
             "                    N, or a,b,c, or first-last/step (e.g. 1-400/20)\n"
@@ -203,6 +204,8 @@ int port_parse_args(int argc, char** argv) {
             port_opt.drawlog = atoi(argv[++i]);
         } else if (!strcmp(a, "--dumptex")) {
             port_opt.dumptex = 1;
+        } else if (!strcmp(a, "--texhash-full")) {
+            port_opt.texhash_full = 1;
         } else if (!strcmp(a, "--headless")) {
             port_opt.headless = 1;
         } else if (!strcmp(a, "--dumpframe") && i + 1 < argc) {
@@ -237,6 +240,7 @@ void port_shutdown(int code) {
     port_clock_report();
     port_gx_shutdown();
     port_dvd_stats();
+    port_thp_report();
     port_dll_report();
     port_reset_report();
     port_stub_report();

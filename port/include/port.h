@@ -45,6 +45,7 @@ typedef struct PortOptions {
     int perf;               /* --perf     per-frame game/gx/present timing     */
     int drawlog;            /* --drawlog N  explain the first N draws in full  */
     int dumptex;            /* --dumptex  write every decoded texture as a PPM */
+    int texhash_full;       /* --texhash-full  hash whole textures every bind */
     int gxwarn;             /* --gxwarn   name every degraded GX feature      */
     int headless;           /* --headless no window; still decodes and logs   */
     const char* dumpframe;  /* --dumpframe SPEC  frames to write: N, a,b, a-b/s */
@@ -105,6 +106,7 @@ void port_host_service(void); /* called from VIWaitForRetrace, once per frame */
 /* ---- subsystems ---------------------------------------------------------- */
 void port_dvd_init(void);
 void port_dvd_service(void);
+void port_thp_report(void);
 void port_arq_service(void);
 
 /* ---- REL modules (port/src/os/dll_load.c) -------------------------------- */

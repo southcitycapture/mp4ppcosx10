@@ -16,12 +16,20 @@
 
 #if defined(__APPLE__)
 #include <dlfcn.h>
+
+#include <dolphin/types.h>
+#include <dolphin/vi.h>
 #include <mach-o/dyld.h>
 #define _XOPEN_SOURCE 700
 #include <sys/ucontext.h>
 #endif
 
+static int watchdog_progressed(void);
+
 static void handler(int sig, siginfo_t* info, void* uap) {
+    if (sig == SIGALRM && watchdog_progressed()) {
+        return; /* the game is moving; the alarm has re-armed */
+    }
 #if defined(__APPLE__)
     ucontext_t* uc = (ucontext_t*)uap;
     unsigned long long pc = 0, sp = 0;
@@ -38,7 +46,7 @@ static void handler(int sig, siginfo_t* info, void* uap) {
     }
 #endif
     port_log("\n*** port: %s: signal %d at address %p\n",
-             sig == SIGALRM ? "watchdog fired (the game is not making progress)" : "fault",
+             sig == SIGALRM ? "watchdog fired: no retrace in the last --watchdog period" : "fault",
              sig, info ? info->si_addr : NULL);
     port_log("    pc   %016llx  (image base %016llx, offset %llx)\n", pc, base,
              pc > base ? pc - base : 0);
@@ -64,7 +72,34 @@ static void handler(int sig, siginfo_t* info, void* uap) {
  * lands in the same handler, which prints the program counter to look up with
  * atos and the stub table, whose last entry is nearly always next to the
  * problem. */
-void port_watchdog_arm(int seconds) { alarm((unsigned)seconds); }
+/* --watchdog N is a *progress* watchdog, not a stopwatch.  It used to be a
+ * plain `alarm(N)` that fired after N seconds whether or not the game was
+ * healthy, and then reported "the game is not making progress" -- which, when
+ * the game was simply slower than N seconds, is a lie that costs whoever reads
+ * it an hour.  It now re-arms every period and only reports when the retrace
+ * count has not moved since the previous one, which is the question actually
+ * being asked. */
+static int wd_period;
+static unsigned wd_last_retrace;
+static int wd_seen;
+
+/* Returns 1 if the alarm should be treated as a hang, 0 if it re-armed. */
+static int watchdog_progressed(void) {
+    unsigned now = VIGetRetraceCount();
+    if (wd_seen && now == wd_last_retrace) {
+        return 0; /* stuck */
+    }
+    wd_seen = 1;
+    wd_last_retrace = now;
+    alarm((unsigned)wd_period);
+    return 1;
+}
+
+void port_watchdog_arm(int seconds) {
+    wd_period = seconds;
+    wd_seen = 0;
+    alarm((unsigned)seconds);
+}
 
 void port_crash_handler_install(void) {
     struct sigaction sa;
