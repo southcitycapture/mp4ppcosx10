@@ -66,10 +66,9 @@ static Vtx verts[MAX_VERTS];
 static int nverts;
 
 static Vtx pending;
-static u8 have[GX_MAX_ATTR];
 static int active[GX_MAX_ATTR]; /* attributes in descriptor order */
 static int nactive;
-static int last_active;
+static int acur;                /* which of them the next writer fills */
 static int tex_slots;
 static int in_prim;
 static u8 prim;
@@ -287,8 +286,7 @@ static void begin_attr_order(void) {
             active[nactive++] = order[i];
         }
     }
-    last_active = nactive ? active[nactive - 1] : -1;
-    memset(have, 0, sizeof(have));
+    acur = 0;
 
     /* How many texcoord slots this primitive's vertices must actually hold.
      * transform_and_store no longer copies the whole 96-byte Vtx, so a slot
@@ -312,12 +310,97 @@ static void begin_attr_order(void) {
 
 static void transform_and_store(void);
 
-static void attr_done(int attr) {
-    have[attr] = 1;
-    if (attr == last_active) {
-        transform_and_store();
-        memset(have, 0, sizeof(have));
+/* **A writer's name does not say which attribute it fills.**
+ *
+ * On the console `GXPosition2f32` and `GXTexCoord2f32` are the same two stores
+ * into the write-gather pipe at 0xCC008000.  The pipe has no idea what an
+ * attribute is: the *command processor* consumes whatever arrives, in the
+ * order the vertex descriptor names, and the writers are named for readability
+ * and nothing else.  So a game is free to reach for whichever one has the
+ * right shape, and Mario Party 4 does -- `src/game/window.c`, the code that
+ * draws every line of message text in the game, emits each glyph's texture
+ * coordinate with **`GXPosition2f32`**, because a texcoord is two floats and so
+ * is a 2D position.  `src/game/printfunc.c` and four minigame modules do the
+ * same in their own places, 28 calls in all.
+ *
+ * The port had believed the names, so those texcoords went into the position
+ * and the descriptor's real last attribute was never written, which means the
+ * vertex never completed.  Every window in the game drew as a handful of
+ * enormous untextured quads -- the white blocks over the file-select and
+ * board-settings screens.  Naming, rather than the pipe's order, was also why
+ * a second `GXTexCoord2f32` overwrote the first instead of filling TEX1.
+ *
+ * So the port keeps a cursor into the descriptor and each writer fills
+ * whichever attribute is next, converting its payload to what that attribute
+ * needs.  That is what the hardware does, it costs nothing, and it makes the
+ * whole class of "the game called the wrong-named writer" impossible rather
+ * than one bug at a time. */
+static int cur_attr(void) {
+    return (nactive && acur < nactive) ? active[acur] : -1;
+}
+
+static void attr_written(void) {
+    if (!nactive) {
+        return;
     }
+    if (++acur >= nactive) {
+        acur = 0;
+        transform_and_store();
+    }
+}
+
+/* n floats into whatever attribute the cursor is on. */
+static void put_f(const f32* v, int n) {
+    int a = cur_attr();
+    if (a == GX_VA_POS) {
+        pending.pos[0] = v[0];
+        pending.pos[1] = n > 1 ? v[1] : 0.0f;
+        pending.pos[2] = n > 2 ? v[2] : 0.0f;
+    } else if (a == GX_VA_NRM) {
+        pending.nrm[0] = v[0];
+        pending.nrm[1] = n > 1 ? v[1] : 0.0f;
+        pending.nrm[2] = n > 2 ? v[2] : 0.0f;
+    } else if (a >= GX_VA_TEX0 && a <= GX_VA_TEX7) {
+        int k = a - GX_VA_TEX0;
+        pending.tex[k][0] = v[0];
+        pending.tex[k][1] = n > 1 ? v[1] : 0.0f;
+    } else if (a == GX_VA_CLR0 || a == GX_VA_CLR1) {
+        int k = a - GX_VA_CLR0, i;
+        for (i = 0; i < 4; i++) {
+            f32 c = i < n ? v[i] : 1.0f;
+            c = c < 0.0f ? 0.0f : c > 1.0f ? 1.0f : c;
+            pending.clr[k][i] = (unsigned char)(c * 255.0f + 0.5f);
+        }
+    }
+    attr_written();
+}
+
+/* n raw fixed-point components, scaled by the *target* attribute's fractional
+ * shift rather than by the one the writer's name would have picked. */
+static void put_fixed(const s32* v, int n) {
+    int a = cur_attr();
+    f32 f[3];
+    f32 k;
+    int i;
+    if (a < 0) {
+        attr_written();
+        return;
+    }
+    k = gx_frac_scale[gx.vat[vtxfmt][a].frac & 31];
+    for (i = 0; i < n && i < 3; i++) {
+        f[i] = (f32)v[i] * k;
+    }
+    put_f(f, n);
+}
+
+static void put_color(u8 r, u8 g, u8 b, u8 a8) {
+    int a = cur_attr();
+    int k = (a == GX_VA_CLR1) ? 1 : 0;
+    pending.clr[k][0] = r;
+    pending.clr[k][1] = g;
+    pending.clr[k][2] = b;
+    pending.clr[k][3] = a8;
+    attr_written();
 }
 
 /* CPU lighting, one colour channel.  GX's model: the material colour comes
@@ -523,19 +606,19 @@ static void transform_and_store(void) {
 
 /* ---- the writers ----------------------------------------------------------- */
 
-static void set_pos(f32 x, f32 y, f32 z) {
-    pending.pos[0] = x;
-    pending.pos[1] = y;
-    pending.pos[2] = z;
-    attr_done(GX_VA_POS);
-}
-
-static void indexed(int attr, u32 index) {
-    const GXArraySpec* a = &gx.array[attr];
-    const GXVatFmt* f = &gx.vat[vtxfmt][attr];
+static void indexed(u32 index) {
+    int attr = cur_attr();
+    const GXArraySpec* a;
+    const GXVatFmt* f;
     const u8* p;
+    if (attr < 0) {
+        attr_written();
+        return;
+    }
+    a = &gx.array[attr];
+    f = &gx.vat[vtxfmt][attr];
     if (!a->base || !a->stride) {
-        attr_done(attr);
+        attr_written();
         return;
     }
     p = a->base + (size_t)index * a->stride;
@@ -556,113 +639,126 @@ static void indexed(int attr, u32 index) {
         pending.tex[k][1] =
             f->cnt == GX_TEX_ST ? read_component(p, f->type, f->frac, 1) : 0.0f;
     }
-    attr_done(attr);
+    attr_written();
 }
 
-/* Which attribute a writer belongs to depends only on its name, so the
- * indexed writers each know theirs. */
-#define IDX_WRITER(name, attr, T, put)                                                   \
+/* The indexed writers.  Which attribute an index belongs to is the cursor's
+ * business, not the function name's -- see attr_written above. */
+#define IDX_WRITER(name, T, put)                                                         \
     void name(T index) {                                                                 \
         if (dl_recording) {                                                              \
             put;                                                                         \
             return;                                                                      \
         }                                                                                \
-        indexed(attr, (u32)index);                                                       \
+        indexed((u32)index);                                                             \
     }
 
-IDX_WRITER(GXPosition1x16, GX_VA_POS, u16, dl_u16(index))
-IDX_WRITER(GXPosition1x8, GX_VA_POS, u8, dl_u8(index))
-IDX_WRITER(GXNormal1x16, GX_VA_NRM, u16, dl_u16(index))
-IDX_WRITER(GXNormal1x8, GX_VA_NRM, u8, dl_u8(index))
-IDX_WRITER(GXColor1x16, GX_VA_CLR0, u16, dl_u16(index))
-IDX_WRITER(GXColor1x8, GX_VA_CLR0, u8, dl_u8(index))
-IDX_WRITER(GXTexCoord1x16, GX_VA_TEX0, u16, dl_u16(index))
-IDX_WRITER(GXTexCoord1x8, GX_VA_TEX0, u8, dl_u8(index))
+IDX_WRITER(GXPosition1x16, u16, dl_u16(index))
+IDX_WRITER(GXPosition1x8, u8, dl_u8(index))
+IDX_WRITER(GXNormal1x16, u16, dl_u16(index))
+IDX_WRITER(GXNormal1x8, u8, dl_u8(index))
+IDX_WRITER(GXColor1x16, u16, dl_u16(index))
+IDX_WRITER(GXColor1x8, u8, dl_u8(index))
+IDX_WRITER(GXTexCoord1x16, u16, dl_u16(index))
+IDX_WRITER(GXTexCoord1x8, u8, dl_u8(index))
 
 void GXPosition3f32(f32 x, f32 y, f32 z) {
+    f32 v[3];
     if (dl_recording) {
         dl_f32(x);
         dl_f32(y);
         dl_f32(z);
         return;
     }
-    set_pos(x, y, z);
+    v[0] = x;
+    v[1] = y;
+    v[2] = z;
+    put_f(v, 3);
 }
 void GXPosition2f32(f32 x, f32 y) {
+    f32 v[2];
     if (dl_recording) {
         dl_f32(x);
         dl_f32(y);
         return;
     }
-    set_pos(x, y, 0.0f);
+    v[0] = x;
+    v[1] = y;
+    put_f(v, 2);
 }
 void GXPosition3s16(s16 x, s16 y, s16 z) {
-    u8 frac = gx.vat[vtxfmt][GX_VA_POS].frac;
-    f32 k = 1.0f / (f32)(1u << frac);
+    s32 v[3];
     if (dl_recording) {
         dl_u16((u16)x);
         dl_u16((u16)y);
         dl_u16((u16)z);
         return;
     }
-    set_pos(x * k, y * k, z * k);
+    v[0] = x;
+    v[1] = y;
+    v[2] = z;
+    put_fixed(v, 3);
 }
 void GXPosition2s16(s16 x, s16 y) {
-    u8 frac = gx.vat[vtxfmt][GX_VA_POS].frac;
-    f32 k = 1.0f / (f32)(1u << frac);
+    s32 v[2];
     if (dl_recording) {
         dl_u16((u16)x);
         dl_u16((u16)y);
         return;
     }
-    set_pos(x * k, y * k, 0.0f);
+    v[0] = x;
+    v[1] = y;
+    put_fixed(v, 2);
 }
 void GXPosition2u16(u16 x, u16 y) {
-    u8 frac = gx.vat[vtxfmt][GX_VA_POS].frac;
-    f32 k = 1.0f / (f32)(1u << frac);
+    s32 v[2];
     if (dl_recording) {
         dl_u16(x);
         dl_u16(y);
         return;
     }
-    set_pos(x * k, y * k, 0.0f);
+    v[0] = x;
+    v[1] = y;
+    put_fixed(v, 2);
 }
 void GXPosition3u8(u8 x, u8 y, u8 z) {
-    u8 frac = gx.vat[vtxfmt][GX_VA_POS].frac;
-    f32 k = 1.0f / (f32)(1u << frac);
+    s32 v[3];
     if (dl_recording) {
         dl_u8(x);
         dl_u8(y);
         dl_u8(z);
         return;
     }
-    set_pos(x * k, y * k, z * k);
+    v[0] = x;
+    v[1] = y;
+    v[2] = z;
+    put_fixed(v, 3);
 }
 void GXNormal3f32(f32 x, f32 y, f32 z) {
+    f32 v[3];
     if (dl_recording) {
         dl_f32(x);
         dl_f32(y);
         dl_f32(z);
         return;
     }
-    pending.nrm[0] = x;
-    pending.nrm[1] = y;
-    pending.nrm[2] = z;
-    attr_done(GX_VA_NRM);
+    v[0] = x;
+    v[1] = y;
+    v[2] = z;
+    put_f(v, 3);
 }
 void GXNormal3s16(s16 x, s16 y, s16 z) {
-    u8 frac = gx.vat[vtxfmt][GX_VA_NRM].frac;
-    f32 k = 1.0f / (f32)(1u << frac);
+    s32 v[3];
     if (dl_recording) {
         dl_u16((u16)x);
         dl_u16((u16)y);
         dl_u16((u16)z);
         return;
     }
-    pending.nrm[0] = x * k;
-    pending.nrm[1] = y * k;
-    pending.nrm[2] = z * k;
-    attr_done(GX_VA_NRM);
+    v[0] = x;
+    v[1] = y;
+    v[2] = z;
+    put_fixed(v, 3);
 }
 void GXColor4u8(u8 r, u8 g, u8 b, u8 a) {
     if (dl_recording) {
@@ -672,37 +768,33 @@ void GXColor4u8(u8 r, u8 g, u8 b, u8 a) {
         dl_u8(a);
         return;
     }
-    pending.clr[0][0] = r;
-    pending.clr[0][1] = g;
-    pending.clr[0][2] = b;
-    pending.clr[0][3] = a;
-    attr_done(GX_VA_CLR0);
+    put_color(r, g, b, a);
 }
 void GXColor3u8(u8 r, u8 g, u8 b) { GXColor4u8(r, g, b, 255); }
 void GXColor1u32(u32 c) {
     GXColor4u8((u8)(c >> 24), (u8)(c >> 16), (u8)(c >> 8), (u8)c);
 }
 void GXTexCoord2f32(f32 s, f32 t) {
+    f32 v[2];
     if (dl_recording) {
         dl_f32(s);
         dl_f32(t);
         return;
     }
-    pending.tex[0][0] = s;
-    pending.tex[0][1] = t;
-    attr_done(GX_VA_TEX0);
+    v[0] = s;
+    v[1] = t;
+    put_f(v, 2);
 }
 void GXTexCoord2s16(s16 s, s16 t) {
-    u8 frac = gx.vat[vtxfmt][GX_VA_TEX0].frac;
-    f32 k = 1.0f / (f32)(1u << frac);
+    s32 v[2];
     if (dl_recording) {
         dl_u16((u16)s);
         dl_u16((u16)t);
         return;
     }
-    pending.tex[0][0] = s * k;
-    pending.tex[0][1] = t * k;
-    attr_done(GX_VA_TEX0);
+    v[0] = s;
+    v[1] = t;
+    put_fixed(v, 2);
 }
 void GXTexCoord2u16(u16 s, u16 t) { GXTexCoord2s16((s16)s, (s16)t); }
 
@@ -922,10 +1014,10 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
                 u8 desc = gx.vcd[attr];
                 const GXVatFmt* f = &gx.vat[vtxfmt][attr];
                 if (desc == GX_INDEX16) {
-                    indexed(attr, rd_be16(p));
+                    indexed(rd_be16(p));
                     p += 2;
                 } else if (desc == GX_INDEX8) {
-                    indexed(attr, *p);
+                    indexed(*p);
                     p += 1;
                 } else { /* GX_DIRECT */
                     int comps, bytes;
@@ -933,7 +1025,7 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
                         bytes = color_bytes(f->type);
                         read_color(p, f->type, pending.clr[attr - GX_VA_CLR0]);
                         p += bytes;
-                        attr_done(attr);
+                        attr_written();
                         continue;
                     }
                     comps = attr == GX_VA_POS   ? (f->cnt == GX_POS_XYZ ? 3 : 2)
@@ -958,7 +1050,7 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
                             comps == 2 ? read_component(p, f->type, f->frac, 1) : 0.0f;
                     }
                     p += (size_t)comps * bytes;
-                    attr_done(attr);
+                    attr_written();
                 }
             }
         }

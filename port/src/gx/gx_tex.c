@@ -366,6 +366,11 @@ typedef struct CacheEntry {
      * shadow.  -1 is "unknown", which is what a fresh glGenTextures name and
      * a re-upload both leave behind. */
     int param_wrap_s, param_wrap_t, param_min, param_mag;
+    /* An EFB copy: the texels never pass through main memory, so there is
+     * nothing at `image` to decode or to hash.  The entry owns a GL texture
+     * that GXCopyTex refills from the back buffer, and a bind uses it as it
+     * stands. */
+    int efb;
 } CacheEntry;
 
 #define CACHE_MAX 2048
@@ -373,6 +378,7 @@ static CacheEntry cache[CACHE_MAX];
 static int cache_used;
 static unsigned stat_hit, stat_miss, stat_evict, stat_bytes, stat_npot;
 static unsigned stat_hash_full, stat_hash_sampled;
+static unsigned stat_efb;
 
 void gx_tex_init(void) {
     memset(cache, 0, sizeof(cache));
@@ -390,6 +396,9 @@ void gx_tex_report(void) {
     port_log("port> texture hash: %u KB hashed in full, %u KB sampled%s\n",
              stat_hash_full / 1024, stat_hash_sampled / 1024,
              port_opt.texhash_full ? " (--texhash-full: sampling disabled)" : "");
+    if (stat_efb) {
+        port_log("port> EFB copies: %u colour copies into the cache\n", stat_efb);
+    }
 }
 
 static GLenum gl_wrap(u8 w) {
@@ -481,6 +490,31 @@ void gx_tex_bind(int unit, GXTexObjPort* o) {
     int i, slot = -1;
     if (!o || o->magic != TEXOBJ_MAGIC) {
         return;
+    }
+    /* An EFB copy is bound as it stands: there is nothing at `image` to
+     * decode, and nothing to hash either -- what the game left in that buffer
+     * is whatever it was before the copy, and the pixels live in a GL texture
+     * the copy already filled. */
+    for (i = 0; i < cache_used; i++) {
+        if (cache[i].efb && cache[i].image == o->image) {
+            o->gl_name = cache[i].gl_name;
+            if (!gl13_live() || !o->gl_name) {
+                return;
+            }
+            stat_hit++;
+            glc_bind_texture(unit, o->gl_name);
+            glc_tex_matrix(unit, cache[i].su, cache[i].sv);
+            if (cache[i].param_wrap_s != (int)gl_wrap(o->wrap_s)) {
+                cache[i].param_wrap_s = (int)gl_wrap(o->wrap_s);
+                GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S,
+                                    (GLint)cache[i].param_wrap_s);
+                GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T,
+                                    (GLint)gl_wrap(o->wrap_t));
+                GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            }
+            return;
+        }
     }
     if (o->is_ci && o->tlut_name < 64 && gx.tlut[o->tlut_name].magic == TLUT_MAGIC) {
         tlut = &gx.tlut[o->tlut_name];
@@ -805,24 +839,118 @@ void GXInvalidateTexRegion(GXTexRegion* r) { (void)r; }
  * copies in are GX_CTF_R8, GX_CTF_A8 and the two depth ones. */
 
 void gx_tex_copy(void* dest, int clear) {
-    static unsigned copies;
+    static unsigned copies, depth_dropped;
+    int sl, st, sw, sh, dw, dh, pw, ph, i, slot = -1;
     copies++;
     if (!gl13_live()) {
         return;
     }
-    if (gx.tex_dst_fmt == GX_TF_Z24X8 || gx.tex_dst_fmt == GX_TF_Z8) {
-        if (!gl13_have_depth_texture) {
-            gx_warn("GXCopyTex of a depth format without ARB_depth_texture: dropped");
-            return;
+    if (gx.tex_dst_fmt == GX_TF_Z24X8 || gx.tex_dst_fmt == GX_TF_Z8 ||
+        gx.tex_dst_fmt == GX_TF_Z16 || gx.tex_dst_fmt == GX_CTF_Z8M ||
+        gx.tex_dst_fmt == GX_CTF_Z8L || gx.tex_dst_fmt == GX_CTF_Z16L) {
+        /* The Radeon 9000 has no ARB_depth_texture (docs/g4-glinfo.log says so
+         * from the card itself, correcting what the development Mac reported),
+         * so there is no GL 1.3 home for a depth copy at all: no FBO to read
+         * from, no depth internal format to copy into, and no way to sample
+         * one afterwards.  The game does four of these -- three Z24X8 and one
+         * Z8 -- and they are a depth-of-field or shadow helper, so the
+         * approximation is to skip them and say so.  The alternative, a colour
+         * proxy, would put a picture of the scene where the shader expects a
+         * depth ramp, which is worse than nothing: whatever reads it would
+         * modulate by an arbitrary image rather than by a flat value.
+         * Skipping leaves the texture at whatever it last held, which for
+         * these sites is the neutral case. */
+        depth_dropped++;
+        gx_warn("GXCopyTex of a depth format: the Radeon 9000 has no "
+                "ARB_depth_texture, so the copy is skipped (see gx_tex.c)");
+        return;
+    }
+
+    sl = gx.tex_src[0];
+    st = gx.tex_src[1];
+    sw = gx.tex_src[2];
+    sh = gx.tex_src[3];
+    dw = gx.tex_dst[0] ? gx.tex_dst[0] : sw;
+    dh = gx.tex_dst[1] ? gx.tex_dst[1] : sh;
+    if (sw <= 0 || sh <= 0) {
+        return;
+    }
+
+    /* The cache entry is keyed on `dest`, the address the game will later wrap
+     * in a GXTexObj.  It carries no decodable texels, so it is marked `efb`
+     * and gx_tex_bind uses its GL name as it stands. */
+    for (i = 0; i < cache_used; i++) {
+        if (cache[i].efb && cache[i].image == dest) {
+            slot = i;
+            break;
         }
     }
-    /* The destination is an EFB-copy texture the game will bind through a
-     * GXTexObj pointing at `dest`; the cache keys on that address, so the
-     * copy is recorded as a decoded RGBA texture under the same key. */
-    gx_warn("GXCopyTex: EFB copies are recorded but not yet read back into the "
-            "texture cache (M3)");
-    (void)dest;
-    (void)clear;
+    if (slot < 0) {
+        if (cache_used == CACHE_MAX) {
+            gx_warn("GXCopyTex: the texture cache is full; the copy is dropped");
+            return;
+        }
+        slot = cache_used++;
+        memset(&cache[slot], 0, sizeof(cache[slot]));
+        cache[slot].image = dest;
+        cache[slot].efb = 1;
+        stat_miss++;
+    }
+    cache[slot].format = gx.tex_dst_fmt;
+    cache[slot].w = (u16)dw;
+    cache[slot].h = (u16)dh;
+
+    pw = pot_up(dw);
+    ph = pot_up(dh);
+    {
+        GLuint name = cache[slot].gl_name;
+        if (!name) {
+            GL(glGenTextures)(1, &name);
+            cache[slot].gl_name = name;
+            cache[slot].param_wrap_s = -1;
+        }
+        glc_active_texture(0);
+        GL(glBindTexture)(GL_TEXTURE_2D, name);
+        glc_note_bind(0, name);
+        /* glCopyTexImage2D would be one call, but it is not in the GL 1.3
+         * subset this backend has written down and the destination has to be a
+         * power of two anyway, so the texture is sized once with a null
+         * glTexImage2D and refilled with glCopyTexSubImage2D thereafter --
+         * which is also cheaper, because it does not reallocate. */
+        if (cache[slot].param_wrap_s == -1) {
+            GL(glTexImage2D)(GL_TEXTURE_2D, 0, GL_RGBA8, pw, ph, 0, GL_RGBA,
+                             GL_UNSIGNED_BYTE, NULL);
+            cache[slot].param_wrap_s = 0;
+            GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        }
+        /* GX's y runs down from the top of the EFB and GL's up from the
+         * bottom, and the copy is written into the bottom-left of the padded
+         * texture so the game's own 0..1 texcoords, folded by su/sv below,
+         * land on it. */
+        GL(glCopyTexSubImage2D)(GL_TEXTURE_2D, 0, 0, 0, sl, 480 - (st + sh),
+                                sw < dw ? sw : dw, sh < dh ? sh : dh);
+    }
+    cache[slot].su = (float)dw / (float)pw;
+    cache[slot].sv = (float)dh / (float)ph;
+    stat_efb++;
+
+    /* GXCopyTex's clear applies to the EFB *after* the copy, and unlike
+     * GXCopyDisp there is no swap in the way: the game is about to draw the
+     * next thing into the same back buffer and expects the copied region to be
+     * blank.  So it happens now, scissored to the region that was copied. */
+    if (clear) {
+        GL(glScissor)(sl, 480 - (st + sh), sw, sh);
+        GL(glColorMask)(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+        GL(glDepthMask)(GL_TRUE);
+        GL(glClearColor)(gx.copy_clear.r / 255.0f, gx.copy_clear.g / 255.0f,
+                         gx.copy_clear.b / 255.0f, gx.copy_clear.a / 255.0f);
+        GL(glClearDepth)((double)gx.copy_clear_z / (double)0xFFFFFF);
+        GL(glClear)(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        glc_invalidate();
+    }
 }
 
 void GXCopyTex(void* dest, GXBool clear) { gx_tex_copy(dest, clear ? 1 : 0); }

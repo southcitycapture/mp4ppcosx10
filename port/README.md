@@ -22,7 +22,12 @@ the GameCube, so nothing needs byteswapping, and the game addresses memory
 through ordinary pointers and ARAM through plain offsets, so there is no
 pinned-globals scheme.
 
-**Status: M2a done — the 99 modules load, and GX draws.** Two binaries and two
+**Status: M3 done — the game reaches Party Mode, with a pad and a memory
+card.** The title screen's 3D layer renders, the boot walks through SELECT A
+FILE, the new-file scene and character select to the board-settings screen, an
+Xbox One pad is read over IOUSBLib on the G4 with rumble, and saves go into a
+512 KB memory-card image in the console's own format. The title screen is
+2.3x faster than it was at M2b. See §13 of [`docs/PLAN.md`](docs/PLAN.md). Two binaries and two
 sets of modules build from one Makefile: `port/build-ppc.sh -j8` produces a
 `powerpc-apple-darwin8` executable plus 99 Mach-O bundles for the G4, and
 `make -C port TARGET=host -j8` produces an arm64 pair for the development Mac.
@@ -58,10 +63,11 @@ port/build-host/marioparty4 \
 NKit-trimmed ISO keeps every file at its original offset) or a directory
 holding an extracted `files/` tree. Other flags: `--frames N`, `--watchdog SEC`,
 `--turbo`, `--gxlog`, `--stub-trace`, `--deterministic`, `--seed N`,
-`--verbose`, `--reldir DIR`, `--reltest`, `--relzerobss`, `--noaudio`,
-`--headless`, `--glcheck`, `--glinfo`, `--gxwarn`, `--gxdemo`, `--perf`,
-`--drawlog N`, `--dumptex`, `--texhash-full`, `--dumpframe SPEC`,
-`--shotdir DIR`, `--scale N`.
+`--verbose`, `--reldir DIR`, `--reltest`, `--relzerobss`, `--reldlclose`,
+`--noaudio`, `--headless`, `--glcheck`, `--glinfo`, `--gxwarn`, `--gxdemo`,
+`--perf`, `--drawlog N`, `--drawlog-at F`, `--dumptex`, `--texhash-full`,
+`--dumpframe SPEC`, `--shotdir DIR`, `--scale N`, `--nocard`, `--nopad`,
+`--paddbg`, `--play SCRIPT`, `--record FILE`.
 
 `--dumpframe` takes a frame *set*, not a frame: `187`, `1,90,186`, or
 `1-400/20`. Comparing against Dolphin needs a spread, because the two sides do
@@ -108,17 +114,23 @@ straight over SSH:
 ssh g4 './MarioParty4.app/Contents/MacOS/isle --watchdog 6'
 ```
 
-**What it does there today (M2b):** the whole logo sequence and the title
-screen render on the Radeon 9000 -- the Nintendo logo, the wipes, the Hudson
-logo, and then MARIO PARTY 4 with its starburst background, PRESS START and
-both copyright lines, pixel-for-pixel against the Dolphin reference. The
-title's 3D character models are submitted (27,041 vertices a frame through 358
-display lists) but do not yet appear, and that is where M3 starts. The opening
-THP movie is skipped deliberately and says so. `--reltest` is 198/198 on
-hardware with nothing left resident, and `--gxdemo` on the real card is the
-same picture as the host's to within 6/255 of interpolator rounding. The logo
-sequence holds 60 fps exactly; the title screen runs at 10.4, all of it in
-per-draw GL state changes. See [`docs/PLAN.md`](docs/PLAN.md) §12.
+**What it does there today (M3):** the whole logo sequence, the title screen
+**with its 3D characters and present boxes**, and then -- with an Xbox One pad
+plugged in, or from a script -- SELECT A FILE, the new-file scene, PARTY MODE,
+character select with 1P and three COM players on EASY, and the board-settings
+screen for Toad's Midway Madness. It creates a save file on a 512 KB memory
+card image on the way through. The opening THP movie is skipped deliberately
+and says so; the theatre-stage backdrop behind three of the menu screens does
+not draw yet, and window backgrounds come out as pale blocks, which is
+`HuSprDisp`'s indirect-textured tiling. The title screen went from 10.4 to
+23.7 effective fps, and the reason it is not 60 is now measured rather than
+guessed. See [`docs/PLAN.md`](docs/PLAN.md) §13.
+
+```sh
+# the reference menu walk, replayed on the G4
+g4 run --frames 5200 --noaudio --seed 12345 --play menu-walk-port.play \
+       --dumpframe 900,1200,1500,2700,3000,5100 --shotdir ~/mp4out
+```
 
 **What M1 did there:** booted, loaded `bootDll`, and ran the boot
 sequence at 56.7 fps — 900 retraces in 15.88 s of wall clock for 1.17 s of CPU,
@@ -147,7 +159,8 @@ and [`docs/g4-m2a-boot.log`](docs/g4-m2a-boot.log) (M2a); §10 of
 | `docs/g4-glinfo.log` | the Radeon 9000's own GL strings, limits and 77 extensions |
 | `docs/g4-gxdemo.png` | the GX self-test as the real card draws it |
 | `docs/g4-audio-first-sound.log` | the audio path on the G4 with audio on: the M6 hand-off |
-| `docs/screenshots/` | the first real frames: both logos, the title screen |
+| `docs/screenshots/` | both logos, the title with its 3D layer, and the five menu screens |
+| `ref/movies/menu-walk-port.play` | the reference menu walk, rebased on the port's own clock |
 | `Makefile` | the whole build, `TARGET=host` or `TARGET=ppc-darwin` |
 | `build-ppc.sh` | the Docker wrapper around the PowerPC cross build |
 | `patches.txt` | every change the port makes to game sources, as exact text |
@@ -165,8 +178,8 @@ and [`docs/g4-m2a-boot.log`](docs/g4-m2a-boot.log) (M2a); §10 of
 | `src/gx/` | the GX state machine, vertex decode, texture decode, the GL 1.3 backend |
 | `src/dvd/` | DVD over an extracted `files/` tree or a disc image; `host_data.c` is the one place every host-only divergence goes through |
 | `src/relmod/` | the other side of the fence: compiled into every REL bundle, never into the main binary |
-| `src/card/` | CARD over host files |
-| `src/pad/` | PAD over SDL2 and the IOKit Xbox One driver; `.dtm` and script playback |
+| `src/card/` | CARD over one 512 KB memory-card image in the console's own format |
+| `src/pad/` | PAD over the IOUSBLib Xbox One driver, SDL2 and the keyboard; `--play` / `--record` |
 | `src/audio/` | AI, the MusyX SAL replacement, the DSP command interpreter |
 | `src/debug/` | self-play, tracing, `--peek`, `--dumpdl`, `--perf` |
 | `src/ui/` | launcher and in-game overlay |

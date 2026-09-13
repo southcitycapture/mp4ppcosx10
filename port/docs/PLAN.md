@@ -2520,3 +2520,402 @@ In order:
    title (`port/ref/notes.md`), so M3 cannot finish without it.
 5. The four `GX_TF_Z24X8`/`GX_TF_Z8` depth copies, which have no obvious GL 1.3
    home now that `ARB_depth_texture` is known absent (§12.2).
+
+---
+
+## 13. M3 log — the 3D layer, a controller, a memory card, and Party Mode *(2026-09-13)*
+
+M3's done-means was "the title screen's 3D layer appears and runs at speed, the
+game has a pad and a memory card, and the menus walk into Party Mode". All
+four happened, and the two that looked hardest — the invisible models and the
+230 µs per draw — were each one wrong line rather than a missing subsystem.
+
+§12.11 listed five things in order. This log follows that order, except that
+the first two swapped places once the port was profiled on the machine it runs
+on rather than reasoned about from the source.
+
+### 13.1 Per-draw GL state caching, and why it was not the answer
+
+`gl13.c` now holds a shadow of the GL state and emits only the difference:
+texture binds, the whole texture-environment chain, the raster state, the
+projection, the client arrays. Everything goes through one door (`glc_*`), so
+there is exactly one place the shadow can drift from the driver;
+`glTexParameter` is cached per texture **object** rather than per unit, because
+that is what it belongs to; and `glc_invalidate()` forgets the lot after
+anything that changes GL behind its back (the once-a-frame clear, an EFB copy).
+
+It works exactly as advertised. In a 1,000-frame run it elides **98.9%** of the
+state calls the backend used to make — 18,281,772 of 18,490,466.
+
+And the frame barely moved: **11.8 fps to 13.8**.
+
+So the port was profiled on the G4 with `sample`, which is what should have
+happened first. Of about 4,300 in-thread samples:
+
+| | samples |
+|---|---:|
+| `transform_and_store` | 1,727 |
+| **`sqrt`** (`__sqrt` + stubs + `sqrtf`) | **768** |
+| `read_component` | 516 |
+| `indexed` | 479 |
+| `gx_tex_bind` | 448 |
+| every GL entry point, together | ~40 |
+
+`--headless`, which runs the whole GX pipeline and never calls GL, was 57 ms of
+gx per frame against 70 with the window open. **The driver was never the
+problem.** §12.7's "230 µs of fixed cost per draw is the whole performance
+story" was measured correctly and attributed wrongly: the fixed cost is per
+*vertex*, and it is arithmetic.
+
+### 13.2 Three PowerPC-shaped fixes in the vertex path
+
+- **`sqrtf` was a call into double-precision `sqrt` through a dyld stub.** The
+  74xx does not implement the optional `fsqrt`/`fsqrts` at all, so the 10.4
+  libm cannot inline them and every normal normalisation and every light
+  distance left the port through the PLT. What the 74xx does have is
+  `frsqrte`, a five-bit reciprocal-square-root estimate; two Newton-Raphson
+  steps take it to about twenty bits, which is far more than a byte-quantised
+  vertex colour can show. And a *reciprocal* square root is what both callers
+  wanted — they divide by the length — so three `fdivs` went with each one.
+  [`port/src/gx/gx_math.h`](../src/gx/gx_math.h).
+- **`fdivs` is 14–21 cycles and does not pipeline**, and the indexed-attribute
+  reader was doing one per component to apply the vertex-attribute table's
+  fractional shift — up to eight per vertex. The shift is a power of two, so a
+  table of exact reciprocals costs nothing in precision.
+- **CPU lighting divided bytes by 255.0f up to thirteen times per vertex** —
+  four for the material, three for the ambient, three per light. A 256-entry
+  table built with the real division removes the divide *and* the
+  integer-to-float conversion, which on pre-2.06 PowerPC is a store-load-add
+  dance through memory.
+
+Plus: `transform_and_store` no longer copies the whole 96-byte `Vtx` per vertex
+(only the two colours survive the transform; `tex_slots` covers the gap a TEV
+stage is allowed to name), 16- and 32-bit attributes are loaded rather than
+assembled byte by byte on a big-endian machine, and the texture content hash's
+sample budget drops from 4 KB to 1 KB — 427 binds a frame times four kilobytes
+of FNV was four megabytes a frame of pointer chasing on a 1 GHz machine.
+
+**Result, by `--perf`'s own "effective fps" over a 1,000-frame `--seed 12345`
+run ending on the title:**
+
+| | M2b | M3 |
+|---|---:|---:|
+| gx, mean | 83.00 ms | 39.88 ms |
+| gx, p95 | 301.26 ms | 142.75 ms |
+| frame, mean | 84.83 ms | 42.14 ms |
+| clocks ratio | 5.757 | 2.526 |
+| effective fps | 10.4 | **23.7** |
+
+Frames 120, 250, 350 and 400 of that run are **byte-identical to the build
+before any of this**, which is the whole point of doing it in this order.
+
+The 60 fps target is not met and the remaining gap is now understood rather
+than suspected: the title screen alone (the 300 frames after the logos) runs at
+**7.4 fps**, 135 ms a frame, and `transform_and_store` is still half of it.
+§13.9 says what to do about it.
+
+### 13.3 One real bug found by the profiler's absence, not its presence
+
+`--perf` reported a mean frame time of **minus 485 milliseconds**.
+
+```c
+return mach_absolute_time() * tb.numer / tb.denom;   // NO
+```
+
+On the G4 `mach_timebase_info` answers numer = 1,000,000,000 and denom = the
+timebase frequency, about 33 MHz, so the multiply overflows 64 bits after
+2^64 / 1e9 = 1.84e10 ticks — **about nine minutes of machine uptime**. Past
+that the product wraps and the clock jumps backwards by a couple of centuries'
+worth of nanoseconds, every nine minutes, forever.
+
+`OSGetTick` is downstream of this and a dozen places in the game pace
+themselves off it (§12.3 bug 4 is one of them), so what this would have looked
+like in the game is a logo that hangs forever or a wipe that finishes
+instantly, at random, on a machine that had been on for a while. The counter
+is now read relative to the port's own first reading and scaled as
+quotient-plus-remainder, which cannot overflow for any run length that fits in
+the counter at all; `OSGetTime`'s *origin* comes from the host calendar
+instead, which is both what the console does — ticks since 2000-01-01 — and
+what keeps the two clock-seeded RNGs (§12.8) seeded differently per run.
+
+### 13.4 The invisible 3D layer: a sign
+
+§12.4 left the title screen submitting 27,041 vertices in 358 display lists,
+with no GL error, and drawing nothing, and listed seven candidates. It was
+none of them. It was one character in `gl13_apply_transform`.
+
+GX maps eye z to [-1, 0] and GL to [-1, 1], so the port adds one row operation
+on the way through. Under a perspective projection **w_clip is `-z_eye`** —
+which is what `M[3][2] = -1` says two lines further down — so
+
+```
+z_clip_gl = 2*z_gx + w_clip = 2*(m22*z + m23) + (-z) = (2*m22 - 1)*z + 2*m23
+```
+
+and `M[2][2]` is `2*m22 - 1`. The port had `2*m22 + 1`. At the title screen's
+projection — m22 = -3.05e-06, near 0.1, far 32768 — that is **+0.99999389 in
+place of -1.00000610**: very nearly the right magnitude and exactly the wrong
+sign. Every perspective vertex therefore came out at a normalised z a couple
+of ten-thousandths past -1 and GL's near plane took the lot. A vertex at
+z_eye = -949 landed at z_ndc = -1.0002.
+
+It hid only the 3D layer because the orthographic branch has w_clip = 1 and its
+`+ 1` was right all along — which is exactly the shape of the M2b symptom, a
+pixel-perfect 2D title screen with nothing behind it.
+
+[`docs/screenshots/mp4-title-3d.png`](screenshots/mp4-title-3d.png) against
+[`ref/frames/boot-5025.png`](../ref/frames/boot-5025.png): the character cluster
+on the present box, the two foreground characters, the boxes with their
+ribbons, the starburst, the logo and PRESS START, all in the right places and
+the right colours. The cast differs between the two shots because the title
+cycles its characters and the two sides do not agree on absolute frame numbers.
+
+Found with a new **`--drawlog-at F`**, which points `--drawlog` at a presented
+frame instead of at the first draws of the boot. An unqualified `--drawlog`
+explains the Nintendo logo eight times and stops, six hundred frames before the
+question.
+
+### 13.5 PAD — the Xbox One pad, on the G4, with rumble
+
+`port/src/pad/` replaces `pad_none.c` with the real thing, lifted from the two
+Snowboard Kids ports as §2.3 planned:
+
+- **`pad_xone.c`** — the Xbox One controller over IOUSBLib, ported nearly
+  verbatim from `snowboardkids-decomp/port/src/platform/input_xone.c`. Left
+  stick → main stick, right stick → C stick, A/B/X/Y straight across, LT/RT →
+  `triggerL`/`triggerR` with the digital `PAD_TRIGGER_*` bits past ~200/255,
+  LB → Z, dpad and Start as themselves, **rumble through `PADControlMotor`**.
+- **`pad_sdl.c`** — `SDL_GameController` for anything else, with a raw
+  `SDL_Joystick` fallback and a keyboard map. The keyboard is polled with
+  `SDL_GetKeyboardState` rather than a second event loop, because `gl13.c`
+  owns the event pump and two pumps fight.
+- **`pad_play.c`** — `--play SCRIPT` and `--record FILE`, feeding raw
+  `PADStatus` at `PADRead` and never synthesising edges, which `ref/notes.md`
+  §6.3 is explicit about: the game's own repeat and edge logic has to run.
+- **`port/tools/gecko2play.py`** — converts a `ref/tools/mkgecko.py` reference
+  script into the port's format.
+
+On the real machine:
+
+```
+port> pad: Xbox One controller (045e:02ea) via IOUSBLib (pipes in 2 out 1)
+port> PADInit: controller 1 = Xbox One controller (045e:02ea) (driver: Xbox-One-IOUSBLib)
+port> PADInit: rumble available
+port> PADInit: controllers 2-4 unplugged (reference config: CPU players)
+```
+
+Ports 2–4 report `PAD_ERR_NO_CONTROLLER` on purpose: `ref/notes.md` §4 says the
+game derives human-versus-CPU from which ports answer, and the reference rig
+has one pad, which is what makes the walk end with 1P and three COM.
+
+GCC 14 rejects the 10.4u SDK's `IOKit/usb/USB.h` (unbalanced
+`#pragma options align=reset`), so `pad_xone.c` compiles against the same
+patched copy the Snowboard Kids ports use, under one static pattern rule in the
+Makefile.
+
+### 13.6 CARD — one real memory card, in one host file
+
+`ref/notes.md` §5 is blunt: a card is mandatory to get past the title, and with
+both slots empty the reference rig reaches SELECT A FILE, says "No valid Memory
+Card is inserted." and stops for as long as you hold A.
+
+[`port/src/card/card_file.c`](../src/card/card_file.c) is a 512 KB **"Memory
+Card 59" image in the console's own format** — CARDID header, directory and
+backup, allocation table and backup, 59 data blocks, big-endian, checksummed
+the way `__CARDCheckSum` does it — in
+`~/Library/Application Support/MarioParty4/memcard-slot-a.raw`. It would have
+been quicker to keep one host file per save file and answer the API over a
+directory; the console format means a save can be carried between Dolphin and
+the G4 in either direction, which for a port whose whole test method is
+comparison against a Dolphin rig is worth the extra afternoon. The layout came
+from the decompilation's own `src/dolphin/card/` — `CARDFormat.c` lays out the
+five system blocks, `CARDCheck.c` gives the checksum and its two ranges,
+`CARDPriv.h` names the allocation table's five header slots, `CARDStat.c` gives
+the banner and icon offset arithmetic — and no emulator source was read for any
+of it. The game's own save format is untouched.
+
+Slot B stays empty, which is the rig's configuration. `--nocard` empties both
+and reproduces the dead end on purpose.
+
+It works: the walk's new-file scene ends with
+
+```
+port> CARD: created "MarioParty4", 8192 bytes (1 block)
+port> CARD: 0 reads, 1 writes, 1 files created, 0 deleted, 4 image flushes, 57 of 59 blocks free
+```
+
+### 13.7 Two bugs between the title screen and Party Mode
+
+**Unlinking a REL must not unmap it.** `dlclose` really does unload a bundle —
+M2a's `--reltest` proved it twice on the real machine, and that was the right
+answer to risk 2. It is the wrong answer for the game. On the console
+`objdll.c` frees the module's heap block, and freed heap is still readable and
+still executable, so a pointer left behind into a just-unlinked module keeps
+working until something allocates over it. Mario Party 4 leaves exactly such a
+pointer: accepting the title unlinks `bootDll` and the very next thing the game
+does is call into its dead text. Here that is `signal 11` with a program
+counter no image claims. The port now drops the reference and keeps the
+mapping, re-entering a resident module with its bss zeroed by hand — the
+console's behaviour, only more reliably. `--reldlclose` restores the strict
+close, and `--reltest` runs with it so the unload path stays proven.
+
+**The one place the address MEM1 lives at is load-bearing.** `window.c` asks
+"is this a message id or a pointer to a string?" four times and answers by
+testing against 0x80000000: exact on a console whose RAM starts there, and
+wrong here, where MEM1 is at 0x02100000, the REL bundles at 0x0b000000 and the
+executable's rodata at 0x1000. Every real pointer read as an id, came back
+NULL from `MessData_MesPtrGet`, and killed the first screen that shows the
+player a string the game built itself — the file select, naming a card slot
+"A" through `MAKE_MESSID_PTR`, which is a bare cast. A range check cannot fix
+it: those pointers come from all three regions, and `saveload.c`'s
+`SlotNameTbl` lives at addresses a message id can also have. So the tag is
+made real — `MAKE_MESSID_PTR` sets the bit the game already tests and the four
+places that turn the value back into a pointer clear it — leaving all four of
+the game's own tests untouched and exactly as correct as they are on hardware.
+§1.5's "no pinned-globals scheme is needed" survives with one named exception.
+
+Both were found by a new **hand-walked PowerPC backtrace in the fault
+handler**. No unwinder can follow this stack — the game runs on one the port
+allocated and its HUPROCESS coroutines swap `sp` with a hand-written
+`gcsetjmp` — but the linkage convention is simple enough to walk without one
+and every frame is named through `dladdr`. The first crash printed
+`no image claims this pc`, which is the whole diagnosis in six words.
+
+### 13.8 A writer's name does not say which attribute it fills
+
+This one is worth its own section, because it is a class rather than a bug.
+
+On the console `GXPosition2f32` and `GXTexCoord2f32` are the same two stores
+into the write-gather pipe at 0xCC008000. The pipe has no idea what an
+attribute is: the command processor consumes whatever arrives, in the order the
+vertex descriptor names, and the writers are named for readability and nothing
+else. So a game is free to reach for whichever one has the right shape, and
+Mario Party 4 does — `src/game/window.c`, which draws **every line of message
+text in the game**, emits each glyph's texture coordinate with
+`GXPosition2f32`, because a texcoord is two floats and so is a 2D position.
+`printfunc.c` and four minigame modules do the same, 28 calls in all.
+
+The port had believed the names, so those texcoords went into the position, the
+descriptor's real last attribute was never written, and the vertex never
+completed. Every window in the game drew as a handful of enormous untextured
+quads. The same naming assumption meant a second `GXTexCoord2f32` overwrote
+the first instead of filling TEX1.
+
+`gx_draw.c` now keeps a cursor into the descriptor and each writer fills
+whichever attribute is next, converting its payload to what that attribute
+needs and using *that* attribute's fractional shift. That is what the hardware
+does, it costs nothing, and it makes the whole class impossible rather than one
+bug at a time. The title screen's four golden frames are unchanged by it,
+because there the game used the writers the obvious way.
+
+### 13.9 The menu walk
+
+Replayed on the G4 from `ref/movies/menu-walk-port.play` — the reference
+schedule rebased on the port's own clock, because the console spends 186 frames
+on the cold-boot logos and 4,195 on a movie the port skips, so the reference's
+START pulses at 380/430/480 are long spent by the time the port arrives at the
+title around frame 700. `ref/movies/menu-walk.play`, the direct conversion of
+the Dolphin script, is kept next to it as the thing that was converted.
+
+| port frame | screen | against | notes |
+|---|---|---|---|
+| 900 | the title, with its 3D layer | `boot-5025` | matches |
+| 1200 | **SELECT A FILE**, slot A, three files | `menu-0300`.. | the card is found and named; the message window's background is wrong (§13.10) |
+| 1500 | mode select, the cube over Peach's castle | `menu-0700`.. | matches |
+| 2700 | the new-file card fan | `menu-1500`.. | the panel and cards are right; the stage behind is black |
+| 3000 | **character select**, 1P on Mario | `menu-2800` | the eight portraits, the badge and the cursor are right; the stage behind is black |
+| 5100 | **board settings** — Toad's Midway Madness, 1P + 3 COM EASY, 20 TURNS, ALL, ON, "Are these settings OK?" | `menu-3900` | every label, value and prompt is right; the stage is black and the window backgrounds are pale blocks |
+
+Screenshots are `docs/screenshots/mp4-menu-*.png`. That is the whole of
+`ref/notes.md` §3's walk, and the game creates a save file on the way through.
+
+**Determinism still holds across it.** Two independent runs,
+`--frames 5200 --seed 12345 --play menu-walk-port.play`, with the card deleted
+before each:
+
+```
+run A  4a83c956466e4207d5fb83621d7889f8  frame-01200.ppm
+       3811bda1bdf836053829d74062219075  frame-03000.ppm
+       3b017cbdd9272e465f6495b950dce830  frame-05100.ppm
+run B  4a83c956466e4207d5fb83621d7889f8  frame-01200.ppm
+       3811bda1bdf836053829d74062219075  frame-03000.ppm
+       3b017cbdd9272e465f6495b950dce830  frame-05100.ppm
+```
+
+### 13.10 What `--gxwarn` names now, and what is still wrong on screen
+
+Five distinct degradations across the whole walk, in order of how much of the
+screen they cover:
+
+| warning | count in 5,199 frames | what it means |
+|---|---:|---|
+| `TEV: a stage needs two different constants; the first wins` | 1,340,300 | one `GL_TEXTURE_ENV_COLOR` per unit against GX's four konst registers |
+| `GXSetTevSwapMode: a non-identity swap table is ignored` | 136,522 | §3.4 fallback 2; new at the menus, not seen at the title |
+| `indirect texturing … direct stage only` + `GXSetTevIndTile: dropped` | 20,818 each | `HuSprDisp`'s background tiling — this is the window backgrounds |
+| `GXInitSpecularDir: specular is approximated by the diffuse term` | 12,630 | model highlights |
+
+**Both alpha-compare warnings are gone.** M2b counted 79,488 OR cases and
+280,241 AND cases at the title alone and reported each as a degradation; they
+never were. A `GX_AOP_OR` (or AND) of a comparison with *itself* — the game's
+own idiom for "just this one", because GX has no way to say it — reduces
+exactly, and so does a half that is `GX_ALWAYS` under AND or `GX_NEVER` under
+OR.
+
+`GXCopyTex` is no longer a no-op: colour copies land in the texture cache as a
+`glCopyTexSubImage2D` into a power-of-two GL texture, keyed on the destination
+address the game will later wrap in a `GXTexObj`, with the NPOT fold in the
+unit's texture matrix like any other texture. 4,313 of them in the walk. The
+**depth** copies still have no GL 1.3 home: the Radeon 9000 has no
+`ARB_depth_texture` (§12.2), there is no FBO to read from and no depth internal
+format to copy into, so the four sites are skipped with a warning. A colour
+proxy was considered and rejected: it would put a picture of the scene where
+the reader expects a depth ramp, which is worse than a flat neutral value.
+
+Two things are still visibly wrong, and they are M4's opening in the same way
+the 3D layer was M3's:
+
+1. **The theatre-stage backdrop is black** behind the new-file, character-select
+   and board-settings screens, where `menu-2900` has curtains, stars and
+   garlands. The foreground of those screens is correct, so this is one scene
+   that is not drawing rather than a broken pipeline.
+2. **Window backgrounds draw as pale blocks.** That is `HuSprDisp`'s
+   `sprite->bg` tiling path, which is indirect texturing — the 20,818 warnings
+   above — and §3.4 case 3 already names the three ways out. A tiled window
+   background is the easiest of them: the tile is a plain repeat, so it can be
+   expressed as a second unit with a scaled texture matrix rather than needing
+   a dependent read at all.
+
+### 13.11 Tooling added
+
+| flag | what |
+|---|---|
+| `--drawlog-at F` | restrict `--drawlog` to presented frame F |
+| `--nocard` | both card slots read empty |
+| `--reldlclose` | really `dlclose` a REL the game unlinks (what `--reltest` uses) |
+| `--play SCRIPT` / `--record FILE` | scripted and recorded controller 1 |
+| `--nopad` / `--paddbg` | no controller at all; log raw pad reports |
+
+and the fault handler's backtrace, and `port> GL state:` at shutdown, which is
+how a regression in the state shadow shows up as a number rather than as a slow
+afternoon.
+
+### 13.12 What M4 needs
+
+1. **The stage backdrop**, §13.10 item 1 — the last thing between the menus and
+   a screenshot that matches the reference outright.
+2. **The window background tiling**, §13.10 item 2.
+3. **Speed, again, and it is `transform_and_store`.** The title screen is 7.4
+   fps and half the samples are in one function. The next three things to try,
+   in order: hoist the per-primitive invariants (the matrices, the channel
+   control, the texgen list) out of the per-vertex loop, which is pure
+   bookkeeping; give the position and normal transforms an AltiVec path, which
+   is what §1.12 already says MTX is the first place to reach for; and skip
+   `light_channel` outright for the very common case of one channel with
+   lighting disabled and a register material.
+4. **A minigame.** `instDll` (the rules screen) and one `m4xxDll`, which will
+   be the first code to ask for timing and input at speed rather than at menu
+   speed — and the first thing the `--play` layer will have to drive
+   frame-accurately rather than approximately.
+5. **The pad's shutdown path.** `pad: xone: read failed (e00002eb), controller
+   gone` is printed at exit; harmless, but it is the driver noticing its own
+   teardown and it should not have to.
