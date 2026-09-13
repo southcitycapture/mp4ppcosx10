@@ -1104,12 +1104,17 @@ One `m4xxDll` playable end to end.
 screen all run at 60 fps on the G4, and `--gxwarn` names every effect that was
 degraded.
 
-### M5 — a board with CPU players
+### M5 — a board with CPU players *(the first turn and the first minigame land, §15)*
 A full board (`w01Dll` first — Toad's Midway Madness is the simplest) with four
 players, three of them CPU, for a full 10-turn game including minigames, items,
 the Star space and the Last 5 Turns event.
 **Done means:** a complete game reaches the results screen without a crash, a
 hang, or a wrong winner, three times running.
+**Where it stands:** the board loads, plays its intro, rolls the turn order,
+takes turns with items and spaces, picks a minigame, explains it, plays it and
+pays it out (§15.4). It does not yet survive ten turns: the *second* minigame
+(`m425dll`) dies with SIGBUS in its own draw hook on both builds (§15.6), and
+that is what M5 has left.
 
 ### M6 — audio
 The MusyX SAL replacement and the DSP-command interpreter; `src/msm` and
@@ -3201,3 +3206,489 @@ hatch is where it goes, and that is an M8 decision, not an M5 one.
    vertex-path work. §14.3 spent a step on bookkeeping that was not the cost.
 4. **Batched AltiVec**, once (3) says where the time is, as the two-phase
    restructuring §14.3 describes rather than a per-vertex intrinsic.
+
+## 15. M5 log — two wrong C bodies in the SDK's own matrix library, and a board with three CPU players *(2026-09-13)*
+
+M5's headline was a board. It got one, and a minigame after it, and the two
+things standing in the way turned out to be the same bug twice: a `C_*` body in
+`src/dolphin/mtx/` that the GameCube never called, that the decomp is right to
+have written the way it is, and that `-DMTX_USE_C` makes the one that runs.
+One of them was M4's off-world second pass. The other was why Toad's Midway
+Madness rendered as a black screen with a working HUD over it.
+
+Neither was findable by reading the port. Both were findable in one run each by
+an instrument that asks the game what it believes.
+
+### 15.1 The off-world pass: `C_MTXIdentity` never wrote the translation column
+
+§14.2 left three candidates. `--scenelog`'s envelope line, which §14.7 said to
+read first, eliminated the first of them outright — at frame 5100 every
+`hsf->matrix->data[]` in every skinned model has a translation under 439:
+
+```
+cenv mdl144 cenvNum 6 base_idx  6 count 53  max|mtx[0][3]|  188.79
+cenv mdl157 cenvNum 6 base_idx  6 count 37  max|mtx[0][3]|  438.18
+```
+
+The answer was not in any of the three. It is in `src/dolphin/mtx/mtx.c`:
+
+```c
+void C_MTXIdentity(Mtx mtx) {
+    mtx[0][0] = 1.0f; mtx[0][1] = 0.0f; mtx[0][2] = 0.0f;
+    mtx[1][0] = 0.0f; mtx[1][1] = 1.0f; mtx[1][2] = 0.0f;
+    mtx[2][0] = 0.0f; mtx[2][1] = 0.0f; mtx[2][2] = 1.0f;
+}
+```
+
+Nine elements of twelve. The translation column is not written at all.
+
+On the console that is invisible and the decomp is not wrong about it:
+`MTXIdentity` is `PSMTXIdentity`, six paired-single stores covering all twelve
+elements (`psq_st` writes pairs, and 0/8/16/24/32/40 is the whole 3x4), so the
+translation is always zeroed and no caller ever had to zero it itself. The DOL
+never reaches `C_MTXIdentity`, so nothing in the decomp's matching build
+depends on the difference.
+
+`-DMTX_USE_C` makes the C body the one that runs, and `src/game/hsfdraw.c`'s
+`mtxRot` hands it an **uninitialised stack `Mtx`**:
+
+```c
+void mtxRot(Mtx mtx, float x, float y, float z) {
+    if (x != 0.0f) { MTXRotRad(mtx, 'X', MTXDegToRad(x)); }
+    else           { MTXIdentity(mtx); }
+    if (y != 0.0f) { MTXRotRad(rotY, 'Y', MTXDegToRad(y)); MTXConcat(rotY, mtx, mtx); }
+    ...
+```
+
+so with a zero x rotation the matrix keeps whatever translation was in that
+stack slot, `MTXConcat` carries it through the y and z rotations, and
+`mtxTransCat` then *adds* the model's position to it. The slot is the same
+address on every call from the same caller, so the value does not merely
+start wrong, it **accumulates**: `Hu3DPostExec`'s `sp40` and
+`Hu3DShadowExec`'s `sp58` walk into the tens of thousands over a few hundred
+models in a frame.
+
+Every part of §14.2's measurement falls out of that:
+
+| §14.2 observed | why |
+|---|---|
+| the stage (models 139, 142) *always* off-world | its objects have `rot.x == 0`, so they always take the `MTXIdentity` branch |
+| the characters drawn **twice**, once right and once off-world, in equal numbers | the main pass and the shadow pass take different branches of the same `if` |
+| x translations of −15,000 to −31,000, drifting | the accumulation, one model's `pos.x` at a time |
+| camera, model placements and envelope matrices all provably sane | none of them goes through `mtxRot` |
+| the port's own re-walk of the HSF trees concatenating to nothing over 3,000 | `--scenelog` builds its matrices with `C_MTXScale`/`C_MTXRotRad`, both of which *do* write all twelve, and then sets the translation itself |
+
+The fix is one line in `patches.txt`, and `port/tests/mtx_test.c` is the new
+thing that makes the class impossible to have again: it poisons the
+destination with a bit pattern no matrix element carries and demands every
+constructor write all twelve elements, runs every in-place form
+(`MTXConcat(m, x, m)`, which `mtxRotCat` does three times a call) against the
+out-of-place answer, diffs every `PS*` replacement in `psmtx_c.c` against the
+`C_*` body it stands in for, and round-trips `PSMTXReorder` +
+`PSMTXROMultVecArray` — the two with no C original at all — against
+`C_MTXMultVecArray`. It found this in one run and reported nothing else
+wrong. `make -C port TARGET=host mtxtest`.
+
+**Proof rather than assertion.** `--gxwarn` is no longer the only permanent
+counter: `port> GX draw: N primitive(s) off-world` counts every primitive whose
+position matrix puts it more than 10,000 units sideways, which is two compares
+per primitive and stays in. Over the 5,150-frame reference menu walk on the
+G4: **0**, against M4's 1,264 of 1,756 on one frame. Primitive and vertex
+counts are unchanged to the digit — 5,779,320 and 255,242,235 before and after
+— the same geometry, different matrices.
+
+`docs/screenshots/mp4-charselect-stage.png` is the theatre stage, present.
+
+*(The counter is x and y only, not z. The board's camera sits 14,000 units
+back with a far plane at 23,000, so on Toad's Midway Madness a modelview z of
+−15,000 is an ordinary distant space; counting z flagged 498,060 perfectly
+good primitives on the first board run. Nothing in this game is ever ten
+thousand units to the *side* of its own camera, which is what the bug did.)*
+
+### 15.2 The board's black screen: `C_VECScale` normalises instead of scaling
+
+`w01dll` loaded on the first try. The board intro played, the turn order was
+rolled, Toad explained where the first Star was — and the screen was black
+behind the sprite HUD for all of it. The board was running the whole time; it
+was drawing into nothing.
+
+`--nanwatch`, added for this, names the first frame each camera, each model and
+the board's own `boardCamera` turns NaN, and prints the board camera for that
+frame and the one before. Two lines:
+
+```
+frame 4984  target -150 100 300   pos -150 13255.7 5088.28  moving 0
+frame 4985  target nan nan nan    pos nan nan nan           moving 1
+```
+
+`rot`, `zoom`, `fov`, `near`, `far`, `target_mdl`, and the entire focus block
+are identical across those two frames. One field changed, and it is a flag.
+
+`src/game/board/main.c:CalcCameraTarget` is three lines long in the part that
+matters:
+
+```c
+VECSubtract(&pos, &camera->target, &offset);
+if (camera->moving) { VECScale(&offset, &offset, 0.15f); }
+VECAdd(&offset, &camera->target, &camera->target);
+```
+
+and on the frame `moving` is first set the camera is already sitting on its
+target, so `offset` is the zero vector. `src/dolphin/mtx/vec.c`:
+
+```c
+void C_VECScale(const Vec *src, Vec *dst, f32 scale) {
+    f32 s;
+    s = 1.0f / sqrtf(src->z*src->z + src->x*src->x + src->y*src->y);
+    dst->x = src->x * s;  dst->y = src->y * s;  dst->z = src->z * s;
+}
+```
+
+That is `C_VECNormalize`'s body under the wrong name — `scale` is not read at
+all — and on the zero vector it is `1.0f / sqrtf(0.0f)`, which is `inf`, and
+`0.0f * inf`, which is NaN. Same story as §15.1: on the console `VECScale` is
+`PSVECScale`, four paired-single instructions that are right, so the DOL never
+called this one and the decomp matches either way.
+
+A NaN in a camera position is completely silent. Nothing crashes, nothing
+warns, every comparison against it is false, and every transformed vertex is
+NaN, so the 3D layer stops drawing and the 2D sprite layer carries on
+perfectly. That is exactly what the first board capture looked like.
+
+`mtx_test.c` grows a fifth section for it: every `C_VEC*` against the
+arithmetic written out by hand, and every one of them fed the zero vector,
+because that is the input that turns a wrong body from a wrong answer into a
+NaN that spreads. It fails the old `C_VECScale` twice over.
+
+**The lesson worth keeping** is that `-DMTX_USE_C` is not a neutral switch. It
+promotes 74 functions from "present in the decomp, never executed, matching by
+construction" to "the thing the port runs", and two of them were wrong. The
+test now covers the whole family; anything else in `src/dolphin/` that the DOL
+never called deserves the same suspicion.
+
+### 15.3 The walk into the board, and what one START costs
+
+`ref/movies/board-start.play` and `ref/movies/board-start.txt` are the same
+walk on the two sides, and getting them there took five captures, all of which
+are worth recording because none of them was a port bug.
+
+The shape is a **metronome**: START through the boot, then A for four frames
+out of every sixty-four, forever. Nothing is pinned to a prompt, because no
+prompt in this run is at a frame either side can predict — the new-file card
+scene's length moves everything after it, and the port and the console do not
+agree on absolute frames anyway (the port skips the DVD seek and the 4,195-frame
+opening movie and reaches the title around frame 700 against the console's 380).
+A metronome does not need to know.
+
+Four things had to be learned:
+
+1. **Dolphin silently drops a Gecko code list that does not fit.** The obvious
+   translation of the metronome is one `at` per press, five code lines each,
+   which for 13,000 frames is 715 lines — past the end of the region Dolphin
+   injects behind the code handler. The capture then looks *exactly* like a
+   capture with no codes: the attract loop, no error anywhere, in the log or
+   on screen. `mkgecko.py` grew an `every <period> <frames> <from> <btn>
+   [<phase>] [<until>]` directive that compiles a metronome to a single masked
+   bit test on the low half of `GlobalCounter` (Gecko `28`, "if `(u16 & ~mask)
+   == value`"), which is five lines for the whole run instead of 715.
+2. **The minigame instruction screen ends on START and nothing else.**
+   `src/REL/instDll/main.c:293` is `btnDown == PAD_BUTTON_START`; the
+   auto-start beside it needs all four players to be CPU and this walk leaves
+   one human. A alone stops there forever, on both sides.
+3. **That START cannot share a frame with an A.** The test is an equality, and
+   A+START is `0x1100`. Hence the phase offset.
+4. **And it cannot be a metronome over the whole run.** A START anywhere else
+   opens the *board* pause menu (`src/game/board/pause.c:1493`), which sleeps
+   four frames before it reads input — so a four-frame press opens the pause
+   and throws the rest of itself away, and the next A walks into "Please choose
+   which character's settings to change", where the walk stays for the rest of
+   the capture. **Both the port and Dolphin got stuck there, identically**,
+   which is a small piece of evidence in its own right.
+
+So the START is a short metronome inside a window, placed from an observation
+in an A-only capture rather than a guess: the screen does not take input until
+its entry animation finishes (`while (instMode != 1)`, a few hundred frames
+after it first appears), so a tap or two at the frame it appears does nothing
+either. That window is the one pinned thing in the walk.
+
+### 15.4 How far the board got
+
+Port, on the G4, `--seed 12345`, 15,400 frames, `--play board-start.play`:
+
+| what | port frame | screenshot |
+|---|---:|---|
+| `w01dll` loads (`--ovllog`: overlay 89) | 4,974 | |
+| the board intro — "Toad's Midway Madness" over the map | 5,200 | `mp4-board-intro.png` |
+| Toad: "Please enjoy the fun rides, and leave your worries behind!" | 6,000 | |
+| the turn-order roll: four blocks, "Great. The order is set! Mario is first!" | 6,200–6,400 | |
+| "Hey, let me show you the first Star of the game!" / "The Star is right here. Get here with 20 coins" | 7,700–8,000 | |
+| the board proper: dice, movement, item spaces, the ferris wheel | 8,200–11,900 | `mp4-board-map.png`, `mp4-board-dice.png` |
+| "You got a Mini Mushroom." | 9,200 | |
+| the 4-Player Mini-Game VS screen and the roulette box | 12,000–12,300 | |
+| the instruction screen — **Take a Breather** | 12,600 | `mp4-minigame-inst.png` |
+| the minigame itself, on the raft | 13,200–14,100 | `mp4-minigame-play.png` |
+| "FINISH!" / "PEACH YOSHI WON!" | 14,400–14,700 | |
+| the results screen, coins paid out | 15,000 | `mp4-minigame-result.png` |
+
+Dolphin, same walk, same shape, `port/ref/tools/capture.sh 750`:
+
+| what | console frame |
+|---|---:|
+| the board map | 4,800 |
+| the turn-order roll | 5,400–6,600 |
+| "The Star is right here" | 7,200 |
+| turns, dice, movement | 7,800–11,000 |
+| the instruction screen — **Mr. Blizzard's Brigade** | 11,500 |
+| the minigame, "START!", the timer, "PEACH WON!" | 12,100–14,200 |
+| the results screen | 14,500 |
+| back to the board, a second minigame (**Photo Finish**) | 14,800–19,900 |
+
+Every milestone matches, in the same order, with the same on-screen furniture:
+the same HUD panels, the same dice numbers rendered as 3D digits over the
+board, the same window frames from M4's tiling fix, the same results table.
+**The two sides play different minigames** — Take a Breather against Mr.
+Blizzard's Brigade — and diverge in the dice they roll, because the board's RNG
+is seeded from `OSGetTime` (`BoardRandInit`) and the port's `--seed` and
+Dolphin's `CustomRTCValue` are different clocks. That is a determinism gap
+between the two *rigs*, not between the two *builds*: each is reproducible on
+its own (§12.8), and closing it means giving the port a `--rtc` that matches
+the pinned `CustomRTCValue`, which is an M7 job and one line.
+
+One artefact is shared and is the walk's own fault: a later START from the
+window lands inside the running minigame and pauses it for a moment — port
+frame 13,500, Dolphin frame 13,300. Both recover.
+
+`instDll` and an `m4xxDll` are therefore both proved, which is what §14.4's
+locked door was hiding.
+
+### 15.5 Profile
+
+`sample` on the G4, 1 ms, main thread, idle threads dropped. Percentages are
+of in-thread busy samples.
+
+**Character select (`mentdll`, overlay 70), 10 s, 7,077 busy samples**
+
+| # | symbol | samples | % |
+|---:|---|---:|---:|
+| 1 | `transform_and_store` | 1,817 | 25.7 |
+| 2 | `indexed` | 1,164 | 16.4 |
+| 3 | `read_component` | 973 | 13.7 |
+| 4 | `gx_tex_bind` | 770 | 10.9 |
+| 5 | `GXCallDisplayList` | 303 | 4.3 |
+| 6 | `saveGPR` | 279 | 3.9 |
+| 7 | `restGPRx` | 237 | 3.3 |
+| 8 | `gldInitDispatch` | 156 | 2.2 |
+| 9 | `gldCreateQuery` | 92 | 1.3 |
+| 10 | `PSMTXROMultVecArray` | 83 | 1.2 |
+| 11 | `glc_texenvi` | 57 | 0.8 |
+| 12 | `FaceDraw` | 52 | 0.7 |
+| 13 | `tex_content_hash` | 50 | 0.7 |
+| 14 | `emit_channel` | 46 | 0.6 |
+| 15 | `begin_attr_order` | 41 | 0.6 |
+
+**Toad's Midway Madness (`w01dll`, overlay 89), 12 s, 8,192 busy samples**
+
+| # | symbol | samples | % |
+|---:|---|---:|---:|
+| 1 | `transform_and_store` | 2,533 | 30.9 |
+| 2 | `indexed` | 1,062 | 13.0 |
+| 3 | `gx_tex_bind` | 965 | 11.8 |
+| 4 | `read_component` | 956 | 11.7 |
+| 5 | `GXCallDisplayList` | 307 | 3.7 |
+| 6 | `saveGPR` | 236 | 2.9 |
+| 7 | `gldInitDispatch` | 196 | 2.4 |
+| 8 | `restGPRx` | 178 | 2.2 |
+| 9 | `PSMTXROMultVecArray` | 118 | 1.4 |
+| 10 | `gldCreateQuery` | 107 | 1.3 |
+| 11 | `C_MTXConcat` | 85 | 1.0 |
+| 12 | (`libGL` internals) | 76 | 0.9 |
+| 13 | `Hu3DMotionExec` | 60 | 0.7 |
+| 14 | `glc_texenvi` | 53 | 0.6 |
+| 15 | `__sqrt` | 48 | 0.6 |
+
+`transform_and_store` is the top item on both, as §14.3 guessed it would be and
+as §13.1 insisted on measuring rather than guessing. The next two,
+`indexed` + `read_component`, are the *attribute reader* rather than the
+transform, and together they are as large again: the whole vertex path is about
+two thirds of the frame on both screens. `gx_tex_bind` at 11–12% is a texture
+cache *hit* path, 10.9 million of them a run, and is the obvious next target
+after this one.
+
+**Frame rates**, measured as wall clock over a segment of a `--turbo` run
+(the port's own `--frames N reached` line):
+
+| screen | frames | wall | fps |
+|---|---:|---:|---:|
+| boot + the whole menu walk to the board settings | 5,150 | 351.6 s | 14.6 |
+| the board and its minigame (the 5,150–15,400 segment) | 10,250 | 690.1 s | 14.9 |
+| the title screen alone (M4, §14.3, unchanged) | — | — | 22.9 |
+
+The 60 fps target is not met and is not close. The board is a heavier scene
+than any menu — 10.9 million primitives and 568 million vertices over
+15,400 frames, against 5.8 million and 255 million over the 5,150-frame menu
+walk — and it holds roughly the same frame rate, which says the cost is
+per-vertex and scales with what is on screen, exactly as the profile says.
+
+### 15.6 The batched AltiVec transform: built, measured, and left switched off
+
+§14.7 item 4 said batched AltiVec, "as the two-phase restructuring §14.3
+describes rather than a per-vertex intrinsic", once the profile named the
+place. The profile named it, so it was built.
+
+**The restructuring.** `transform_and_store` was called once per vertex from
+the attribute cursor, so the modelview and the normal matrix were loaded from
+memory for every vertex and nothing could stay in a register. It is now two
+phases. Phase 1 (`transform_and_store`) runs per vertex and does only what
+does not need a matrix: the colours, including the two constant-per-primitive
+overrides that used to be re-tested per vertex, the **model-space** position
+and normal, and the raw texture coordinates a texgen will read back. Phase 2
+(`finish_vertices`) runs once per primitive from `draw_now`, with the whole run
+in hand, and is the only place a matrix is touched.
+
+This is arithmetically identical to what it replaced — the same operations on
+the same inputs in the same order per element, only grouped differently — so
+the reference md5s did not move and did not need to.
+
+**The vector path.** Behind `#ifdef __ALTIVEC__`, `finish_vertices` builds the
+four columns of the modelview and the three of the normal matrix once into
+vector registers and keeps them for the whole run. `verts[]` is
+`__attribute__((aligned(16)))` and `sizeof(Vtx)` is 96, so every vertex's
+position starts on a quadword boundary and two aligned loads give
+`(px, py, pz, nx)` and `(ny, nz, colour, colour)`. Each vertex is then three
+`vec_madd`s for the position, three for the normal, a `vec_rsqrte` with one
+Newton step and a `vec_sel` to keep the zero-length guard, and two `vec_perm`s
+to put the results back without disturbing the two colour words that share the
+second quadword. Nine multiplies and six adds become three fused ones. Only
+`src/gx/gx_draw.o` is compiled with `-maltivec`, deliberately: turning it on
+for the whole tree would let GCC vectorise the game's own translation units
+too, which is a much bigger change than this one earns.
+
+**And it bought nothing.** Two 12-second `sample` runs on the same board scene,
+same seed, same script, same frame:
+
+| | scalar two-phase | AltiVec |
+|---|---:|---:|
+| `draw_now` (phase 2, inlined) | 2,151 (26.2%) | 2,179 (26.5%) |
+| `transform_and_store` (phase 1) | 423 (5.2%) | 447 (5.4%) |
+| in-thread busy samples | 8,210 | 8,236 |
+
+Inside run-to-run variance, in the wrong direction. For completeness, the
+one-phase M4 code on the same scene was `transform_and_store` 2,533 of 8,192
+(30.9%), so the split itself is also free — as it should be, being the same
+arithmetic.
+
+**What that measurement actually says** is more useful than a speed-up would
+have been. M4 predicted AltiVec would not pay because of loads, permutes and
+the store-back *per vec3*; batching removes exactly those, and the answer did
+not change. So the cost in phase 2 is not the arithmetic and not the matrix
+loads — it is the memory traffic. A `Vtx` is 96 bytes, the run walks a 6.3 MB
+array, and 329 million vertices a run is 31 GB of reads and writes on a machine
+with a 133 MHz bus. Vector arithmetic over a memory-bound loop is free and
+worth nothing.
+
+That points the next step somewhere else entirely: make the vertex smaller
+(eight texcoord slots are reserved and one or two are ever used), or stop
+staging into `verts[]` at all for the display-list path, which is 92% of the
+board's primitives. Neither is an M5 job.
+
+So the path is **kept and switched off**: `port/build-ppc.sh ALTIVEC=1 -j8`
+builds it, the default does not. It renders correctly — a screenshot of the
+board taken from an AltiVec run is indistinguishable from the scalar one — but
+`vec_madd` is fused and `vec_rsqrte` is a different reciprocal square root, so
+enabling it *would* mean re-basing the goldens, and there is no reason to pay
+that for a change that is not faster.
+
+**One crash, and it is not this.** The 15,400-frame board walk with a cleared
+memory card reaches a *second* minigame — `instdll` at frame 13,035, `m425dll`
+at 13,325 — and dies there with SIGBUS at 0x04800000, inside the module's own
+draw hook (`Hu3DDrawPost` -> a `HU3DMODELHOOK` in `m425Dll.bundle`). The
+AltiVec build and the scalar build crash at the *same frame in the same
+function*, which is how it was attributed: it is a real port bug in the hook
+path, it is not the vertex path, and it is the first thing M6 or M5b should
+pick up. The first minigame — Take a Breather, §15.4 — runs to its results
+screen on both builds.
+
+### 15.7 What `--gxwarn` names now
+
+Over the 15,400-frame board walk, which is a much bigger sample than M4's menu
+walk and the first one that includes a board and a minigame:
+
+| warning | M4 (menu walk) | M5 (board walk) |
+|---|---:|---:|
+| `TEV: a stage needs two different constants; the first wins` | 1,319,950 | 1,789,688* |
+| `GXSetTevSwapMode: a non-identity swap table is ignored` | 135,622 | 135,802* |
+| `GXInitSpecularDir: specular is approximated by the diffuse term` | 12,630 | 34,353* |
+| `indirect texturing … direct stage only` | 0 | 0 |
+| `GXSetTevIndTile: dropped` | 0 | 0 |
+| `TEV: a four-input stage with no GL 1.3 combiner; the d term wins` | — | first seen in `m425dll` |
+
+*\* over the 11,000 frames of a board walk, which is the shape of the sample
+rather than a comparable total: M4's column is the 5,150-frame menu walk.*
+
+Three distinct degradations over the board itself, and a **fourth** that only
+the second minigame reaches: a TEV stage with four different inputs, which GL
+1.3's `COMBINE` cannot express at all. So the board adds nothing new and the
+minigames add one — which is the more useful reading of that table than the counts. The
+two-konst case remains the big one and remains a real GL 1.3 limit (one
+`GL_TEXTURE_ENV_COLOR` per unit against GX's four konst registers); §3.9's
+`GL_ATI_text_fragment_shader` escape hatch is still where it goes, and still an
+M8 decision.
+
+### 15.8 Tooling added
+
+| flag / tool | what |
+|---|---|
+| `--nanwatch` | the first frame each camera, each `Hu3DData` model and the board's own `boardCamera` turns NaN, with the board camera printed for that frame *and the one before* — which is how §15.2 became one field |
+| `port> GX draw: N primitive(s) off-world` | always on, two compares per primitive: how many draws land more than 10,000 units sideways. Zero is the answer §15.1 is judged by. With `--gxwarn`, the first eight are named through the `HU3DDRAWOBJ` behind the loaded matrix |
+| `port/tests/mtx_test.c`, `make -C port TARGET=host mtxtest` | the matrix library against itself: every constructor writes all twelve elements, every in-place form matches the out-of-place answer, every `PS*` replacement matches its `C_*` body, `PSMTXReorder`+`PSMTXROMultVecArray` round-trips against `C_MTXMultVecArray`, every `C_VEC*` against arithmetic written out by hand and fed the zero vector |
+| `mkgecko.py every` | a metronome as one masked bit test on `GlobalCounter` instead of one five-line block per press, with an optional phase and an optional end frame. Five lines instead of 715, which is the difference between codes Dolphin installs and codes it silently drops |
+| `ref/movies/board-start.play`, `ref/movies/board-start.txt` | the two sides of the walk into the board and its first minigame |
+
+### 15.9 What M6 needs
+
+M6 is audio: MusyX above the SAL, the ADPCM stream path first.
+
+1. **The SAL is the whole job and the ADPCM stream is the way in.** `src/msm`
+   and `extern/musyx` above the SAL compile already and are linked into the
+   binary today — the 23 stubs the boot still hits are all `snd*` and `AI*`
+   (§12.9's list, unchanged), and every one of them is a SAL entry point:
+   `sndInit`, `sndSetHooks`, `sndStreamAllocEx`, `sndStreamADPCMParameter`,
+   `sndStreamARAMUpdate`, `sndStreamActivate`, `sndFXStartParaInfo`,
+   `sndFXCtrl`, `sndFXKeyOff`, `sndPushGroup`, `sndOutputMode`, `sndVolume`,
+   the three `sndAuxCallback*` reverb/delay pairs, `AIInit`,
+   `AIRegisterDMACallback`. The stream path is the smaller half and the one
+   with an audible pass/fail: `sndStreamAllocEx` + `sndStreamADPCMParameter` +
+   `sndStreamARAMUpdate` + `sndStreamActivate` is a four-call contract over
+   data the port already has in ARAM, and it is what the board music goes
+   through.
+2. **ARAM is already honest** and the stream path depends on it:
+   `port/src/audio/aram.c` is a memcpy over 16 MB of host memory and
+   `HuAR_MRAMtoARAM`/`HuAR_DVDtoARAM` are exercised on every screen (the board
+   alone moves 25 MB through it). `sndStreamARAMUpdate` reads out of the same
+   offsets, so nothing new has to be plumbed.
+3. **`#########SE Entry Error<SE nn:ErrorNo -110>` is not a port bug and will
+   stop on its own.** It is `HuAudFXPlay` failing because `sndFXStartParaInfo`
+   is a stub returning zero; the board prints hundreds of them a turn. Worth
+   knowing so the first real SAL run is not read as having broken something.
+4. **The output device.** SDL2 is already linked and initialised on the G4;
+   `port/src/audio/audio_none.c` is the file it replaces. The DSP-command
+   interpreter is the far side of M6 and does not block the stream path.
+5. **Do not let audio into the frame budget.** §15.5 says the port is at
+   ~14.9 fps on the board with the CPU entirely in the vertex path; M6's own
+   done-means allows 1.5 ms a frame, which is 2% of the current frame. Mixing
+   on the main thread would be visible immediately, so the SAL's mixer belongs
+   on the SDL audio callback thread from the first commit, and `--perf` should
+   grow an audio row at the same time.
+
+And two things M5 leaves that are not M6:
+
+6. **`gx_tex_bind` is 11–12% of both screens** (§15.5) and it is the *hit*
+   path — 10.9 million binds over a board run against 550 cache misses. That
+   is the next real speed item after the vertex path, and unlike the vertex
+   path it is likely to be bookkeeping rather than arithmetic.
+7. **The port and Dolphin do not roll the same dice** (§15.4), because
+   `BoardRandInit` seeds from `OSGetTime` and the two rigs pin different
+   clocks. A `--rtc` that takes the same value as the reference
+   `CustomRTCValue` would make the two walks comparable frame by frame instead
+   of milestone by milestone, which is what M7's self-play harness wants
+   anyway.

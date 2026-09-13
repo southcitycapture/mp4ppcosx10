@@ -192,6 +192,26 @@ $(BUILD)/port/src/pad/pad_xone.o: src/pad/pad_xone.c $(MIRROR_STAMP)
 	@mkdir -p $(dir $@)
 	$(CC) $(PORT_CFLAGS) $(PAD_XONE_CFLAGS) -MMD -MP -c -o $@ $<
 
+# The vertex path's phase 2 (src/gx/gx_draw.c finish_vertices) has an AltiVec
+# batch behind `#ifdef __ALTIVEC__`.  Only this one object is compiled with
+# -maltivec, deliberately: switching it on for the whole tree would let GCC
+# emit vector code in the game's own translation units too, which is a much
+# larger change to justify than "the hottest loop in the port went vector".
+# The scalar path is what every other object and the host build use.
+# Off by default, and PLAN.md 15.6 is why: the batch is measurably no faster
+# than the scalar loop on a 7450, and leaving it off keeps the reference md5s
+# (vec_madd is fused, vec_rsqrte is a different reciprocal square root).
+#   port/build-ppc.sh ALTIVEC=1 -j8      build the vector path instead
+ALTIVEC ?= 0
+ifeq ($(TARGET)$(ALTIVEC),ppc-darwin1)
+GX_DRAW_CFLAGS := -maltivec -mabi=altivec
+else
+GX_DRAW_CFLAGS :=
+endif
+$(BUILD)/port/src/gx/gx_draw.o: src/gx/gx_draw.c $(MIRROR_STAMP)
+	@mkdir -p $(dir $@)
+	$(CC) $(PORT_CFLAGS) $(GX_DRAW_CFLAGS) -MMD -MP -c -o $@ $<
+
 $(BUILD)/port/%.o: %.c $(MIRROR_STAMP)
 	@mkdir -p $(dir $@)
 	$(CC) $(PORT_CFLAGS) -MMD -MP -c -o $@ $<

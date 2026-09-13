@@ -24,10 +24,11 @@ Script syntax -- one directive per line, '#' starts a comment:
     at <frame> <frames> <btn>[,<btn>...]   # hold buttons for <frames> frames
                                            #   starting at GlobalCounter == <frame>
     at <frame> <frames> dstk:<dir>         # hold a stick direction (menu movement)
-    every <period> <frames> <from> <btn> [<phase>]
+    every <period> <frames> <from> <btn> [<phase>] [<until>]
                                            # hold buttons for <frames> frames out of
-                                           #   every <period>, from <from> onwards,
-                                           #   offset <phase> frames into the period
+                                           #   every <period>, from <from> to <until>
+                                           #   (default: forever), offset <phase>
+                                           #   frames into the period
     mark <frame> <label>                   # emit a comment; also written to .marks
 
 `every` exists because the code list has to fit in Dolphin's Gecko region.  The
@@ -86,7 +87,7 @@ def block(first, last, writes):
     return out
 
 
-def every_block(period, hold, first, writes, phase=0):
+def every_block(period, hold, first, writes, phase=0, until=None):
     """A metronome, as one masked bit test rather than one block per press.
 
     `GlobalCounter % period < hold` is a test on the counter's low bits when
@@ -100,8 +101,10 @@ def every_block(period, hold, first, writes, phase=0):
         raise ValueError('every: phase must be a multiple of frames and below period')
     band = (period - 1) & ~(hold - 1)          # the bits that select the slot
     ignore = 0xFFFF & ~band                    # Gecko's mask is what to ignore
-    out = [f'24{off(GLOBAL_COUNTER):06X} {first - 1:08X}',
-           f'28{off(GLOBAL_COUNTER) + 2:06X} {ignore:04X}{phase:04X}']
+    out = [f'24{off(GLOBAL_COUNTER):06X} {first - 1:08X}']
+    if until is not None:
+        out.append(f'26{off(GLOBAL_COUNTER):06X} {until + 1:08X}')
+    out.append(f'28{off(GLOBAL_COUNTER) + 2:06X} {ignore:04X}{phase:04X}')
     for addr, size, value in writes:
         if size == 1:
             out.append(f'00{off(addr):06X} 0000{value:02X}')
@@ -145,7 +148,8 @@ def compile_script(path):
                 if p[0].lower() == 'every':
                     period, hold, first, what = int(p[1]), int(p[2]), int(p[3]), p[4]
                     phase = int(p[5]) if len(p) > 5 else 0
-                    lines += every_block(period, hold, first, pad_writes(what), phase)
+                    until = int(p[6]) if len(p) > 6 else None
+                    lines += every_block(period, hold, first, pad_writes(what), phase, until)
                     continue
                 if p[0].lower() != 'at':
                     raise ValueError(f'unknown directive {p[0]!r}')

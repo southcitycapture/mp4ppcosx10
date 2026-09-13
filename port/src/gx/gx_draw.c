@@ -64,7 +64,10 @@ typedef struct Vtx {
 } Vtx;
 
 #define MAX_VERTS 65536
-static Vtx verts[MAX_VERTS];
+/* 16-byte aligned, and sizeof(Vtx) is 96, so every vertex's `pos` starts on
+ * a quadword boundary -- which is what lets the AltiVec batch in
+ * finish_vertices() use aligned loads and stores. */
+static Vtx verts[MAX_VERTS] __attribute__((aligned(16)));
 static int nverts;
 
 static Vtx pending;
@@ -103,6 +106,9 @@ typedef struct PrimInv {
      * loads to do nothing. */
     int chan_mode;
     int ntexgen;
+    /* How many raw texcoord slots phase 1 has to carry into the vertex for
+     * phase 2 to read back: one past the highest texgen source. */
+    int tex_copy_n;
     struct {
         u8 src_kind;     /* 0 = a texcoord, 1 = position, 2 = normal          */
         u8 src_k;        /* which texcoord, when src_kind is 0                */
@@ -129,12 +135,21 @@ static u16 want_verts;
 static float byte_scale[256];
 
 static unsigned stat_prims, stat_verts, stat_draws, stat_dls;
-/* Draws whose position matrix puts the object further from the origin than any
- * Mario Party 4 scene ever goes.  M4 had to bolt a throwaway instrument on to
- * count these (1,264 of 1,756 on the character select); it is one compare per
- * primitive, so it stays.  Zero is the answer PLAN.md 15.1's fix is judged by. */
+/* Draws whose position matrix puts the object sideways off the world.
+ *
+ * M4 had to bolt a throwaway instrument on to count these (1,264 of 1,756 on
+ * the character select); it is two compares per primitive, so it stays.  Zero
+ * is the answer PLAN.md 15.1's fix is judged by.
+ *
+ * **x and y only, not z.**  The modelview's z translation is the camera
+ * distance, and the board's camera sits 14,000 units back with a far plane at
+ * 23,000 -- so on Toad's Midway Madness a z of -15,000 is an ordinary distant
+ * space, and counting it flagged 498,060 perfectly good primitives.  Nothing
+ * in this game is ever ten thousand units to the side of its own camera, which
+ * is what the bug did and what this counts. */
 #define GX_OFFWORLD_LIMIT 10000.0f
 static unsigned stat_offworld;
+static int offworld_named;
 static int dl_shown;
 
 void gx_draw_reset(void) {
@@ -367,9 +382,20 @@ static void begin_attr_order(void) {
         pi.pos_mtx = gx.pos_mtx[slot];
         pi.nrm_mtx = gx.nrm_mtx[slot];
         if (pi.pos_mtx[3] > GX_OFFWORLD_LIMIT || pi.pos_mtx[3] < -GX_OFFWORLD_LIMIT ||
-            pi.pos_mtx[7] > GX_OFFWORLD_LIMIT || pi.pos_mtx[7] < -GX_OFFWORLD_LIMIT ||
-            pi.pos_mtx[11] > GX_OFFWORLD_LIMIT || pi.pos_mtx[11] < -GX_OFFWORLD_LIMIT) {
+            pi.pos_mtx[7] > GX_OFFWORLD_LIMIT || pi.pos_mtx[7] < -GX_OFFWORLD_LIMIT) {
             stat_offworld++;
+            /* Name the first few, the same way --drawlog does: the matrix GX
+             * was handed is a member of a HU3DDRAWOBJ, so the model and the
+             * HSF object come back from the pointer alone. */
+            if (port_opt.gxwarn && offworld_named < 8) {
+                int mdl = -1;
+                const char* nm = port_drawobj_name(gx_last_posmtx_arg, &mdl);
+                offworld_named++;
+                port_log("gxwarn> off-world draw: model %d object \"%s\" "
+                         "translation %.1f %.1f %.1f\n",
+                         mdl, nm ? nm : "?", pi.pos_mtx[3], pi.pos_mtx[7],
+                         pi.pos_mtx[11]);
+            }
         }
         pi.have_nrm = gx.vcd[GX_VA_NRM] != GX_NONE;
         pi.no_clr0 = gx.vcd[GX_VA_CLR0] == GX_NONE;
@@ -404,6 +430,12 @@ static void begin_attr_order(void) {
             }
             pi.tg[t].divide = (u8)(g->func == GX_TG_MTX3x4);
         }
+        pi.tex_copy_n = 0;
+        for (t = 0; t < pi.ntexgen; t++) {
+            if (pi.tg[t].src_kind == 0 && pi.tg[t].src_k + 1 > pi.tex_copy_n) {
+                pi.tex_copy_n = pi.tg[t].src_k + 1;
+            }
+        }
         for (i = 0; i < (size_t)nactive; i++) {
             int a = active[i];
             pi.arr[a] = &gx.array[a];
@@ -413,6 +445,7 @@ static void begin_attr_order(void) {
 }
 
 static void transform_and_store(void);
+static void finish_vertices(int n);
 
 /* **A writer's name does not say which attribute it fills.**
  *
@@ -598,12 +631,210 @@ static void light_channel(int c, const float* wpos, const float* wnrm,
     io[3] = (unsigned char)(mat[3] * 255.0f + 0.5f);
 }
 
+/* ---- the vertex path, in two phases ----------------------------------------
+ *
+ * M4's profile said `transform_and_store` was the hottest symbol in the port
+ * and M4's hoist did not move it (PLAN.md 14.3); M5's says the same, 25.7% of
+ * the character select's in-thread samples and 30.9% of the board's.  The
+ * reason a per-vertex AltiVec rewrite could not help was structural: the
+ * function was called once per vertex from the attribute cursor, so the
+ * modelview and the normal matrix were reloaded from memory for every vertex
+ * and nothing could stay in a vector register.
+ *
+ * So the path is split.  Phase 1, `store_vertex`, runs per vertex and does
+ * only what does not need the matrices: the colours (including the two
+ * constant-per-primitive overrides), the *model-space* position and normal,
+ * and the raw texture coordinates any texgen will read back.  Phase 2,
+ * `finish_vertices`, runs once per primitive from `draw_now` with the whole
+ * run in hand, and is the only place a matrix is touched.
+ *
+ * That is worth doing on its own -- the matrices load once per primitive
+ * instead of once per vertex -- and it is what makes AltiVec possible: the
+ * four columns of the modelview and the three of the normal matrix are built
+ * once and stay in vector registers for the whole run, and each vertex is
+ * three `vec_madd`s instead of nine multiplies and six adds.
+ *
+ * **The scalar path is kept and is the default.**  Without `__ALTIVEC__` the
+ * arithmetic is exactly what it was, in the same order, so the goldens are
+ * unchanged.  With it, `vec_madd` is a fused multiply-add and `vec_rsqrte` is
+ * a different reciprocal square root, so the rounding differs and the
+ * reference md5s were re-based deliberately -- see PLAN.md 15.5.
+ */
+
+#ifdef __ALTIVEC__
+#include <altivec.h>
+#define vf32 __vector float
+
+/* (m[a], m[b], m[c], 0) -- a column of a row-major 3x4 or 3x3. */
+static vf32 column(const f32* m, int a, int b, int c) {
+    union { f32 f[4]; vf32 v; } u;
+    u.f[0] = m[a];
+    u.f[1] = m[b];
+    u.f[2] = m[c];
+    u.f[3] = 0.0f;
+    return u.v;
+}
+#endif
+
+static void finish_vertices(int n) {
+    const f32* m = pi.pos_mtx;
+    const f32* nm = pi.nrm_mtx;
+    int i;
+
+    if (n <= 0) {
+        return;
+    }
+
+#ifdef __ALTIVEC__
+    {
+        vf32 zero = (vf32)vec_splat_u32(0);
+        vf32 c0 = column(m, 0, 4, 8), c1 = column(m, 1, 5, 9),
+                   c2 = column(m, 2, 6, 10), c3 = column(m, 3, 7, 11);
+        vf32 half = vec_ctf(vec_splat_s32(1), 1);   /* 0.5f */
+        vf32 threehalf = vec_ctf(vec_splat_s32(3), 1); /* 1.5f */
+        /* verts[i] is quadword aligned (sizeof(Vtx) is 96), so A is
+         * (px, py, pz, nx) and B is (ny, nz, colour, colour). */
+        __vector unsigned char sel_pn = {
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 16, 17, 18, 19
+        }; /* (a.x, a.y, a.z, b.x) */
+        __vector unsigned char sel_nb = {
+            4, 5, 6, 7, 8, 9, 10, 11, 24, 25, 26, 27, 28, 29, 30, 31
+        }; /* (a.y, a.z, b.z, b.w) -- the two colour words come back untouched */
+        __vector unsigned char sel_pa = {
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 28, 29, 30, 31
+        }; /* (a.x, a.y, a.z, b.w) */
+        if (pi.have_nrm) {
+            vf32 n0 = column(nm, 0, 3, 6), n1 = column(nm, 1, 4, 7),
+                       n2 = column(nm, 2, 5, 8);
+            for (i = 0; i < n; i++) {
+                f32* q = &verts[i].pos[0];
+                vf32 A = vec_ld(0, q);
+                vf32 B = vec_ld(16, q);
+                vf32 P = vec_madd(c0, vec_splat(A, 0), c3);
+                vf32 N = vec_madd(n0, vec_splat(A, 3), zero);
+                vf32 len2, r, ok;
+                P = vec_madd(c1, vec_splat(A, 1), P);
+                N = vec_madd(n1, vec_splat(B, 0), N);
+                P = vec_madd(c2, vec_splat(A, 2), P);
+                N = vec_madd(n2, vec_splat(B, 1), N);
+                /* N's fourth lane is zero by construction, so the square sum
+                 * over all four lanes is the 3-vector's. */
+                len2 = vec_madd(N, N, zero);
+                len2 = vec_add(len2, vec_sld(len2, len2, 4));
+                len2 = vec_add(len2, vec_sld(len2, len2, 8));
+                r = vec_rsqrte(len2);
+                /* one Newton step, the same shape gx_rsqrtf uses */
+                r = vec_madd(r, vec_nmsub(vec_madd(r, r, zero), vec_madd(len2, half, zero),
+                                          threehalf),
+                             zero);
+                ok = (vf32)vec_cmpgt(len2, zero);
+                N = vec_sel(N, vec_madd(N, r, zero), (__vector unsigned int)ok);
+                vec_st(vec_perm(P, N, sel_pn), 0, q);
+                vec_st(vec_perm(N, B, sel_nb), 16, q);
+            }
+        } else {
+            for (i = 0; i < n; i++) {
+                f32* q = &verts[i].pos[0];
+                vf32 A = vec_ld(0, q);
+                vf32 P = vec_madd(c0, vec_splat(A, 0), c3);
+                P = vec_madd(c1, vec_splat(A, 1), P);
+                P = vec_madd(c2, vec_splat(A, 2), P);
+                vec_st(vec_perm(P, A, sel_pa), 0, q);
+            }
+        }
+    }
+#else
+    for (i = 0; i < n; i++) {
+        Vtx* v = &verts[i];
+        float px = v->pos[0], py = v->pos[1], pz = v->pos[2];
+        v->pos[0] = m[0] * px + m[1] * py + m[2] * pz + m[3];
+        v->pos[1] = m[4] * px + m[5] * py + m[6] * pz + m[7];
+        v->pos[2] = m[8] * px + m[9] * py + m[10] * pz + m[11];
+    }
+    if (pi.have_nrm) {
+        for (i = 0; i < n; i++) {
+            Vtx* v = &verts[i];
+            float nx = v->nrm[0], ny = v->nrm[1], nz = v->nrm[2];
+            float len2;
+            v->nrm[0] = nm[0] * nx + nm[1] * ny + nm[2] * nz;
+            v->nrm[1] = nm[3] * nx + nm[4] * ny + nm[5] * nz;
+            v->nrm[2] = nm[6] * nx + nm[7] * ny + nm[8] * nz;
+            len2 = v->nrm[0] * v->nrm[0] + v->nrm[1] * v->nrm[1] + v->nrm[2] * v->nrm[2];
+            if (len2 > 0.0f) {
+                float rl = gx_rsqrtf(len2);
+                v->nrm[0] *= rl;
+                v->nrm[1] *= rl;
+                v->nrm[2] *= rl;
+            }
+        }
+    }
+#endif
+
+    /* Lighting and texgen: both read the transformed position, so neither can
+     * move into phase 1, and neither vectorises the way the transform does --
+     * a texgen is a 2x4 against one vector and a lit channel is a loop over
+     * however many lights the material named. */
+    if (pi.chan_mode == 2) {
+        for (i = 0; i < n; i++) {
+            Vtx* v = &verts[i];
+            light_channel(0, v->pos, v->nrm, v->clr[0]);
+        }
+    }
+    if (pi.ntexgen || tex_slots) {
+        for (i = 0; i < n; i++) {
+            Vtx* v = &verts[i];
+            float raw[GX_TEXCOORDS][2];
+            int t, k;
+            for (k = 0; k < pi.tex_copy_n; k++) {
+                raw[k][0] = v->tex[k][0];
+                raw[k][1] = v->tex[k][1];
+            }
+            for (t = 0; t < pi.ntexgen; t++) {
+                float s, tc, in[3];
+                const f32* tm = pi.tg[t].mtx;
+                if (pi.tg[t].src_kind == 0) {
+                    k = pi.tg[t].src_k;
+                    in[0] = raw[k][0];
+                    in[1] = raw[k][1];
+                    in[2] = 1.0f;
+                } else if (pi.tg[t].src_kind == 1) {
+                    in[0] = v->pos[0];
+                    in[1] = v->pos[1];
+                    in[2] = v->pos[2];
+                } else {
+                    in[0] = v->nrm[0];
+                    in[1] = v->nrm[1];
+                    in[2] = v->nrm[2];
+                }
+                if (!tm) {
+                    s = in[0];
+                    tc = in[1];
+                } else {
+                    s = tm[0] * in[0] + tm[1] * in[1] + tm[2] * in[2] + tm[3];
+                    tc = tm[4] * in[0] + tm[5] * in[1] + tm[6] * in[2] + tm[7];
+                    if (pi.tg[t].divide) {
+                        float q = tm[8] * in[0] + tm[9] * in[1] + tm[10] * in[2] + tm[11];
+                        if (q != 0.0f) {
+                            s /= q;
+                            tc /= q;
+                        }
+                    }
+                }
+                v->tex[t][0] = s;
+                v->tex[t][1] = tc;
+            }
+            for (; t < tex_slots; t++) {
+                v->tex[t][0] = 0.0f;
+                v->tex[t][1] = 0.0f;
+            }
+        }
+    }
+}
+
+/* Phase 1: everything that does not need a matrix. */
 static void transform_and_store(void) {
     Vtx* v;
-    const f32* m = pi.pos_mtx;
-    const f32* n = pi.nrm_mtx;
-    float px, py, pz;
-    int i;
+    int k;
     if (nverts >= MAX_VERTS) {
         gx_warn("GXBegin: more than 65536 vertices in one primitive; truncated");
         return;
@@ -611,97 +842,39 @@ static void transform_and_store(void) {
     v = &verts[nverts++];
     /* Not `*v = pending`.  A Vtx is 96 bytes and every one of its fields is
      * either overwritten below or unread by the draw; copying the whole thing
-     * per vertex was pure memory traffic in the hottest loop in the port.
-     * Only the two colours are carried across verbatim. */
-    v->clr[0][0] = pending.clr[0][0];
-    v->clr[0][1] = pending.clr[0][1];
-    v->clr[0][2] = pending.clr[0][2];
-    v->clr[0][3] = pending.clr[0][3];
+     * per vertex was pure memory traffic in the hottest loop in the port. */
+    if (pi.no_clr0 || pi.chan_mode == 1) {
+        /* Both cases splat the register material, and both are constant for
+         * the whole primitive, so the copy from `pending` is skipped. */
+        v->clr[0][0] = gx.chan[0].mat.r;
+        v->clr[0][1] = gx.chan[0].mat.g;
+        v->clr[0][2] = gx.chan[0].mat.b;
+        v->clr[0][3] = gx.chan[0].mat.a;
+    } else {
+        v->clr[0][0] = pending.clr[0][0];
+        v->clr[0][1] = pending.clr[0][1];
+        v->clr[0][2] = pending.clr[0][2];
+        v->clr[0][3] = pending.clr[0][3];
+    }
     v->clr[1][0] = pending.clr[1][0];
     v->clr[1][1] = pending.clr[1][1];
     v->clr[1][2] = pending.clr[1][2];
     v->clr[1][3] = pending.clr[1][3];
 
-    px = pending.pos[0];
-    py = pending.pos[1];
-    pz = pending.pos[2];
-    v->pos[0] = m[0] * px + m[1] * py + m[2] * pz + m[3];
-    v->pos[1] = m[4] * px + m[5] * py + m[6] * pz + m[7];
-    v->pos[2] = m[8] * px + m[9] * py + m[10] * pz + m[11];
-
+    v->pos[0] = pending.pos[0];
+    v->pos[1] = pending.pos[1];
+    v->pos[2] = pending.pos[2];
     if (pi.have_nrm) {
-        float nx = pending.nrm[0], ny = pending.nrm[1], nz = pending.nrm[2];
-        float len2;
-        v->nrm[0] = n[0] * nx + n[1] * ny + n[2] * nz;
-        v->nrm[1] = n[3] * nx + n[4] * ny + n[5] * nz;
-        v->nrm[2] = n[6] * nx + n[7] * ny + n[8] * nz;
-        len2 = v->nrm[0] * v->nrm[0] + v->nrm[1] * v->nrm[1] + v->nrm[2] * v->nrm[2];
-        if (len2 > 0.0f) {
-            float rl = gx_rsqrtf(len2);
-            v->nrm[0] *= rl;
-            v->nrm[1] *= rl;
-            v->nrm[2] *= rl;
-        }
+        v->nrm[0] = pending.nrm[0];
+        v->nrm[1] = pending.nrm[1];
+        v->nrm[2] = pending.nrm[2];
     } else {
         v->nrm[0] = v->nrm[1] = 0.0f;
         v->nrm[2] = 1.0f;
     }
-
-    if (pi.no_clr0) {
-        v->clr[0][0] = gx.chan[0].mat.r;
-        v->clr[0][1] = gx.chan[0].mat.g;
-        v->clr[0][2] = gx.chan[0].mat.b;
-        v->clr[0][3] = gx.chan[0].mat.a;
-    }
-    if (pi.chan_mode == 2) {
-        light_channel(0, v->pos, v->nrm, v->clr[0]);
-    } else if (pi.chan_mode == 1) {
-        v->clr[0][0] = gx.chan[0].mat.r;
-        v->clr[0][1] = gx.chan[0].mat.g;
-        v->clr[0][2] = gx.chan[0].mat.b;
-        v->clr[0][3] = gx.chan[0].mat.a;
-    }
-
-    /* texgen: the only forms the game uses are a 2x4/3x4 matrix over a
-     * texcoord or over the position (PLAN.md §1.14 -- there are no bump or
-     * SRTG texgens outside the handful already warned about). */
-    for (i = 0; i < pi.ntexgen; i++) {
-        float s, t, in[3];
-        const f32* tm = pi.tg[i].mtx;
-        if (pi.tg[i].src_kind == 0) {
-            int k = pi.tg[i].src_k;
-            in[0] = pending.tex[k][0];
-            in[1] = pending.tex[k][1];
-            in[2] = 1.0f;
-        } else if (pi.tg[i].src_kind == 1) {
-            in[0] = v->pos[0];
-            in[1] = v->pos[1];
-            in[2] = v->pos[2];
-        } else {
-            in[0] = v->nrm[0];
-            in[1] = v->nrm[1];
-            in[2] = v->nrm[2];
-        }
-        if (!tm) {
-            s = in[0];
-            t = in[1];
-        } else {
-            s = tm[0] * in[0] + tm[1] * in[1] + tm[2] * in[2] + tm[3];
-            t = tm[4] * in[0] + tm[5] * in[1] + tm[6] * in[2] + tm[7];
-            if (pi.tg[i].divide) {
-                float q = tm[8] * in[0] + tm[9] * in[1] + tm[10] * in[2] + tm[11];
-                if (q != 0.0f) {
-                    s /= q;
-                    t /= q;
-                }
-            }
-        }
-        v->tex[i][0] = s;
-        v->tex[i][1] = t;
-    }
-    for (; i < tex_slots; i++) {
-        v->tex[i][0] = 0.0f;
-        v->tex[i][1] = 0.0f;
+    for (k = 0; k < pi.tex_copy_n; k++) {
+        v->tex[k][0] = pending.tex[k][0];
+        v->tex[k][1] = pending.tex[k][1];
     }
 }
 
@@ -1025,6 +1198,9 @@ static void draw_now(void) {
     if (!gl13_live()) {
         return;
     }
+    /* Phase 2 of the vertex path: the whole run, transformed at once.  See the
+     * comment above finish_vertices. */
+    finish_vertices(nverts);
     gl13_apply_transform();
     gl13_apply_raster_state();
     gx_tev_apply();

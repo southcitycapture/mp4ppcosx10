@@ -34,10 +34,25 @@ at 480 6 START
 # first minigame.
 every 64 4 560 A
 
-# The minigame instruction screen ends on START, not A
-# (src/REL/instDll/main.c:293 tests `btnDown == PAD_BUTTON_START`, and the
-# auto-start beside it only fires when all four players are CPU).  It has to be
-# out of phase with the A metronome, because that test is an equality: an A and
-# a START on the same frame make `btnDown` 0x1100 and match nothing.  Offset 32
-# is never a multiple of 64.
-every 256 4 560 START 32
+# The minigame instruction screen ends on START and nothing else
+# (src/REL/instDll/main.c:293 tests `btnDown == PAD_BUTTON_START`; the
+# auto-start beside it only fires when all four players are CPU, and this walk
+# leaves one human).  Getting that one press right cost four captures:
+#
+#   * it cannot share a frame with an A -- instDll compares `btnDown` for
+#     equality against PAD_BUTTON_START, and A+START is 0x1100.  Hence +32.
+#   * it cannot be a metronome over the whole run.  A START anywhere else opens
+#     the *board* pause menu (src/game/board/pause.c:1493), which sleeps before
+#     it reads input, so the next A walks into "Please choose which character's
+#     settings to change" and the walk stays there to the end.  Both the port
+#     and Dolphin got stuck there, identically, which is its own small piece of
+#     evidence about the port.
+#   * it cannot be one or two taps at a pinned frame either: the screen does
+#     not take input until its entry animation finishes (`while (instMode != 1)`),
+#     which is a few hundred frames after it first appears.
+#
+# So it is a metronome inside a window -- from after the first minigame starts
+# to before it can possibly be over -- which is the one part of the walk pinned
+# to frame numbers, and pinned to an observation from an A-only capture rather
+# than a guess.
+every 256 1 12000 START 32 14000

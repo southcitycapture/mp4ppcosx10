@@ -22,19 +22,22 @@ the GameCube, so nothing needs byteswapping, and the game addresses memory
 through ordinary pointers and ARAM through plain offsets, so there is no
 pinned-globals scheme.
 
-**Status: M4 in part — window backgrounds are right, and Mini-Game mode
-runs.** The title screen's 3D layer renders, the boot walks through SELECT A
-FILE, the new-file scene and character select to the board-settings screen, an
-Xbox One pad is read over IOUSBLib on the G4 with rumble, and saves go into a
-512 KB memory-card image in the console's own format. The title screen is
-2.3x faster than it was at M2b. M4 adds the one indirect-texturing form the
-game actually leans on — `GXSetTevIndTile`'s tile maps, which draw every
-message window's background — composed exactly on the CPU and cached, so the
-windows now match the reference instead of coming out as pale blocks; and it
-reaches Mini-Game mode, where a fresh save has nothing unlocked to play. The
-theatre-stage backdrop is still missing and §14.2 says exactly which draws are
-wrong and where to look next. See §13 and §14 of
-[`docs/PLAN.md`](docs/PLAN.md). Two binaries and two
+**Status: M5 in part — it plays a board, and a minigame.** The port boots
+through SELECT A FILE, the new-file scene, PARTY MODE and character select,
+starts **Toad's Midway Madness** with 1P and three COM players on EASY, plays
+the board intro and the turn-order roll, takes turns with dice, item spaces and
+the Star, picks a 4-player minigame, shows its instruction screen, plays it and
+pays out the results. The theatre-stage backdrop M4 could not draw is there,
+and so is the board: both were the same kind of bug twice over — a `C_*` body
+in the SDK's own matrix library that the GameCube never called, that the decomp
+is right to have written the way it is, and that `-DMTX_USE_C` makes the one
+that runs. `C_MTXIdentity` leaves the translation column unwritten, which
+`hsfdraw.c:mtxRot` then accumulates into tens of thousands over a frame;
+`C_VECScale` is `C_VECNormalize` under the wrong name, which is `1/sqrt(0)` on
+a zero vector and put a NaN in the board camera on the eleventh frame of every
+board. `port/tests/mtx_test.c` now holds both fixed. What is left of M5 is
+turns two to ten: the *second* minigame dies with SIGBUS inside its own draw
+hook. See §15 of [`docs/PLAN.md`](docs/PLAN.md). Two binaries and two
 sets of modules build from one Makefile: `port/build-ppc.sh -j8` produces a
 `powerpc-apple-darwin8` executable plus 99 Mach-O bundles for the G4, and
 `make -C port TARGET=host -j8` produces an arm64 pair for the development Mac.
@@ -75,7 +78,7 @@ holding an extracted `files/` tree. Other flags: `--frames N`, `--watchdog SEC`,
 `--perf`, `--drawlog N`, `--drawlog-at F`, `--dumptex`, `--texhash-full`,
 `--dumpframe SPEC`, `--shotdir DIR`, `--scale N`, `--nocard`, `--nopad`,
 `--paddbg`, `--play SCRIPT`, `--record FILE`, `--scenelog F[,F...]`,
-`--ovllog`.
+`--ovllog`, `--nanwatch`.
 
 `--dumpframe` takes a frame *set*, not a frame: `187`, `1,90,186`, or
 `1-400/20`. Comparing against Dolphin needs a spread, because the two sides do
@@ -95,6 +98,7 @@ output:
 | `--perf` | where the frame went: game, gx and present, with mean/median/p95/worst, and the game clock against the wall clock (an idle-gated retrace hides overruns) |
 | `--scenelog F` | what the 3D scene believes about itself on frame F: every camera, every model's placement, every HSF object transform -- which is how "the modelview is 67,720 out" became "the camera and the models are both fine and a second pass over the same objects is not" |
 | `--ovllog` | one line whenever the scene changes, which is the only way to know which screen a scripted A press landed on without shooting the frame |
+| `--nanwatch` | the first frame each camera, each model and the board's own `boardCamera` turns NaN, with the board camera printed for that frame *and the one before*. A NaN in a camera is completely silent -- nothing crashes, every comparison against it is false, and the 3D layer simply stops drawing -- so without this it looks like "the board does not render" |
 
 ## Running on the G4
 
@@ -124,20 +128,27 @@ straight over SSH:
 ssh g4 './MarioParty4.app/Contents/MacOS/isle --watchdog 6'
 ```
 
-**What it does there today (M3):** the whole logo sequence, the title screen
+**What it does there today (M5):** the whole logo sequence, the title screen
 **with its 3D characters and present boxes**, and then -- with an Xbox One pad
 plugged in, or from a script -- SELECT A FILE, the new-file scene, PARTY MODE,
-character select with 1P and three COM players on EASY, and the board-settings
-screen for Toad's Midway Madness. It creates a save file on a 512 KB memory
-card image on the way through. It also walks into **Mini-Game
-mode**, which loads and runs `mgmodedll` and then says "You haven't opened any
-games!", because Free Play lists only what a save file has unlocked and this
-one is minutes old. The opening THP movie is skipped deliberately and says so;
-message-window backgrounds are now composed correctly from their tile maps, and
-the theatre-stage backdrop behind three of the menu screens still does not
-draw. The title screen went from 10.4 to
-23.7 effective fps, and the reason it is not 60 is now measured rather than
-guessed. See [`docs/PLAN.md`](docs/PLAN.md) §13.
+character select with 1P and three COM players on EASY **on its theatre stage**,
+the board-settings screen, and then **Toad's Midway Madness itself**: the board
+intro, the turn-order roll, dice, movement, item spaces, Toad showing where the
+first Star is, a 4-player minigame with its instruction screen, and the results
+screen that pays it out. It creates a save file on a 512 KB memory card image
+on the way through and writes the game back to it. It also walks into
+**Mini-Game mode**, which loads and runs `mgmodedll`. The opening THP movie is
+skipped deliberately and says so. The board runs at about 14.9 fps and the
+character select at about 14.6; where that time goes is measured, not guessed,
+and the answer is the vertex path -- two thirds of the frame on both screens
+(§15.5). It does not survive a whole ten-turn game yet: the second minigame
+crashes in its own draw hook. See [`docs/PLAN.md`](docs/PLAN.md) §15.
+
+```sh
+# the walk into the board and its first minigame, replayed on the G4
+g4 run --turbo --seed 12345 --frames 15400 --play board-start.play \
+       --ovllog --nanwatch --gxwarn
+```
 
 ```sh
 # the reference menu walk, replayed on the G4
@@ -172,9 +183,12 @@ and [`docs/g4-m2a-boot.log`](docs/g4-m2a-boot.log) (M2a); §10 of
 | `docs/g4-glinfo.log` | the Radeon 9000's own GL strings, limits and 77 extensions |
 | `docs/g4-gxdemo.png` | the GX self-test as the real card draws it |
 | `docs/g4-audio-first-sound.log` | the audio path on the G4 with audio on: the M6 hand-off |
-| `docs/screenshots/` | both logos, the title with its 3D layer, and the five menu screens |
+| `docs/screenshots/` | both logos, the title with its 3D layer, the five menu screens, and the board and its first minigame |
 | `ref/movies/menu-walk-port.play` | the reference menu walk, rebased on the port's own clock |
 | `ref/movies/minigame-select.play` | the same walk, but taking the Mini-Game row of the mode ring |
+| `ref/movies/board-start.play` | past the board settings into Toad's Midway Madness and its first minigame |
+| `ref/movies/board-start.txt` | the same walk on the Dolphin side, for `tools/mkgecko.py` |
+| `tests/mtx_test.c` | the matrix library against itself: `make -C port TARGET=host mtxtest` |
 | `Makefile` | the whole build, `TARGET=host` or `TARGET=ppc-darwin` |
 | `build-ppc.sh` | the Docker wrapper around the PowerPC cross build |
 | `patches.txt` | every change the port makes to game sources, as exact text |
