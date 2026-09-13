@@ -58,8 +58,49 @@ rm -rf "$out"
 mkdir -p "$out/Contents/MacOS" "$out/Contents/Resources"
 cp "$exe" "$out/Contents/MacOS/isle"
 chmod 755 "$out/Contents/MacOS/isle"
+# The 99 REL modules, one dlopen'ed Mach-O bundle each.  They go next to the
+# executable because that is where --reldir defaults to (<exe dir>/rels), so
+# nothing has to be told where they are.
+rels=$(dirname "$exe")/rels
+if [ -d "$rels" ]; then
+    mkdir -p "$out/Contents/MacOS/rels"
+    cp "$rels"/*.bundle "$out/Contents/MacOS/rels/" 2>/dev/null || cp -R "$rels"/. "$out/Contents/MacOS/rels/"
+    echo "  rels: $(ls "$out/Contents/MacOS/rels" | wc -l | tr -d ' ') modules"
+fi
 if [ "$with_image" = 1 ]; then
     cp "$image" "$out/Contents/Resources/$(basename "$image")"
+fi
+# SDL2.  The cross build links it from the Docker mount (/work/sdl2/lib), a path
+# that does not exist on the G4, so the dylib is copied into the bundle and the
+# executable's reference to it rewritten to @executable_path.  Nothing has to be
+# installed on the G4 and DYLD_LIBRARY_PATH stays out of it.  (The Snowboard
+# Kids ports link SDL2 statically and need none of this; if this port ever does
+# the same, the whole block becomes a no-op.)
+SDL2_PREFIX=${SDL2_PREFIX:-$HOME/Apps/panther-sdl2/build-tiger-joy/prefix}
+IMAGE=${IMAGE:-ghcr.io/variantxyz/gcc-powerpc-apple-darwin8:build-gcc-14.2-MacOSXSDK10.4u}
+sdl_ref=$(otool -L "$out/Contents/MacOS/isle" 2>/dev/null | awk '/libSDL2/{print $1}' | head -1)
+if [ -n "$sdl_ref" ]; then
+    sdl_leaf=$(basename "$sdl_ref")
+    if [ -f "$SDL2_PREFIX/lib/$sdl_leaf" ]; then
+        mkdir -p "$out/Contents/Frameworks"
+        cp "$SDL2_PREFIX/lib/$sdl_leaf" "$out/Contents/Frameworks/$sdl_leaf"
+        chmod 755 "$out/Contents/Frameworks/$sdl_leaf"
+        # The host's own install_name_tool refuses these 2005-vintage PowerPC
+        # Mach-Os ("malformed load command 0"), so use the cross toolchain's,
+        # which is already in the build image.
+        docker run --rm -v "$(cd "$out/.." && pwd)":/w -w /w "$IMAGE" sh -c "
+            powerpc-apple-darwin8-install_name_tool -change '$sdl_ref' \
+                '@executable_path/../Frameworks/$sdl_leaf' \
+                '$(basename "$out")/Contents/MacOS/isle' &&
+            powerpc-apple-darwin8-install_name_tool -id \
+                '@executable_path/../Frameworks/$sdl_leaf' \
+                '$(basename "$out")/Contents/Frameworks/$sdl_leaf'" \
+            2>&1 | grep -v "requested image's platform" || true
+        echo "  sdl2: $sdl_leaf -> Contents/Frameworks (was $sdl_ref)"
+    else
+        echo "  WARNING: isle needs $sdl_ref and there is no $sdl_leaf in $SDL2_PREFIX/lib;" >&2
+        echo "           the bundle will not start on a machine without that path." >&2
+    fi
 fi
 [ -f "$here/../resources/MarioParty4.icns" ] && \
     cp "$here/../resources/MarioParty4.icns" "$out/Contents/Resources/MarioParty4.icns"

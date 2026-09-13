@@ -1805,3 +1805,53 @@ With both in, the G4 narration reaches the same seam as the host —
   backtrace path is unexercised on this target.
 - **Anything visual.** M1 has no window; the 66 GX entry points are counted,
   not drawn.
+
+### 10.6 Same day, an hour later: M2a on the G4, and risk #2 closed
+
+The REL loader landed on `ppc-port` while the M1 run above was being written
+up, so this worktree was rebased onto it and the whole thing went round again.
+The full narration is in [`docs/g4-m2a-boot.log`](g4-m2a-boot.log).
+
+**`--reltest`: 198/198 clean, 0 still resident after `dlclose`, in 0.241 s.**
+Ninety-nine PowerPC `MH_BUNDLE`s, opened and closed twice each, with
+`dlopen(RTLD_NOLOAD)` asked after every single unload whether the image really
+went away. It always had. Identical to the host result, and it is the answer
+**§4 risk 2** has been waiting for since the plan was written: dyld on Mac OS X
+10.5.4 genuinely unloads a bundle, so the game's re-entry contract — fresh,
+zeroed bss on every re-load — holds without the by-hand fallback, which was
+never reached.
+
+One PowerPC-only build fix was needed first: `dll_load.c`'s 32-bit branch
+called `getsegbynamefromheader()`, absent from the MacOSX10.4u SDK. It now
+walks the load commands for `__TEXT` itself. Five lines; the 64-bit branch is
+untouched.
+
+**bootDll runs, and so does the game.** `objdll>LinkOK`, `Boot ObjectSetup`,
+`InitObjMan`, prolog end — and then 900 frames of the real boot sequence.
+
+- **ARAM is finally exercised on hardware.** §10.5 had to record that `ARInit`
+  was the only ARAM line in the M1 boot. bootDll's asset load does four real
+  transfers (`ARAM Trans 808000 / 80aaa0 / 82da60 / 8a7640`) against the game's
+  own `Rest Memory` accounting, ending at `data num 74000b`. Written and read
+  on the G4, no fault.
+- **The GX surface triples and changes shape.** 83 distinct stubs against 66,
+  and the counts stop being ones and twos: 97,944 `GXPosition1x16`, 97,944
+  `GXNormal1x16`, 97,268 `GXTexCoord1x16` inside 1,320 display lists, 891 TLUT
+  loads, 893 `GXDrawDone`, 398,743 calls in 900 frames. Indexed vertices,
+  display lists and colour-index textures — that is what M3's GL 1.3 backend
+  actually has to do, and §9.3's implementation order should be re-derived from
+  these counts rather than from M1's.
+- **Speed: 900 retraces in 15.88 s wall against a 15.02 s game clock (56.7 fps)
+  for 1.17 s of user CPU — about 7% of one processor.** Meaningless as a
+  finished-port number, because GX draws nothing; meaningful as a statement
+  that the engine, the coroutines, the DVD reads and the ARAM traffic together
+  leave essentially the whole frame budget on this machine to the GL backend.
+
+Two tooling notes. M2a links SDL2 dynamically from the Docker mount path, which
+does not exist on the G4, so the first push died in dyld; `make_bundle.sh` now
+copies the dylib into `Contents/Frameworks` and rewrites the reference to
+`@executable_path` — using the **cross** toolchain's `install_name_tool` inside
+the build image, because the host's own refuses these binaries with "malformed
+load command 0". And `--watchdog` is a plain `alarm(N)` whose message says "the
+game is not making progress"; at M2a it says that after 541 healthy frames, so
+`--frames` is the way to end a run now.

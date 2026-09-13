@@ -75,12 +75,16 @@ straight over SSH:
 ssh g4 './MarioParty4.app/Contents/MacOS/isle --watchdog 6'
 ```
 
-**What it does there today:** the whole boot narration, in under a second, to
-the same `objdll>Link DLL:dll/bootdll.rel` seam the host reaches — and with the
-audio the host cannot do. On big-endian hardware `msmSysInit` succeeds where the
-host fails, MusyX initialises, and the game's own read of the REL headers off
-the disc is correct in every field. The captured run, the host/G4 diff and the
-two port bugs the G4 found are in [`docs/g4-boot.log`](docs/g4-boot.log); §10 of
+**What it does there today:** boots, loads `bootDll`, and runs the boot
+sequence at 56.7 fps — 900 retraces in 15.88 s of wall clock for 1.17 s of CPU,
+because GX still draws nothing. `--reltest` loads and unloads all 99 REL
+bundles twice with 0 left resident after `dlclose`, which closes the plan's
+second-largest risk on the only machine that could answer it. On big-endian
+hardware `msmSysInit` succeeds where the host fails and MusyX initialises, the
+game's own read of the REL headers off the disc is correct in every field, and
+ARAM carries real transfers. The captured runs are
+[`docs/g4-boot.log`](docs/g4-boot.log) (M1, with the field-by-field host diff)
+and [`docs/g4-m2a-boot.log`](docs/g4-m2a-boot.log) (M2a); §10 of
 [`docs/PLAN.md`](docs/PLAN.md) is the log entry.
 
 ## Layout
@@ -91,6 +95,7 @@ two port bugs the G4 found are in [`docs/g4-boot.log`](docs/g4-boot.log); §10 o
 | `docs/inventory.md` | generated: every SDK symbol the game calls, with counts |
 | `docs/m1-boot.log` | the boot narration M1 reaches on the host, captured |
 | `docs/g4-boot.log` | the same, on the real G4, with the host diff |
+| `docs/g4-m2a-boot.log` | the G4 again once RELs loaded: --reltest, ARAM, 900 frames |
 | `Makefile` | the whole build, `TARGET=host` or `TARGET=ppc-darwin` |
 | `build-ppc.sh` | the Docker wrapper around the PowerPC cross build |
 | `patches.txt` | every change the port makes to game sources, as exact text |
