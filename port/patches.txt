@@ -244,3 +244,35 @@ src/dolphin/mtx/mtx.c	    mtx[0][0] = 1.0f;\n    mtx[0][1] = 0.0f;\n    mtx[0][2
 # transformed vertex is NaN, so Toad's Midway Madness rendered as a black
 # screen with a working sprite HUD over it (PLAN.md 15.2).
 src/dolphin/mtx/vec.c	    f32 s;\n\n    s = 1.0f / sqrtf(src->z * src->z + src->x * src->x + src->y * src->y);\n    dst->x = src->x * s;\n    dst->y = src->y * s;\n    dst->z = src->z * s;	    dst->x = src->x * scale;\n    dst->y = src->y * scale;\n    dst->z = src->z * scale;
+
+# ------------------------------------------------- REL/m425Dll/thwomp.c
+# `unk_3C` is declared one element short.  The struct says
+#
+#     s32 unk_3C[5];
+#     s32 unk_50;
+#
+# but every loop over it runs `for (var_r29 = 0; var_r29 < 6; var_r29++)` and
+# indexes `unk_3C[var_r29]`, and the two places that name `unk_50` are exactly
+# the `var_r29 == 5` cases written out longhand (thwomp.c:1934, 1939, against
+# the `unk_54[5]` / `unk_6C[5]` on the lines either side of them).  `unk_50`
+# *is* `unk_3C[5]`: 0x3C + 5*4 == 0x50, and `unk_54` still starts at 0x54, so
+# merging the two fields moves nothing.
+#
+# Metrowerks did not care.  GCC does, and it is not a warning -- it is the
+# m425dll crash.  `-faggressive-loop-optimizations` (on by default at -O2)
+# takes "`unk_3C[var_r29]` with 5 elements" as proof that iteration 5 is
+# unreachable, concludes the `var_r29 < 6` test can therefore never be the one
+# that ends the loop, and **deletes the exit test**.  What is left is a loop
+# whose only exit is the float compare `unk_54[var_r29] <= 0.0f`, walking a
+# strength-reduced pointer forward four bytes at a time and writing -1, 0 and
+# 0.0f at every step until it leaves the address space -- the 16 MB scribble
+# past the top of MEM1 in PLAN.md 17.7, faulting at 0x4800000.
+#
+# Proof, without the console: fn_1_E914 compiles to 655 instructions with no
+# compare against the loop bound anywhere in it; with `unk_3C[6]` it compiles
+# to 974 with the bound back, which is the same 974 that
+# `-fno-aggressive-loop-optimizations` produces from the unfixed source.
+# `port/tools/ubaudit.sh` is the scan that found it.
+src/REL/m425Dll/thwomp.c	    s32 unk_3C[5];\n    s32 unk_50;\n	    s32 unk_3C[6];\n
+src/REL/m425Dll/thwomp.c	        var_r31->unk_50 = var_r31->unk_34;	        var_r31->unk_3C[5] = var_r31->unk_34;
+src/REL/m425Dll/thwomp.c	        var_r31->unk_50 = -1;	        var_r31->unk_3C[5] = -1;

@@ -147,7 +147,20 @@ GAME_WARN := -w -Wno-implicit-function-declaration -Wno-return-mismatch \
              -Wno-int-conversion -Wno-incompatible-pointer-types \
              -Wno-incompatible-function-pointer-types -Wno-unknown-pragmas \
              -Wno-implicit-int
+# -fno-aggressive-loop-optimizations: the safety net under the whole decomp.
+# GCC takes an out-of-bounds array access as proof that the iteration doing it
+# is unreachable, and will then DELETE a loop's exit test as redundant.  In a
+# decomp every struct array length is a reconstruction, and several of them are
+# one element short of what the code actually indexes -- so the proof is false
+# and what is left is a loop with no bound.  That is not hypothetical: it is
+# the m425dll crash (see patches.txt, PLAN.md 18.2), where the six-iteration
+# loop at thwomp.c:1943 lost its `var_r29 < 6` test and walked 16 MB past the
+# top of MEM1 writing as it went.  `port/tools/ubaudit.sh` lists 39 more sites
+# in 20 modules with the same shape.  The individual declarations are worth
+# fixing one at a time in patches.txt; this flag is what makes the other 38
+# not be a crash in the meantime.  It only changes code where it fires.
 GAME_CFLAGS = -std=gnu11 -O2 -g -fno-strict-aliasing -fwrapv -fcommon \
+              -fno-aggressive-loop-optimizations \
               $(GAME_WARN) $(GAME_DEFS) $(GAME_INC) $(TARGET_CFLAGS)
 PORT_CFLAGS = -std=gnu11 -O2 -g -fno-strict-aliasing -fcommon \
               -Wall -Wno-unused-parameter -Wno-unknown-pragmas \
