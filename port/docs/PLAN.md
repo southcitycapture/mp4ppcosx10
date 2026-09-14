@@ -1124,7 +1124,7 @@ the `--wav` capture of a fixed 30-second board segment matches a Dolphin
 capture of the same segment to the ear, and the audio path costs less than
 1.5 ms/frame in `--perf`.
 
-### M7 — the self-play harness
+### M7 — the self-play harness *(landed, §17; the m425 crash is reproduced and diagnosed, not fixed)*
 The game's CPU players already exist: `GWPlayerCfg[i].diff` (an `s16` per
 player) and `GWSystem.diff_story`. The harness sets those and hands player 1 to
 the CPU, then drives menus with a task-name navigator (the equivalent of
