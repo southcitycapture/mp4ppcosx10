@@ -30,6 +30,7 @@ ifeq ($(TARGET),ppc-darwin)
   TARGET_CFLAGS  := -isysroot $(SYSROOT) -mmacosx-version-min=10.4 -malign-natural \
                     -mone-byte-bool
   TARGET_LDFLAGS := -isysroot $(SYSROOT) -mmacosx-version-min=10.4 -static-libgcc
+  GAME_UBSAFE := -fno-aggressive-loop-optimizations
   CTX_ASM  := src/os/jmp_ppc_darwin.s
   MIRROR_TARGET := ppc
   REL_EXT  := bundle
@@ -45,6 +46,7 @@ else ifeq ($(TARGET),host)
   NM       := nm
   TARGET_CFLAGS  :=
   TARGET_LDFLAGS :=
+  GAME_UBSAFE :=   # clang does not have the option, and does not do this
   CTX_ASM  := src/os/jmp_arm64.s
   MIRROR_TARGET := host
   REL_EXT  := dylib
@@ -160,7 +162,7 @@ GAME_WARN := -w -Wno-implicit-function-declaration -Wno-return-mismatch \
 # fixing one at a time in patches.txt; this flag is what makes the other 38
 # not be a crash in the meantime.  It only changes code where it fires.
 GAME_CFLAGS = -std=gnu11 -O2 -g -fno-strict-aliasing -fwrapv -fcommon \
-              -fno-aggressive-loop-optimizations \
+              $(GAME_UBSAFE) \
               $(GAME_WARN) $(GAME_DEFS) $(GAME_INC) $(TARGET_CFLAGS)
 PORT_CFLAGS = -std=gnu11 -O2 -g -fno-strict-aliasing -fcommon \
               -Wall -Wno-unused-parameter -Wno-unknown-pragmas \
