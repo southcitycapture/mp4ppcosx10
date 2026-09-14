@@ -371,6 +371,15 @@ typedef struct CacheEntry {
      * that GXCopyTex refills from the back buffer, and a bind uses it as it
      * stands. */
     int efb;
+    /* O(1) lookup: every entry (efb or not) chains off a bucket of
+     * `hash_head[]` keyed on `image` alone -- see `find_slot()`.  -1 ends a
+     * chain. */
+    int hash_next;
+    /* The validation epoch (see below) this slot's `content` was last
+     * verified against the real texel bytes.  A hit whose slot is already
+     * current for this epoch costs a hash-table lookup and nothing else: no
+     * FNV pass at all. */
+    unsigned validated_epoch;
 } CacheEntry;
 
 #define CACHE_MAX 2048
@@ -379,10 +388,116 @@ static int cache_used;
 static unsigned stat_hit, stat_miss, stat_evict, stat_bytes, stat_npot;
 static unsigned stat_hash_full, stat_hash_sampled;
 static unsigned stat_efb;
+/* How many times an already-cached slot's content hash was actually
+ * recomputed to check for an in-place rewrite -- as opposed to a pure
+ * epoch-cached hit, which touches none of the texel bytes at all.  This is
+ * the number the per-frame epoch is supposed to shrink. */
+static unsigned stat_revalidate;
+
+/* `--texvalidate-every-bind`: keep the validation epoch out of the decision
+ * (every bind re-checks content) but leave the sampled-vs-full hash choice
+ * alone.  This isolates the epoch from the sampling for bisection, the way
+ * `--texhash-full` isolates the sampling from the epoch. */
+static int validate_every_bind;
+void gx_tex_set_validate_every_bind(int v) { validate_every_bind = v; }
+
+/* ---- the O(1) index: a hash table on `image`, chained through the cache
+ * array itself ---------------------------------------------------------- */
+
+#define TEX_HASH_BITS 12
+#define TEX_HASH_SIZE (1u << TEX_HASH_BITS)
+#define TEX_HASH_MASK (TEX_HASH_SIZE - 1u)
+static int hash_head[TEX_HASH_SIZE];
+
+static unsigned hash_key(const void* image) {
+    uintptr_t p = (uintptr_t)image;
+    /* A texture buffer's address is usually 4/8/16-byte aligned, so the low
+     * bits alone are a poor key; fold the whole pointer through a
+     * multiplicative mix before masking down to the table size.  Two
+     * constants because `uintptr_t` is 64 bits on the development Mac and 32
+     * on the G4, and a 64-bit literal truncated into a 32-bit multiply is a
+     * compiler warning waiting to happen. */
+#if UINTPTR_MAX > 0xFFFFFFFFu
+    p ^= p >> 15;
+    p *= (uintptr_t)0x2545F4914F6CDD1DULL; /* splitmix64's finalizer */
+    p ^= p >> 13;
+#else
+    p ^= p >> 15;
+    p *= (uintptr_t)0x85EBCA6Bu; /* murmur3's finalizer */
+    p ^= p >> 13;
+#endif
+    return (unsigned)p & TEX_HASH_MASK;
+}
+
+static void hash_insert(int slot) {
+    unsigned h = hash_key(cache[slot].image);
+    cache[slot].hash_next = hash_head[h];
+    hash_head[h] = slot;
+}
+
+/* Unlink `slot` from whichever bucket its *current* `image` chains through.
+ * Must run before the slot's `image` is overwritten (an eviction reusing the
+ * slot for a different key). */
+static void hash_remove(int slot) {
+    unsigned h = hash_key(cache[slot].image);
+    int* pp = &hash_head[h];
+    while (*pp >= 0) {
+        if (*pp == slot) {
+            *pp = cache[slot].hash_next;
+            return;
+        }
+        pp = &cache[*pp].hash_next;
+    }
+}
+
+/* The single O(1) replacement for both of the old O(cache_used) scans: the
+ * EFB-copy scan (matched on `image` alone, and given priority, exactly as
+ * the two separate loops used to -- an EFB entry at this address always wins
+ * over a decoded one) and the regular (image, format, w, h, lut) scan.
+ * `*is_efb` reports which kind was found. */
+static int find_slot(const void* image, u32 format, u16 w, u16 h, const void* lut,
+                      int* is_efb) {
+    unsigned h0 = hash_key(image);
+    int i, regular = -1;
+    for (i = hash_head[h0]; i >= 0; i = cache[i].hash_next) {
+        CacheEntry* e = &cache[i];
+        if (e->image != image) {
+            continue;
+        }
+        if (e->efb) {
+            *is_efb = 1;
+            return i;
+        }
+        if (regular < 0 && e->format == format && e->w == w && e->h == h &&
+            e->lut == lut) {
+            regular = i;
+        }
+    }
+    *is_efb = 0;
+    return regular;
+}
+
+/* The validation epoch: bumped the first time any bind observes a new frame
+ * number.  A cache slot's content hash is only ever recomputed against the
+ * real texel bytes once per epoch; every other bind of the same slot inside
+ * that epoch is a hash-table lookup and a bind, nothing else.  See the long
+ * comment above `gx_tex_bind`'s epoch-bump line for why the frame counter is
+ * the right signal and `GXInvalidateTexAll`/`DCFlushRange` are not. */
+static unsigned cache_epoch;
+static unsigned cache_epoch_frame;
+static int cache_epoch_started;
+unsigned gl13_frame_number(void);
 
 void gx_tex_init(void) {
+    int i;
     memset(cache, 0, sizeof(cache));
     cache_used = 0;
+    for (i = 0; i < (int)TEX_HASH_SIZE; i++) {
+        hash_head[i] = -1;
+    }
+    cache_epoch = 0;
+    cache_epoch_frame = 0;
+    cache_epoch_started = 0;
 }
 
 void gx_tex_report(void) {
@@ -393,9 +508,12 @@ void gx_tex_report(void) {
              "%u KB decoded, %u padded to a power of two\n",
              stat_hit, stat_miss, stat_evict, (unsigned)cache_used, stat_bytes / 1024,
              stat_npot);
-    port_log("port> texture hash: %u KB hashed in full, %u KB sampled%s\n",
-             stat_hash_full / 1024, stat_hash_sampled / 1024,
-             port_opt.texhash_full ? " (--texhash-full: sampling disabled)" : "");
+    port_log("port> texture hash: %u KB hashed in full, %u KB sampled, %u "
+             "revalidations (of %u binds)%s%s\n",
+             stat_hash_full / 1024, stat_hash_sampled / 1024, stat_revalidate,
+             stat_hit + stat_miss + stat_evict,
+             port_opt.texhash_full ? " (--texhash-full: epoch+sampling bypassed)" : "",
+             validate_every_bind ? " (--texvalidate-every-bind: epoch bypassed)" : "");
     if (stat_efb) {
         port_log("port> EFB copies: %u colour copies into the cache\n", stat_efb);
     }
@@ -430,24 +548,36 @@ static GLenum gl_filter(u8 f, int is_min) {
  * prove a suspected staleness bug is or is not this. */
 #define TEX_HASH_SAMPLE 1024
 
-/* Every image buffer this cache has ever hashed in full.  A buffer's first
- * sight always gets the exhaustive hash; only repeats are sampled. */
-#define SEEN_MAX 4096
-static const void* seen[SEEN_MAX];
-static int seen_n;
+/* M5b: "has this buffer ever been hashed in full" used to be a linear scan
+ * over up to 4096 remembered pointers (`seen_before()`), run on every bind of
+ * anything bigger than TEX_HASH_SAMPLE.  It is now free: `slot < 0` at the
+ * point a content hash is computed already means "no cache entry for this
+ * (image, format, w, h, lut) key exists yet", which is exactly the condition
+ * `seen_before()` was approximating -- and is in fact a tighter one, because
+ * it is keyed on the whole cache key rather than on the raw pointer alone (a
+ * buffer address reused later for a different format/size now gets its own
+ * exhaustive first-sight hash instead of inheriting an unrelated sighting).
+ * See `tex_bind_content_hash()`'s `first_sight` parameter. */
 
-static int seen_before(const void* p) {
-    int i;
-    for (i = 0; i < seen_n; i++) {
-        if (seen[i] == p) {
-            return 1;
-        }
-    }
-    if (seen_n < SEEN_MAX) {
-        seen[seen_n++] = p;
-    }
-    return 0;
-}
+/* The validation epoch.  A cache slot's content hash is only ever recomputed
+ * against the real texel bytes once per epoch; every other bind of the same
+ * slot inside that epoch is a hash-table lookup and a bind, nothing else.
+ *
+ * The signal has to be both cheap and conservative -- never so coarse that an
+ * in-place rewrite goes unnoticed for more than one epoch's worth of frames.
+ * `GXInvalidateTexAll` cannot be it: the comment above and PLAN.md §3.6 both
+ * say `HuSprDispInit` calls it once *per sprite pass*, several times a frame,
+ * so treating it as the epoch boundary would mean re-validating everything
+ * several times a frame -- no better than the old per-bind hash.
+ * `DCFlushRange` is a no-op in this port (`port/src/os/os_misc.c`) and out of
+ * this file's lane besides.  What is left, and is exactly right: the frame
+ * counter `gl13.c` already keeps for `--drawlog-at`/`--scenelog`
+ * (`gl13_frame_number()`).  The game's draw order inside a frame is what it
+ * is regardless of how many invalidate-alls it issues, so "revalidate a slot
+ * at most once per frame, the first time it is bound that frame" is exact:
+ * every content change the sampled hash can see at all is caught the very
+ * next time the changed texture is bound, which is always within the same or
+ * the following frame relative to when the game wrote it. */
 
 static int pot(int v) { return v > 0 && (v & (v - 1)) == 0; }
 
@@ -484,78 +614,19 @@ static u8* pad_to_pot(const u8* src, int w, int h, int pw, int ph) {
     return dst;
 }
 
-void gx_tex_bind(int unit, GXTexObjPort* o) {
-    const GXTlutObjPort* tlut = NULL;
-    u32 content;
-    int i, slot = -1;
-    if (!o || o->magic != TEXOBJ_MAGIC) {
-        return;
-    }
-    /* An EFB copy is bound as it stands: there is nothing at `image` to
-     * decode, and nothing to hash either -- what the game left in that buffer
-     * is whatever it was before the copy, and the pixels live in a GL texture
-     * the copy already filled. */
-    for (i = 0; i < cache_used; i++) {
-        if (cache[i].efb && cache[i].image == o->image) {
-            o->gl_name = cache[i].gl_name;
-            if (!gl13_live() || !o->gl_name) {
-                return;
-            }
-            stat_hit++;
-            glc_bind_texture(unit, o->gl_name);
-            glc_tex_matrix(unit, cache[i].su, cache[i].sv);
-            if (cache[i].param_wrap_s != (int)gl_wrap(o->wrap_s)) {
-                cache[i].param_wrap_s = (int)gl_wrap(o->wrap_s);
-                GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S,
-                                    (GLint)cache[i].param_wrap_s);
-                GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T,
-                                    (GLint)gl_wrap(o->wrap_t));
-                GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-                GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            }
-            return;
-        }
-    }
-    if (o->is_ci && o->tlut_name < 64 && gx.tlut[o->tlut_name].magic == TLUT_MAGIC) {
-        tlut = &gx.tlut[o->tlut_name];
-    }
-    /* GX textures are always power of two, and a non-POT one silently makes
-     * the GL texture incomplete -- which disables texturing for that unit and
-     * looks like a lighting bug thirty draws later. */
-    if ((!pot(o->width) || !pot(o->height)) &&
-        (o->wrap_s == GX_REPEAT || o->wrap_t == GX_REPEAT)) {
-        /* Padding and GX_REPEAT disagree: the repeat would run over the
-         * padding.  Every NPOT texture in the boot path clamps, so this is
-         * reported rather than solved until something actually needs it. */
-        gx_warn("texture: a non-power-of-two texture with GX_REPEAT is padded "
-                "to a power of two and will repeat over the padding");
-    }
-
-    /* The cache is content-keyed because the game reuses one buffer for
-     * different images and GX has no "this texture changed" call we could
-     * trust -- HuSprDispInit calls GXInvalidateTexAll on every single sprite
-     * pass, so honouring that literally would mean re-uploading everything
-     * several times a frame.
-     *
-     * But hashing the *whole* image on every bind is what makes the title
-     * screen crawl.  The Nintendo logo alone is 576x480 C8 = 270 KB, and a
-     * 1 GHz G4 walking a few megabytes of FNV per frame has nothing left.  So
-     * the hash is **sampled** after the first sight of a buffer: the header,
-     * the tail, and a bounded spread of interior points, capped at
-     * TEX_HASH_SAMPLE bytes.  The first time a (image, format, size, tlut) key
-     * is seen the whole thing is hashed, so a texture is never wrong when it
-     * first appears; afterwards a change is caught if it touches any sampled
-     * point, which for real texture animation -- whole images swapped in, or
-     * decoded afresh into the buffer -- it always does.
-     *
-     * --texhash-full turns the exhaustive hash back on, which is the way to
-     * prove that a suspected texture-staleness bug is or is not this. */
-    content = fnv(&o->format, sizeof(o->format), 2166136261u);
+/* The content hash: the same FNV walk as before the M5b rework, factored out
+ * so both the miss path and the epoch-triggered revalidation path share it.
+ * `first_sight` forces the exhaustive hash regardless of size, exactly as
+ * `!seen_before(o->image)` used to -- see the note above `TEX_HASH_SAMPLE`.
+ * `--texhash-full` still forces it unconditionally, on every call. */
+static u32 tex_bind_content_hash(const GXTexObjPort* o, const GXTlutObjPort* tlut,
+                                  int first_sight) {
+    u32 content = fnv(&o->format, sizeof(o->format), 2166136261u);
     content = fnv(&o->width, sizeof(o->width), content);
     content = fnv(&o->height, sizeof(o->height), content);
     if (o->image) {
         size_t n = encoded_size(o->format, o->width, o->height);
-        if (port_opt.texhash_full || n <= TEX_HASH_SAMPLE || !seen_before(o->image)) {
+        if (port_opt.texhash_full || first_sight || n <= TEX_HASH_SAMPLE) {
             content = fnv(o->image, n, content);
             stat_hash_full += (unsigned)n;
         } else {
@@ -577,122 +648,106 @@ void gx_tex_bind(int unit, GXTexObjPort* o) {
     if (tlut && tlut->lut) {
         content = fnv(tlut->lut, (size_t)tlut->n * 2, content);
     }
+    return content;
+}
 
-    for (i = 0; i < cache_used; i++) {
-        if (cache[i].image == o->image && cache[i].format == o->format &&
-            cache[i].w == o->width && cache[i].h == o->height &&
-            cache[i].lut == (tlut ? tlut->lut : NULL)) {
-            slot = i;
-            break;
+/* Decode fresh texels into `slot` and upload them: shared by a genuine miss
+ * (a brand-new cache key) and a revalidation that found the bytes changed
+ * under an existing key (an in-place rewrite, the old `stat_evict` case).
+ * Everything about the slot except `content` (set by the caller) and the key
+ * fields (already correct, either just-assigned or unchanged) is written
+ * here. */
+static void tex_bind_decode_and_upload(int slot, int unit, const GXTexObjPort* o,
+                                        const GXTlutObjPort* tlut) {
+    int w = 0, h = 0;
+    u8* rgba = decode(o, tlut, &w, &h);
+    cache[slot].su = cache[slot].sv = 1.0f;
+    /* --dumptex: every texture the decoder produces, as it produced it,
+     * written out the first time it is decoded.  "The draw is right and
+     * the screen is black" is nearly always the texture, and looking at
+     * the texture is much faster than reasoning about the format. */
+    if (rgba && port_opt.dumptex) {
+        char path[1024];
+        FILE* f;
+        snprintf(path, sizeof(path), "%s/tex-%03d-%dx%d-fmt%u%s.ppm",
+                 port_opt.shotdir ? port_opt.shotdir : ".", slot, w, h,
+                 (unsigned)o->format, o->is_ci ? "-ci" : "");
+        f = fopen(path, "wb");
+        if (f) {
+            int yy, xx;
+            fprintf(f, "P6\n%d %d\n255\n", w, h);
+            for (yy = 0; yy < h; yy++) {
+                for (xx = 0; xx < w; xx++) {
+                    fwrite(rgba + ((size_t)yy * w + xx) * 4, 1, 3, f);
+                }
+            }
+            fclose(f);
+            port_log("port> --dumptex: wrote %s\n", path);
+        }
+        /* and the alpha, which is what an alpha test actually judges */
+        snprintf(path, sizeof(path), "%s/tex-%03d-%dx%d-fmt%u%s-alpha.pgm",
+                 port_opt.shotdir ? port_opt.shotdir : ".", slot, w, h,
+                 (unsigned)o->format, o->is_ci ? "-ci" : "");
+        f = fopen(path, "wb");
+        if (f) {
+            int yy, xx;
+            fprintf(f, "P5\n%d %d\n255\n", w, h);
+            for (yy = 0; yy < h; yy++) {
+                for (xx = 0; xx < w; xx++) {
+                    fwrite(rgba + ((size_t)yy * w + xx) * 4 + 3, 1, 1, f);
+                }
+            }
+            fclose(f);
         }
     }
-    if (slot >= 0 && cache[slot].content == content) {
-        stat_hit++;
-    } else {
-        int w = 0, h = 0;
-        u8* rgba = decode(o, tlut, &w, &h);
-        if (slot < 0) {
-            if (cache_used == CACHE_MAX) {
-                slot = (int)(content % CACHE_MAX); /* an eviction, not a leak */
-                if (gl13_live() && cache[slot].gl_name) {
-                    GLuint n = cache[slot].gl_name;
-                    GL(glDeleteTextures)(1, &n);
-                }
-                memset(&cache[slot], 0, sizeof(cache[slot]));
+    if (rgba) {
+        int pw = pot_up(w), ph = pot_up(h);
+        u8* up = rgba;
+        stat_bytes += (unsigned)(w * h * 4);
+        if (pw != w || ph != h) {
+            u8* padded = pad_to_pot(rgba, w, h, pw, ph);
+            if (padded) {
+                up = padded;
+                cache[slot].su = (float)w / (float)pw;
+                cache[slot].sv = (float)h / (float)ph;
+                stat_npot++;
             } else {
-                slot = cache_used++;
-            }
-            stat_miss++;
-        } else {
-            stat_evict++;
-        }
-        cache[slot].image = o->image;
-        cache[slot].lut = tlut ? tlut->lut : NULL;
-        cache[slot].format = o->format;
-        cache[slot].w = o->width;
-        cache[slot].h = o->height;
-        cache[slot].content = content;
-        cache[slot].su = cache[slot].sv = 1.0f;
-        /* --dumptex: every texture the decoder produces, as it produced it,
-         * written out the first time it is decoded.  "The draw is right and
-         * the screen is black" is nearly always the texture, and looking at
-         * the texture is much faster than reasoning about the format. */
-        if (rgba && port_opt.dumptex) {
-            char path[1024];
-            FILE* f;
-            snprintf(path, sizeof(path), "%s/tex-%03d-%dx%d-fmt%u%s.ppm",
-                     port_opt.shotdir ? port_opt.shotdir : ".", slot, w, h,
-                     (unsigned)o->format, o->is_ci ? "-ci" : "");
-            f = fopen(path, "wb");
-            if (f) {
-                int yy, xx;
-                fprintf(f, "P6\n%d %d\n255\n", w, h);
-                for (yy = 0; yy < h; yy++) {
-                    for (xx = 0; xx < w; xx++) {
-                        fwrite(rgba + ((size_t)yy * w + xx) * 4, 1, 3, f);
-                    }
-                }
-                fclose(f);
-                port_log("port> --dumptex: wrote %s\n", path);
-            }
-            /* and the alpha, which is what an alpha test actually judges */
-            snprintf(path, sizeof(path), "%s/tex-%03d-%dx%d-fmt%u%s-alpha.pgm",
-                     port_opt.shotdir ? port_opt.shotdir : ".", slot, w, h,
-                     (unsigned)o->format, o->is_ci ? "-ci" : "");
-            f = fopen(path, "wb");
-            if (f) {
-                int yy, xx;
-                fprintf(f, "P5\n%d %d\n255\n", w, h);
-                for (yy = 0; yy < h; yy++) {
-                    for (xx = 0; xx < w; xx++) {
-                        fwrite(rgba + ((size_t)yy * w + xx) * 4 + 3, 1, 1, f);
-                    }
-                }
-                fclose(f);
+                pw = w;
+                ph = h;
             }
         }
-        if (rgba) {
-            int pw = pot_up(w), ph = pot_up(h);
-            u8* up = rgba;
-            stat_bytes += (unsigned)(w * h * 4);
-            if (pw != w || ph != h) {
-                u8* padded = pad_to_pot(rgba, w, h, pw, ph);
-                if (padded) {
-                    up = padded;
-                    cache[slot].su = (float)w / (float)pw;
-                    cache[slot].sv = (float)h / (float)ph;
-                    stat_npot++;
-                } else {
-                    pw = w;
-                    ph = h;
-                }
+        if (gl13_live()) {
+            GLuint name = cache[slot].gl_name;
+            if (!name) {
+                GL(glGenTextures)(1, &name);
+                cache[slot].gl_name = name;
             }
-            if (gl13_live()) {
-                GLuint name = cache[slot].gl_name;
-                if (!name) {
-                    GL(glGenTextures)(1, &name);
-                    cache[slot].gl_name = name;
-                }
-                /* An upload has to bind the name it is about to fill, and
-                 * it does that on whichever unit is current; tell the shadow
-                 * rather than let it guess.  `unit` is where this bind is
-                 * headed anyway, so the bind below usually elides. */
-                glc_active_texture(unit);
-                GL(glBindTexture)(GL_TEXTURE_2D, name);
-                glc_note_bind(unit, name);
-                GL(glTexImage2D)(GL_TEXTURE_2D, 0, GL_RGBA8, pw, ph, 0, GL_RGBA,
-                                 GL_UNSIGNED_BYTE, up);
-                /* A fresh name has the GL default filter state, which is
-                 * mipmapped and therefore incomplete here; force the
-                 * parameters to be re-emitted for it. */
-                cache[slot].param_wrap_s = -1;
-            }
-            if (up != rgba) {
-                free(up);
-            }
-            free(rgba);
+            /* An upload has to bind the name it is about to fill, and
+             * it does that on whichever unit is current; tell the shadow
+             * rather than let it guess.  `unit` is where this bind is
+             * headed anyway, so the bind below usually elides. */
+            glc_active_texture(unit);
+            GL(glBindTexture)(GL_TEXTURE_2D, name);
+            glc_note_bind(unit, name);
+            GL(glTexImage2D)(GL_TEXTURE_2D, 0, GL_RGBA8, pw, ph, 0, GL_RGBA,
+                             GL_UNSIGNED_BYTE, up);
+            /* A fresh name has the GL default filter state, which is
+             * mipmapped and therefore incomplete here; force the
+             * parameters to be re-emitted for it. */
+            cache[slot].param_wrap_s = -1;
         }
+        if (up != rgba) {
+            free(up);
+        }
+        free(rgba);
     }
+}
+
+/* The tail of a bind, shared by every path that lands on a decoded (non-EFB)
+ * slot: bind the GL name, fold NPOT padding into the texture matrix, and emit
+ * glTexParameter only when this texture object's own parameters actually
+ * changed since the last time this slot was bound. */
+static void tex_bind_finish(int unit, GXTexObjPort* o, int slot) {
     o->gl_name = cache[slot].gl_name;
     if (!gl13_live() || !o->gl_name) {
         return;
@@ -727,6 +782,131 @@ void gx_tex_bind(int unit, GXTexObjPort* o) {
             GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, (GLint)mn);
             GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, (GLint)mg);
         }
+    }
+}
+
+void gx_tex_bind(int unit, GXTexObjPort* o) {
+    const GXTlutObjPort* tlut = NULL;
+    int slot, is_efb;
+    unsigned frame;
+    if (!o || o->magic != TEXOBJ_MAGIC) {
+        return;
+    }
+
+    /* The validation epoch: bumped the first time any bind observes a new
+     * frame number.  See the long comment above this function's old body,
+     * now attached to `cache_epoch`. */
+    frame = gl13_frame_number();
+    if (!cache_epoch_started || frame != cache_epoch_frame) {
+        cache_epoch_started = 1;
+        cache_epoch_frame = frame;
+        cache_epoch++;
+    }
+
+    if (o->is_ci && o->tlut_name < 64 && gx.tlut[o->tlut_name].magic == TLUT_MAGIC) {
+        tlut = &gx.tlut[o->tlut_name];
+    }
+
+    /* One hash-table lookup replaces both of the old O(cache_used) scans: the
+     * EFB-copy scan (image only, and given priority) and the regular (image,
+     * format, w, h, lut) scan. */
+    slot = find_slot(o->image, o->format, o->width, o->height,
+                      tlut ? tlut->lut : NULL, &is_efb);
+
+    if (slot >= 0 && is_efb) {
+        /* An EFB copy is bound as it stands: there is nothing at `image` to
+         * decode, and nothing to hash either -- what the game left in that
+         * buffer is whatever it was before the copy, and the pixels live in a
+         * GL texture the copy already filled. */
+        o->gl_name = cache[slot].gl_name;
+        if (!gl13_live() || !o->gl_name) {
+            return;
+        }
+        stat_hit++;
+        glc_bind_texture(unit, o->gl_name);
+        glc_tex_matrix(unit, cache[slot].su, cache[slot].sv);
+        if (cache[slot].param_wrap_s != (int)gl_wrap(o->wrap_s)) {
+            cache[slot].param_wrap_s = (int)gl_wrap(o->wrap_s);
+            GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S,
+                                (GLint)cache[slot].param_wrap_s);
+            GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T,
+                                (GLint)gl_wrap(o->wrap_t));
+            GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        }
+        return;
+    }
+
+    /* GX textures are always power of two, and a non-POT one silently makes
+     * the GL texture incomplete -- which disables texturing for that unit and
+     * looks like a lighting bug thirty draws later. */
+    if ((!pot(o->width) || !pot(o->height)) &&
+        (o->wrap_s == GX_REPEAT || o->wrap_t == GX_REPEAT)) {
+        /* Padding and GX_REPEAT disagree: the repeat would run over the
+         * padding.  Every NPOT texture in the boot path clamps, so this is
+         * reported rather than solved until something actually needs it. */
+        gx_warn("texture: a non-power-of-two texture with GX_REPEAT is padded "
+                "to a power of two and will repeat over the padding");
+    }
+
+    if (slot >= 0) {
+        /* The cache is content-keyed because the game reuses one buffer for
+         * different images and GX has no "this texture changed" call we
+         * could trust (see `cache_epoch`'s comment).  A *hit* on an existing
+         * slot only needs to touch the texel bytes at all once per
+         * validation epoch: `--texhash-full` and `--texvalidate-every-bind`
+         * both defeat that, independently, for bisecting a suspected
+         * staleness bug between "the epoch" and "the sampling". */
+        CacheEntry* e = &cache[slot];
+        int need_validate = port_opt.texhash_full || validate_every_bind ||
+                            e->validated_epoch != cache_epoch;
+        if (!need_validate) {
+            stat_hit++;
+        } else {
+            u32 content = tex_bind_content_hash(o, tlut, 0 /* slot exists: not first sight */);
+            stat_revalidate++;
+            e->validated_epoch = cache_epoch;
+            if (content == e->content) {
+                stat_hit++;
+            } else {
+                /* An in-place rewrite: same key, new bytes (the SBK lesson --
+                 * Mario Party rewrites scratch textures and animated palettes
+                 * at the same address).  The key fields, and this slot's
+                 * place in the hash table, do not change. */
+                stat_evict++;
+                e->content = content;
+                tex_bind_decode_and_upload(slot, unit, o, tlut);
+            }
+        }
+        tex_bind_finish(unit, o, slot);
+        return;
+    }
+
+    /* A genuine miss: no entry for this (image, format, w, h, lut) key. */
+    {
+        u32 content = tex_bind_content_hash(o, tlut, 1 /* first sight: exhaustive */);
+        if (cache_used == CACHE_MAX) {
+            slot = (int)(content % CACHE_MAX); /* an eviction, not a leak */
+            hash_remove(slot); /* unlink whatever key that slot held before */
+            if (gl13_live() && cache[slot].gl_name) {
+                GLuint n = cache[slot].gl_name;
+                GL(glDeleteTextures)(1, &n);
+            }
+            memset(&cache[slot], 0, sizeof(cache[slot]));
+        } else {
+            slot = cache_used++;
+        }
+        stat_miss++;
+        cache[slot].image = o->image;
+        cache[slot].lut = tlut ? tlut->lut : NULL;
+        cache[slot].format = o->format;
+        cache[slot].w = o->width;
+        cache[slot].h = o->height;
+        cache[slot].content = content;
+        cache[slot].validated_epoch = cache_epoch;
+        hash_insert(slot);
+        tex_bind_decode_and_upload(slot, unit, o, tlut);
+        tex_bind_finish(unit, o, slot);
     }
 }
 
@@ -878,13 +1058,11 @@ void gx_tex_copy(void* dest, int clear) {
 
     /* The cache entry is keyed on `dest`, the address the game will later wrap
      * in a GXTexObj.  It carries no decodable texels, so it is marked `efb`
-     * and gx_tex_bind uses its GL name as it stands. */
-    for (i = 0; i < cache_used; i++) {
-        if (cache[i].efb && cache[i].image == dest) {
-            slot = i;
-            break;
-        }
-    }
+     * and gx_tex_bind uses its GL name as it stands.  The same hash table
+     * `find_slot()` looks up in `gx_tex_bind` covers this entry too -- the
+     * format/w/h/lut arguments below are irrelevant for an `efb` match, which
+     * is keyed on `image` alone (see `find_slot()`). */
+    slot = find_slot(dest, 0, 0, 0, NULL, &i);
     if (slot < 0) {
         if (cache_used == CACHE_MAX) {
             gx_warn("GXCopyTex: the texture cache is full; the copy is dropped");
@@ -894,6 +1072,7 @@ void gx_tex_copy(void* dest, int clear) {
         memset(&cache[slot], 0, sizeof(cache[slot]));
         cache[slot].image = dest;
         cache[slot].efb = 1;
+        hash_insert(slot);
         stat_miss++;
     }
     cache[slot].format = gx.tex_dst_fmt;

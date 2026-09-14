@@ -189,6 +189,10 @@ GXTexObjPort* gx_bound_tex(unsigned id); /* NULL unless the unit holds a real ob
 void gx_tex_copy(void* dest, int clear);
 void gx_tex_report(void);
 void gx_tex_tile_report(void);
+/* --texvalidate-every-bind: keep per-bind content validation (still using
+ * the sampled hash) but bypass the per-frame epoch, for bisecting a
+ * suspected staleness regression between "the epoch" and "the sampling". */
+void gx_tex_set_validate_every_bind(int v);
 
 /* gl13.c -- the only file that talks to GL */
 int gl13_init(void);
