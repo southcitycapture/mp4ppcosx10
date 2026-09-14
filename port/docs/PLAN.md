@@ -4375,3 +4375,112 @@ sample-to-sample step over half full scale — in process, so a soak reports the
 number a `--wav` would have been measured at, and the report names which
 resampler and which depop setting produced it.
 
+### 17.6 What the harness costs, and what the board now measures
+
+`--status`' `aud` column, over the 119 seconds of the `--minigame m425` run
+below (boot, the menus, and the first turn of Toad's Midway Madness), with the
+4-tap resampler and the depop ramp both on:
+
+| | mean | median | p95 | worst |
+|---|---:|---:|---:|---:|
+| `aud`, M6 (§16.7, a 6,000-frame walk) | 1.61 | 1.72 | 3.13 | 5.08 |
+| `aud`, M7 (this run, 119 s) | **1.53** | 1.78 | 2.61 | 2.84 |
+
+The two segments are not the same segment, so this is a comparison and not a
+controlled A/B, and it should be read as one: the mean moved the right way and
+the tail moved a long way the right way (p95 3.13 -> 2.61, worst 5.08 -> 2.84),
+which is what replacing a 64-bit multiply per sample with a table lookup and
+four 32-bit ones would be expected to do on this machine. **1.53 is still over
+M6's 1.5 ms budget**, by 2%, and calling that "met" would be a rounding
+error dressed as a result. It is not met; it is much closer, and the variance
+is gone.
+
+The board's own numbers are the more useful reading: `aud` on `w01dll` sits at
+0.55-3.00 ms depending on how many voices the turn has running, and on the
+character-select screen — the heaviest — it is 1.3-2.7. The mixer's cost is a
+function of concurrent voices and nothing else, which is what a per-sample
+inner loop should look like.
+
+### 17.7 The `m425dll` SIGBUS: reproduced on demand, and it is the other hook
+
+§16.8 spent four board runs failing to reach `m425dll`. With `--minigame` it
+took one, and the log says exactly what happened:
+
+```
+port> --minigame m425: parking the roulette on m425dll (mg 425, type 2)
+...
+port> roulette: frame 10501 dealt mg 412 (m412dll, type 0)  -- overridden by --minigame
+port> status f10800   instdll   board 0 turn 1/10  mg 425 (m425dll)
+      coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.04 ms  19.6 fps
+*** port: fault: signal 10 at address 0x4800000
+    in   _epilog  (m425Dll.bundle)
+    backtrace:
+      #0  _epilog + 49068  [m425Dll.bundle]
+      #1  Hu3DDrawPost + 1772  [isle]
+      #2  Hu3DExec + 1380  [isle]
+```
+
+The board dealt Snow Throw; the harness parked Air Dossun; `instDll` dismissed
+its own instruction screen because all four players are CPU; and the module
+crashed. **A twenty-minute dice roll is now one flag**, which was §16.10 item
+3's whole point.
+
+**Three things the reproduction settles.**
+
+*It is the other hook.* §16.8 reviewed `main.c:1495 fn_1_57D4` -> `fn_1_5C20`,
+the display-list hook, at length and cleared it — correctly, as it turns out.
+Symbolising the fault against the bundle's own `nm` (only `_prolog` and
+`_epilog` are exported, so the arithmetic is
+`pc - _epilog + nm(_epilog)`) puts it at bundle offset `0xc318`, inside
+**`fn_1_E914`**, `thwomp.c:1810` — the *Thwomp deformation* hook, a completely
+different function reached through the same `Hu3DDrawPost`.
+
+*It is a store from a runaway pointer walk, not a bad base.* The faulting
+instruction is
+
+```
+0000c314	stw	r23,0xfffc(r17)
+0000c318	stw	r24,0x2c(r17)      <-- SIGBUS
+0000c31c	stfs	f0,0x14(r17)
+0000c320	b	0xc2fc
+```
+
+`r17` is advanced by `addi r17,r17,0x4` on every pass of a loop whose only
+exit is a float compare (`lfs f0,0x18(r17); fcmpu cr0,f0,f25`), and it had
+reached about `0x47FFFD4`. This is GCC's strength-reduced form of one of
+`fn_1_E914`'s three `for (var_r30 = 0; var_r30 < var_r31->unk_110; var_r30++)`
+loops over `unk_178` / `unk_180` / `unk_194` — the arrays allocated from
+`unk_110` at `thwomp.c:421-442` — and the `_sqrtf` stub call eight
+instructions later pins it to the second of them (`thwomp.c:1959-1975`).
+
+*And it explains the address, which was never a clue.* `0x04800000` is
+**16 MB past the top of MEM1**, which `OSInit` prints as
+`[0x2000000, 0x3800000)`. §16.8 disproved "one past the arena" and stopped
+there; the fuller answer is that the runaway had already written through 16 MB
+of whatever the host had mapped above MEM1 before it reached a page that was
+not mapped at all. The fault address is where the *host's* address space runs
+out, not where the bug is, and it is a round number for the same reason.
+
+**What has to happen next, in this order.** Two of these are cheap and one is
+the actual fix:
+
+1. **A guard region above MEM1.** The single most useful thing this milestone
+   found is that a pointer can walk 16 MB past the top of MEM1 and corrupt
+   host memory silently before anything notices. `port_mem_init` should
+   `mmap` MEM1 with `PROT_NONE` pages either side, so that this class of bug
+   faults at `0x3800000` — one page past the arena, where the diagnosis is
+   immediate — instead of wherever the address space happens to end. That
+   turns every future overrun of this shape into a one-line answer, and it is
+   a port-side change with no game-source patch.
+2. **Print `unk_110` and the four array bases** when the hook is entered. The
+   loop bound is a sum of twenty-five sub-counts including `var_r24 * var_r24`
+   stored in an `s16` (`thwomp.c:394-421`), and every array is allocated from
+   the same `unk_110`, so a consistent bound cannot overrun by itself. Either
+   the bound and the allocation disagree, or one of the allocations came back
+   short. `HuMemDirectMallocNum(HEAP_MODEL, ...)` under a nearly-full model
+   heap is the obvious candidate and the port has never checked it.
+3. Then fix whichever of those it is.
+
+This is where M7 stopped on the crash. The reproduction is the deliverable and
+it is done; the fix is one instrumented run away and did not fit tonight.
+

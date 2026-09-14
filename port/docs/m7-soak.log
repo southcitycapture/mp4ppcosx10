@@ -1,0 +1,56 @@
+# The M7 soak
+
+`--soak` is the harness with everything on: four CPU players, a status line a
+second, the stuck-screen watchdog, and a log line for every minigame module
+entered and left. It is started once and left running.
+
+```sh
+g4 run --rtc dolphin --card ~/mp4-soak.raw --freshcard --soak --turns 10 \
+       --clickstat --play ~/soak.play --turbo --log ~/soak.log
+```
+
+`soak.play` is `port/ref/movies/board-start.play`'s metronome — START through
+the boot, then A for four frames out of every sixty-four — extended to four
+million frames. With `--com4` no screen needs a *specific* button any more
+(`instDll` dismisses its own instruction screen when all four players are CPU,
+`instDll/main.c:294`), so the metronome alone walks every menu, every results
+screen, and every board restart. There are no STARTs after the boot: a START
+on the board opens the pause menu, which is what cost §15.3 three captures.
+
+**Save-file handling.** The soak gets its own card image and `--freshcard`, so
+the roulette starts from a known played set and a crashed run does not leave a
+half-written save for the next one. Without `--card` the soak would write the
+same `~/Library/Application Support/MarioParty4/memcard-slot-a.raw` the player
+uses.
+
+## What it produced
+
+Started 2026-09-13 at the end of the M7 session, on the G4, and left running.
+This file is the place its findings go: `grep "enter minigame" soak.log` for
+the list of modules that played, `grep STUCK` for the screens that stopped
+making progress, and `grep "port: fault"` for the crashes with their frame and
+module.
+
+At the time this file was written the soak had booted, walked the mode-select
+menus and reached character select, mixing at 0.42 ms of `aud` a frame:
+
+```
+port> status f2280   mentdll   board 0 turn 0/10  mg 401 (m401dll)
+      coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.42 ms  9.8 fps
+```
+
+**One crash is already known and will be in this log the moment the roulette
+deals it**: `m425dll`'s Thwomp deformation hook (`thwomp.c:1810 fn_1_E914`),
+SIGBUS on a store from a runaway pointer walk 16 MB past the top of MEM1. It
+is diagnosed in `PLAN.md` §17.7 and not yet fixed, so a soak that runs long
+enough will stop there. Everything else it finds is new.
+
+## Reading it
+
+| grep for | what you get |
+|---|---|
+| `enter minigame` / `left  minigame` | every m4xx module the soak played, with the frame |
+| `STUCK` | the live screen, by name, when nothing has changed in 90 s |
+| `port: fault` | the signal, the address, and the symbolised backtrace |
+| `port> status` | one line a second; the `aud` column is the mixer's cost |
+| `musyx_mix: --clickstat` | at shutdown: steps over half full scale, by `wavstat.py`'s own rule |
