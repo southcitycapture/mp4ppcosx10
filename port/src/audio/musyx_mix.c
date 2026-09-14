@@ -601,14 +601,22 @@ static void src_table_init(void) {
  * 4-tap table above stands in for the DSP's polyphase filter, and
  * `--resample1` keeps the linear blend M6 shipped so the two can be measured
  * against each other on the same walk. */
-static s32 voice_output_sample(DSPvoice* dv, MixVoice* mv) {
+/* `use4` is passed rather than read from `port_opt` here, and that is not
+ * tidiness.  This function is inlined into `render_voice`'s per-sample loop,
+ * the loop calls `voice_decode_advance`, and `port_opt` is a global struct --
+ * so GCC has to assume the call might change it and reloads the flag, and
+ * re-tests the branch, on every output sample of every voice.  Hoisting it to
+ * a local in the caller is a load and a branch removed from the innermost loop
+ * the port has, for no change in behaviour: it is a command-line flag and it
+ * cannot change while a frame is being mixed. */
+static s32 voice_output_sample(DSPvoice* dv, MixVoice* mv, int use4) {
     s32 out;
 
     if (mv->srcType == 2) {
         return voice_decode_advance(dv, mv);
     }
 
-    if (port_opt.resample4) {
+    if (use4) {
         const s16* c = src_coef[(mv->phase & 0xFFFF) >> (16 - 8)];
         out = (mv->hist[0] * c[0] + mv->hist[1] * c[1] + mv->hist[2] * c[2] +
                mv->hist[3] * c[3]) >> SRC_Q;
@@ -918,6 +926,9 @@ static void writeback_current_addr(DSPvoice* dv, const MixVoice* mv) {
  * any deactivation, since salDeactivateVoice() unlinks the voice from the
  * list the caller is walking. */
 static void render_voice(DSPvoice* dv, MixVoice* mv, DSPstudioinfo* stp) {
+    /* Read once per voice per frame, not once per sample: see
+     * voice_output_sample. */
+    const int use_src4 = port_opt.resample4;
     s32* main_buf = stp->main[salFrame];
     s32* auxa_buf = stp->auxA[salAuxFrame];
     s32* auxb_buf = stp->auxB[salAuxFrame];
@@ -1017,7 +1028,7 @@ static void render_voice(DSPvoice* dv, MixVoice* mv, DSPstudioinfo* stp) {
             if (mv->ended || port_musyx_mix_mute) {
                 raw = 0;
             } else {
-                raw = voice_output_sample(dv, mv);
+                raw = voice_output_sample(dv, mv, use_src4);
             }
 
             /* total gain per bus = envelope volume x bus volume, both
