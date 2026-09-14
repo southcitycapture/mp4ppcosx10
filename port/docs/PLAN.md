@@ -4484,3 +4484,57 @@ the actual fix:
 This is where M7 stopped on the crash. The reproduction is the deliverable and
 it is done; the fix is one instrumented run away and did not fit tonight.
 
+### 17.8 Tooling added
+
+| flag / tool | what |
+|---|---|
+| `--rtc SECS` \| `--rtc dolphin` | the deterministic clock's origin as a Unix time — the number Dolphin calls `CustomRTCValue`. `OSInit` prints what the run was pinned to, because a log that does not say the number cannot be compared with anything |
+| `--card FILE`, `--freshcard` | the *other* input to a run. The roulette reads the save's played set and every run rewrites the save; before this, the same seed was not the same experiment |
+| `--com4` | four CPU players, which is also what makes `instDll` dismiss its own instruction screen — and therefore what removes every screen-specific button press from every walk |
+| `--minigame NAME\|ID` | `m425dll`, `425` and `24` all name the same minigame. Reproducing a crash in a named module went from four board runs to one |
+| `--turns N` | the board's turn count |
+| `--status` | one line a second: live screen by name, board, turn, the module the roulette dealt, coins and stars per player, `aud` ms and fps. §16.10 item 2's "the result line should carry the audio's own invariants", once a second instead of once a run |
+| `--stuckwatch SEC` | the live screen has not changed in SEC seconds: name it, and the one before it. One compare a frame, against the N64 ports' 27% `dladdr` |
+| `--soak` | all of the above, from boot, restarting boards, logging every module entered and left |
+| `--nodepop`, `--resample1` | switch off each of §17.5's two repairs independently, so the A/B is a word on a command line |
+| `--clickstat` | `wavstat.py`'s discontinuity rule, evaluated in process, so a soak reports the number a capture would have been measured at |
+| `port> roulette: frame N dealt mg X` | what the board's own RNG chose, logged whether or not `--minigame` overrides it — so the override costs no information |
+| `port/docs/m7-soak.log` | what the soak found, and how to read it |
+
+### 17.9 What M8 needs
+
+1. **A guard region above and below MEM1, before anything else.** §17.7's
+   runaway wrote through 16 MB of host memory before it hit a page that was
+   not mapped. `PROT_NONE` pages either side of the MEM1 mapping turn that
+   into a fault at `0x3800000` with an obvious diagnosis, and turn every
+   future bug of this shape into a one-line answer instead of an evening.
+   It is the cheapest thing on this list and it has the largest effect on
+   how long the next bug takes.
+
+2. **Finish `m425dll`.** §17.7 item 2: print `unk_110` and the four array
+   bases on hook entry, and check `HuMemDirectMallocNum`'s return. The
+   reproduction is a single `--minigame m425` run away, which is the part
+   that used to be hard.
+
+3. **The audio budget is 1.53 ms against 1.5 and the comparison is not
+   controlled.** §17.6 compares two different segments. The controlled
+   version is two runs of the same command differing only by
+   `--nodepop --resample1`, which the flags now make trivial and which this
+   session did not have the G4 time for. Do that before claiming the 4-tap
+   filter bought anything, and measure `--clickstat` on both — that number,
+   not the millisecond, is what §16.7's 25,306 was about.
+
+4. **`--rtcoffset`, if the Dolphin comparison is still wanted.** §17.3: the
+   two rigs share the clock's origin and still diverge, because
+   `BoardRandInit` reads `OSGetTime` at board setup and the port arrives
+   there some 300 frames earlier than the console does. One subtraction,
+   measurable from `--ovllog` on each side. It is now a nice-to-have rather
+   than a blocker, because `--minigame` solved the problem it was blocking.
+
+5. **The soak is the regression suite now.** §16.10 item 4 wanted a `regress`
+   mode that fails on a budget regression as well as a pixel one. Between
+   `--rtc`/`--freshcard` (a run is a function of its command line, §17.2),
+   `--status`' `aud` column and `--clickstat`, all three assertions exist as
+   numbers; what is missing is a script that runs the fixed walk, extracts
+   them and compares against a recorded baseline. That script is small and
+   it should be written before the next optimisation, not after.
