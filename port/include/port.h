@@ -84,6 +84,13 @@ typedef struct PortOptions {
                              *   the deterministic clock's origin expressed the
                              *   way Dolphin's CustomRTCValue is                */
     int rtc_set;            /* --rtc was given (0 is a legal RTC)              */
+    int rtc_seen;           /* --rtc parsed; the origin is computed after the
+                             * loop so --rtcoffset may come before or after   */
+    double rtc_offset;      /* --rtcoffset SECS: shift the clock's origin so the
+                             * port reaches BoardRandInit at the same OSGetTime
+                             * the console does.  §17.3: sharing --rtc is not
+                             * enough, because BoardRandInit reads the clock at
+                             * board setup and the port gets there sooner.     */
     const char* card;       /* --card FILE  use this 512 KB card image          */
     int freshcard;          /* --freshcard  format the card image at boot       */
     const char* minigame;   /* --minigame NAME|ID  park the roulette here       */

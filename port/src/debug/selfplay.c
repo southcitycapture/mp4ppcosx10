@@ -254,16 +254,84 @@ static void status_line(u32 frame) {
  * on a button, which is what we want -- both are "the soak is not making
  * progress".
  */
+/* The soak's first run fired this ten times and every one was a lie
+ * (PLAN.md §17.10).  `omcurovl` + `omovlevtno` is the right signal for a menu
+ * waiting on a button nobody will press, and the wrong one for a board: four
+ * CPU players walking a board at 10 fps stay in the same overlay and the same
+ * event for well over ninety seconds at a time, between a minigame's results
+ * and the next roulette, while being entirely healthy.  Ten false positives
+ * are exactly how a real one gets missed.
+ *
+ * The fix is to ask the game whether it is *doing* anything rather than
+ * whether it has changed screen.  These are the words that move whenever the
+ * game is alive and stop moving when it is not: the overlay and its event, the
+ * turn and whose turn it is, and each player's coins, stars and current space.
+ * A piece moving one space, a coin changing hands, a turn ending -- any of
+ * them re-arms the watch.  A board between events now looks the way it is.
+ *
+ * A minigame is the case this does not cover: it legitimately runs for a
+ * minute with none of those words moving.  So the limit is per screen rather
+ * than global -- a minigame gets the multiplier, because the only thing that
+ * can be said about it from out here is that it has an end. */
+static u32 progress_stamp(void) {
+    u32 h = 2166136261u;
+    int i;
+#define PORT_MIX(v)                  \
+    do {                             \
+        h ^= (u32)(s32)(v);          \
+        h *= 16777619u;              \
+    } while (0)
+    PORT_MIX(omcurovl);
+    PORT_MIX(omovlevtno);
+    PORT_MIX(GWSystem.turn);
+    PORT_MIX(GWSystem.player_curr);
+    for (i = 0; i < 4; i++) {
+        PORT_MIX(GWPlayer[i].coins);
+        PORT_MIX(GWPlayer[i].stars);
+        PORT_MIX(GWPlayer[i].space_curr);
+    }
+#undef PORT_MIX
+    return h;
+}
+
+/* A minigame has no progress signal visible from here, so it gets four times
+ * the patience.  Everything else -- boards, menus, results -- is covered by
+ * progress_stamp and gets the number that was asked for. */
+static u32 stuck_limit(int ovl) {
+    u32 limit = (u32)port_opt.stuckwatch * 60u;
+    if (ovl >= 0 && omMgIndexGet((s16)ovl) >= 0) {
+        return limit * 4u;
+    }
+    return limit;
+}
+
+/* mg_next between turns is not an index into anything: the board leaves it at
+ * whatever the last draw was, or at a value the roulette has not finished
+ * writing, and the watchdog printed it raw -- which is where "mg 65936" in the
+ * first soak came from.  The status line already range-checks it; so does this
+ * now, and an out-of-range value is reported as itself rather than dressed up
+ * as a minigame number. */
+static void format_mg_next(char* buf, size_t n) {
+    int mg = (int)GWSystem.mg_next;
+    if (mg >= 0 && mg < 64 && mgInfoTbl[mg].ovl != 0xFFFF) {
+        snprintf(buf, n, "%d (%s)", mg + 0x191, screen_name(mgInfoTbl[mg].ovl));
+    } else {
+        snprintf(buf, n, "none (raw %d)", mg);
+    }
+}
+
 static void stuck_watch(u32 frame) {
-    static int last_ovl = -2;
-    static int last_evt = -2;
+    static u32 last_stamp;
+    static int primed;
     static u32 last_change;
     static u32 last_report;
-    u32 limit = (u32)port_opt.stuckwatch * 60u;
+    u32 stamp = progress_stamp();
+    u32 limit = stuck_limit((int)omcurovl);
+    char mg[64];
 
-    if ((int)omcurovl != last_ovl || (int)omovlevtno != last_evt) {
-        last_ovl = (int)omcurovl;
-        last_evt = (int)omovlevtno;
+    if (!primed || stamp != last_stamp) {
+        primed = 1;
+        last_stamp = stamp;
         last_change = frame;
         return;
     }
@@ -274,12 +342,14 @@ static void stuck_watch(u32 frame) {
         return; /* one report per window, not one a frame */
     }
     last_report = frame;
-    port_log("port> STUCK: frame %u, %u s with no scene change.  live screen "
-             "%s (overlay %d, event %d, previous %s), turn %d/%d, mg_next %d\n",
-             frame, (frame - last_change) / 60u, screen_name((int)omcurovl),
-             (int)omcurovl, (int)omovlevtno, screen_name((int)omprevovl),
-             (int)GWSystem.turn, (int)GWSystem.max_turn,
-             (int)GWSystem.mg_next + 0x191);
+    format_mg_next(mg, sizeof(mg));
+    port_log("port> STUCK: frame %u, %u s with no progress (limit %u s here).  "
+             "live screen %s (overlay %d, event %d, previous %s), turn %d/%d, "
+             "mg_next %s\n",
+             frame, (frame - last_change) / 60u, limit / 60u,
+             screen_name((int)omcurovl), (int)omcurovl, (int)omovlevtno,
+             screen_name((int)omprevovl), (int)GWSystem.turn,
+             (int)GWSystem.max_turn, mg);
 }
 
 /* ---- the module trace ---------------------------------------------------------

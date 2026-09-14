@@ -49,8 +49,15 @@ void OSInit(void) {
         gmtime_r(&t, &tm);
         strftime(when, sizeof(when), "%Y-%m-%dT%H:%M:%SZ", &tm);
         port_log("port> OSInit: RTC pinned to %lld (%s), OSGetTime origin "
-                 "%lld ticks\n",
-                 (long long)port_opt.rtc, when, (long long)port_opt.seed);
+                 "%lld ticks%s\n",
+                 (long long)port_opt.rtc, when, (long long)port_opt.seed,
+                 port_opt.rtc_offset != 0.0 ? " (shifted by --rtcoffset)" : "");
+        if (port_opt.rtc_offset != 0.0) {
+            port_log("port> OSInit: --rtcoffset %+.3f s (%+.1f frames) -- the "
+                     "origin is moved so BoardRandInit reads what the console "
+                     "reads, not so the boot does\n",
+                     port_opt.rtc_offset, port_opt.rtc_offset * 60.0);
+        }
     }
 }
 

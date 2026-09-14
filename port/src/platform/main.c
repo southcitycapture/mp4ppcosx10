@@ -54,6 +54,12 @@ static void usage(const char* argv0) {
             "  --rtc SECS        the same origin written as the console's real-time\n"
             "                    clock, in Unix seconds -- the number Dolphin calls\n"
             "                    CustomRTCValue.  `--rtc dolphin' is the pinned\n"
+            "  --rtcoffset SECS  shift that origin, so the port reaches\n"
+            "                    BoardRandInit at the console's reading rather\n"
+            "                    than 300 frames earlier.  1 frame = 1/60 s.\n"
+            "  --memmap          print the MEM1/ARAM/stack map and its guards\n"
+            "  --guardtest WHERE mem1-hi|mem1-lo|aram-hi|aram-lo|stack-lo: write\n"
+            "                    one byte past that edge and expect a fault\n"
             "                    reference value (1041472800, 2003-01-02).  Implies\n"
             "                    --deterministic, and both of the game's RNG seed\n"
             "                    sites read it through OSGetTime\n"
@@ -245,10 +251,19 @@ int port_parse_args(int argc, char** argv) {
             const char* v = argv[++i];
             port_opt.rtc = !strcmp(v, "dolphin") ? PORT_RTC_DOLPHIN
                                                  : strtoll(v, NULL, 0);
-            port_opt.rtc_set = 1;
-            port_opt.seed =
-                (port_opt.rtc - PORT_GC_EPOCH_UNIX) * (long long)PORT_TIMER_CLOCK;
+            port_opt.rtc_seen = 1;
             port_opt.deterministic = 1;
+        } else if (!strcmp(a, "--rtcoffset") && i + 1 < argc) {
+            /* §17.3: --rtc gives the two rigs the same clock *origin* and they
+             * still deal different minigames, because `BoardRandInit`
+             * (board/main.c:1432) seeds from OSGetTime at board setup rather
+             * than at boot, and the port arrives there some 300 frames earlier
+             * than the console -- it skips the DVD seek and the opening movie.
+             * This is that difference, in seconds, added to the origin.  One
+             * frame is 1/60 s, so the 300-frame gap is --rtcoffset 5.0; the
+             * exact number is a subtraction between the two rigs' --ovllog
+             * timestamps at the board's first frame. */
+            port_opt.rtc_offset = strtod(argv[++i], NULL);
         } else if (!strcmp(a, "--card") && i + 1 < argc) {
             port_opt.card = argv[++i];
         } else if (!strcmp(a, "--freshcard")) {
@@ -350,6 +365,14 @@ int port_parse_args(int argc, char** argv) {
             usage(argv[0]);
             return 0;
         }
+    }
+    /* After the loop, so --rtc and --rtcoffset may be given in either order. */
+    if (port_opt.rtc_seen) {
+        port_opt.rtc_set = 1;
+        port_opt.seed =
+            (long long)((double)(port_opt.rtc - PORT_GC_EPOCH_UNIX) *
+                            (double)PORT_TIMER_CLOCK +
+                        port_opt.rtc_offset * (double)PORT_TIMER_CLOCK);
     }
     return 1;
 }
