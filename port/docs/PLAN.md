@@ -1124,7 +1124,7 @@ the `--wav` capture of a fixed 30-second board segment matches a Dolphin
 capture of the same segment to the ear, and the audio path costs less than
 1.5 ms/frame in `--perf`.
 
-### M7 — the self-play harness *(landed, §17; the m425 crash is reproduced and diagnosed, not fixed)*
+### M7 — the self-play harness *(landed, §17; the m425 crash is fixed in §18.2, unwitnessed)*
 The game's CPU players already exist: `GWPlayerCfg[i].diff` (an `s16` per
 player) and `GWSystem.diff_story`. The harness sets those and hands player 1 to
 the CPU, then drives menus with a task-name navigator (the equivalent of
@@ -1136,7 +1136,7 @@ hardest, imposed on the CPU opponents through the same variables) is defined
 and measurable; a `regress` mode replays a set of recorded input scripts and
 gets identical results every time.
 
-### M8 — enhancements and the launcher slot
+### M8 — enhancements and the launcher slot *(§18: the crash work landed, the enhancements did not start — there was no console this session)*
 Widescreen or higher internal resolution, the `--gxshader`
 `ATI_text_fragment_shader` backend for the named degraded effects, THP movie
 playback, the launcher UI and a slot alongside the two Snowboard Kids apps,
@@ -4588,3 +4588,363 @@ It completed the board, it printed a line a second, and the value turned out
 to be in the lines nobody specified: eleven module names, ten watchdog
 reports, one new crash, and a cost figure that corrected a claim this same
 document had made an hour earlier.
+
+## 18. M8 log — a session with no console, and the two crashes it solved anyway *(2026-09-14)*
+
+The G4 was unreachable for the whole of this session. The lab is at home and
+this session ran from the office, where `192.168.0.200` is somebody else's
+machine (§18.7's note is now in the tooling table); the ProxyJump route through
+`littlejelly` was dead too, Tailscale having last seen it an hour before the
+session opened. A scan of the office LAN found eleven hosts with `sshd` and not
+one of them running an OpenSSH old enough to be Leopard.
+
+So none of the six deliverables could be *run*. What follows is what a session
+with a compiler and no console turns out to be good for, which is more than
+was expected, and what it is not good for, which is exactly the things that
+were left.
+
+**Both open crashes were diagnosed. One of them is proved fixed at the level
+of the generated instructions, without the machine that found it.** That is
+the session, and it came from noticing that the port had been compiling the
+game with `-w` for eight milestones.
+
+### 18.1 Guard pages: the fault address is now the bug's address
+
+§17.9 item 1, and it was right that it was the cheapest thing on the list.
+
+`port_mem_init` used to make one read-write mapping and hand the game a
+pointer into the middle of it. Every region is now its own span with 64 KB of
+`PROT_NONE` on both sides:
+
+```
+[guard][ game stack 8 MB ][guard][ MEM1 24 MB ][guard]
+[guard][ ARAM 16 MB ][guard]
+```
+
+ARAM used to be a `calloc`, where an overrun landed in the C heap and nothing
+ever noticed. The game stack was guarded because it was free to do so, and a
+stack overflow inside the game's own 8 MB is now a thing this port can see.
+
+64 KB rather than a single page on purpose: a strength-reduced loop striding a
+struct at a time can step clean over one 4 KB page without touching it. Nothing
+in this game strides 64 KB.
+
+The crash handler gained the line that makes the mapping worth having. It names
+the region an address is in, and when that region is a guard it says which
+mapping ran off which end and where that mapping's bounds are:
+
+```
+*** port: fault: signal 10 at address 0x10c388000
+    region  0 bytes into the guard above MEM1 [0x10c388000, 0x10c398000)
+            this is a guard page: MEM1 ran off its top end.
+            MEM1 is [0x10ab4c000, 0x10c34c000) -- the bug is the last write
+            before this one.
+```
+
+`--guardtest mem1-hi | mem1-lo | aram-hi | aram-lo | stack-lo` writes one byte
+one past the named edge and expects exactly that. All five pass on the host.
+They exist because a guard is the sort of thing that quietly stops working —
+one `mprotect` that fails on some future OS and the port runs on, silently,
+exactly as badly as before. A failed `mprotect` warns and continues, and a
+`--guardtest` that says `IT DID NOT FAULT` is worth more than a silent run.
+`--memmap` prints the table at boot.
+
+### 18.2 The m425dll runaway: GCC deleted the loop's exit test, and it was entitled to
+
+§17.7 left this as "either the bound and the allocation disagree, or one of the
+allocations came back short", with `HuMemDirectMallocNum` under a full model
+heap as the favourite. Both were wrong, and so was the shape of the question.
+
+**Symbolising it properly.** §17.7 worked from `_epilog` and arithmetic because
+"only `_prolog` and `_epilog` are exported". They are the only *exported*
+symbols; the bundle carries every local one as well, and it is built with `-g`,
+so `dsymutil` plus `llvm-symbolizer` turns the fault offset into a file and a
+line directly:
+
+```
+0xc318 -> fn_1_E914  .../REL/m425Dll/thwomp.c:1947:38
+```
+
+Not thwomp.c:1959 — thwomp.c:**1947**, `var_r31->unk_6C[var_r29] = 0;`, inside
+the six-iteration loop at 1943, not the `unk_110` loop at 1959 that the
+sqrtf call had seemed to pin it to. Every instruction in the faulting block
+maps to a line in that little loop:
+
+```
+c2fc: lfs  f0, 24(r17)     1944  unk_54[var_r29]
+c300: fcmpu f0, f25        1944  <= 0.0f
+c308: bf   2, 0xc1c8       1944  the else branch
+c30c: lfs  f0, 0(r30)      1946  0.0f
+c310: addi r17, r17, 4           var_r29++
+c314: stw  r23, -4(r17)    1945  unk_3C[var_r29] = -1
+c318: stw  r24, 44(r17)    1947  unk_6C[var_r29] = 0      <-- fault
+c31c: stfs f0, 20(r17)     1946  unk_54[var_r29] = 0.0f
+c320: b    0xc2fc                and round again
+```
+
+One induction pointer, four bytes a step, three arrays reached as fixed
+displacements off it. **And no test against 6 anywhere.** The back edge at
+`c320` is unconditional; the only way out is the float compare at `c300`. When
+no element of `unk_54[]` satisfies it, this writes `-1`, `0` and `0.0f` every
+four bytes until the address space stops — which is the 16 MB scribble, and
+which is why `0x4800000` was never a clue.
+
+**Why the test is missing.** The struct says:
+
+```c
+    s32 unk_3C[5];
+    s32 unk_50;
+```
+
+Five elements. Every loop over it runs `var_r29 < 6`, and the two lines that
+name `unk_50` are the `var_r29 == 5` case written out longhand, sitting between
+an `unk_54[5]` and an `unk_6C[5]` on the lines either side. `unk_50` **is**
+`unk_3C[5]`: `0x3C + 5*4 == 0x50`, and `unk_54` still begins at `0x54`, so the
+two fields are one array the decomp split in half.
+
+`-faggressive-loop-optimizations`, on by default at `-O2`, takes
+`unk_3C[var_r29]` against a five-element array as proof that iteration 5 never
+happens. It follows that `var_r29 < 6` can never be the test that ends the
+loop. It deletes it. Every step of that is correct C; the premise is a
+decompiler's guess about an array length, and the conclusion is an unbounded
+write.
+
+**Proved without the console.** `fn_1_E914` compiled to 655 instructions with
+no compare against the loop bound anywhere in the function. With `unk_3C[6]` it
+compiles to 974 with both bounds back — and 974 is *exactly* what
+`-fno-aggressive-loop-optimizations` produces from the unfixed source, which is
+the cross-check that says the two explanations are the same explanation. The
+rebuilt `m425Dll.bundle` disassembles to the second number.
+
+That is as far as a machine with a cross-compiler can take it. What has not
+happened is a run of `--minigame m425` on the G4 that plays to its result
+screen, and `docs/screenshots/mp4-minigame-m425.png` does not exist. The fix is
+believed, not witnessed.
+
+### 18.3 Thirty-nine more of them, and why nobody had seen one
+
+The build compiles the game with `-w`. GCC has been saying
+
+```
+thwomp.c:302:34: warning: iteration 5 invokes undefined behavior
+                          [-Waggressive-loop-optimizations]
+```
+
+at four sites in that one file since the first PowerPC build, and at
+
+```
+thwomp.c:2018:32: warning: array subscript 5 is above array bounds of 's32[5]'
+```
+
+which names the wrong declaration outright. `-w` is not unreasonable for a
+decomp — the tree generates thousands of warnings Metrowerks accepted — but it
+takes this one with it, and this one is not a style note.
+
+`port/tools/ubaudit.sh` recompiles the whole mirror with those two warnings
+back on. 349 files, none of which fails to compile, and the result is
+**39 `-Waggressive-loop-optimizations` sites in 20 modules** and 35
+`-Warray-bounds` sites. The loop list, in full:
+
+| module | sites |
+|---|---|
+| `m446Dll/cursor.c` | 6 |
+| `m442Dll/score.c`, `m453Dll/score.c` | 4 each |
+| `E3setupDLL/mgselect.c`, `m425Dll/thwomp.c` | 3 each |
+| `m440Dll/main.c`, `mstory3Dll/result.c`, `game/board/shop.c` | 2 each |
+| `m415Dll/map.c`, `m419Dll/main.c`, `m420dll/player.c`, `m427Dll/map.c`, `m428Dll/map.c`, `m430Dll/player.c`, `m443Dll/main.c`, `m446Dll/stage.c`, `m447dll/main.c`, `m449Dll/main.c`, `ztardll/main.c`, `game/board/last5.c` | 1 each |
+
+Not all 39 are bugs. The warning fires whenever GCC uses an out-of-bounds
+access to bound a loop, and that is harmless when the loop's own bound is
+already tight — `for (j = 0; j < 4; j++)` over a `[4]` array warns about the
+iteration that never happens. It is a bug when the loop's bound *exceeds* the
+array, because then the deletion is of a test that was doing real work. Telling
+the two apart needs the disassembly, one function at a time.
+
+So there are two changes here and they are deliberately different in kind.
+`patches.txt` corrects the one declaration whose right length is knowable from
+the code around it. `GAME_CFLAGS` gains `-fno-aggressive-loop-optimizations`
+for the PowerPC target, because in a decompilation every array length is a
+reconstruction and this optimisation is entitled to turn any wrong one into an
+unbounded write. The flag only changes code where it fires. It is the thing
+that keeps the other 38 from being somebody's next evening.
+
+This is the most portable result of the session: it is not specific to this
+game. Any decompilation built with a modern GCC at `-O2` has this hazard, and
+`ubaudit.sh` is thirty lines.
+
+### 18.4 The end-of-game crash: a draw list built from indices nobody maintains
+
+`mstory3Dll/result.c` is on §18.3's list twice, which looked for a while like
+the same answer twice. It is not: neither of those two loops loses its bound
+(`-fno-aggressive-loop-optimizations` changes `fn_1_194A0` and `fn_1_1C534` by
+zero instructions), and the declaration involved — `s32 unk34[4][2]` followed
+by eight more hand-named pairs up to a struct size of exactly `0x34 + 12*8 =
+0x94` — is the same kind of split as m425's and reaches exactly the bytes the
+console reached. Worth correcting for clarity; not this crash.
+
+The crash is simpler and it is in `sprman.c`. `HuSprBegin` rebuilds the draw
+order list every frame by walking every group's member array, and the only test
+it made was `member != -1` (sprman.c:99). Nothing in that file keeps the member
+arrays in step with the slots:
+
+- `HuSprKill` (sprman.c:382) clears `HuSprData[i].data` and does **not** unlink
+  `i` from any group. `HuSprGrpMemberKill` is the one that does both; the plain
+  kill is called directly from `thpmain.c:201` and `minigame_seq.c:321`.
+- `HuSprCreate` (sprman.c:251) reuses the first slot with `data == NULL`, so the
+  group's stale index silently starts naming somebody else's sprite.
+- `HuSprCall` (sprman.c:141) then dereferences
+  `sprite->data->bank[sprite->bank].frame[...]` with no validity test at all,
+  and it does so *before* `HuSprExec`'s `DISPOFF` and `drawNo` filters, so a
+  stale sprite crashes even when it is invisible.
+
+`0x88888888` fits that and fits nothing else. There is no fill-on-free anywhere
+in this tree — `HuMemMemoryFree` (memory.c:93) rewrites the block header and
+leaves the body alone, and `HuMemHeapInit` writes `0xCD` magic and a
+`0xCDCDCDCD` return address into headers only. It is not an unloaded overlay's
+bss either: `portDLLClose` keeps the module mapped and forces `zero_bss` on
+re-entry (dll_load.c:332), and fresh bss reads as zero, not `0x88`. So
+`--relzerobss` and `--reldlclose`, which §17.10 nominated, are the wrong
+experiment. `0x88888888` is whatever word now lives at `data + 8` in a block
+that was freed and handed out again — a use-after-free signature, and a
+perfectly ordinary grey pixel if the block was reused for a bitmap.
+
+`HuSprBegin` now asks the question the loop should always have asked: is this
+an in-range slot holding a pointer that is inside one of the game's five heaps?
+A `FUNC` sprite keeps its callback in the same union and that is a text
+address, so the heap test is made only where `data` really is an `ANIMDATA *`.
+A member that fails is dropped from the group as well as from the list, because
+a stale index that survives the frame is back on the next one and sixty reports
+a second is not a diagnosis.
+
+This is a guard, not a fix, and the commit says so. It converts a SIGSEGV into
+a named report and one missing sprite, and the report says which group and
+which slot — which is where the next session looks. The leak itself is most
+likely on the other side of the results transition: `mstory3Dll` contains
+exactly one `HuSprGrpKill` and no `HuSprKill` at all, and `result_seq.c:602`
+has the screen tear itself down and rebuild through `omOvlGotoEx`, which is the
+one moment a board's sprites and the results' sprites are both in flight.
+
+Also found while reading and not touched, because none of them is this crash
+and all of them want a test: `HuSprGrpCopy` (sprman.c:321) blind-copies `bg`
+without a matching `HuSprAnimLock`, so two sprites free one anim; and eight
+setters from `HuSprPosSet` to `HuSprScissorSet` index `HuSprData[members[m]]`
+with no `HUSPR_NONE` check, unlike `HuSprAttrSet` two lines above them, so a
+`HuSprCreate` that returns -1 writes through `HuSprData[-1]`.
+
+### 18.5 The audio budget: the flag left the inner loop, the measurement did not happen
+
+`voice_output_sample` is inlined into `render_voice`'s per-sample loop and read
+`port_opt.resample4` there. `port_opt` is a global struct and the loop calls
+`voice_decode_advance`, so GCC must assume the call changed it: the flag was
+reloaded and the branch re-tested on every output sample of every voice. It is
+a command-line flag. It is now read once per voice per frame and passed in;
+`port_musyx_mix_frame` grew 30 instructions specialising, and no `port_opt`
+reference is left in it.
+
+The rest of §17.9 item 3 did not happen and no number in §17.10 has been
+re-measured. There is no `aud` figure for either resampler from this session,
+because there was no machine to produce one, and an instruction count is not a
+millisecond.
+
+What exists instead is the experiment. `port/tools/audio_ab.sh` runs the same
+walk twice differing only by `--resample1`, pins the part that makes it an
+experiment (`--rtc dolphin --freshcard --com4 --turbo --perf --clickstat`),
+passes everything else through, and prints both `aud` lines, both
+`--clickstat` counts, and the last status line of each run — because the
+comparison is worthless unless both sides reached the same place, which is
+precisely what went wrong in §17.6. `G4=1 port/tools/audio_ab.sh --frames
+40000` is the whole of the remaining work, and it is twenty minutes on a
+machine that answers.
+
+The decision it feeds is worth stating in advance so that it is not re-argued:
+the 4-tap filter exists for §16.7's discontinuity count and for nothing else.
+If linear is cheaper *and* clicks no more, linear should be the default and the
+4-tap should be the flag.
+
+### 18.6 The harness: the watchdog now watches the game, not the clock
+
+§17.10's soak fired the stuck watchdog ten times and all ten were false. The
+signal was `omcurovl` + `omovlevtno`, which is right for a menu waiting on a
+button nobody will press and wrong for a board: four CPU players walking Toad's
+Midway Madness at 10 fps sit in one overlay and one event for well over ninety
+seconds between a minigame's results and the next roulette, in perfect health.
+Ten false positives are how a real one gets missed.
+
+The watch now hashes the words that move whenever the game is alive and stop
+when it is not: the overlay and its event, the turn and whose turn it is, and
+every player's coins, stars and current space. A piece moving one space re-arms
+it. The one case a progress signal cannot cover is a minigame, which
+legitimately runs a minute with none of those moving — so the limit is per
+screen and an overlay `omMgIndexGet` recognises gets four times the patience.
+The report says which limit applied, because a threshold that is not in the
+output is a threshold nobody can argue with.
+
+`mg_next` is range-checked before printing, which is where `mg 65936` came
+from. `--rtcoffset SECS` is §17.9 item 4: `--rtc` gives both rigs the same
+clock origin and they still deal different minigames, because `BoardRandInit`
+seeds from `OSGetTime` at board setup and the port gets there some 300 frames
+earlier — no DVD seek, no opening movie. 300 frames is `--rtcoffset 5.0`; the
+real number is a subtraction between the two rigs' `--ovllog` timestamps at the
+board's first frame, and `OSInit` prints what it was given so two logs can be
+compared. It is applied after argument parsing, so the two flags may be given
+in either order.
+
+### 18.7 The soak did not run
+
+`port/docs/m8-soak.log` does not exist and no minigame module was entered this
+session. Everything in §18 is a compiler result, a disassembly, or a reading of
+the source. The port builds clean for both targets at every commit and the
+guard pages are exercised by `--guardtest` on the host; nothing else here has
+touched hardware.
+
+That is the honest shape of the milestone, and it is worth being exact about
+which claims are which:
+
+| claim | evidence |
+|---|---|
+| guards fault at the boundary and are named | `--guardtest`, all five edges, host |
+| m425's loop lost its bound | disassembly of the shipped bundle, 655 insns, no bound test |
+| the declaration is why | `unk_3C[6]` restores it; 974 insns, matching `-fno-aggressive-loop-optimizations` |
+| 39 more sites of the same shape | `ubaudit.sh` over 349 files, 0 compile failures |
+| m425 now plays to its result screen | **not tested** |
+| `0x88888888` is a use-after-free, not poison and not bss | grep of the whole tree; `memory.c` fills nothing; `portDLLClose` zeroes bss on re-entry |
+| the sprite guard stops the crash | **not tested** |
+| the audio A/B | **not run** |
+| a board completes into the results | **not tested** |
+
+### 18.8 Tooling added
+
+| flag / tool | what |
+|---|---|
+| `--guardtest WHERE` | `mem1-hi`, `mem1-lo`, `aram-hi`, `aram-lo`, `stack-lo`: write one byte past that edge and expect a named fault. The regression test for the guards, and it runs anywhere the port builds |
+| `--memmap` | the region table at boot, guards included |
+| `--rtcoffset SECS` | shift the deterministic clock's origin, so the port reaches `BoardRandInit` at the console's reading rather than 300 frames early |
+| `port/tools/ubaudit.sh` | recompile the mirror with `-Waggressive-loop-optimizations` and `-Warray-bounds`, which `-w` has been hiding since M1. 39 + 35 sites |
+| `port/tools/audio_ab.sh` | the controlled resampler A/B as one command, both `aud` lines and both `--clickstat` counts, and the last status line of each run so the comparison can be checked |
+| `dsymutil` + `llvm-symbolizer` on a bundle | the REL modules are built with `-g` and keep every local symbol; a fault offset resolves to file and line without arithmetic. §17.7 did this by hand from `_epilog` and landed twelve lines away |
+| `G4_HOST=g4-jump` | needs `littlejelly` to be up on Tailscale. When it is not, and the LAN reuses `192.168.0.200`, there is no route to the lab at all — worth knowing before planning a session around it |
+
+### 18.9 What M9 needs
+
+1. **Run everything in §18.7's "not tested" column.** In order, and it is
+   perhaps ninety minutes: `--minigame m425 --com4 --rtc dolphin --freshcard
+   --turbo` to its result screen with a screenshot; a shortest-possible board
+   with four CPU players through the results and back to the menu with a
+   screenshot; `G4=1 port/tools/audio_ab.sh --frames 40000`; then the soak.
+   Every one of them is a single command that already exists.
+2. **The sprite guard's report is the next diagnosis.** If it fires, it names a
+   group and a slot, and the question becomes which module left the index —
+   look first at the `omOvlKill` either side of `result_seq.c:602`. If it does
+   not fire and the crash still happens, the reading in §18.4 is wrong and
+   `HuSprCall` should range-check `data` itself and dump the order entry.
+3. **Work down §18.3's list of 39.** `-fno-aggressive-loop-optimizations` holds
+   the line, but each site is a struct declaration that is wrong, and a wrong
+   struct declaration in a decomp is worth fixing upstream — these are
+   contributions to the decompilation, not to the port. `m446Dll/cursor.c` has
+   six and is the place to start.
+4. **Then M8's own scope**, which this session never reached: Nightmare CPU,
+   widescreen or a higher internal resolution, THP, the launcher slot alongside
+   the two Snowboard Kids apps, bring-your-own-disc, the `.dmg`.
+5. **A regression script**, still. §17.9 item 5 asked for one and it is still
+   the thing that would have made this session's changes checkable in one
+   command rather than four. `audio_ab.sh` is the shape of it.

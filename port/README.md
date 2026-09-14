@@ -203,7 +203,8 @@ Then the harness, which plays the game itself:
 | `--minigame NAME\|ID` | park the roulette on one minigame: `--minigame m425dll`, `--minigame 425` and `--minigame 24` are the same thing. Reproducing a crash in a named module stops being a twenty-minute dice roll |
 | `--turns N` | the board's turn count |
 | `--status` | one line a second: screen, board, turn, the module the roulette dealt, coins and stars per player, `aud` ms and fps |
-| `--stuckwatch SEC` | the live screen has not changed in SEC seconds: name it |
+| `--stuckwatch SEC` | the game has made no *progress* in SEC seconds: name the screen. The signal is the overlay, its event, the turn, whose turn it is, and every player's coins, stars and space -- not the screen alone, which is why the first soak reported a healthy board as stuck ten times. A minigame gets four times the limit, because it is the one screen with no progress signal visible from out here |
+| `--rtcoffset SECS` | shift the deterministic clock's origin, so the port reaches `BoardRandInit` at the console's reading rather than ~300 frames early. 1 frame = 1/60 s |
 | `--soak` | all of the above, from boot, logging every minigame module entered and left, for as long as you leave it |
 
 ```sh
@@ -250,6 +251,8 @@ crashed run does not leave a half-written save behind for the next one.
 | `ref/movies/board-start.play` | past the board settings into Toad's Midway Madness and its first minigame |
 | `ref/movies/board-start.txt` | the same walk on the Dolphin side, for `tools/mkgecko.py` |
 | `tests/mtx_test.c` | the matrix library against itself: `make -C port TARGET=host mtxtest` |
+| `tools/ubaudit.sh` | recompile the mirror with `-Waggressive-loop-optimizations` and `-Warray-bounds`, which the build's `-w` hides. A struct array declared one element short lets GCC delete a loop's exit test; that was the m425dll crash, and there are 39 more sites of the same shape (PLAN.md §18.3) |
+| `tools/audio_ab.sh` | the resampler A/B as one command: the same walk twice, differing only by `--resample1`, with both `aud` lines and both `--clickstat` counts |
 | `Makefile` | the whole build, `TARGET=host` or `TARGET=ppc-darwin` |
 | `build-ppc.sh` | the Docker wrapper around the PowerPC cross build |
 | `patches.txt` | every change the port makes to game sources, as exact text |
