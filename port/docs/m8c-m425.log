@@ -1,0 +1,1394 @@
+Mario Party 4 -- native port, milestone M2a
+port> DVD: disc image /Users/zach/MarioParty4/mp4.nkit.iso, 357 files in the FST
+port> GL: ATI Radeon 9000 OpenGL Engine / 1.3 ATI-1.5.28, 6 texture units
+port> GL feature set used: combine3 1, crossbar 1, s3tc 1, blend_subtract 1, depth_texture 0, 6 units
+port> audio: 32000 Hz, 2 ch, 512-frame buffer, 64 KB ring (512 ms)
+port> --minigame m425: parking the roulette on m425dll (mg 425, type 2)
+port> --com4: all four players are CPU; instDll will dismiss its own instruction screen (src/REL/instDll/main.c:294)
+port> entering the game's own main()
+
+port> OSInit: MEM1 24 MB [0x2020000, 0x3820000), ARAM 16 MB, bus 162 MHz
+port> OSInit: RTC pinned to 1041472800 (2003-01-02T02:00:00Z), OSGetTime origin 3838914000000000 ticks
+port> DVDInit
+port> VIInit
+port> PADInit: no pad found; controller 1 = keyboard
+port> PADInit: rumble not available
+port> PADInit: controllers 2-4 unplugged (reference config: CPU players)
+port> pad: --play: board-start.play -> /Users/zach/isle.app/Contents/Resources/movies/board-start.play
+port> pad: --play board-start.play: 464 directives, 0 marks
+port> OSCreateHeap 0: 0x214c000..0x3820000 (23375 KB)
+port> VIConfigure: 640x480 xfb, 640x480 efb, tv mode 0
+port> GXInit: FIFO 0x214c00c, 1048576 bytes (the port keeps no FIFO; the write-gather writers are ordinary calls under TARGET_PC)
+port> roulette: frame 1 dealt mg 401 (m401dll, type 0)  -- overridden by --minigame
+port> OSCreateThread 0x199430 func 0x41ea0 (the soft-reset watcher; polled once per retrace, not run on a thread)
+HuMem> left memory space 2383KB(2441120)
+port> ARInit: 16 MB of ARAM
+port> MusyX SAL: 32000 Hz, 4 x 640-byte AI buffers (20 ms), 32-sample sub-frame
+port> musyx_mix: CPU mixer up, 50 voices, 1 studios, 32000 Hz
+port> MusyX SAL: mixing started
+port> musyx_aram: region [0x000000, 0x800000) zero_buf [0x000000, 0x000500) sample heap starts at 0x000500
+port> CARD: slot A = /Users/zach/m425.raw (--freshcard: formatted, 59 free blocks)
+DLL DBG OUT
+objman>Call New Ovl 1(1)
+++++++++++++++++++++ Start New OVL 1 (EVT:0 STAT:0x00000000) ++++++++++++++++++
+objman>Used Memory Size:000121e0
+objman>Used Memory Cnt:2
+objman>Init esp
+objman>Call objectsetup
+DLLStart 1 0
+Search:dll/bootdll.rel
+objdll>Link DLL:dll/bootdll.rel
+Rest Memory 580000
+port> REL bundles: 99 in /Users/zach/isle.app/Contents/MacOS/rels
+===== DLL Module Info dump ====
+                   ID:0x00000001
+             LinkPrev:0x00000000
+             LinkNext:0x00000000
+          Section num:14
+Section info tbl ofst:0x00000048
+           nameOffset:0x00000000
+             nameSize:47
+              version:0x00000002
+===============================
+==== DLL Module Header dump ====
+          bss Size:0x0000005c
+        rel Offset:0x00005c9d
+        imp Offset:0x00007a4d
+    prolog Section:1
+    epilog Section:1
+unresolved Section:0
+       prolog func:0x00000000
+       epilog func:0x00000054
+   unresolved func:0x00000000
+================================
+objdll>LinkOK 0225e578 00ad0c60
+objdll> dll/bootdll.rel prolog start
+******* Boot ObjectSetup *********
+objman>InitObjMan start
+objman>InitObjMan end
+objdll> dll/bootdll.rel prolog end
+objman>ObjectSetup end
+DLL DBG OUT
+Rest Memory 57d540
+ARAM Trans 808000
+Rest Memory 55d020
+ARAM Trans 80aaa0
+Rest Memory 506400
+ARAM Trans 82da60
+Rest Memory 564f40
+ARAM Trans 8a7640
+Rest Memory 5395a0
+data num 74000b
+Rest Memory 1f08c0
+port> status f60      bootdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.11 ms  0.0 fps
+port> status f120     bootdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.14 ms  403.3 fps
+port> status f180     bootdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.12 ms  633.4 fps
+port> status f240     bootdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.11 ms  577.6 fps
+port> status f300     bootdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.11 ms  260.0 fps
+port> status f360     bootdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.10 ms  379.2 fps
+port> status f420     bootdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.11 ms  632.7 fps
+port> status f480     bootdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.10 ms  634.2 fps
+port> status f540     bootdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.11 ms  586.1 fps
+0
+GroupSet 0
+***********GroupSet Error 0
+port> status f600     bootdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.11 ms  451.2 fps
+port> THP: movie/opmov_a00.thp skipped -- movie decode is M8 (see port/src/dvd/thp_stub.c)
+port> HuSprBegin: group 3 slot 0 names sprite 7, which is not a live sprite (data 0x0, attr 0010) -- dropped [1/32]
+port> status f660     bootdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.11 ms  581.2 fps
+port> status f720     bootdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.11 ms  712.0 fps
+>>>>>>>>MSM_SE_SEL_01 0
+>>>>>>>>SE Num 0
+port> audio: first non-silent sample at retrace 726 (12.03 s of mixed audio)
+port> status f780     bootdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.38 ms  6.8 fps
+port> status f840     bootdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.41 ms  6.7 fps
+port> musyx_mix: MEM1 sample id 1074 compType 0 at 0x2c9fb50 len 12059824: 00 00 00 0f 0f 00 00 0f 00 00 00 00 00 00 0f 00
+port> musyx_mix: MEM1 sample id 1073 compType 0 at 0x2c98890 len 12089200: 00 00 00 00 0f 00 00 0f 00 00 00 00 00 00 00 00
+port> musyx_mix: MEM1 sample id 1076 compType 0 at 0x2cc0430 len 11926480: 34 95 2f 1f ff 02 1f f0 33 20 f0 43 fa e7 71 be
+port> musyx_mix: MEM1 sample id 1075 compType 0 at 0x2ca6e10 len 12030448: 73 7e f0 d2 0e 01 13 fe 12 f3 20 26 1b e6 49 b6
+objman>Call New Ovl 74(1)
+OvlKill 1
+objdll>omDLLNumEnd 1 1
+Search:dll/bootdll.rel
++++++++++++ Find0: dll/bootdll.rel
+objdll>omDLLEnd 0 1
+objdll>End DLL:dll/bootdll.rel
+odjdll>Unlink DLL:dll/bootdll.rel
+objdll>Unlink DLL epilog
+objdll>Unlink DLL epilog finish
+objdll>End DLL finish
+objman>Destory ObjMan
+++++++++++++++++++++ Start New OVL 74 (EVT:0 STAT:0x00000000) ++++++++++++++++++
+objman>Used Memory Size:00012b80
+objman>Used Memory Cnt:7
+objman>Init esp
+objman>Call objectsetup
+############CharGrpSet
+Del Group OK
+port> musyx_aram: aramRemoveData(22208) with an empty sample heap.  Expected: hwSaveSample only stores on the Dolphin target, so msm owns sample upload and MusyX only ever frees.  Clamped; further occurrences are counted, not printed.
+SOUND ##########################
+0
+GroupSet 0
+***********GroupSet Error 0
+Change AUX 0,1
+##########################
+DLLStart 74 0
+Search:dll/modeseldll.rel
+objdll>Link DLL:dll/modeseldll.rel
+Rest Memory 580000
+===== DLL Module Info dump ====
+                   ID:0x00000001
+             LinkPrev:0x00000000
+             LinkNext:0x00000000
+          Section num:15
+Section info tbl ofst:0x00000048
+           nameOffset:0x00000000
+             nameSize:53
+              version:0x00000002
+===============================
+==== DLL Module Header dump ====
+          bss Size:0x000001ca
+        rel Offset:0x0000d154
+        imp Offset:0x0001664c
+    prolog Section:1
+    epilog Section:1
+unresolved Section:0
+       prolog func:0x00000000
+       epilog func:0x00000054
+   unresolved func:0x00000000
+================================
+objdll>LinkOK 0225e578 00ab4430
+objdll> dll/modeseldll.rel prolog start
+******* MS ObjectSetup *********
+objman>InitObjMan start
+objman>InitObjMan end
+Rest Memory 5395a0
+objdll> dll/modeseldll.rel prolog end
+objman>ObjectSetup end
+DLL DBG OUT
+data num 630000
+Rest Memory 441ce0
+port> status f900     modeseldll   board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.88 ms  8.2 fps
+port> status f960     modeseldll   board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.29 ms  219.4 fps
+port> status f1020    modeseldll   board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.71 ms  224.8 fps
+port> status f1080    modeseldll   board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.90 ms  214.5 fps
+port> status f1140    modeseldll   board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.93 ms  213.3 fps
+port> status f1200    modeseldll   board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.00 ms  212.1 fps
+Init
+port> status f1260    modeseldll   board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.84 ms  59.0 fps
+ARAM data num 86001f
+port> status f1320    modeseldll   board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.69 ms  63.1 fps
+port> CARD: created "MARIPA4BOX0", 16384 bytes (2 blocks)
+port> status f1380    modeseldll   board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.20 ms  58.6 fps
+port> THP: movie/opmov_s00.thp skipped -- movie decode is M8 (see port/src/dvd/thp_stub.c)
+port> HuSprBegin: group 1 slot 0 names sprite 12, which is not a live sprite (data 0x0, attr 0010) -- dropped [2/32]
+port> status f1440    modeseldll   board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.80 ms  55.1 fps
+port> status f1500    modeseldll   board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.19 ms  60.7 fps
+port> status f1560    modeseldll   board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.78 ms  62.6 fps
+port> status f1620    modeseldll   board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.28 ms  59.4 fps
+port> status f1680    modeseldll   board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.06 ms  57.2 fps
+port> status f1740    modeseldll   board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.11 ms  58.3 fps
+port> THP: movie/opmov_c00.thp skipped -- movie decode is M8 (see port/src/dvd/thp_stub.c)
+port> HuSprBegin: group 2 slot 0 names sprite 14, which is not a live sprite (data 0x0, attr 0010) -- dropped [3/32]
+port> status f1800    modeseldll   board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.00 ms  60.2 fps
+port> status f1860    modeseldll   board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.79 ms  62.3 fps
+port> status f1920    modeseldll   board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.75 ms  61.7 fps
+objman>Call New Ovl 70(1)
+OvlKill 1
+objdll>omDLLNumEnd 74 1
+Search:dll/modeseldll.rel
++++++++++++ Find0: dll/modeseldll.rel
+objdll>omDLLEnd 0 1
+objdll>End DLL:dll/modeseldll.rel
+odjdll>Unlink DLL:dll/modeseldll.rel
+objdll>Unlink DLL epilog
+objdll>Unlink DLL epilog finish
+objdll>End DLL finish
+objman>Destory ObjMan
+++++++++++++++++++++ Start New OVL 70 (EVT:0 STAT:0x00000000) ++++++++++++++++++
+objman>Used Memory Size:00012b80
+objman>Used Memory Cnt:7
+objman>Init esp
+objman>Call objectsetup
+DLLStart 70 0
+Search:dll/mentdll.rel
+objdll>Link DLL:dll/mentdll.rel
+Rest Memory 580000
+===== DLL Module Info dump ====
+                   ID:0x00000001
+             LinkPrev:0x00000000
+             LinkNext:0x00000000
+          Section num:15
+Section info tbl ofst:0x00000048
+           nameOffset:0x00000000
+             nameSize:47
+              version:0x00000002
+===============================
+==== DLL Module Header dump ====
+          bss Size:0x000036c4
+        rel Offset:0x000246f8
+        imp Offset:0x00036a90
+    prolog Section:1
+    epilog Section:1
+unresolved Section:0
+       prolog func:0x000000a4
+       epilog func:0x000000f8
+   unresolved func:0x00000000
+================================
+objdll>LinkOK 022841f8 00af2e20
+objdll> dll/mentdll.rel prolog start
+objman>InitObjMan start
+objman>InitObjMan end
+Rest Memory 5395a0
+0
+GroupSet 7
+***********GroupSet Error 0
+objdll> dll/mentdll.rel prolog end
+objman>ObjectSetup end
+DLL DBG OUT
+data num 600008
+Rest Memory 1ad6c0
+ARAM data num 120006
+port> status f1980    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.35 ms  25.3 fps
+########### ME_MainProcFunc000
+port> status f2040    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.18 ms  24.8 fps
+port> status f2100    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.41 ms  25.0 fps
+port> status f2160    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.41 ms  12.4 fps
+port> status f2220    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.41 ms  10.2 fps
+port> status f2280    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.41 ms  10.2 fps
+port> status f2340    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.41 ms  10.6 fps
+port> status f2400    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.42 ms  10.6 fps
+port> status f2460    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.92 ms  10.5 fps
+port> status f2520    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.68 ms  10.3 fps
+port> status f2580    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.04 ms  10.4 fps
+port> status f2640    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.85 ms  10.3 fps
+port> status f2700    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.10 ms  10.5 fps
+port> status f2760    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.22 ms  10.4 fps
+port> status f2820    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.22 ms  10.5 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+port> status f2880    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.32 ms  10.7 fps
+port> status f2940    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.32 ms  10.5 fps
+port> status f3000    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.44 ms  10.4 fps
+#########SE Entry Error<SE 54:ErrorNo -110>
+port> status f3060    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.31 ms  10.4 fps
+#########SE Entry Error<SE 109:ErrorNo -110>
+#########SE Entry Error<SE 57:ErrorNo -110>
+port> status f3120    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.83 ms  10.4 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f3180    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.03 ms  10.3 fps
+#########SE Entry Error<SE 110:ErrorNo -110>
+port> status f3240    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.17 ms  10.3 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+port> status f3300    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.52 ms  10.2 fps
+#########SE Entry Error<SE 111:ErrorNo -110>
+port> status f3360    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.17 ms  10.4 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+port> status f3420    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.26 ms  10.3 fps
+#########SE Entry Error<SE 112:ErrorNo -110>
+port> status f3480    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.61 ms  10.3 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+port> status f3540    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.08 ms  10.3 fps
+port> status f3600    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.75 ms  10.3 fps
+port> status f3660    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.36 ms  10.5 fps
+#########SE Entry Error<SE 57:ErrorNo -110>
+port> status f3720    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.17 ms  10.5 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+#########SE Entry Error<SE 83:ErrorNo -110>
+#########SE Entry Error<SE 54:ErrorNo -110>
+port> status f3780    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.09 ms  10.4 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+port> status f3840    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.48 ms  10.4 fps
+#########SE Entry Error<SE 57:ErrorNo -110>
+#########SE Entry Error<SE 84:ErrorNo -110>
+port> status f3900    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.62 ms  10.6 fps
+#########SE Entry Error<SE 84:ErrorNo -110>
+#########SE Entry Error<SE 84:ErrorNo -110>
+port> status f3960    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.60 ms  10.4 fps
+#########SE Entry Error<SE 84:ErrorNo -110>
+port> status f4020    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.73 ms  10.3 fps
+port> status f4080    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.10 ms  10.4 fps
+port> status f4140    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.41 ms  10.5 fps
+#########SE Entry Error<SE 54:ErrorNo -110>
+port> status f4200    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.89 ms  10.5 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f4260    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.58 ms  10.5 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+port> status f4320    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.79 ms  10.5 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+port> status f4380    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.04 ms  10.5 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+port> status f4440    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.00 ms  10.3 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+port> status f4500    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.58 ms  10.2 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+#########SE Entry Error<SE 54:ErrorNo -110>
+port> status f4560    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.52 ms  10.3 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+port> status f4620    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.78 ms  10.4 fps
+port> status f4680    mentdll      board 0 turn 0/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.59 ms  10.2 fps
+#########SE Entry Error<SE 84:ErrorNo -110>
+port> status f4740    mentdll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.44 ms  12.6 fps
+#########SE Entry Error<SE 84:ErrorNo -110>
+Rest Memory 3f5780
+Rest Memory 420c20
+#########SE Entry Error<SE 84:ErrorNo -110>
+port> status f4800    mentdll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.75 ms  17.5 fps
+#########SE Entry Error<SE 55:ErrorNo -110>
+port> status f4860    mentdll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.39 ms  18.5 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f4920    mentdll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.82 ms  18.5 fps
+#########SE Entry Error<SE 117:ErrorNo -110>
+#########SE Entry Error<SE 118:ErrorNo -110>
+#########SE Entry Error<SE 119:ErrorNo -110>
+#########SE Entry Error<SE 120:ErrorNo -110>
+#########SE Entry Error<SE 125:ErrorNo -110>
+port> status f4980    mentdll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.29 ms  18.4 fps
+#########SE Entry Error<SE 34:ErrorNo -110>
+port> status f5040    mentdll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.26 ms  18.6 fps
+port> status f5100    mentdll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.18 ms  18.5 fps
+Rest Memory 2e2fa0
+ARAM Trans a4cf40
+Rest Memory 2da580
+ARAM Trans b8aba0
+Rest Memory 2ed200
+ARAM Trans cd1220
+Rest Memory 2c7a80
+ARAM Trans e04c20
+objman>Call New Ovl 89(1)
+OvlKill 1
+objdll>omDLLNumEnd 70 1
+Search:dll/mentdll.rel
++++++++++++ Find0: dll/mentdll.rel
+objdll>omDLLEnd 0 1
+objdll>End DLL:dll/mentdll.rel
+odjdll>Unlink DLL:dll/mentdll.rel
+objdll>Unlink DLL epilog
+objdll>Unlink DLL epilog finish
+objdll>End DLL finish
+objman>Destory ObjMan
+++++++++++++++++++++ Start New OVL 89 (EVT:0 STAT:0x00000000) ++++++++++++++++++
+objman>Used Memory Size:000212e0
+objman>Used Memory Cnt:15
+objman>Init esp
+objman>Call objectsetup
+SOUND ##########################
+0
+GroupSet 9
+***********GroupSet Error 0
+##########################
+DLLStart 89 0
+Search:dll/w01dll.rel
+objdll>Link DLL:dll/w01dll.rel
+Rest Memory 420c20
+===== DLL Module Info dump ====
+                   ID:0x00000001
+             LinkPrev:0x00000000
+             LinkNext:0x00000000
+          Section num:16
+Section info tbl ofst:0x00000048
+           nameOffset:0x00000000
+             nameSize:45
+              version:0x00000002
+===============================
+==== DLL Module Header dump ====
+          bss Size:0x0000081c
+        rel Offset:0x00012e34
+        imp Offset:0x0001f174
+    prolog Section:1
+    epilog Section:1
+unresolved Section:0
+       prolog func:0x00000030
+       epilog func:0x00000094
+   unresolved func:0x00000000
+================================
+objdll>LinkOK 0225e578 00ac4820
+objdll> dll/w01dll.rel prolog start
+objman>InitObjMan start
+objman>InitObjMan end
+objdll> dll/w01dll.rel prolog end
+objman>ObjectSetup end
+DLL DBG OUT
+Rest Memory 37b3c0
+Rest Memory 334960
+data num 5e0000
+Rest Memory 31dea0
+ARAM data num 120006
+data num 190000
+Rest Memory 322ae0
+data num 6c0000
+Rest Memory 302e20
+data num 890000
+Rest Memory 31a860
+ARAM data num 7001d
+data num 50000
+Rest Memory 136ce0
+data num 90000
+Rest Memory 1424a0
+port> status f5160    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.32 ms  8.1 fps
+port> status f5220    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.42 ms  10.7 fps
+port> status f5280    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.41 ms  10.6 fps
+port> status f5340    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.41 ms  10.7 fps
+port> status f5400    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.42 ms  10.6 fps
+port> status f5460    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.41 ms  10.6 fps
+port> status f5520    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.42 ms  11.4 fps
+port> status f5580    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.41 ms  15.2 fps
+port> status f5640    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.41 ms  19.4 fps
+port> status f5700    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.41 ms  24.9 fps
+port> status f5760    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.41 ms  25.1 fps
+port> status f5820    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.41 ms  24.9 fps
+#########SE Entry Error<SE 269:ErrorNo -110>
+#########SE Entry Error<SE 269:ErrorNo -110>
+port> status f5880    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.48 ms  17.6 fps
+#########SE Entry Error<SE 333:ErrorNo -110>
+#########SE Entry Error<SE 333:ErrorNo -110>
+#########SE Entry Error<SE 397:ErrorNo -110>
+#########SE Entry Error<SE 397:ErrorNo -110>
+port> status f5940    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.28 ms  13.7 fps
+#########SE Entry Error<SE 461:ErrorNo -110>
+port> status f6000    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.20 ms  12.0 fps
+#########SE Entry Error<SE 54:ErrorNo -110>
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f6060    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.19 ms  12.0 fps
+port> status f6120    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.48 ms  11.9 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f6180    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.21 ms  11.8 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f6240    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.07 ms  11.8 fps
+#########SE Entry Error<SE 770:ErrorNo -110>
+#########SE Entry Error<SE 770:ErrorNo -110>
+#########SE Entry Error<SE 770:ErrorNo -110>
+#########SE Entry Error<SE 770:ErrorNo -110>
+port> status f6300    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.06 ms  11.7 fps
+#########SE Entry Error<SE 768:ErrorNo -110>
+#########SE Entry Error<SE 768:ErrorNo -110>
+#########SE Entry Error<SE 768:ErrorNo -110>
+#########SE Entry Error<SE 768:ErrorNo -110>
+#########SE Entry Error<SE 771:ErrorNo -110>
+#########SE Entry Error<SE 771:ErrorNo -110>
+#########SE Entry Error<SE 771:ErrorNo -110>
+port> status f6360    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.15 ms  11.2 fps
+#########SE Entry Error<SE 771:ErrorNo -110>
+port> status f6420    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.08 ms  11.3 fps
+port> status f6480    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.72 ms  11.5 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+#########SE Entry Error<SE 290:ErrorNo -110>
+port> status f6540    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.52 ms  11.9 fps
+port> status f6600    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.95 ms  11.8 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f6660    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.41 ms  11.6 fps
+#########SE Entry Error<SE 418:ErrorNo -110>
+port> status f6720    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.14 ms  11.6 fps
+port> status f6780    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.11 ms  11.7 fps
+port> status f6840    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.32 ms  11.8 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+#########SE Entry Error<SE 354:ErrorNo -110>
+port> status f6900    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.40 ms  11.8 fps
+port> status f6960    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.14 ms  12.0 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f7020    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.16 ms  12.0 fps
+port> status f7080    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.40 ms  11.7 fps
+#########SE Entry Error<SE 482:ErrorNo -110>
+port> status f7140    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.18 ms  11.8 fps
+port> status f7200    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.75 ms  11.8 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f7260    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.86 ms  11.8 fps
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+port> status f7320    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 9/0c 9/0c 9/0c 9/0c  aud 2.22 ms  11.8 fps
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 15:ErrorNo -110>
+#########SE Entry Error<SE 354:ErrorNo -110>
+#########SE Entry Error<SE 290:ErrorNo -110>
+#########SE Entry Error<SE 418:ErrorNo -110>
+port> status f7380    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 1.95 ms  11.7 fps
+#########SE Entry Error<SE 482:ErrorNo -110>
+port> status f7440    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.01 ms  11.5 fps
+port> status f7500    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.04 ms  11.5 fps
+port> status f7560    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.13 ms  11.6 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f7620    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.16 ms  11.8 fps
+port> status f7680    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.63 ms  12.2 fps
+#########SE Entry Error<SE 54:ErrorNo -110>
+port> status f7740    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.64 ms  12.4 fps
+port> status f7800    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.64 ms  17.9 fps
+port> status f7860    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.63 ms  16.9 fps
+port> status f7920    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.93 ms  17.0 fps
+port> status f7980    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.82 ms  17.0 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f8040    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.75 ms  17.0 fps
+#########SE Entry Error<SE 775:ErrorNo -110>
+port> status f8100    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.71 ms  13.0 fps
+#########SE Entry Error<SE 770:ErrorNo -110>
+#########SE Entry Error<SE 768:ErrorNo -110>
+port> status f8160    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.71 ms  13.3 fps
+#########SE Entry Error<SE 771:ErrorNo -110>
+#########SE Entry Error<SE 780:ErrorNo -110>
+port> status f8220    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.65 ms  13.4 fps
+#########SE Entry Error<SE 261:ErrorNo -110>
+port> status f8280    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.80 ms  12.7 fps
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 325:ErrorNo -110>
+#########SE Entry Error<SE 389:ErrorNo -110>
+#########SE Entry Error<SE 453:ErrorNo -110>
+#########SE Entry Error<SE 325:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 389:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+port> status f8340    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.87 ms  12.0 fps
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 842:ErrorNo -110>
+#########SE Entry Error<SE 832:ErrorNo -110>
+port> status f8400    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.62 ms  16.3 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+port> status f8460    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.49 ms  18.4 fps
+port> status f8520    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.94 ms  18.3 fps
+#########SE Entry Error<SE 780:ErrorNo -110>
+#########SE Entry Error<SE 833:ErrorNo -110>
+port> status f8580    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 3.01 ms  18.0 fps
+#########SE Entry Error<SE 781:ErrorNo -110>
+#########SE Entry Error<SE 864:ErrorNo -110>
+#########SE Entry Error<SE 290:ErrorNo -110>
+port> status f8640    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 3.17 ms  17.5 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f8700    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.67 ms  17.8 fps
+#########SE Entry Error<SE 775:ErrorNo -110>
+port> status f8760    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.78 ms  15.7 fps
+#########SE Entry Error<SE 770:ErrorNo -110>
+#########SE Entry Error<SE 768:ErrorNo -110>
+port> status f8820    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.79 ms  14.5 fps
+#########SE Entry Error<SE 771:ErrorNo -110>
+#########SE Entry Error<SE 780:ErrorNo -110>
+port> status f8880    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.74 ms  14.6 fps
+port> status f8940    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.87 ms  14.8 fps
+#########SE Entry Error<SE 389:ErrorNo -110>
+#########SE Entry Error<SE 389:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 325:ErrorNo -110>
+#########SE Entry Error<SE 453:ErrorNo -110>
+#########SE Entry Error<SE 839:ErrorNo -110>
+#########SE Entry Error<SE 325:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 418:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+port> status f9000    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 12/0c 10/0c 10/0c  aud 2.79 ms  14.1 fps
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 15:ErrorNo -110>
+port> status f9060    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 10/0c 10/0c  aud 2.85 ms  14.4 fps
+port> status f9120    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 10/0c 10/0c  aud 2.69 ms  14.7 fps
+#########SE Entry Error<SE 775:ErrorNo -110>
+#########SE Entry Error<SE 770:ErrorNo -110>
+#########SE Entry Error<SE 768:ErrorNo -110>
+port> status f9180    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 10/0c 10/0c  aud 2.95 ms  15.0 fps
+port> status f9240    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 10/0c 10/0c  aud 2.89 ms  14.9 fps
+#########SE Entry Error<SE 771:ErrorNo -110>
+#########SE Entry Error<SE 780:ErrorNo -110>
+port> status f9300    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 10/0c 10/0c  aud 2.74 ms  15.1 fps
+#########SE Entry Error<SE 325:ErrorNo -110>
+#########SE Entry Error<SE 325:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+port> status f9360    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 10/0c 10/0c  aud 2.95 ms  14.0 fps
+#########SE Entry Error<SE 453:ErrorNo -110>
+#########SE Entry Error<SE 839:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 354:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 15:ErrorNo -110>
+port> status f9420    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 10/0c  aud 3.15 ms  14.3 fps
+port> status f9480    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 10/0c  aud 2.86 ms  14.6 fps
+#########SE Entry Error<SE 775:ErrorNo -110>
+port> status f9540    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 10/0c  aud 2.63 ms  15.2 fps
+#########SE Entry Error<SE 770:ErrorNo -110>
+#########SE Entry Error<SE 768:ErrorNo -110>
+port> status f9600    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 10/0c  aud 2.91 ms  15.1 fps
+#########SE Entry Error<SE 771:ErrorNo -110>
+#########SE Entry Error<SE 780:ErrorNo -110>
+port> status f9660    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 10/0c  aud 2.91 ms  15.0 fps
+port> status f9720    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 10/0c  aud 3.17 ms  14.4 fps
+#########SE Entry Error<SE 453:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 453:ErrorNo -110>
+#########SE Entry Error<SE 453:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 453:ErrorNo -110>
+port> status f9780    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 10/0c  aud 2.73 ms  12.2 fps
+#########SE Entry Error<SE 453:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 839:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 482:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 15:ErrorNo -110>
+port> status f9840    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.80 ms  11.9 fps
+port> status f9900    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.51 ms  12.2 fps
+port> status f9960    w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.73 ms  12.8 fps
+#########SE Entry Error<SE 852:ErrorNo -110>
+#########SE Entry Error<SE 853:ErrorNo -110>
+port> status f10020   w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.46 ms  15.9 fps
+port> status f10080   w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 3.16 ms  16.2 fps
+port> status f10140   w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.32 ms  16.4 fps
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+port> status f10200   w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.78 ms  16.1 fps
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+port> status f10260   w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.80 ms  16.1 fps
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 773:ErrorNo -110>
+port> status f10320   w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.95 ms  15.9 fps
+port> status f10380   w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.62 ms  15.9 fps
+port> status f10440   w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.51 ms  15.8 fps
+Rest Memory 40a8e0
+port> status f10500   w01dll       board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.34 ms  16.0 fps
+port> roulette: frame 10501 dealt mg 412 (m412dll, type 0)  -- overridden by --minigame
+objman>Call New Ovl 3(1)
+OvlKill 1
+objdll>omDLLNumEnd 89 1
+Search:dll/w01dll.rel
++++++++++++ Find0: dll/w01dll.rel
+objdll>omDLLEnd 0 1
+objdll>End DLL:dll/w01dll.rel
+odjdll>Unlink DLL:dll/w01dll.rel
+objdll>Unlink DLL epilog
+objdll>Unlink DLL epilog finish
+objdll>End DLL finish
+objman>Destory ObjMan
+++++++++++++++++++++ Start New OVL 3 (EVT:0 STAT:0x00000000) ++++++++++++++++++
+objman>Used Memory Size:000212e0
+objman>Used Memory Cnt:15
+objman>Init esp
+objman>Call objectsetup
+DLLStart 3 0
+Search:dll/instdll.rel
+objdll>Link DLL:dll/instdll.rel
+Rest Memory 40a8e0
+===== DLL Module Info dump ====
+                   ID:0x00000001
+             LinkPrev:0x00000000
+             LinkNext:0x00000000
+          Section num:15
+Section info tbl ofst:0x00000048
+           nameOffset:0x00000000
+             nameSize:47
+              version:0x00000002
+===============================
+==== DLL Module Header dump ====
+          bss Size:0x00000064
+        rel Offset:0x00006aa8
+        imp Offset:0x0000ad98
+    prolog Section:1
+    epilog Section:1
+unresolved Section:0
+       prolog func:0x00000000
+       epilog func:0x00000054
+   unresolved func:0x00000000
+================================
+objdll>LinkOK 0225e578 00ae8f00
+objdll> dll/instdll.rel prolog start
+******* INST ObjectSetup *********
+objman>InitObjMan start
+objman>InitObjMan end
+0
+GroupSet 42
+***********GroupSet Error 0
+Rest Memory 3c3e80
+objdll> dll/instdll.rel prolog end
+objman>ObjectSetup end
+DLL DBG OUT
+data num 190000
+Rest Memory 3b2000
+ARAM data num 120006
+data num 890000
+Rest Memory 3a9d80
+data num 5e0000
+Rest Memory 3ad3c0
+data num 6c0000
+Rest Memory 392340
+port> status f10560   instdll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 0.85 ms  16.1 fps
+#########SE Entry Error<SE 1211:ErrorNo -110>
+#########SE Entry Error<SE 1212:ErrorNo -110>
+port> status f10620   instdll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.02 ms  19.3 fps
+#########SE Entry Error<SE 55:ErrorNo -110>
+#########SE Entry Error<SE 461:ErrorNo -110>
+#########SE Entry Error<SE 333:ErrorNo -110>
+#########SE Entry Error<SE 397:ErrorNo -110>
+#########SE Entry Error<SE 397:ErrorNo -110>
+#########SE Entry Error<SE 333:ErrorNo -110>
+#########SE Entry Error<SE 269:ErrorNo -110>
+#########SE Entry Error<SE 269:ErrorNo -110>
+Rest Memory 486f40
+port> status f10680   instdll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 1.70 ms  18.3 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+port> status f10740   instdll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 1.90 ms  19.0 fps
+#########SE Entry Error<SE 57:ErrorNo -110>
+#########SE Entry Error<SE 341:ErrorNo -110>
+port> status f10800   instdll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.03 ms  19.4 fps
+#########SE Entry Error<SE 1210:ErrorNo -110>
+objman>Call New Ovl 33(1)
+OvlKill 1
+objdll>omDLLNumEnd 3 1
+Search:dll/instdll.rel
++++++++++++ Find0: dll/instdll.rel
+objdll>omDLLEnd 0 1
+objdll>End DLL:dll/instdll.rel
+odjdll>Unlink DLL:dll/instdll.rel
+objdll>Unlink DLL epilog
+objdll>Unlink DLL epilog finish
+objdll>End DLL finish
+objman>Destory ObjMan
+++++++++++++++++++++ Start New OVL 33 (EVT:0 STAT:0x00000000) ++++++++++++++++++
+objman>Used Memory Size:000212e0
+objman>Used Memory Cnt:15
+objman>Init esp
+objman>Call objectsetup
+SOUND ##########################
+##########################
+DLLStart 33 0
+Search:dll/m425dll.rel
+objdll>Link DLL:dll/m425dll.rel
+Rest Memory 486f40
+===== DLL Module Info dump ====
+                   ID:0x00000001
+             LinkPrev:0x00000000
+             LinkNext:0x00000000
+          Section num:15
+Section info tbl ofst:0x00000048
+           nameOffset:0x00000000
+             nameSize:47
+              version:0x00000002
+===============================
+==== DLL Module Header dump ====
+          bss Size:0x000006f4
+        rel Offset:0x00012e4c
+        imp Offset:0x0001b35c
+    prolog Section:1
+    epilog Section:1
+unresolved Section:0
+       prolog func:0x00000000
+       epilog func:0x00000054
+   unresolved func:0x00000000
+================================
+objdll>LinkOK 0225e578 00aea240
+objdll> dll/m425dll.rel prolog start
+******* M425ObjectSetup *********
+objman>InitObjMan start
+objman>InitObjMan end
+objdll> dll/m425dll.rel prolog end
+objman>ObjectSetup end
+DLL DBG OUT
+data num 1e0020
+Rest Memory 39a8a0
+#########SE Entry Error<SE 1587:ErrorNo -110>
+#########SE Entry Error<SE 1589:ErrorNo -110>
+data num 5e0001
+Rest Memory 33d380
+ARAM data num 120006
+data num 6c0001
+Rest Memory 2c4de0
+data num 190001
+Rest Memory 26c500
+data num 890001
+Rest Memory 20b9a0
+port> status f10860   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 1.89 ms  15.0 fps
+#########SE Entry Error<SE 1582:ErrorNo -110>
+port> status f10920   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 1.65 ms  17.5 fps
+#########SE Entry Error<SE 1583:ErrorNo -110>
+#########SE Entry Error<SE 281:ErrorNo -110>
+#########SE Entry Error<SE 1583:ErrorNo -110>
+#########SE Entry Error<SE 409:ErrorNo -110>
+#########SE Entry Error<SE 1583:ErrorNo -110>
+#########SE Entry Error<SE 1583:ErrorNo -110>
+#########SE Entry Error<SE 1583:ErrorNo -110>
+#########SE Entry Error<SE 345:ErrorNo -110>
+#########SE Entry Error<SE 1583:ErrorNo -110>
+#########SE Entry Error<SE 473:ErrorNo -110>
+#########SE Entry Error<SE 1583:ErrorNo -110>
+#########SE Entry Error<SE 1583:ErrorNo -110>
+port> status f10980   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.74 ms  16.8 fps
+#########SE Entry Error<SE 36:ErrorNo -110>
+port> status f11040   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 1.91 ms  17.2 fps
+#########SE Entry Error<SE 16:ErrorNo -110>
+port> status f11100   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 1.35 ms  17.1 fps
+port> status f11160   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 1.38 ms  17.2 fps
+#########SE Entry Error<SE 277:ErrorNo -110>
+port> status f11220   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.35 ms  17.1 fps
+#########SE Entry Error<SE 405:ErrorNo -110>
+#########SE Entry Error<SE 280:ErrorNo -110>
+#########SE Entry Error<SE 341:ErrorNo -110>
+#########SE Entry Error<SE 405:ErrorNo -110>
+#########SE Entry Error<SE 1592:ErrorNo -110>
+#########SE Entry Error<SE 281:ErrorNo -110>
+#########SE Entry Error<SE 344:ErrorNo -110>
+#########SE Entry Error<SE 277:ErrorNo -110>
+port> status f11280   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.20 ms  17.0 fps
+#########SE Entry Error<SE 469:ErrorNo -110>
+#########SE Entry Error<SE 280:ErrorNo -110>
+#########SE Entry Error<SE 1596:ErrorNo -110>
+#########SE Entry Error<SE 345:ErrorNo -110>
+#########SE Entry Error<SE 472:ErrorNo -110>
+#########SE Entry Error<SE 405:ErrorNo -110>
+#########SE Entry Error<SE 1593:ErrorNo -110>
+#########SE Entry Error<SE 281:ErrorNo -110>
+#########SE Entry Error<SE 1595:ErrorNo -110>
+#########SE Entry Error<SE 473:ErrorNo -110>
+#########SE Entry Error<SE 408:ErrorNo -110>
+#########SE Entry Error<SE 277:ErrorNo -110>
+port> status f11340   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.09 ms  16.6 fps
+#########SE Entry Error<SE 1592:ErrorNo -110>
+#########SE Entry Error<SE 409:ErrorNo -110>
+#########SE Entry Error<SE 341:ErrorNo -110>
+#########SE Entry Error<SE 469:ErrorNo -110>
+#########SE Entry Error<SE 270:ErrorNo -110>
+#########SE Entry Error<SE 270:ErrorNo -110>
+#########SE Entry Error<SE 341:ErrorNo -110>
+port> status f11400   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.10 ms  16.7 fps
+#########SE Entry Error<SE 277:ErrorNo -110>
+#########SE Entry Error<SE 405:ErrorNo -110>
+#########SE Entry Error<SE 469:ErrorNo -110>
+#########SE Entry Error<SE 344:ErrorNo -110>
+#########SE Entry Error<SE 405:ErrorNo -110>
+#########SE Entry Error<SE 280:ErrorNo -110>
+#########SE Entry Error<SE 408:ErrorNo -110>
+#########SE Entry Error<SE 472:ErrorNo -110>
+#########SE Entry Error<SE 1596:ErrorNo -110>
+#########SE Entry Error<SE 1592:ErrorNo -110>
+#########SE Entry Error<SE 345:ErrorNo -110>
+#########SE Entry Error<SE 281:ErrorNo -110>
+#########SE Entry Error<SE 1592:ErrorNo -110>
+#########SE Entry Error<SE 409:ErrorNo -110>
+port> status f11460   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.61 ms  16.6 fps
+#########SE Entry Error<SE 277:ErrorNo -110>
+#########SE Entry Error<SE 1595:ErrorNo -110>
+#########SE Entry Error<SE 473:ErrorNo -110>
+#########SE Entry Error<SE 405:ErrorNo -110>
+#########SE Entry Error<SE 280:ErrorNo -110>
+#########SE Entry Error<SE 408:ErrorNo -110>
+#########SE Entry Error<SE 1593:ErrorNo -110>
+#########SE Entry Error<SE 1594:ErrorNo -110>
+#########SE Entry Error<SE 281:ErrorNo -110>
+#########SE Entry Error<SE 409:ErrorNo -110>
+#########SE Entry Error<SE 469:ErrorNo -110>
+port> status f11520   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.22 ms  16.9 fps
+#########SE Entry Error<SE 341:ErrorNo -110>
+#########SE Entry Error<SE 277:ErrorNo -110>
+#########SE Entry Error<SE 472:ErrorNo -110>
+#########SE Entry Error<SE 405:ErrorNo -110>
+#########SE Entry Error<SE 344:ErrorNo -110>
+#########SE Entry Error<SE 1595:ErrorNo -110>
+#########SE Entry Error<SE 408:ErrorNo -110>
+#########SE Entry Error<SE 473:ErrorNo -110>
+#########SE Entry Error<SE 1596:ErrorNo -110>
+#########SE Entry Error<SE 270:ErrorNo -110>
+#########SE Entry Error<SE 345:ErrorNo -110>
+#########SE Entry Error<SE 270:ErrorNo -110>
+#########SE Entry Error<SE 277:ErrorNo -110>
+port> status f11580   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.31 ms  16.7 fps
+#########SE Entry Error<SE 280:ErrorNo -110>
+#########SE Entry Error<SE 1593:ErrorNo -110>
+#########SE Entry Error<SE 409:ErrorNo -110>
+#########SE Entry Error<SE 469:ErrorNo -110>
+#########SE Entry Error<SE 1593:ErrorNo -110>
+#########SE Entry Error<SE 281:ErrorNo -110>
+#########SE Entry Error<SE 405:ErrorNo -110>
+#########SE Entry Error<SE 472:ErrorNo -110>
+#########SE Entry Error<SE 408:ErrorNo -110>
+port> status f11640   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.28 ms  16.6 fps
+#########SE Entry Error<SE 1595:ErrorNo -110>
+#########SE Entry Error<SE 277:ErrorNo -110>
+#########SE Entry Error<SE 473:ErrorNo -110>
+#########SE Entry Error<SE 280:ErrorNo -110>
+#########SE Entry Error<SE 1593:ErrorNo -110>
+#########SE Entry Error<SE 409:ErrorNo -110>
+#########SE Entry Error<SE 341:ErrorNo -110>
+#########SE Entry Error<SE 1592:ErrorNo -110>
+#########SE Entry Error<SE 281:ErrorNo -110>
+#########SE Entry Error<SE 344:ErrorNo -110>
+#########SE Entry Error<SE 405:ErrorNo -110>
+#########SE Entry Error<SE 277:ErrorNo -110>
+port> status f11700   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.40 ms  16.6 fps
+#########SE Entry Error<SE 469:ErrorNo -110>
+#########SE Entry Error<SE 408:ErrorNo -110>
+#########SE Entry Error<SE 1595:ErrorNo -110>
+#########SE Entry Error<SE 280:ErrorNo -110>
+#########SE Entry Error<SE 345:ErrorNo -110>
+#########SE Entry Error<SE 1592:ErrorNo -110>
+#########SE Entry Error<SE 1593:ErrorNo -110>
+#########SE Entry Error<SE 281:ErrorNo -110>
+#########SE Entry Error<SE 409:ErrorNo -110>
+#########SE Entry Error<SE 341:ErrorNo -110>
+#########SE Entry Error<SE 469:ErrorNo -110>
+port> status f11760   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.36 ms  16.6 fps
+#########SE Entry Error<SE 277:ErrorNo -110>
+#########SE Entry Error<SE 344:ErrorNo -110>
+#########SE Entry Error<SE 472:ErrorNo -110>
+#########SE Entry Error<SE 280:ErrorNo -110>
+#########SE Entry Error<SE 405:ErrorNo -110>
+#########SE Entry Error<SE 1596:ErrorNo -110>
+#########SE Entry Error<SE 345:ErrorNo -110>
+#########SE Entry Error<SE 408:ErrorNo -110>
+#########SE Entry Error<SE 1596:ErrorNo -110>
+#########SE Entry Error<SE 473:ErrorNo -110>
+#########SE Entry Error<SE 1593:ErrorNo -110>
+#########SE Entry Error<SE 281:ErrorNo -110>
+port> status f11820   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.40 ms  16.7 fps
+#########SE Entry Error<SE 1592:ErrorNo -110>
+#########SE Entry Error<SE 409:ErrorNo -110>
+#########SE Entry Error<SE 405:ErrorNo -110>
+#########SE Entry Error<SE 277:ErrorNo -110>
+#########SE Entry Error<SE 341:ErrorNo -110>
+#########SE Entry Error<SE 469:ErrorNo -110>
+#########SE Entry Error<SE 344:ErrorNo -110>
+#########SE Entry Error<SE 405:ErrorNo -110>
+#########SE Entry Error<SE 472:ErrorNo -110>
+port> status f11880   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.42 ms  16.7 fps
+#########SE Entry Error<SE 280:ErrorNo -110>
+#########SE Entry Error<SE 1595:ErrorNo -110>
+#########SE Entry Error<SE 345:ErrorNo -110>
+#########SE Entry Error<SE 1592:ErrorNo -110>
+#########SE Entry Error<SE 281:ErrorNo -110>
+#########SE Entry Error<SE 1596:ErrorNo -110>
+#########SE Entry Error<SE 473:ErrorNo -110>
+#########SE Entry Error<SE 469:ErrorNo -110>
+#########SE Entry Error<SE 277:ErrorNo -110>
+port> status f11940   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.43 ms  17.1 fps
+#########SE Entry Error<SE 405:ErrorNo -110>
+#########SE Entry Error<SE 280:ErrorNo -110>
+#########SE Entry Error<SE 281:ErrorNo -110>
+#########SE Entry Error<SE 469:ErrorNo -110>
+#########SE Entry Error<SE 408:ErrorNo -110>
+#########SE Entry Error<SE 341:ErrorNo -110>
+#########SE Entry Error<SE 277:ErrorNo -110>
+#########SE Entry Error<SE 344:ErrorNo -110>
+#########SE Entry Error<SE 1592:ErrorNo -110>
+#########SE Entry Error<SE 409:ErrorNo -110>
+#########SE Entry Error<SE 405:ErrorNo -110>
+port> status f12000   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 1.87 ms  17.1 fps
+#########SE Entry Error<SE 1595:ErrorNo -110>
+#########SE Entry Error<SE 345:ErrorNo -110>
+#########SE Entry Error<SE 277:ErrorNo -110>
+#########SE Entry Error<SE 341:ErrorNo -110>
+#########SE Entry Error<SE 344:ErrorNo -110>
+#########SE Entry Error<SE 280:ErrorNo -110>
+#########SE Entry Error<SE 469:ErrorNo -110>
+#########SE Entry Error<SE 405:ErrorNo -110>
+#########SE Entry Error<SE 472:ErrorNo -110>
+port> status f12060   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.26 ms  17.0 fps
+#########SE Entry Error<SE 1595:ErrorNo -110>
+#########SE Entry Error<SE 345:ErrorNo -110>
+#########SE Entry Error<SE 1592:ErrorNo -110>
+#########SE Entry Error<SE 281:ErrorNo -110>
+#########SE Entry Error<SE 277:ErrorNo -110>
+#########SE Entry Error<SE 1595:ErrorNo -110>
+#########SE Entry Error<SE 473:ErrorNo -110>
+#########SE Entry Error<SE 405:ErrorNo -110>
+#########SE Entry Error<SE 280:ErrorNo -110>
+#########SE Entry Error<SE 469:ErrorNo -110>
+#########SE Entry Error<SE 405:ErrorNo -110>
+port> status f12120   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.84 ms  16.9 fps
+#########SE Entry Error<SE 1592:ErrorNo -110>
+#########SE Entry Error<SE 281:ErrorNo -110>
+#########SE Entry Error<SE 341:ErrorNo -110>
+#########SE Entry Error<SE 472:ErrorNo -110>
+#########SE Entry Error<SE 408:ErrorNo -110>
+#########SE Entry Error<SE 344:ErrorNo -110>
+#########SE Entry Error<SE 1592:ErrorNo -110>
+#########SE Entry Error<SE 1596:ErrorNo -110>
+#########SE Entry Error<SE 277:ErrorNo -110>
+#########SE Entry Error<SE 409:ErrorNo -110>
+#########SE Entry Error<SE 473:ErrorNo -110>
+#########SE Entry Error<SE 1596:ErrorNo -110>
+#########SE Entry Error<SE 345:ErrorNo -110>
+#########SE Entry Error<SE 280:ErrorNo -110>
+port> status f12180   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.43 ms  16.8 fps
+#########SE Entry Error<SE 1593:ErrorNo -110>
+#########SE Entry Error<SE 281:ErrorNo -110>
+#########SE Entry Error<SE 277:ErrorNo -110>
+#########SE Entry Error<SE 405:ErrorNo -110>
+port> status f12240   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.40 ms  16.8 fps
+#########SE Entry Error<SE 280:ErrorNo -110>
+#########SE Entry Error<SE 341:ErrorNo -110>
+#########SE Entry Error<SE 405:ErrorNo -110>
+#########SE Entry Error<SE 344:ErrorNo -110>
+#########SE Entry Error<SE 1593:ErrorNo -110>
+#########SE Entry Error<SE 281:ErrorNo -110>
+#########SE Entry Error<SE 408:ErrorNo -110>
+#########SE Entry Error<SE 277:ErrorNo -110>
+#########SE Entry Error<SE 1592:ErrorNo -110>
+port> status f12300   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.53 ms  16.7 fps
+#########SE Entry Error<SE 409:ErrorNo -110>
+#########SE Entry Error<SE 1596:ErrorNo -110>
+#########SE Entry Error<SE 345:ErrorNo -110>
+#########SE Entry Error<SE 469:ErrorNo -110>
+#########SE Entry Error<SE 405:ErrorNo -110>
+#########SE Entry Error<SE 280:ErrorNo -110>
+#########SE Entry Error<SE 341:ErrorNo -110>
+#########SE Entry Error<SE 408:ErrorNo -110>
+#########SE Entry Error<SE 472:ErrorNo -110>
+#########SE Entry Error<SE 1592:ErrorNo -110>
+#########SE Entry Error<SE 281:ErrorNo -110>
+#########SE Entry Error<SE 1592:ErrorNo -110>
+#########SE Entry Error<SE 1595:ErrorNo -110>
+#########SE Entry Error<SE 409:ErrorNo -110>
+#########SE Entry Error<SE 473:ErrorNo -110>
+port> status f12360   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.97 ms  16.4 fps
+#########SE Entry Error<SE 277:ErrorNo -110>
+#########SE Entry Error<SE 334:ErrorNo -110>
+#########SE Entry Error<SE 405:ErrorNo -110>
+#########SE Entry Error<SE 469:ErrorNo -110>
+#########SE Entry Error<SE 341:ErrorNo -110>
+#########SE Entry Error<SE 280:ErrorNo -110>
+#########SE Entry Error<SE 408:ErrorNo -110>
+#########SE Entry Error<SE 344:ErrorNo -110>
+#########SE Entry Error<SE 472:ErrorNo -110>
+#########SE Entry Error<SE 1593:ErrorNo -110>
+#########SE Entry Error<SE 281:ErrorNo -110>
+#########SE Entry Error<SE 1594:ErrorNo -110>
+#########SE Entry Error<SE 409:ErrorNo -110>
+#########SE Entry Error<SE 1595:ErrorNo -110>
+#########SE Entry Error<SE 1596:ErrorNo -110>
+#########SE Entry Error<SE 473:ErrorNo -110>
+#########SE Entry Error<SE 345:ErrorNo -110>
+port> status f12420   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.59 ms  16.4 fps
+#########SE Entry Error<SE 277:ErrorNo -110>
+#########SE Entry Error<SE 341:ErrorNo -110>
+#########SE Entry Error<SE 405:ErrorNo -110>
+#########SE Entry Error<SE 469:ErrorNo -110>
+#########SE Entry Error<SE 280:ErrorNo -110>
+#########SE Entry Error<SE 334:ErrorNo -110>
+#########SE Entry Error<SE 405:ErrorNo -110>
+#########SE Entry Error<SE 1592:ErrorNo -110>
+#########SE Entry Error<SE 281:ErrorNo -110>
+port> status f12480   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.52 ms  16.6 fps
+#########SE Entry Error<SE 341:ErrorNo -110>
+#########SE Entry Error<SE 469:ErrorNo -110>
+#########SE Entry Error<SE 277:ErrorNo -110>
+#########SE Entry Error<SE 344:ErrorNo -110>
+#########SE Entry Error<SE 472:ErrorNo -110>
+#########SE Entry Error<SE 280:ErrorNo -110>
+#########SE Entry Error<SE 1595:ErrorNo -110>
+#########SE Entry Error<SE 345:ErrorNo -110>
+#########SE Entry Error<SE 1595:ErrorNo -110>
+#########SE Entry Error<SE 473:ErrorNo -110>
+#########SE Entry Error<SE 469:ErrorNo -110>
+#########SE Entry Error<SE 1593:ErrorNo -110>
+#########SE Entry Error<SE 281:ErrorNo -110>
+port> status f12540   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.80 ms  16.8 fps
+#########SE Entry Error<SE 341:ErrorNo -110>
+#########SE Entry Error<SE 472:ErrorNo -110>
+#########SE Entry Error<SE 334:ErrorNo -110>
+#########SE Entry Error<SE 1596:ErrorNo -110>
+#########SE Entry Error<SE 473:ErrorNo -110>
+port> status f12600   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.63 ms  16.7 fps
+#########SE Entry Error<SE 341:ErrorNo -110>
+#########SE Entry Error<SE 277:ErrorNo -110>
+#########SE Entry Error<SE 469:ErrorNo -110>
+#########SE Entry Error<SE 334:ErrorNo -110>
+#########SE Entry Error<SE 472:ErrorNo -110>
+#########SE Entry Error<SE 341:ErrorNo -110>
+#########SE Entry Error<SE 270:ErrorNo -110>
+#########SE Entry Error<SE 270:ErrorNo -110>
+port> status f12660   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.76 ms  16.8 fps
+#########SE Entry Error<SE 1595:ErrorNo -110>
+#########SE Entry Error<SE 277:ErrorNo -110>
+#########SE Entry Error<SE 473:ErrorNo -110>
+#########SE Entry Error<SE 344:ErrorNo -110>
+#########SE Entry Error<SE 280:ErrorNo -110>
+#########SE Entry Error<SE 6:ErrorNo -110>
+#########SE Entry Error<SE 469:ErrorNo -110>
+#########SE Entry Error<SE 1595:ErrorNo -110>
+#########SE Entry Error<SE 345:ErrorNo -110>
+#########SE Entry Error<SE 472:ErrorNo -110>
+#########SE Entry Error<SE 1592:ErrorNo -110>
+#########SE Entry Error<SE 281:ErrorNo -110>
+#########SE Entry Error<SE 405:ErrorNo -110>
+port> status f12720   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.75 ms  16.8 fps
+#########SE Entry Error<SE 277:ErrorNo -110>
+#########SE Entry Error<SE 1595:ErrorNo -110>
+#########SE Entry Error<SE 473:ErrorNo -110>
+#########SE Entry Error<SE 341:ErrorNo -110>
+#########SE Entry Error<SE 6:ErrorNo -110>
+#########SE Entry Error<SE 280:ErrorNo -110>
+#########SE Entry Error<SE 469:ErrorNo -110>
+#########SE Entry Error<SE 1593:ErrorNo -110>
+#########SE Entry Error<SE 281:ErrorNo -110>
+#########SE Entry Error<SE 334:ErrorNo -110>
+port> status f12780   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.48 ms  17.0 fps
+#########SE Entry Error<SE 341:ErrorNo -110>
+#########SE Entry Error<SE 472:ErrorNo -110>
+#########SE Entry Error<SE 6:ErrorNo -110>
+#########SE Entry Error<SE 1595:ErrorNo -110>
+#########SE Entry Error<SE 473:ErrorNo -110>
+#########SE Entry Error<SE 277:ErrorNo -110>
+#########SE Entry Error<SE 344:ErrorNo -110>
+#########SE Entry Error<SE 280:ErrorNo -110>
+#########SE Entry Error<SE 405:ErrorNo -110>
+#########SE Entry Error<SE 1595:ErrorNo -110>
+#########SE Entry Error<SE 345:ErrorNo -110>
+port> status f12840   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.63 ms  16.7 fps
+#########SE Entry Error<SE 469:ErrorNo -110>
+#########SE Entry Error<SE 1593:ErrorNo -110>
+#########SE Entry Error<SE 281:ErrorNo -110>
+#########SE Entry Error<SE 341:ErrorNo -110>
+#########SE Entry Error<SE 408:ErrorNo -110>
+#########SE Entry Error<SE 6:ErrorNo -110>
+#########SE Entry Error<SE 344:ErrorNo -110>
+#########SE Entry Error<SE 277:ErrorNo -110>
+#########SE Entry Error<SE 1592:ErrorNo -110>
+#########SE Entry Error<SE 409:ErrorNo -110>
+#########SE Entry Error<SE 1595:ErrorNo -110>
+#########SE Entry Error<SE 280:ErrorNo -110>
+#########SE Entry Error<SE 345:ErrorNo -110>
+port> status f12900   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.25 ms  16.7 fps
+#########SE Entry Error<SE 405:ErrorNo -110>
+#########SE Entry Error<SE 6:ErrorNo -110>
+#########SE Entry Error<SE 1592:ErrorNo -110>
+#########SE Entry Error<SE 281:ErrorNo -110>
+#########SE Entry Error<SE 408:ErrorNo -110>
+#########SE Entry Error<SE 469:ErrorNo -110>
+#########SE Entry Error<SE 341:ErrorNo -110>
+#########SE Entry Error<SE 277:ErrorNo -110>
+#########SE Entry Error<SE 472:ErrorNo -110>
+#########SE Entry Error<SE 1592:ErrorNo -110>
+#########SE Entry Error<SE 409:ErrorNo -110>
+port> status f12960   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 1.72 ms  17.0 fps
+#########SE Entry Error<SE 334:ErrorNo -110>
+Rest Memory 1c4f40
+#########SE Entry Error<SE 5:ErrorNo -110>
+port> status f13020   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.27 ms  16.9 fps
+port> status f13080   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.32 ms  17.1 fps
+port> status f13140   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.40 ms  17.3 fps
+port> status f13200   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.54 ms  17.6 fps
+#########SE Entry Error<SE 1595:ErrorNo -110>
+#########SE Entry Error<SE 270:ErrorNo -110>
+#########SE Entry Error<SE 473:ErrorNo -110>
+#########SE Entry Error<SE 270:ErrorNo -110>
+#########SE Entry Error<SE 6:ErrorNo -110>
+#########SE Entry Error<SE 37:ErrorNo -110>
+port> status f13260   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.58 ms  17.2 fps
+port> status f13320   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 1.60 ms  17.5 fps
+port> status f13380   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 1.97 ms  17.5 fps
+#########SE Entry Error<SE 292:ErrorNo -110>
+#########SE Entry Error<SE 420:ErrorNo -110>
+#########SE Entry Error<SE 353:ErrorNo -110>
+port> status f13440   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.55 ms  17.1 fps
+#########SE Entry Error<SE 481:ErrorNo -110>
+port> status f13500   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.30 ms  17.3 fps
+port> status f13560   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.31 ms  17.3 fps
+port> status f13620   m425dll      board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.31 ms  17.2 fps
+objman>Ovl Return 1=4(1)
+OvlKill 1
+objdll>omDLLNumEnd 33 1
+Search:dll/m425dll.rel
++++++++++++ Find0: dll/m425dll.rel
+objdll>omDLLEnd 0 1
+objdll>End DLL:dll/m425dll.rel
+odjdll>Unlink DLL:dll/m425dll.rel
+objdll>Unlink DLL epilog
+objdll>Unlink DLL epilog finish
+objdll>End DLL finish
+objman>Destory ObjMan
+++++++++++++++++++++ Start New OVL 84 (EVT:0 STAT:0x00000000) ++++++++++++++++++
+objman>Used Memory Size:000212e0
+objman>Used Memory Cnt:15
+objman>Init esp
+objman>Call objectsetup
+DLLStart 84 0
+Search:dll/resultdll.rel
+objdll>Link DLL:dll/resultdll.rel
+Rest Memory 486f40
+===== DLL Module Info dump ====
+                   ID:0x00000001
+             LinkPrev:0x00000000
+             LinkNext:0x00000000
+          Section num:14
+Section info tbl ofst:0x00000048
+           nameOffset:0x00000000
+             nameSize:51
+              version:0x00000002
+===============================
+==== DLL Module Header dump ====
+          bss Size:0x00001adc
+        rel Offset:0x0000a038
+        imp Offset:0x0000fa50
+    prolog Section:1
+    epilog Section:1
+unresolved Section:0
+       prolog func:0x00000000
+       epilog func:0x00000054
+   unresolved func:0x00000000
+================================
+objdll>LinkOK 0225e578 00af7fa0
+objdll> dll/resultdll.rel prolog start
+******* RESULT ObjectSetup *********
+objman>InitObjMan start
+objman>InitObjMan end
+Rest Memory 5395a0
+objdll> dll/resultdll.rel prolog end
+objman>ObjectSetup end
+DLL DBG OUT
+data num 6f0000
+Rest Memory 498d80
+port> status f13680   resultdll    board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.37 ms  17.1 fps
+ARAM data num 70000
+Rest Memory 420c20
+#########SE Entry Error<SE 23:ErrorNo -110>
+#########SE Entry Error<SE 9:ErrorNo -110>
+port> status f13740   resultdll    board 0 turn 1/10  mg 425 (m425dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 1.03 ms  136.3 fps
+#########SE Entry Error<SE 27:ErrorNo -110>
+port> status f13800   resultdll    board 0 turn 1/10  mg 425 (m425dll)  coins/stars 20/0c 23/0c 13/0c 566/0c  aud 1.15 ms  118.7 fps
+port> status f13860   resultdll    board 0 turn 1/10  mg 425 (m425dll)  coins/stars 20/0c 23/0c 13/0c 566/0c  aud 1.47 ms  130.4 fps
+port> status f13920   resultdll    board 0 turn 1/10  mg 425 (m425dll)  coins/stars 20/0c 23/0c 13/0c 566/0c  aud 1.44 ms  131.0 fps
+ARAM data num 860020
+port> status f13980   resultdll    board 0 turn 1/10  mg 425 (m425dll)  coins/stars 20/0c 23/0c 13/0c 566/0c  aud 1.09 ms  159.6 fps
+port> status f14040   resultdll    board 0 turn 1/10  mg 425 (m425dll)  coins/stars 20/0c 23/0c 13/0c 566/0c  aud 1.35 ms  416.6 fps
+port> status f14100   resultdll    board 0 turn 1/10  mg 425 (m425dll)  coins/stars 20/0c 23/0c 13/0c 566/0c  aud 1.59 ms  288.1 fps
+objman>Ovl Return 1=3(1)
+OvlKill 1
+objdll>omDLLNumEnd 84 1
+Search:dll/resultdll.rel
++++++++++++ Find0: dll/resultdll.rel
+objdll>omDLLEnd 0 1
+objdll>End DLL:dll/resultdll.rel
+odjdll>Unlink DLL:dll/resultdll.rel
+objdll>Unlink DLL epilog
+objdll>Unlink DLL epilog finish
+objdll>End DLL finish
+objman>Destory ObjMan
+++++++++++++++++++++ Start New OVL 89 (EVT:0 STAT:0x00000000) ++++++++++++++++++
+objman>Used Memory Size:000212e0
+objman>Used Memory Cnt:15
+objman>Init esp
+objman>Call objectsetup
+SOUND ##########################
+0
+GroupSet 9
+***********GroupSet Error 0
+##########################
+DLLStart 89 0
+Search:dll/w01dll.rel
+objdll>Link DLL:dll/w01dll.rel
+Rest Memory 420c20
+port> w01dll: dlclose did not unload it; zeroed 2186 bytes of bss by hand
+===== DLL Module Info dump ====
+                   ID:0x00000001
+             LinkPrev:0x00000000
+             LinkNext:0x00000000
+          Section num:16
+Section info tbl ofst:0x00000048
+           nameOffset:0x00000000
+             nameSize:45
+              version:0x00000002
+===============================
+==== DLL Module Header dump ====
+          bss Size:0x0000081c
+        rel Offset:0x00012e34
+        imp Offset:0x0001f174
+    prolog Section:1
+    epilog Section:1
+unresolved Section:0
+       prolog func:0x00000030
+       epilog func:0x00000094
+   unresolved func:0x00000000
+================================
+objdll>LinkOK 0225e578 00ac4820
+objdll> dll/w01dll.rel prolog start
+objman>InitObjMan start
+objman>InitObjMan end
+objdll> dll/w01dll.rel prolog end
+objman>ObjectSetup end
+DLL DBG OUT
+Rest Memory 37b3c0
+Rest Memory 334960
+data num 5e0000
+Rest Memory 31dea0
+ARAM data num 120006
+data num 6c0000
+Rest Memory 302e20
+data num 190000
+Rest Memory 322ae0
+data num 890000
+Rest Memory 31a860
+ARAM data num 7001d
+data num 50000
+Rest Memory 136ce0
+data num 90000
+Rest Memory 1424a0
+#########SE Entry Error<SE 775:ErrorNo -110>
+port> status f14160   w01dll       board 0 turn 2/10  mg 425 (m425dll)  coins/stars 20/0c 23/0c 13/0c 566/0c  aud 0.55 ms  21.7 fps
+#########SE Entry Error<SE 770:ErrorNo -110>
+#########SE Entry Error<SE 768:ErrorNo -110>
+port> status f14220   w01dll       board 0 turn 2/10  mg 425 (m425dll)  coins/stars 20/0c 23/0c 13/0c 566/0c  aud 1.47 ms  16.1 fps
+#########SE Entry Error<SE 3:ErrorNo -110>
+#########SE Entry Error<SE 2:ErrorNo -110>
+#########SE Entry Error<SE 782:ErrorNo -110>
+port> status f14280   w01dll       board 0 turn 2/10  mg 425 (m425dll)  coins/stars 20/0c 23/0c 13/0c 566/0c  aud 1.70 ms  16.3 fps
+#########SE Entry Error<SE 783:ErrorNo -110>
+#########SE Entry Error<SE 867:ErrorNo -110>
+port> status f14340   w01dll       board 0 turn 2/10  mg 425 (m425dll)  coins/stars 20/0c 23/0c 13/0c 566/0c  aud 1.50 ms  16.7 fps
+#########SE Entry Error<SE 848:ErrorNo -110>
+port> status f14400   w01dll       board 0 turn 2/10  mg 425 (m425dll)  coins/stars 20/0c 23/0c 13/0c 566/0c  aud 1.44 ms  16.7 fps
+port> status f14460   w01dll       board 0 turn 2/10  mg 425 (m425dll)  coins/stars 20/0c 23/0c 13/0c 566/0c  aud 1.73 ms  16.5 fps
+port> status f14520   w01dll       board 0 turn 2/10  mg 425 (m425dll)  coins/stars 20/0c 23/0c 13/0c 566/0c  aud 2.22 ms  16.4 fps
+#########SE Entry Error<SE 786:ErrorNo -110>
+#########SE Entry Error<SE 785:ErrorNo -110>
+port> status f14580   w01dll       board 0 turn 2/10  mg 425 (m425dll)  coins/stars 20/0c 23/0c 13/0c 566/0c  aud 2.52 ms  16.4 fps
+port> status f14640   w01dll       board 0 turn 2/10  mg 425 (m425dll)  coins/stars 20/0c 23/0c 13/0c 566/0c  aud 1.89 ms  16.9 fps
+port> status f14700   w01dll       board 0 turn 2/10  mg 425 (m425dll)  coins/stars 20/0c 23/0c 13/0c 566/0c  aud 2.09 ms  16.7 fps
+port> status f14760   w01dll       board 0 turn 2/10  mg 425 (m425dll)  coins/stars 20/0c 23/0c 13/0c 566/0c  aud 2.33 ms  16.3 fps
+#########SE Entry Error<SE 770:ErrorNo -110>
+#########SE Entry Error<SE 768:ErrorNo -110>
+port> status f14820   w01dll       board 0 turn 2/10  mg 425 (m425dll)  coins/stars 20/0c 23/0c 13/0c 566/0c  aud 1.70 ms  13.5 fps
+#########SE Entry Error<SE 771:ErrorNo -110>
+#########SE Entry Error<SE 780:ErrorNo -110>
+port> status f14880   w01dll       board 0 turn 2/10  mg 425 (m425dll)  coins/stars 20/0c 23/0c 13/0c 566/0c  aud 1.60 ms  13.3 fps
+#########SE Entry Error<SE 770:ErrorNo -110>
+#########SE Entry Error<SE 768:ErrorNo -110>
