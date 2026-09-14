@@ -271,14 +271,32 @@ static void card_load(int chan) {
          * rather than paper over. */
         return;
     }
-    card_dir_make(dir, sizeof(dir));
-    snprintf(s->path, sizeof(s->path), "%s/memcard-slot-%c.raw", dir, 'a' + chan);
+    if (port_opt.card && *port_opt.card) {
+        /* --card names a scratch image, so a reproducibility run can start
+         * from a known card without disturbing the one the player's saves are
+         * in.  The roulette reads the save file's played-minigame set
+         * (PLAN.md §16.8), so "the same seed" is only the same experiment when
+         * the card is the same too. */
+        snprintf(s->path, sizeof(s->path), "%s", port_opt.card);
+    } else {
+        card_dir_make(dir, sizeof(dir));
+        snprintf(s->path, sizeof(s->path), "%s/memcard-slot-%c.raw", dir, 'a' + chan);
+    }
     s->img = (u8*)malloc(CARD_IMAGE_SIZE);
     if (!s->img) {
         port_log("port> CARD: out of memory for a 512 KB card image\n");
         return;
     }
-    f = fopen(s->path, "rb");
+    f = port_opt.freshcard ? NULL : fopen(s->path, "rb");
+    if (port_opt.freshcard) {
+        card_format_image(s);
+        port_log("port> CARD: slot %c = %s (--freshcard: formatted, %d free "
+                 "blocks)\n",
+                 'A' + chan, s->path, CARD_FREE_BLOCKS);
+        s->present = 1;
+        card_flush(s);
+        return;
+    }
     if (f && stat(s->path, &st) == 0 && (size_t)st.st_size == CARD_IMAGE_SIZE &&
         fread(s->img, 1, CARD_IMAGE_SIZE, f) == CARD_IMAGE_SIZE) {
         fclose(f);

@@ -39,6 +39,19 @@ void OSInit(void) {
     port_log("port> OSInit: MEM1 %u MB [%p, %p), ARAM %u MB, bus %u MHz\n",
              PORT_MEM1_SIZE >> 20, port_mem1_lo(), port_mem1_hi(), PORT_ARAM_SIZE >> 20,
              PORT_BUS_CLOCK / 1000000);
+    if (port_opt.rtc_set) {
+        /* Printed, because the whole point of --rtc is that a second rig can
+         * be given the same number, and a log that does not say what the
+         * number was cannot be compared with anything. */
+        time_t t = (time_t)port_opt.rtc;
+        struct tm tm;
+        char when[64];
+        gmtime_r(&t, &tm);
+        strftime(when, sizeof(when), "%Y-%m-%dT%H:%M:%SZ", &tm);
+        port_log("port> OSInit: RTC pinned to %lld (%s), OSGetTime origin "
+                 "%lld ticks\n",
+                 (long long)port_opt.rtc, when, (long long)port_opt.seed);
+    }
 }
 
 /* ---- time ---------------------------------------------------------------- */
@@ -61,7 +74,7 @@ void OSInit(void) {
  * keep in step with the first, and the two RNGs stay in the same relationship
  * to each other that they have on the console. */
 
-#define GC_EPOCH_UNIX 946684800LL /* 2000-01-01T00:00:00Z */
+#define GC_EPOCH_UNIX PORT_GC_EPOCH_UNIX
 
 static OSTime det_ticks;
 static OSTime wall_origin;

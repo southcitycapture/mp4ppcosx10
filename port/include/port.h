@@ -20,6 +20,12 @@ extern "C" {
 #define PORT_BUS_CLOCK 162000000u
 #define PORT_CORE_CLOCK 486000000u
 #define PORT_TIMER_CLOCK (PORT_BUS_CLOCK / 4) /* 40.5 MHz, what OSGetTick counts */
+/* The console's RTC epoch: OSGetTime counts 40.5 MHz ticks from here.  Dolphin's
+ * CustomRTCValue is a Unix time, so --rtc converts through this constant and the
+ * two rigs then seed their RNGs from the same number. */
+#define PORT_GC_EPOCH_UNIX 946684800LL /* 2000-01-01T00:00:00Z */
+/* What port/ref/dolphin-user/Config/Dolphin.ini pins CustomRTCValue to. */
+#define PORT_RTC_DOLPHIN 1041472800LL /* 2003-01-02T00:00:00Z */
 
 /* ---- settings, from argv ------------------------------------------------- */
 typedef struct PortOptions {
@@ -71,6 +77,23 @@ typedef struct PortOptions {
                              *   nobody can listen to the G4 over SSH          */
     int mute;               /* --mute   mix and time it, emit silence          */
     int audiolog;           /* --audiolog  narrate voice/stream/studio events  */
+    /* ---- M7 ---- */
+    long long rtc;          /* --rtc SECS  the console RTC as Unix seconds:
+                             *   the deterministic clock's origin expressed the
+                             *   way Dolphin's CustomRTCValue is                */
+    int rtc_set;            /* --rtc was given (0 is a legal RTC)              */
+    const char* card;       /* --card FILE  use this 512 KB card image          */
+    int freshcard;          /* --freshcard  format the card image at boot       */
+    const char* minigame;   /* --minigame NAME|ID  park the roulette here       */
+    int com4;               /* --com4  all four players are CPU                 */
+    int turns;              /* --turns N  the board's turn count                */
+    int status;             /* --status  one state line per second              */
+    int stuckwatch;         /* seconds of no scene change before the watchdog
+                             *   names the live screen (0 = off)                */
+    int soak;               /* --soak  boot, walk in, play, restart, forever    */
+    int depop;              /* --nodepop clears it: the voice cut-off ramp      */
+    int resample4;          /* --resample1 clears it: the 4-tap resampler       */
+    int clickstat;          /* --clickstat  count mix discontinuities in-process */
 } PortOptions;
 
 extern PortOptions port_opt;
@@ -100,11 +123,16 @@ void port_perf_audio_begin(void);
 void port_perf_audio_end(void);
 void port_perf_frame(void);
 void port_perf_report(void);
+void port_perf_window(double* fps, double* aud_ms); /* --status's rolling second */
 
 /* --scenelog, src/debug/scenelog.c */
 void port_scenelog(void);
 void port_nanwatch(void);
 void port_ovllog(void);
+
+/* the self-play harness, port/src/debug/selfplay.c */
+void port_selfplay_init(void);
+void port_selfplay_tick(unsigned frame);
 const char* port_drawobj_name(const void* mtx, int* model_index);
 void port_clock_mark(void);
 void port_clock_report(void);

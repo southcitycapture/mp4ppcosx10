@@ -51,6 +51,15 @@ static void usage(const char* argv0) {
             "  --stub-trace      log every stub call, not just the first of each\n"
             "  --deterministic   fixed 60 Hz tick and no wall-clock pacing\n"
             "  --seed N          the deterministic clock's origin: the RNG seed\n"
+            "  --rtc SECS        the same origin written as the console's real-time\n"
+            "                    clock, in Unix seconds -- the number Dolphin calls\n"
+            "                    CustomRTCValue.  `--rtc dolphin' is the pinned\n"
+            "                    reference value (1041472800, 2003-01-02).  Implies\n"
+            "                    --deterministic, and both of the game's RNG seed\n"
+            "                    sites read it through OSGetTime\n"
+            "  --card FILE       use FILE as slot A's 512 KB card image\n"
+            "  --freshcard       format the card image at boot, so the save file's\n"
+            "                    played-minigame set does not carry between runs\n"
             "  --verbose         print each stub the first time it is called\n"
             "\n"
             "  --reldir DIR      where the 99 REL bundles live (default: <exe dir>/rels)\n"
@@ -96,7 +105,20 @@ static void usage(const char* argv0) {
             "  --play SCRIPT     scripted controller 1 input (port/src/pad/pad_play.c\n"
             "                    format); see port/tools/gecko2play.py to convert a\n"
             "                    port/ref/tools/mkgecko.py reference script\n"
-            "  --record FILE     record controller 1's raw input in the --play format\n",
+            "  --record FILE     record controller 1's raw input in the --play format\n"
+            "\n"
+            "  self-play (M7):\n"
+            "  --minigame N|NAME park the minigame roulette on this minigame\n"
+            "  --com4            all four players are CPU\n"
+            "  --turns N         the board's turn count (10/20/30/50)\n"
+            "  --status          one state line a second: screen, turn, minigame,\n"
+            "                    coins and stars per player, aud ms, fps\n"
+            "  --stuckwatch SEC  name the live screen if it has not changed in SEC\n"
+            "  --soak            boot, walk into a four-CPU board, play it, and\n"
+            "                    start another one when it ends, forever\n"
+            "  --nodepop         switch off the voice cut-off ramp\n"
+            "  --resample1       linear interpolation instead of the 4-tap table\n"
+            "  --clickstat       count mix discontinuities as they are produced\n",
             argv0);
 }
 
@@ -187,6 +209,11 @@ static const char* port_find_default_image(void) {
 
 int port_parse_args(int argc, char** argv) {
     int i;
+    /* The two audio repairs are on by default and switched *off* by a flag, so
+     * that every unadorned run -- including every run of the self-play soak --
+     * exercises them, and an A/B is one word on the command line. */
+    port_opt.depop = 1;
+    port_opt.resample4 = 1;
     for (i = 1; i < argc; i++) {
         const char* a = argv[i];
         if (!strcmp(a, "--image") && i + 1 < argc) {
@@ -210,6 +237,45 @@ int port_parse_args(int argc, char** argv) {
              * clock, started at a chosen reading.  See os_misc.c. */
             port_opt.seed = strtoll(argv[++i], NULL, 0);
             port_opt.deterministic = 1;
+        } else if (!strcmp(a, "--rtc") && i + 1 < argc) {
+            /* Dolphin pins CustomRTCValue and the game seeds both of its RNGs
+             * from OSGetTime; --rtc is the same number on this side, converted
+             * to the console's 40.5 MHz ticks since 2000-01-01.  It is --seed
+             * in the units the reference rig is configured in. */
+            const char* v = argv[++i];
+            port_opt.rtc = !strcmp(v, "dolphin") ? PORT_RTC_DOLPHIN
+                                                 : strtoll(v, NULL, 0);
+            port_opt.rtc_set = 1;
+            port_opt.seed =
+                (port_opt.rtc - PORT_GC_EPOCH_UNIX) * (long long)PORT_TIMER_CLOCK;
+            port_opt.deterministic = 1;
+        } else if (!strcmp(a, "--card") && i + 1 < argc) {
+            port_opt.card = argv[++i];
+        } else if (!strcmp(a, "--freshcard")) {
+            port_opt.freshcard = 1;
+        } else if (!strcmp(a, "--minigame") && i + 1 < argc) {
+            port_opt.minigame = argv[++i];
+        } else if (!strcmp(a, "--com4")) {
+            port_opt.com4 = 1;
+        } else if (!strcmp(a, "--turns") && i + 1 < argc) {
+            port_opt.turns = atoi(argv[++i]);
+        } else if (!strcmp(a, "--status")) {
+            port_opt.status = 1;
+        } else if (!strcmp(a, "--stuckwatch") && i + 1 < argc) {
+            port_opt.stuckwatch = atoi(argv[++i]);
+        } else if (!strcmp(a, "--soak")) {
+            port_opt.soak = 1;
+            port_opt.com4 = 1;
+            port_opt.status = 1;
+            if (!port_opt.stuckwatch) {
+                port_opt.stuckwatch = 90;
+            }
+        } else if (!strcmp(a, "--nodepop")) {
+            port_opt.depop = 0;
+        } else if (!strcmp(a, "--resample1")) {
+            port_opt.resample4 = 0;
+        } else if (!strcmp(a, "--clickstat")) {
+            port_opt.clickstat = 1;
         } else if (!strcmp(a, "--reldir") && i + 1 < argc) {
             port_opt.reldir = argv[++i];
         } else if (!strcmp(a, "--gxdemo")) {
@@ -361,6 +427,7 @@ int main(int argc, char** argv) {
             port_audio_wav_start(port_opt.wav);
         }
     }
+    port_selfplay_init();
     port_call_on_stack(run_game, port_game_stack_top());
     return 0;
 }
