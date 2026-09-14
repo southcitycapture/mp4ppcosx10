@@ -3938,3 +3938,37 @@ On a synthetic host benchmark shaped like the profile's reuse — 300 textures,
 | bytes hashed | 584 MB | **119 MB** |
 | hash computations | 1,707,987 | **315,921** |
 
+### 16.10 What M7 needs
+
+1. **`--rtc` is now the cheapest thing on the list and it unblocks two
+   others.** §15.9 item 7 wanted it so the port and Dolphin roll the same
+   dice. M6 adds a second reason: §16.6's spectral comparison is inconclusive
+   partly *because* the two rigs are not at the same musical moment, and a
+   `--rtc` that takes Dolphin's pinned `CustomRTCValue` would make the audio
+   comparison frame-for-frame instead of window-for-window. It is one value
+   into `BoardRandInit`'s `OSGetTime`.
+
+2. **The self-play harness now has a second thing to assert.** §4's M7
+   done-means is "`--autoplay` completes a full four-player board unattended
+   and prints one result line". That line should carry the audio's own
+   invariants — frames mixed, max concurrent voices, clamped ARAM reads,
+   voices refused — because all four are zero-or-monotonic on a healthy run
+   and none of them is visible in a screenshot.
+
+3. **The minigame roulette is the obstacle to reproducing a named minigame,
+   and M7 is where it gets solved.** §16.8 spent four board runs trying to
+   land on `m425dll` and got `m456dll` and `Take a Breather` instead, because
+   the selection depends on the save file's played-minigame set as well as the
+   RNG. A harness that can set `GWPlayerCfg[i].diff` can equally set the
+   minigame directly, and then "reproduce the crash in module X" stops being a
+   twenty-minute dice roll.
+
+4. **The `aud` phase belongs in the regression line.** `--perf` now reports it
+   and M6's budget was 1.5 ms; a `regress` mode that replays input scripts
+   should fail on a budget regression, not only on a pixel one.
+
+5. **Determinism has a new input and it should be asserted, not assumed.**
+   The audio tick is an integer function of the retrace count and nothing
+   else, which is what makes `--seed` still work — but that is a property of
+   the code, not a tested one. Two runs of the same seed with `--dumpframe`
+   over a spread, md5-compared, is the assertion, and it costs nothing to run.
