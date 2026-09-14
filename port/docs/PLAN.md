@@ -3886,6 +3886,114 @@ does not, so the 70-retrace offset in first sound may be a different piece of
 music rather than the same one late. That is not resolved and should not be
 claimed as resolved.
 
+### 16.7 The board, and the two bugs only hardware could find
+
+The full walk runs with audio: `bootdll` -> `modeseldll` -> `mentdll` ->
+`w01dll` (Toad's Midway Madness) -> `instdll` -> `m456dll` -> `resultdll` ->
+back to the board. 15,400 frames, a complete turn, a minigame and its results,
+with music and SFX throughout. `--seed 12345` still reproduces, and the walk
+reaches the same places it did in §15.4 — audio did not perturb it.
+
+**`#########SE Entry Error<SE nn:ErrorNo -110>` went from hundreds a turn to
+398 over the whole 15,400-frame run**, and 0 over a 1,400-frame boot. §15.9
+item 3 was right that it would stop on its own once `sndFXStartParaInfo` was
+real; the residue is genuine failures (an SE whose group is not loaded), not
+the stub.
+
+Then two bugs that only the hardware could have found, because the
+little-endian host cannot get `msmSysInit` past the sound bank at all (§9.6).
+
+**One: the sample data was never in ARAM.** The first board run reported
+**104,826,913 clamped ARAM reads** — about 2,000 per 160-sample frame. A bare
+count says nothing, so the clamp learned to describe itself, and one menu walk
+named the cause in two lines:
+
+```
+ARAM read refused at 0x02c7fb50 ... voice: compType 0, addrBase 0x02c7fb50,
+  curSample 2 of length 51371, loop off, frameOffset 2
+OSInit: MEM1 24 MB [0x2000000, 0x3800000)
+```
+
+0x02c7fb50 is inside MEM1. The cause is one line and it is a `#if`
+(hardware.c:566, inside `#if MUSY_TARGET == MUSY_TARGET_DOLPHIN`):
+
+```c
+*((u32*)data) = (u32)aramStoreData((void*)*((u32*)data), len);
+```
+
+`dataAddSampleReference` sets `sdir->addr = offset + base`, a main-memory
+pointer into the loaded bank, and `hwSaveSample` is what normally replaces it
+with the ARAM address the bytes were copied to. It never runs here. So every
+sequenced sample reached the mixer as a MEM1 pointer used as an ARAM offset —
+while the *stream* path was untouched, because streams get their address from
+`aramAllocateStreamBuffer`, which §16.3 really did implement. That is exactly
+why the title music was right and everything sequenced was reading nothing.
+
+The mixer resolves each address once at voice start now: below
+`PORT_ARAM_SIZE` is an ARAM offset, inside `[port_mem1_lo(), port_mem1_hi())`
+is a host pointer used as it stands, anything else refuses the voice rather
+than guessing. Nothing is copied — a CPU mixer has no reason to move 8 MB into
+ARAM to satisfy a constraint that existed only because the DSP could not read
+main memory. Clamped reads: **104,826,913 -> 0**.
+
+A hexdump at the resolved address confirmed it rather than assuming it:
+`34 95 2f 1f ff 02 1f f0 ...` — header byte 0x34, predictor 3, scale 4. Valid
+DSPADPCM.
+
+**Two: and then the mix pinned at full scale.** RMS went from 3,057 to 16,203
+and the capture filled with clicks. `adsrHandle` (synth_adsr.c:153) returns a
+volume and a delta through two `u16*`, and they are not the same kind of
+number:
+
+```c
+*adsr_start = old_volume >> 16;            /* 0..0x8000, UNSIGNED */
+*adsr_delta = -(-currentDelta >> 21);      /* SIGNED, in a u16    */
+```
+
+A voice *starts* at 0x8000 (hw_dspctrl.c:895), so reading the volume as `s16`
+turns unity gain into minus unity. Worse, every release ramp's delta is
+negative: added unsigned, a voice fading out by -3 per sample instead ramps
+*up* by 65,533 per sample and clips the rest of the mix out with it.
+
+The three states, measured on the G4 over the same 6,000-frame walk, against
+Dolphin's 3,400–4,400 RMS for comparable material:
+
+| | before addressing | after addressing | after envelope |
+|---|---:|---:|---:|
+| capture RMS | 3,057 | 16,203 | **3,688** |
+| steps over half full scale | 11,498 | 434,234 | **25,306** |
+| clamped ARAM reads | 104,826,913 | 0 | 0 |
+
+**What is still wrong, precisely.** 25,306 discontinuities in 100 seconds is
+not clean. They are not spread evenly: seconds 12–42 carry exactly one, and
+then 43–45 burst (603, 5,598, 4,709) and 46 onward settles to a steady ~300 a
+second. Something that starts around frame 2,580 introduces a persistent
+defect; the title music and the early menus before it are clean. The two
+candidates already on the record are the host depop path
+(`DSPhostDPop`/`hostDPopSum`), which is not implemented and whose named
+symptom is exactly a click on voice cut-off, and the linear resampler standing
+in for the console's 4-tap polyphase filter. Neither is confirmed. This is the
+first thing M6b or M7 should pick up, and the localisation above is where to
+start.
+
+**Cost.** `--perf` on the G4 over the 6,000-frame walk, with 23 concurrent
+voices at peak:
+
+| phase | mean | median | p95 | worst |
+|---|---:|---:|---:|---:|
+| game | 7.50 | 9.73 | 10.75 | 918.26 |
+| gx | 43.41 | 47.81 | 87.98 | 355.00 |
+| **aud** | **1.61** | 1.72 | 3.13 | 5.08 |
+| frame | 53.14 | 60.41 | 98.58 | 969.79 |
+
+M6's budget was 1.5 ms a frame and the mean is **1.61 ms** — over it, by 7%.
+Honestly: missed, narrowly. The mixer's own counter puts one 160-sample frame
+at 486 us and there are 3.34 of them per video frame, which is where the
+figure comes from. The cheapest remaining win is the one the console itself
+used and this mixer does not: `salCheckVolErrorAndResetDelta`'s bus-liveness
+policy is implemented, but the 4-tap resampler is not, so every voice pays a
+multiply-and-shift per sample that a table lookup would replace.
+
 ### 16.8 The `m425dll` SIGBUS: not reproduced, and the reason is worth more than the attempt
 
 §15.6 left a SIGBUS at 0x04800000 in a `HU3DMODELHOOK` inside `m425Dll.bundle`,
@@ -3983,6 +4091,12 @@ screen, which is the useful part.
 **Byte-identical**: `--gxdemo` writes the same `gxdemo.ppm`
 (`577735b51beb3112fe63ad75ebe50a72`) before and after.
 
+**On the G4**, the same 5,600-frame segment §15.5 measured at **15.1 fps** now
+runs at **19.9 fps** — a 32% gain, audio off so the two are comparable. Over
+that segment the cache took 4,020,081 hits against 518 misses and revalidated
+486,822 times, so **87.9% of binds touch no texel bytes at all**; 448 MB were
+hashed where the old code would have sampled about 4.1 GB.
+
 On a synthetic host benchmark shaped like the profile's reuse — 300 textures,
 90% of binds landing in a 40-texture hot set:
 
@@ -3991,6 +4105,19 @@ On a synthetic host benchmark shaped like the profile's reuse — 300 textures,
 | ns per bind | 579.7 | **96.3** |
 | bytes hashed | 584 MB | **119 MB** |
 | hash computations | 1,707,987 | **315,921** |
+
+### 16.11 Tooling added
+
+| flag / tool | what |
+|---|---|
+| `--wav FILE` | the mix as a 32 kHz stereo WAV, written on the producer side *before* the output ring, so it is complete whatever the device does. The only way an audio claim can be checked at all on a machine nobody can listen to |
+| `--mute` | every voice started, decoded, advanced and retired as usual; silence emitted. Separates "the audio path broke it" from "the audio broke it" without moving the game's timing by one frame |
+| `--audiolog` | one line per second of mixed audio: peak sample and ring fill. Those two numbers separate the three ways this can be wrong — nothing being mixed, something being mixed but the ring starving, or both fine and the fault downstream |
+| `aud` in `--perf` | the mix is on the game thread by design (§16.4), so it is subtracted from `game` rather than hidden inside it |
+| `port/tools/wavstat.py` | describes a capture in the terms a claim can be judged by: first sound as a retrace number, peak and RMS, worst sample-to-sample step and how many exceed half full scale, and an octave-spaced Goertzel spectrum. `--compare A B` lines two up. It is what turned "it sounds wrong" into "RMS 16,203 against Dolphin's 3,400" |
+| Dolphin `DumpAudio` | `DumpAudio = True` under **`[DSP]`** (not `[Movie]`) in the pinned user directory writes `Dump/Audio/*_dspdump.wav`, the DSP-HLE mix at 32028 Hz — like-for-like with what MusyX asks the hardware for. Its `*_dtkdump.wav` companion is silent end to end for this game, which is how we know the AI streaming path is genuinely unused |
+| `musyx_mix`'s clamp report | names the voice behind a refused read — compType, resolved memory kind, base, position, length, loop bounds, pitch, resampler — for the first eight, then counts. One menu walk with it turned 104 million anonymous clamps into a one-line diagnosis |
+| `OSInit` prints MEM1's bounds | a fault address is otherwise a riddle; §16.8 spent an hour on a hypothesis that one printed range disproved |
 
 ### 16.10 What M7 needs
 
