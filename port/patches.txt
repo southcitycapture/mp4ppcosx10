@@ -421,3 +421,24 @@ src/REL/m449Dll/main.c	s32 unk_1C4[4];\n    char unk1D4[0x30];\n	s32 unk_1C4[16]
 # the end of the world.  Worth a run of a board's last five turns before it is
 # offered upstream.
 src/game/board/last5.c	while(j>=0) {	while(j>0) {
+
+# ------------------------------------------------------- REL/resultDll/main.c
+# `ResultCoinNumGet` fills `s16 coinNum[5]` -- four players and a rounding
+# remainder in [4] -- and for every minigame type except 4 (battle) it fills
+# only the four.  The decomp knows: the zero of [4] is inside `#ifdef
+# NON_MATCHING`, because writing it does not match the original object.  Then
+# `ResultCoinAdd` does
+#
+#     coinNum[resultBonusPlayer] += coinNum[4];    // resultBonusPlayer = frandmod(4)
+#
+# and one player, chosen at random, is paid whatever was in that stack slot.
+# On the G4 that slot is a stable 553: the first witness board handed Yoshi
+# 566 coins for a minigame worth 13, the second handed Peach 563, and the
+# soak's scoreboard is meaningless while it happens.  Under MWCC the slot
+# happened to hold zero, which is why the game shipped.
+#
+# This is a decomp bug that is only visible off the console, and the fix is
+# the decomp's own -- take the line out of the ifdef.  Upstream wants it as a
+# NON_MATCHING-guarded correctness note; here it is the difference between a
+# scoreboard and a random number.
+src/REL/resultDll/main.c	#ifdef NON_MATCHING\n            coinNum[4] = 0;\n#endif\n	            coinNum[4] = 0;\n
