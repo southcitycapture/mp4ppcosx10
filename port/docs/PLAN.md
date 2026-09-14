@@ -5086,6 +5086,58 @@ the per-function counts, so a correction is checked by running it before the
 patch and after. Two equalities, meaning two different things — see the comment
 at the top of the script, and the table at the top of `decomp-struct-notes.md`.
 
+### 19.5 The audio benchmark did not get written
+
+The second deliverable of this session was a host benchmark --
+`make -C port TARGET=host audiobench` -- mixing N synthetic voices through the
+real mixer path with linear and with the 4-tap, and then an optimisation of the
+4-tap path measured against it. **It does not exist.** No code was written, no
+number was taken, and §18.5's "there is no `aud` figure for either resampler"
+is still true, on the host as well as on the G4.
+
+What came out of the attempt is a dependency map, and it is worth keeping
+because it is the part that made the job look bigger than it was:
+
+- `port_musyx_mix_frame` can be driven without the game, but not without
+  MusyX's own runtime state. The sequence is `sndSetHooks` ->
+  `salInitDspCtrl(N, 1, 0)` -> per voice `hwInitSamplePlayback`, `hwSetPitch`,
+  `hwSetSRCType`, `hwSetVolume`, `hwStart` -> `port_musyx_mix_init()` -> the
+  frame loop. `salNumVoices`, `salMaxStudioNum`, `dspVoice` and `dspStudio` are
+  plain externs and can be poked after `salInitDspCtrl`.
+- compType 2 (big-endian PCM16, no extraData) is the simplest synthetic voice,
+  and `resolve_sample_ptr` takes a raw `port_aram()` offset, so the test signal
+  can be written straight into ARAM. The envelope has to be forced
+  (`sLevel = 0x7FFF`, `aTime = dTime = rTime = 0`) or `adsrSetup` returns
+  `VoiceDone` on the first frame and the bench measures silence.
+- The link set is the existing `MUSYX_OBJS` plus `musyx_mix.o`,
+  `musyx_aram.o`, `os_arena.o`, `os_report.o` and `clock.o` -- deliberately
+  *not* `musyx_sal.c`, whose `salCtrlDsp` drags in the WAV writer, the ring
+  buffer and the perf counters, and not `main.c`, so the bench has to define
+  its own `PortOptions port_opt`.
+- The optimisation to make first is not a guess: `mv->srcType` is read per
+  output sample inside `voice_output_sample` and only ever changes in
+  `apply_subframe_changes`, once per 32-sample subframe. Hoisting it takes the
+  branch from 160 evaluations per voice per frame to 5, the same shape as
+  §18.5's `port_opt.resample4` hoist, and `port_musyx_mix_mute` is a second
+  global in the same loop with the same property.
+
+None of that has been compiled, so all of it is a plan. The decision §18.5
+states in advance -- if linear is cheaper *and* clicks no more, linear becomes
+the default and the 4-tap becomes the flag -- is therefore still undecided, and
+`G4=1 port/tools/audio_ab.sh --frames 40000` is still the twenty minutes that
+decides it. The host benchmark was meant to make that decision cheaper to
+reach, not to replace it.
+
+### 19.6 The witness list
+
+Three sessions have now ended owing the same runs, described in four different
+sections. `port/docs/g4-witness.md` is that debt as a runbook: the Tailscale
+check that says whether there is a lab at all, the bundle install (the six
+corrected modules are not on the G4 yet), m425 to its result screen, a
+three-turn board through the results, the resampler A/B, the four corrected
+minigames one command each, and the soak -- each with what to expect, how to
+read it, and the path its evidence lands at.
+
 ### 19.4 What is *still* not tested
 
 Everything. Six corrected modules, two behaviour changes, and no minigame has
