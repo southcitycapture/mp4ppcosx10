@@ -153,6 +153,7 @@ static unsigned long g_storeRejected;       /* aramStoreData calls that didn't f
 static unsigned long g_streamRejected;      /* stream-buffer requests that failed   */
 static unsigned long g_uploadRejected;      /* aramUploadData calls out of bounds   */
 static unsigned long g_removeMismatches;    /* aramRemoveData calls with a bad addr */
+static int g_removeUnderflowNamed;          /* the empty-heap case, explained once */
 
 static void InitStreamBuffers(void) {
     unsigned long i;
@@ -372,10 +373,28 @@ void aramRemoveData(void* aram, unsigned long len) {
         /* Removing more than was ever stored would walk the write cursor
          * back into (or past) the reserved zero buffer.  The original
          * MUSY_ASSERT_MSG()s here; clamp instead so one bad call can't
-         * corrupt the cursor for every store that follows it. */
-        port_log("port> musyx_aram: aramRemoveData(%lu) would underflow the sample heap "
-                 "-- clamping\n",
-                 len);
+         * corrupt the cursor for every store that follows it.
+         *
+         * On this target that is not a fault, it is the *normal* case, and
+         * the asymmetry is worth naming once rather than warning about a
+         * thousand times.  `hwSaveSample` in hardware.c calls `aramStoreData`
+         * only inside `#if MUSY_TARGET == MUSY_TARGET_DOLPHIN`, so MusyX
+         * never uploads a sample through this heap here -- `src/msm` does its
+         * own ARAM loading and `dataGetSample` hands MusyX addresses that
+         * already point at it.  But `hwRemoveSample` calls `aramRemoveData`
+         * *unconditionally*, so every group unload asks this heap to free
+         * something it never allocated.  Nothing is corrupted: the cursor
+         * clamps to the floor it is already sitting on.  The count is kept so
+         * that if the sample heap ever does start being used, a genuine
+         * underflow is still visible in the report. */
+        if (!g_removeUnderflowNamed) {
+            g_removeUnderflowNamed = 1;
+            port_log("port> musyx_aram: aramRemoveData(%lu) with an empty sample heap.  "
+                     "Expected: hwSaveSample only stores on the Dolphin target, so msm "
+                     "owns sample upload and MusyX only ever frees.  Clamped; further "
+                     "occurrences are counted, not printed.\n",
+                     len);
+        }
         g_removeMismatches++;
         g_aramWrite = floorAddr;
         return;

@@ -289,7 +289,7 @@ void port_audio_report(void) {
              stat_frames, stat_frames * (double)FRAME_SAMPLES / MIX_FRQ, stat_retraces);
     if (first_sound_frame) {
         port_log("port> audio: first sound at retrace %ld; Dolphin's own DSP dump of "
-                 "the same boot starts at 10.4 s = retrace ~623\n",
+                 "the same boot starts at 10.95 s = retrace ~656\n",
                  first_sound_frame);
     } else {
         port_log("port> audio: NOTHING was ever mixed above silence\n");

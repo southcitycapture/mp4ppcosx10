@@ -136,6 +136,7 @@ static unsigned long stat_peak_abs; /* largest |sample| ever written to dest */
  * exercised it. */
 static u32 stat_voices_active_this_frame;
 static u32 stat_max_concurrent_voices;
+static unsigned long stat_voices_no_extradata;
 
 /* --perf-gated per-call cost, in seconds; port_now_seconds() is the same
  * clock port_perf_* already uses elsewhere, so this composes with --perf
@@ -448,6 +449,17 @@ static int start_voice(DSPvoice* dv, MixVoice* mv) {
     case 5: {
         SNDADPCMinfo* info = (SNDADPCMinfo*)smp->extraData;
         int i;
+        /* `extraData` is the sample directory's per-sample ADPCM block, and
+         * `dataGetSample` only fills it when the SDIR entry has one.  Every
+         * ADPCM sample in this game's bank does, and none has ever been
+         * missing on hardware -- but this runs on a machine that has to stay
+         * up, and dereferencing it unchecked turns a malformed bank into a
+         * segfault instead of a silent voice.  Refuse the voice instead. */
+        if (!info) {
+            stat_voices_no_extradata++;
+            salDeactivateVoice(dv);
+            return 0;
+        }
         mv->addrBase = (u32)(uintptr_t)smp->addr;
         mv->yn1 = 0;
         mv->yn2 = 0;
@@ -471,6 +483,11 @@ static int start_voice(DSPvoice* dv, MixVoice* mv) {
     }
     case 1: {
         DSPADPCMplusInfo* info = (DSPADPCMplusInfo*)smp->extraData;
+        if (!info) { /* see the compType 0/4/5 arm above */
+            stat_voices_no_extradata++;
+            salDeactivateVoice(dv);
+            return 0;
+        }
         u32 start_frame = (smp->offset + 13u) / 14u;
         int i;
         mv->addrBase = (u32)(uintptr_t)smp->addr;
@@ -1003,6 +1020,11 @@ void port_musyx_mix_report(void) {
              stat_frames_mixed, stat_voices_started, stat_voices_ended,
              (unsigned long)stat_peak_abs, stat_peak_abs > 32000 ? " (near full scale)" : "",
              stat_aram_clamped, stat_max_concurrent_voices, num_voices);
+    if (stat_voices_no_extradata) {
+        port_log("port> musyx_mix: %lu ADPCM voice(s) refused for a missing extraData "
+                 "block\n",
+                 stat_voices_no_extradata);
+    }
     if (port_opt.perf && stat_time_samples) {
         port_log("port> musyx_mix: --perf: mean %.1f us/frame, worst %.1f us/frame, "
                  "over %lu timed frames\n",
