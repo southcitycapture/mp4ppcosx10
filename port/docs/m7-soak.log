@@ -23,34 +23,103 @@ half-written save for the next one. Without `--card` the soak would write the
 same `~/Library/Application Support/MarioParty4/memcard-slot-a.raw` the player
 uses.
 
-## What it produced
+## Run 1: a whole ten-turn board, eleven minigames, and a new crash
 
-Started 2026-09-13 at the end of the M7 session, on the G4, and left running.
-This file is the place its findings go: `grep "enter minigame" soak.log` for
-the list of modules that played, `grep STUCK` for the screens that stopped
-making progress, and `grep "port: fault"` for the crashes with their frame and
-module.
+2026-09-13 into 2026-09-14, on the G4. **130,140 frames — 36 minutes of game
+time — with four CPU players, unattended.** The filtered log is
+`m7-soak-run1.log` (the raw 1 MB is mostly the game's own narration and was
+not worth keeping).
 
-At the time this file was written the soak had booted, walked the mode-select
-menus and reached character select, mixing at 0.42 ms of `aud` a frame:
+It played a complete ten-turn game of Toad's Midway Madness and reached the
+end-of-game results with `999/2c 999/1c 574/0c 994/2c` on the board. That is
+the first time this port has finished a board, and it did it by itself.
+
+### Every minigame it dealt
+
+| module | entered | left |
+|---|---:|---:|
+| `m412dll` Snow Throw | 10,838 | 13,803 |
+| `m428dll` The Rock Climb | 20,641 | 30,523 |
+| `m403dll` Falling Wall | 34,943 | 36,151 |
+| `m432dll` | 44,471 | 52,738 |
+| `m416dll` Defend Fire | 59,762 | 62,452 |
+| `m426dll` Kyorokyoro Panic | 69,584 | 72,207 |
+| `m401dll` Waku-Guri Diving | 84,937 | 88,664 |
+| `m424dll` Crane Catch | 95,450 | 99,097 |
+| `m402dll` Big Slime | 106,585 | 109,567 |
+| `m441dll` | 111,624 | 116,985 |
+| `m429dll` Treasure Forest | 120,335 | 124,866 |
+
+**Eleven distinct modules, entered and left without a crash.** Before M7 the
+port was known to survive exactly two.
+
+### Crashes
+
+| frame | where | signal | address |
+|---:|---|---|---|
+| ~130,150 | `HuSprCall` <- `Hu3DExec`, in `mstory3dll` (the end-of-game results) | SIGSEGV (11) | `0x88888888` |
+
+`HuSprCall` (`src/game/sprman.c:131`) dereferences
+`sprite->data->bank[sprite->bank]`, so `sprite->data` was `0x88888888`.
+**That value is not a fill pattern from anywhere in this tree** — `0x88` does
+not appear as a memset or poison byte in `src/` or `port/` — so it is either
+uninitialised memory or a stale sprite entry left in `HuSprOrder` by an
+overlay that has been unloaded. The second is PLAN.md §4's risk 2, the
+`dlclose` hazard, and it is testable directly: re-run with `--relzerobss`,
+which zeroes a module's bss by hand on load, and with `--reldlclose`, which
+really unloads. If the crash moves or disappears under either, that is the
+answer.
+
+`m425dll` did **not** come up in this run, so its SIGBUS (PLAN.md §17.7) is
+not in this log.
+
+### Ten stuck reports, all the same one
 
 ```
-port> status f2280   mentdll   board 0 turn 0/10  mg 401 (m401dll)
-      coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.42 ms  9.8 fps
+port> STUCK: frame 68297, 90 s with no scene change.  live screen w01dll
+  (overlay 89, event 0, previous resultdll), turn 6/10, mg_next 65936
 ```
 
-**One crash is already known and will be in this log the moment the roulette
-deals it**: `m425dll`'s Thwomp deformation hook (`thwomp.c:1810 fn_1_E914`),
-SIGBUS on a store from a runaway pointer walk 16 MB past the top of MEM1. It
-is diagnosed in `PLAN.md` §17.7 and not yet fixed, so a soak that runs long
-enough will stop there. Everything else it finds is new.
+The board sits on `w01dll` for over 90 seconds between a minigame's results
+and the next turn's roulette. That is the watchdog working as designed and
+reporting something that is not a hang — a turn of four CPU players moving
+around the board legitimately takes that long at 10 fps. **The threshold is
+wrong, not the watch**: `--stuckwatch` should default to something like 240
+for a board, or the watch should reset on `GWSystem.turn` as well as on the
+overlay. Worth fixing before the next soak, because ten false positives make
+a real one easy to miss.
 
-## Reading it
+`mg_next 65936` in those lines is the watchdog printing `GWSystem.mg_next`
+between turns, when it holds no valid minigame. Cosmetic, and it should be
+range-checked the way the status line's is.
+
+### Cost over the whole run
+
+`--status`' `aud` column, 2,169 samples — one a second for the entire soak:
+
+| | mean | median | p95 | worst |
+|---|---:|---:|---:|---:|
+| M6 (§16.7, a 6,000-frame walk) | 1.61 | 1.72 | 3.13 | 5.08 |
+| M7 soak run 1 (130,140 frames) | **2.21** | 2.25 | 3.17 | 4.02 |
+
+**This is the honest number and it is worse.** PLAN.md §17.6 quoted 1.53 ms
+from 119 seconds of a boot-and-menus segment and said at the time that it was
+a comparison rather than a controlled A/B; over 36 minutes of real gameplay
+the mean is 2.21 ms against a 1.5 ms budget. The tail is still better than
+M6's (worst 4.02 against 5.08), which is consistent with the depop ramp doing
+its job, but the 4-tap resampler looks like it costs more per sample than the
+linear blend it replaced rather than less.
+
+So the controlled A/B is no longer a nice-to-have: run the same command twice,
+once with `--resample1`, and let the two `aud` columns decide. `--clickstat`
+on both says whether the filter bought anything in exchange.
+
+## Reading a soak log
 
 | grep for | what you get |
 |---|---|
 | `enter minigame` / `left  minigame` | every m4xx module the soak played, with the frame |
-| `STUCK` | the live screen, by name, when nothing has changed in 90 s |
+| `STUCK` | the live screen, by name, when nothing has changed in the window |
 | `port: fault` | the signal, the address, and the symbolised backtrace |
 | `port> status` | one line a second; the `aud` column is the mixer's cost |
 | `musyx_mix: --clickstat` | at shutdown: steps over half full scale, by `wavstat.py`'s own rule |

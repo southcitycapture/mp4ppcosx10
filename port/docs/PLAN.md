@@ -4387,13 +4387,19 @@ below (boot, the menus, and the first turn of Toad's Midway Madness), with the
 | `aud`, M7 (this run, 119 s) | **1.53** | 1.78 | 2.61 | 2.84 |
 
 The two segments are not the same segment, so this is a comparison and not a
-controlled A/B, and it should be read as one: the mean moved the right way and
-the tail moved a long way the right way (p95 3.13 -> 2.61, worst 5.08 -> 2.84),
-which is what replacing a 64-bit multiply per sample with a table lookup and
-four 32-bit ones would be expected to do on this machine. **1.53 is still over
-M6's 1.5 ms budget**, by 2%, and calling that "met" would be a rounding
-error dressed as a result. It is not met; it is much closer, and the variance
-is gone.
+controlled A/B. **It was also, read on its own, misleading, and the soak said
+so within the hour** (§17.10): over 130,140 frames of actual gameplay rather
+than 119 seconds of boot and menus, the mean is **2.21 ms**, not 1.53 — worse
+than M6's 1.61, not better. The tail is genuinely better in both samples
+(worst 5.08 -> 4.02 over the long run), which is what the depop ramp doing its
+job looks like, but the 4-tap resampler appears to cost more per sample than
+the linear blend it replaced.
+
+The lesson is the one §13.1 already wrote down in different words: a mean over
+a segment chosen because it was the segment you happened to have is not a
+measurement. The controlled A/B — the same command twice, differing only by
+`--resample1` — is now the first thing M8 should run, and the flags exist
+precisely so that it costs one word.
 
 The board's own numbers are the more useful reading: `aud` on `w01dll` sits at
 0.55-3.00 ms depending on how many voices the turn has running, and on the
@@ -4538,3 +4544,47 @@ it is done; the fix is one instrumented run away and did not fit tonight.
    numbers; what is missing is a script that runs the fixed walk, extracts
    them and compares against a recorded baseline. That script is small and
    it should be written before the next optimisation, not after.
+
+### 17.10 The soak's first run: a whole board, eleven minigames, and a new crash
+
+The soak was started at the end of the session and had answered three
+questions before the session closed. `port/docs/m7-soak.log` is the full
+account; the headlines:
+
+**It finished a board.** 130,140 frames — 36 minutes of game time — four CPU
+players, unattended, a complete ten-turn game of Toad's Midway Madness through
+to the end-of-game results with `999/2c 999/1c 574/0c 994/2c` on the table.
+This port had never finished a board before, and it did this one by itself.
+
+**It played eleven distinct minigame modules**, entering and leaving each
+without a crash: `m412`, `m428`, `m403`, `m432`, `m416`, `m426`, `m401`,
+`m424`, `m402`, `m441`, `m429`. Before M7 the port was known to survive two.
+That is a far wider sample of the GX and audio surface than any scripted walk
+has ever reached, and none of it needed a walk to be authored.
+
+**And it found a crash nobody was looking for.** At the very end, in
+`mstory3dll` — the end-of-game results — SIGSEGV at `0x88888888` inside
+`HuSprCall` (`sprman.c:131`), which dereferences
+`sprite->data->bank[sprite->bank]`. `0x88` is not a poison byte anywhere in
+this tree, so `sprite->data` is either uninitialised or a stale sprite entry
+left in `HuSprOrder` by an overlay that has since been unloaded — which is
+§4's risk 2, the `dlclose` hazard, and which the port already has two flags to
+test with (`--relzerobss`, `--reldlclose`). That is a one-run experiment and
+it is M8's second item.
+
+**Two things about the harness itself, from its own output.** The watchdog
+fired ten times, always the same false positive: the board legitimately sits
+on `w01dll` for more than 90 seconds between a minigame's results and the next
+roulette, because four CPU players moving around a board at 10 fps takes that
+long. The threshold is wrong, not the watch — `--stuckwatch` should default
+higher for a board, or reset on `GWSystem.turn` as well as on the overlay.
+Ten false positives are exactly how a real one gets missed. And the watchdog
+prints `mg_next` unguarded, so between turns it says `mg 65936`; the status
+line range-checks it and the watchdog should too.
+
+**What this says about the milestone.** M7's done-means was "`--autoplay`
+completes a full four-player board unattended and prints one result line".
+It completed the board, it printed a line a second, and the value turned out
+to be in the lines nobody specified: eleven module names, ten watchdog
+reports, one new crash, and a cost figure that corrected a claim this same
+document had made an hour earlier.

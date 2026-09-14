@@ -1,0 +1,44 @@
+port> --com4: all four players are CPU; instDll will dismiss its own instruction screen (src/REL/instDll/main.c:294)
+port> --soak: playing itself; every minigame module entered and left is logged
+port> musyx_mix: CPU mixer up, 50 voices, 1 studios, 32000 Hz
+port> musyx_mix: MEM1 sample id 1074 compType 0 at 0x2c7fb50 len 12059824: 00 00 00 0f 0f 00 00 0f 00 00 00 00 00 00 0f 00
+port> musyx_mix: MEM1 sample id 1073 compType 0 at 0x2c78890 len 12089200: 00 00 00 00 0f 00 00 0f 00 00 00 00 00 00 00 00
+port> musyx_mix: MEM1 sample id 1076 compType 0 at 0x2ca0430 len 11926480: 34 95 2f 1f ff 02 1f f0 33 20 f0 43 fa e7 71 be
+port> musyx_mix: MEM1 sample id 1075 compType 0 at 0x2c86e10 len 12030448: 73 7e f0 d2 0e 01 13 fe 12 f3 20 26 1b e6 49 b6
+port> soak: enter minigame m412dll   at frame 10838 (mg 412)
+port> soak: left  minigame m412dll   at frame 13803
+port> STUCK: frame 19648, 90 s with no scene change.  live screen w01dll (overlay 89, event 0, previous resultdll), turn 2/10, mg_next 65936
+port> soak: enter minigame m428dll   at frame 20641 (mg 428)
+port> STUCK: frame 26041, 90 s with no scene change.  live screen m428dll (overlay 36, event 0, previous instdll), turn 2/10, mg_next 428
+port> soak: left  minigame m428dll   at frame 30523
+port> soak: enter minigame m403dll   at frame 34943 (mg 403)
+port> soak: left  minigame m403dll   at frame 36151
+port> STUCK: frame 41996, 90 s with no scene change.  live screen w01dll (overlay 89, event 0, previous resultdll), turn 4/10, mg_next 65936
+port> soak: enter minigame m432dll   at frame 44471 (mg 432)
+port> STUCK: frame 49871, 90 s with no scene change.  live screen m432dll (overlay 40, event 0, previous instdll), turn 4/10, mg_next 432
+port> soak: left  minigame m432dll   at frame 52738
+port> STUCK: frame 58555, 90 s with no scene change.  live screen w01dll (overlay 89, event 0, previous resultdll), turn 5/10, mg_next 65936
+port> soak: enter minigame m416dll   at frame 59762 (mg 416)
+port> soak: left  minigame m416dll   at frame 62452
+port> STUCK: frame 68297, 90 s with no scene change.  live screen w01dll (overlay 89, event 0, previous resultdll), turn 6/10, mg_next 65936
+port> soak: enter minigame m426dll   at frame 69584 (mg 426)
+port> soak: left  minigame m426dll   at frame 72207
+port> STUCK: frame 78052, 90 s with no scene change.  live screen w01dll (overlay 89, event 0, previous resultdll), turn 7/10, mg_next 65936
+port> STUCK: frame 83452, 180 s with no scene change.  live screen w01dll (overlay 89, event 0, previous resultdll), turn 7/10, mg_next 65936
+port> soak: enter minigame m401dll   at frame 84937 (mg 401)
+port> soak: left  minigame m401dll   at frame 88664
+port> STUCK: frame 94481, 90 s with no scene change.  live screen w01dll (overlay 89, event 0, previous resultdll), turn 8/10, mg_next 65936
+port> soak: enter minigame m424dll   at frame 95450 (mg 424)
+port> soak: left  minigame m424dll   at frame 99097
+port> STUCK: frame 104914, 90 s with no scene change.  live screen w01dll (overlay 89, event 0, previous resultdll), turn 9/10, mg_next 65936
+port> soak: enter minigame m402dll   at frame 106585 (mg 402)
+port> soak: left  minigame m402dll   at frame 109567
+port> soak: enter minigame m441dll   at frame 111624 (mg 441)
+port> soak: left  minigame m441dll   at frame 116985
+port> soak: enter minigame m429dll   at frame 120335 (mg 429)
+port> soak: left  minigame m429dll   at frame 124866
+*** port: fault: signal 11 at address 0x88888888
+      #0  00027010  Hu3DExec + 1588  [isle]
+      #1  0002b778  mp4_game_main + 556  [isle]
+      #2  0009da34  port_shutdown + 116  [isle]
+      #3  000bd484  port_call_on_stack + 32  [isle]
