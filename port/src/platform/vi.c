@@ -121,6 +121,12 @@ void VIWaitForRetrace(void) {
 
     port_dvd_service();
     port_arq_service();
+    /* The AI interrupt, simulated.  On the console this was the audio
+     * hardware's own 200 Hz interrupt; here it is an exact integer number of
+     * 160-sample frames per retrace, spent before the game runs, so MusyX's
+     * sequencer advances by a fixed function of the frame number and not by
+     * the wall clock.  See port/src/audio/musyx_sal.c. */
+    port_audio_tick();
     port_reset_thread_tick();
 
     {

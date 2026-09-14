@@ -66,6 +66,11 @@ typedef struct PortOptions {
     /* ---- M5 ---- */
     int nanwatch;           /* --nanwatch  name the first frame each camera,
                              *   model or board-camera field turns NaN         */
+    /* ---- M6: audio ---- */
+    const char* wav;        /* --wav FILE  capture the mix to a WAV, because
+                             *   nobody can listen to the G4 over SSH          */
+    int mute;               /* --mute   mix and time it, emit silence          */
+    int audiolog;           /* --audiolog  narrate voice/stream/studio events  */
 } PortOptions;
 
 extern PortOptions port_opt;
@@ -91,6 +96,8 @@ void port_perf_gx_end(void);
 void port_perf_present_begin(void);
 void port_perf_present_end(void);
 void port_perf_slept(double seconds);
+void port_perf_audio_begin(void);
+void port_perf_audio_end(void);
 void port_perf_frame(void);
 void port_perf_report(void);
 
@@ -130,6 +137,27 @@ void port_dvd_service(void);
 void port_thp_report(void);
 void port_card_report(void);
 void port_arq_service(void);
+
+/* ---- audio (port/src/audio, PLAN.md §16) --------------------------------- */
+/* The SAL's deterministic tick: one call per retrace, from the gate.  It is
+ * the only thing that makes MusyX advance, and it advances by an exact
+ * integer number of 160-sample frames, never by the wall clock. */
+void port_audio_tick(void);
+void port_audio_shutdown(void);
+void port_audio_report(void);
+/* MusyX's own ARAM allocator, ported off its stubbed PC arm (musyx_aram.c) */
+void port_musyx_aram_report(void);
+extern int port_audio_enabled; /* cleared by --noaudio */
+
+/* the output device, port/src/audio/audio_out_sdl.c */
+int port_audio_out_init(void);
+void port_audio_out_queue(const void* samples, unsigned bytes);
+unsigned port_audio_out_queued(void);
+void port_audio_out_shutdown(void);
+void port_audio_out_report(void);
+int port_audio_wav_start(const char* path);
+void port_audio_wav_write(const void* samples, unsigned bytes);
+void port_audio_wav_finish(void);
 
 /* ---- REL modules (port/src/os/dll_load.c) -------------------------------- */
 void* portDLLOpen(const char* relpath);

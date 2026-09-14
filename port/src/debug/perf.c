@@ -27,14 +27,15 @@
 #include <stdlib.h>
 #include <string.h>
 
-static double t_gx, t_present, t_frame_start, t_sleep;
-static double gx_open, present_open;
+static double t_gx, t_present, t_audio, t_frame_start, t_sleep;
+static double gx_open, present_open, audio_open;
 static int gx_depth;
 
 /* per-frame samples, so the report can give a median and a worst case rather
  * than only a mean -- a port's stutter lives in the tail. */
 #define PERF_MAX 20000
 static float s_frame[PERF_MAX], s_gx[PERF_MAX], s_present[PERF_MAX], s_game[PERF_MAX];
+static float s_audio[PERF_MAX];
 static int n_samples;
 static double t_first;
 
@@ -71,6 +72,24 @@ void port_perf_present_end(void) {
     }
 }
 
+/* The MusyX mix, from salCtrlDsp.  It is called about 3.34 times a frame (one
+ * 160-sample DSP frame per 5 ms of audio, against a 16.68 ms video frame), so
+ * this accumulates several regions per frame rather than bracketing one.
+ * It is on the game thread on purpose -- see the header of
+ * port/src/audio/audio_out_sdl.c -- which is exactly why it has to be counted
+ * here and subtracted from `game` rather than left invisible. */
+void port_perf_audio_begin(void) {
+    if (port_opt.perf) {
+        audio_open = port_now_seconds();
+    }
+}
+
+void port_perf_audio_end(void) {
+    if (port_opt.perf) {
+        t_audio += port_now_seconds() - audio_open;
+    }
+}
+
 void port_perf_slept(double seconds) {
     if (port_opt.perf) {
         t_sleep += seconds;
@@ -87,11 +106,11 @@ void port_perf_frame(void) {
     if (t_frame_start == 0.0) {
         t_frame_start = now;
         t_first = now;
-        t_gx = t_present = t_sleep = 0.0;
+        t_gx = t_present = t_audio = t_sleep = 0.0;
         return;
     }
     wall = now - t_frame_start - t_sleep;
-    game = wall - t_gx - t_present;
+    game = wall - t_gx - t_present - t_audio;
     if (game < 0.0) {
         game = 0.0;
     }
@@ -99,11 +118,12 @@ void port_perf_frame(void) {
         s_frame[n_samples] = (float)(wall * 1000.0);
         s_gx[n_samples] = (float)(t_gx * 1000.0);
         s_present[n_samples] = (float)(t_present * 1000.0);
+        s_audio[n_samples] = (float)(t_audio * 1000.0);
         s_game[n_samples] = (float)(game * 1000.0);
         n_samples++;
     }
     t_frame_start = now;
-    t_gx = t_present = t_sleep = 0.0;
+    t_gx = t_present = t_audio = t_sleep = 0.0;
 }
 
 static int cmpf(const void* a, const void* b) {
@@ -145,6 +165,7 @@ void port_perf_report(void) {
     line("game", s_game, n_samples);
     line("gx", s_gx, n_samples);
     line("present", s_present, n_samples);
+    line("aud", s_audio, n_samples);
     line("frame", s_frame, n_samples);
     port_log("  budget   16.68 ms/frame at 59.94 Hz; %d of %d frames over it (%.1f%%)\n",
              over, n_samples, 100.0 * over / n_samples);

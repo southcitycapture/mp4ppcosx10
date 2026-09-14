@@ -30,6 +30,7 @@ void port_call_on_stack(void (*fn)(void), void* stack_top);
 void port_dvd_stats(void);
 void port_crash_handler_install(void);
 void port_watchdog_arm(int seconds);
+void gx_tex_set_validate_every_bind(int v);
 
 static void usage(const char* argv0) {
     fprintf(stderr,
@@ -61,6 +62,9 @@ static void usage(const char* argv0) {
             "                    calls into bootDll after unlinking it and the\n"
             "                    console's freed heap is still executable\n"
             "  --noaudio         HuAudInit and msm succeed as silent stubs\n"
+            "  --wav FILE        capture the 32 kHz stereo mix to a WAV file\n"
+            "  --mute            mix and time it as usual; emit silence\n"
+            "  --audiolog        narrate MusyX stream, voice and studio events\n"
             "  --headless        decode and log GX, but open no window\n"
             "  --glcheck         assert that no GL call leaves the GL 1.3 subset\n"
             "  --glinfo          dump the driver's GL strings, limits and extensions\n"
@@ -75,7 +79,12 @@ static void usage(const char* argv0) {
             "                    card does; without it slot A holds a 512 KB image in\n"
             "                    ~/Library/Application Support/MarioParty4/\n"
             "  --dumptex         write every decoded texture (colour + alpha) to shotdir\n"
-            "  --texhash-full    hash whole textures on every bind (slow; a correctness check)\n"
+            "  --texhash-full    hash whole textures on every bind, bypassing the\n"
+            "                    validation epoch entirely (slow; a correctness check)\n"
+            "  --texvalidate-every-bind\n"
+            "                    keep the sampled content hash but check it on every\n"
+            "                    bind instead of once per validation epoch -- for\n"
+            "                    telling an epoch bug from a sampling bug\n"
             "  --gxwarn          name every GX feature the backend degraded\n"
             "  --dumpframe SPEC  write these presented frames as PPMs:\n"
             "                    N, or a,b,c, or first-last/step (e.g. 1-400/20)\n"
@@ -211,6 +220,12 @@ int port_parse_args(int argc, char** argv) {
             port_opt.relzerobss = 1;
         } else if (!strcmp(a, "--noaudio")) {
             port_opt.noaudio = 1;
+        } else if (!strcmp(a, "--wav") && i + 1 < argc) {
+            port_opt.wav = argv[++i];
+        } else if (!strcmp(a, "--mute")) {
+            port_opt.mute = 1;
+        } else if (!strcmp(a, "--audiolog")) {
+            port_opt.audiolog = 1;
         } else if (!strcmp(a, "--glcheck")) {
             port_opt.glcheck = 1;
         } else if (!strcmp(a, "--glinfo")) {
@@ -237,6 +252,8 @@ int port_parse_args(int argc, char** argv) {
             port_opt.dumptex = 1;
         } else if (!strcmp(a, "--texhash-full")) {
             port_opt.texhash_full = 1;
+        } else if (!strcmp(a, "--texvalidate-every-bind")) {
+            gx_tex_set_validate_every_bind(1);
         } else if (!strcmp(a, "--headless")) {
             port_opt.headless = 1;
         } else if (!strcmp(a, "--dumpframe") && i + 1 < argc) {
@@ -275,7 +292,9 @@ void GXInit_demo_bootstrap(void);
 /* One exit path, so a quit through the game's own reset, through --frames and
  * through the end of main() all report the same things in the same order. */
 void port_shutdown(int code) {
+    port_audio_shutdown(); /* first: it closes the WAV, which must be complete */
     port_perf_report();
+    port_audio_report();
     port_clock_report();
     port_gx_shutdown();
     port_dvd_stats();
@@ -330,6 +349,18 @@ int main(int argc, char** argv) {
     port_vi_init();
     port_dvd_init();
     port_gx_init();
+    /* After port_gx_init, which is what brings SDL up.  --noaudio keeps the
+     * whole path switched off, including the tick, so the boot behaves exactly
+     * as it did before M6 -- which is what makes an audio regression bisectable
+     * against a silent run of the same seed. */
+    if (port_opt.noaudio) {
+        port_audio_enabled = 0;
+    } else {
+        port_audio_out_init();
+        if (port_opt.wav) {
+            port_audio_wav_start(port_opt.wav);
+        }
+    }
     port_call_on_stack(run_game, port_game_stack_top());
     return 0;
 }

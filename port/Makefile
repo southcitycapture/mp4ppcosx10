@@ -68,6 +68,30 @@ GAME_C   := $(patsubst $(ROOT)/%,%,$(wildcard $(ROOT)/src/game/*.c $(ROOT)/src/g
             src/dolphin/mtx/vec.c src/dolphin/mtx/quat.c
 PORT_C   := $(wildcard src/platform/*.c src/os/*.c src/gx/*.c src/dvd/*.c \
                        src/card/*.c src/pad/*.c src/audio/*.c src/debug/*.c)
+# ---- MusyX (extern/musyx, MIT) -----------------------------------------------
+# AxioDL's MusyX reimplementation, compiled from the decomp's own checkout with
+# MUSY_TARGET=MUSY_TARGET_PC, which GAME_DEFS already sets.  Everything above
+# the SAL is portable exactly as it stands -- the sequencer, the voice and ADSR
+# model, the 3-D emitters, the streaming layer and the four aux effects -- so
+# these are built unmirrored and unpatched, straight out of extern/.
+#
+# Two files in that directory are deliberately not here:
+#   hw_pc.c      the skeleton PC SAL: every AI call commented out and
+#                salAiGetDest returning NULL.  port/src/audio/musyx_sal.c
+#                replaces it (and defines the same thirteen symbols).
+#   hw_aramdma.c its PC arm is eleven empty bodies -- aramStoreData returns
+#                NULL, aramAllocateStreamBuffer returns 0 -- which is exactly
+#                the path sndStreamAllocEx/ARAMUpdate/hwGetStreamPlayBuffer
+#                take, so the music would have nowhere to live.
+#                port/src/audio/musyx_aram.c is the Dolphin arm ported onto
+#                the port's flat 16 MB ARAM.
+#   profile.c    not in MusyX's own CMakeLists either; needs dolphin/PPCArch.h.
+# hw_dolphin.c, hw_lib_dolphin.c and dsp_import.c are guarded down to nothing on
+# this target, so they are dropped rather than compiled empty.
+MUSYX_DIR := $(ROOT)/extern/musyx/src/musyx/runtime
+MUSYX_C   := $(filter-out %/hw_pc.c %/hw_aramdma.c %/profile.c %/hw_dolphin.c \
+                          %/hw_lib_dolphin.c %/dsp_import.c, \
+               $(wildcard $(MUSYX_DIR)/*.c $(MUSYX_DIR)/*/*.c))
 # src/relmod/ is the other side of the fence: compiled into every REL bundle,
 # never into the main binary.
 RELMOD_C := src/relmod/rel_runtime.c src/relmod/rel_placeholder.c
@@ -97,8 +121,9 @@ STUBS_C  := $(BUILD)/sdk_stubs.c
 STUBS_U_C := $(BUILD)/sdk_stubs_untyped.c
 
 GAME_OBJS := $(patsubst %.c,$(BUILD)/game/%.o,$(GAME_C))
+MUSYX_OBJS := $(patsubst $(MUSYX_DIR)/%.c,$(BUILD)/musyx/%.o,$(MUSYX_C))
 PORT_OBJS := $(patsubst %.c,$(BUILD)/port/%.o,$(PORT_C)) $(BUILD)/port/jmp.o \
-             $(BUILD)/port/kerent_tramp.o
+             $(BUILD)/port/kerent_tramp.o $(MUSYX_OBJS)
 STUBS_OBJ := $(BUILD)/port/sdk_stubs.o $(BUILD)/port/sdk_stubs_untyped.o
 
 # ---- flags -------------------------------------------------------------------
@@ -215,6 +240,16 @@ $(BUILD)/port/src/gx/gx_draw.o: src/gx/gx_draw.c $(MIRROR_STAMP)
 $(BUILD)/port/%.o: %.c $(MIRROR_STAMP)
 	@mkdir -p $(dir $@)
 	$(CC) $(PORT_CFLAGS) -MMD -MP -c -o $@ $<
+
+# MusyX, straight out of extern/ -- no mirror, no patches, so no $(MIRROR_STAMP)
+# dependency and no $(GEN)/include on the path.  `-w` for the same reason the
+# game's own sources get it: this is upstream code compiled as it is written,
+# and the port's -Wall is a statement about the port's own files.
+MUSYX_CFLAGS = -std=gnu11 -O2 -g -fno-strict-aliasing -fwrapv -fcommon -w \
+               $(GAME_DEFS) -I$(ROOT)/extern/musyx/include -Iinclude $(TARGET_CFLAGS)
+$(BUILD)/musyx/%.o: $(MUSYX_DIR)/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(MUSYX_CFLAGS) -MMD -MP -c -o $@ $<
 
 $(BUILD)/port/jmp.o: $(CTX_ASM)
 	@mkdir -p $(dir $@)

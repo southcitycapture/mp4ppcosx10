@@ -78,7 +78,7 @@ holding an extracted `files/` tree. Other flags: `--frames N`, `--watchdog SEC`,
 `--perf`, `--drawlog N`, `--drawlog-at F`, `--dumptex`, `--texhash-full`,
 `--dumpframe SPEC`, `--shotdir DIR`, `--scale N`, `--nocard`, `--nopad`,
 `--paddbg`, `--play SCRIPT`, `--record FILE`, `--scenelog F[,F...]`,
-`--ovllog`, `--nanwatch`.
+`--ovllog`, `--nanwatch`, `--wav FILE`, `--mute`, `--audiolog`.
 
 `--dumpframe` takes a frame *set*, not a frame: `187`, `1,90,186`, or
 `1-400/20`. Comparing against Dolphin needs a spread, because the two sides do
@@ -98,6 +98,8 @@ output:
 | `--perf` | where the frame went: game, gx and present, with mean/median/p95/worst, and the game clock against the wall clock (an idle-gated retrace hides overruns) |
 | `--scenelog F` | what the 3D scene believes about itself on frame F: every camera, every model's placement, every HSF object transform -- which is how "the modelview is 67,720 out" became "the camera and the models are both fine and a second pass over the same objects is not" |
 | `--ovllog` | one line whenever the scene changes, which is the only way to know which screen a scripted A press landed on without shooting the frame |
+| `--wav FILE` | the mix, as a 32 kHz stereo WAV. Nobody can listen to the G4 over SSH, so this is how an audio claim is checked at all: peak levels, spectrum, and the frame the first sound arrives on, against Dolphin's own `dspdump.wav` of the same boot |
+| `--mute` | every voice started, decoded, advanced and retired exactly as usual, and silence emitted. The frame costs the same, so this separates "the audio path broke it" from "the audio broke it" without moving the game's timing |
 | `--nanwatch` | the first frame each camera, each model and the board's own `boardCamera` turns NaN, with the board camera printed for that frame *and the one before*. A NaN in a camera is completely silent -- nothing crashes, every comparison against it is false, and the 3D layer simply stops drawing -- so without this it looks like "the board does not render" |
 
 ## Running on the G4
@@ -208,7 +210,8 @@ and [`docs/g4-m2a-boot.log`](docs/g4-m2a-boot.log) (M2a); §10 of
 | `src/relmod/` | the other side of the fence: compiled into every REL bundle, never into the main binary |
 | `src/card/` | CARD over one 512 KB memory-card image in the console's own format |
 | `src/pad/` | PAD over the IOUSBLib Xbox One driver, SDL2 and the keyboard; `--play` / `--record` |
-| `src/audio/` | AI, the MusyX SAL replacement, the DSP command interpreter |
+| `src/audio/` | ARAM, the MusyX SAL replacement (`musyx_sal.c`), the CPU mixer that stands in for the `dspSlave` ucode (`musyx_mix.c`), MusyX's own ARAM allocator ported off its stubbed PC arm (`musyx_aram.c`), and the SDL output ring and `--wav` capture (`audio_out_sdl.c`) |
+| `extern/musyx` | *not* part of the port, but compiled into it: AxioDL's MIT MusyX reimplementation, built straight out of the decomp's checkout with `MUSY_TARGET_PC`, unmirrored and unpatched. The Makefile drops the five files that are skeletons or Dolphin-only on that target |
 | `src/debug/` | self-play, tracing, `--peek`, `--dumpdl`, `--perf` |
 | `src/ui/` | launcher and in-game overlay |
 | `scripts/` | input scripts and goldens |
