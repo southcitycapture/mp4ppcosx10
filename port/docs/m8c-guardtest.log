@@ -1,0 +1,103 @@
+# M8c hardware witness: --reltest, --memmap and --guardtest on the real G4
+# Power Mac G4, Mac OS X 10.5.4 (Leopard), Mon Sep 14 17:41:28 EDT 2026
+# bundle: build-ppc-darwin/MarioParty4.app installed by port/tools/g4_install.sh (the six corrected modules + guard pages)
+
+## --reltest
+Mario Party 4 -- native port, milestone M2a
+port> REL bundles: 99 in /Users/zach/isle.app/Contents/MacOS/rels
+port> --reltest: 99 module bundles, two load/unload rounds each
+port> --reltest: 198/198 load+unload cycles clean, 0 failed, 0 missing an entry point, 0 still resident after dlclose
+EXITCODE=0
+
+## --memmap (from the --guardtest mem1-hi run)
+port> memory map:
+port>   0x1800000-0x1810000        64 KB  the guard below the game stack  (PROT_NONE)
+port>   0x1810000-0x2010000      8192 KB  the game stack
+port>   0x2010000-0x2020000        64 KB  the guard between the game stack and MEM1  (PROT_NONE)
+port>   0x2020000-0x3820000     24576 KB  MEM1
+port>   0x3820000-0x3830000        64 KB  the guard above MEM1  (PROT_NONE)
+port>   0x3830000-0x3840000        64 KB  the guard below ARAM  (PROT_NONE)
+port>   0x3840000-0x4840000     16384 KB  ARAM
+port>   0x4840000-0x4850000        64 KB  the guard above ARAM  (PROT_NONE)
+port> --guardtest mem1-hi: writing one byte at 0x3820000, which should fault
+
+## --guardtest mem1-hi
+port> --guardtest mem1-hi: writing one byte at 0x3820000, which should fault
+
+*** port: fault: signal 10 at address 0x3820000
+    region  0 bytes into the guard above MEM1 [0x3820000, 0x3830000)
+            this is a guard page: MEM1 ran off its top end.
+            MEM1 is [0x2020000, 0x3820000) -- the bug is the last write before this one.
+    pc   00000000000a0734  (image base 0000000000001000, offset 9f734)
+    sp   00000000bffff290
+    atos -o <binary> -l 0x1000 0xa0734
+    in   port_guard_selftest  (/Users/zach/isle.app/Contents/MacOS/isle)
+    backtrace (pc, then return addresses up the linkage chain):
+      #0  000db4f4  main + 672  [isle]
+      #1  000027a8  (no image -- unloaded REL?)
+      #2  00002528  (no image -- unloaded REL?)
+
+## --guardtest mem1-lo
+port> --guardtest mem1-lo: writing one byte at 0x201ffff, which should fault
+
+*** port: fault: signal 10 at address 0x201ffff
+    region  65535 bytes into the guard between the game stack and MEM1 [0x2010000, 0x2020000)
+            this is a guard page: MEM1 ran off its bottom end.
+            MEM1 is [0x2020000, 0x3820000) -- the bug is the last write before this one.
+    pc   00000000000a0734  (image base 0000000000001000, offset 9f734)
+    sp   00000000bffff290
+    atos -o <binary> -l 0x1000 0xa0734
+    in   port_guard_selftest  (/Users/zach/isle.app/Contents/MacOS/isle)
+    backtrace (pc, then return addresses up the linkage chain):
+      #0  000db4f4  main + 672  [isle]
+      #1  000027a8  (no image -- unloaded REL?)
+      #2  00002528  (no image -- unloaded REL?)
+
+## --guardtest aram-hi
+port> --guardtest aram-hi: writing one byte at 0x4840000, which should fault
+
+*** port: fault: signal 10 at address 0x4840000
+    region  0 bytes into the guard above ARAM [0x4840000, 0x4850000)
+            this is a guard page: ARAM ran off its top end.
+            ARAM is [0x3840000, 0x4840000) -- the bug is the last write before this one.
+    pc   00000000000a0734  (image base 0000000000001000, offset 9f734)
+    sp   00000000bffff290
+    atos -o <binary> -l 0x1000 0xa0734
+    in   port_guard_selftest  (/Users/zach/isle.app/Contents/MacOS/isle)
+    backtrace (pc, then return addresses up the linkage chain):
+      #0  000db4f4  main + 672  [isle]
+      #1  000027a8  (no image -- unloaded REL?)
+      #2  00002528  (no image -- unloaded REL?)
+
+## --guardtest aram-lo
+port> --guardtest aram-lo: writing one byte at 0x383ffff, which should fault
+
+*** port: fault: signal 10 at address 0x383ffff
+    region  65535 bytes into the guard below ARAM [0x3830000, 0x3840000)
+            this is a guard page: ARAM ran off its bottom end.
+            ARAM is [0x3840000, 0x4840000) -- the bug is the last write before this one.
+    pc   00000000000a0734  (image base 0000000000001000, offset 9f734)
+    sp   00000000bffff290
+    atos -o <binary> -l 0x1000 0xa0734
+    in   port_guard_selftest  (/Users/zach/isle.app/Contents/MacOS/isle)
+    backtrace (pc, then return addresses up the linkage chain):
+      #0  000db4f4  main + 672  [isle]
+      #1  000027a8  (no image -- unloaded REL?)
+      #2  00002528  (no image -- unloaded REL?)
+
+## --guardtest stack-lo
+port> --guardtest stack-lo: writing one byte at 0x180ffff, which should fault
+
+*** port: fault: signal 10 at address 0x180ffff
+    region  65535 bytes into the guard below the game stack [0x1800000, 0x1810000)
+            this is a guard page: the game stack ran off its bottom end.
+            the game stack is [0x1810000, 0x2010000) -- the bug is the last write before this one.
+    pc   00000000000a0734  (image base 0000000000001000, offset 9f734)
+    sp   00000000bffff290
+    atos -o <binary> -l 0x1000 0xa0734
+    in   port_guard_selftest  (/Users/zach/isle.app/Contents/MacOS/isle)
+    backtrace (pc, then return addresses up the linkage chain):
+      #0  000db4f4  main + 672  [isle]
+      #1  000027a8  (no image -- unloaded REL?)
+      #2  00002528  (no image -- unloaded REL?)
+
