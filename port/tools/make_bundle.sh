@@ -70,6 +70,17 @@ fi
 if [ "$with_image" = 1 ]; then
     cp "$image" "$out/Contents/Resources/$(basename "$image")"
 fi
+# The input scripts.  `--play board-start.play` is how every runbook writes it,
+# and the runner's working directory on the G4 is not this tree; pad_play.c
+# falls back to Contents/Resources/movies for a name with no '/' in it, so the
+# scripts have to be in the bundle for that to find anything.  They are a few
+# kilobytes each.
+movies=$here/../ref/movies
+if [ -d "$movies" ]; then
+    mkdir -p "$out/Contents/Resources/movies"
+    cp "$movies"/*.play "$out/Contents/Resources/movies/" 2>/dev/null || true
+    echo "  movies: $(ls "$out/Contents/Resources/movies" | wc -l | tr -d ' ') input scripts"
+fi
 # SDL2.  The cross build links it from the Docker mount (/work/sdl2/lib), a path
 # that does not exist on the G4, so the dylib is copied into the bundle and the
 # executable's reference to it rewritten to @executable_path.  Nothing has to be

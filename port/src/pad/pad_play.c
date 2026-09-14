@@ -46,6 +46,10 @@
 #include <string.h>
 #include <strings.h>
 
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#endif
+
 struct pad_play_cmd {
     u32 first, last; /* inclusive frame range */
     u16 buttons;
@@ -162,13 +166,59 @@ static void parse_at_tokens(char* toks, u32 first, u32 last) {
     append_cmd(c);
 }
 
-static void load_script(const char* path) {
+/* A bare script name -- `--play board-start.play` -- is what every runbook and
+ * every g4 invocation writes, and the working directory of a run started by the
+ * console runner on the G4 is not the tree the scripts live in.  So a name with
+ * no '/' in it is also looked for inside the bundle, next to the disc image:
+ * make_bundle.sh ships port/ref/movies there as Contents/Resources/movies.
+ * Without this the run does not fail -- it sits on the title screen for as long
+ * as it is given, which cost one witness session an hour. */
+static FILE* open_script(const char* path, char* used, size_t used_n) {
     FILE* f = fopen(path, "r");
+
+    snprintf(used, used_n, "%s", path);
+    if (f != NULL || strchr(path, '/') != NULL) {
+        return f;
+    }
+#if defined(__APPLE__)
+    {
+        char exe[1024];
+        uint32_t n = (uint32_t)sizeof(exe);
+        if (_NSGetExecutablePath(exe, &n) == 0) {
+            char* slash = strrchr(exe, '/'); /* strip the executable */
+            if (slash != NULL) {
+                *slash = '\0';
+                slash = strrchr(exe, '/'); /* strip MacOS */
+                if (slash != NULL) {
+                    *slash = '\0';
+                    snprintf(used, used_n, "%s/Resources/movies/%s", exe, path);
+                    f = fopen(used, "r");
+                    if (f == NULL) {
+                        snprintf(used, used_n, "%s/Resources/%s", exe, path);
+                        f = fopen(used, "r");
+                    }
+                }
+            }
+        }
+    }
+#endif
+    if (f == NULL) {
+        snprintf(used, used_n, "%s", path);
+    }
+    return f;
+}
+
+static void load_script(const char* path) {
+    char used[1024];
+    FILE* f = open_script(path, used, sizeof(used));
     char line[512];
     int lineno = 0;
     if (f == NULL) {
         port_log("port> pad: --play: cannot open %s\n", path);
         return;
+    }
+    if (strcmp(used, path) != 0) {
+        port_log("port> pad: --play: %s -> %s\n", path, used);
     }
     while (fgets(line, sizeof(line), f) != NULL) {
         char op[16], a1[16], a2[16], toks[480];
