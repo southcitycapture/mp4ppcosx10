@@ -48,6 +48,28 @@ static void handler(int sig, siginfo_t* info, void* uap) {
     port_log("\n*** port: %s: signal %d at address %p\n",
              sig == SIGALRM ? "watchdog fired: no retrace in the last --watchdog period" : "fault",
              sig, info ? info->si_addr : NULL);
+    /* Which region -- if any -- the address belongs to.  Since M8 the port
+     * maps PROT_NONE guards either side of MEM1, the game stack and ARAM, so
+     * an overrun faults one page past the end of the thing it overran instead
+     * of 16 MB later wherever the address space happens to stop.  This is the
+     * line that turns that into an answer (PLAN.md §18.1). */
+    if (sig != SIGALRM && info && info->si_addr) {
+        long off = 0;
+        const void *rlo = NULL, *rhi = NULL, *glo = NULL, *ghi = NULL;
+        const char* what = port_mem_region_name(info->si_addr, &off, &rlo, &rhi);
+        const char* guards = port_mem_guard_of(info->si_addr, &glo, &ghi);
+        if (what) {
+            port_log("    region  %ld bytes into %s [%p, %p)\n", off, what, rlo, rhi);
+        } else {
+            port_log("    region  not a region the port owns\n");
+        }
+        if (guards) {
+            port_log("            this is a guard page: %s ran off its %s end.\n",
+                     guards, info->si_addr >= ghi ? "top" : "bottom");
+            port_log("            %s is [%p, %p) -- the bug is the last write "
+                     "before this one.\n", guards, glo, ghi);
+        }
+    }
     port_log("    pc   %016llx  (image base %016llx, offset %llx)\n", pc, base,
              pc > base ? pc - base : 0);
     port_log("    sp   %016llx\n", sp);

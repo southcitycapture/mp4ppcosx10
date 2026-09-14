@@ -282,6 +282,10 @@ int port_parse_args(int argc, char** argv) {
             port_opt.gxdemo = 1;
         } else if (!strcmp(a, "--reltest")) {
             port_opt.reltest = 1;
+        } else if (!strcmp(a, "--guardtest") && i + 1 < argc) {
+            port_opt.guardtest = argv[++i];
+        } else if (!strcmp(a, "--memmap")) {
+            port_opt.memmap = 1;
         } else if (!strcmp(a, "--relzerobss")) {
             port_opt.relzerobss = 1;
         } else if (!strcmp(a, "--noaudio")) {
@@ -412,6 +416,13 @@ int main(int argc, char** argv) {
     }
     port_reset_init();
     port_mem_init();
+    if (port_opt.memmap || port_opt.guardtest) {
+        port_mem_regions_dump();
+    }
+    if (port_opt.guardtest) {
+        port_guard_selftest(port_opt.guardtest);
+        port_shutdown(0);
+    }
     port_vi_init();
     port_dvd_init();
     port_gx_init();

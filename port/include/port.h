@@ -42,6 +42,8 @@ typedef struct PortOptions {
     const char* reldir;     /* --reldir  where the 99 REL bundles live        */
     int gxdemo;             /* --gxdemo  draw the GX self-test frame          */
     int reltest;            /* --reltest load and unload all 99 twice, report */
+    int memmap;             /* --memmap  print the region table at boot */
+    const char* guardtest;  /* --guardtest WHERE: prove the guards fault */
     int relzerobss;         /* --relzerobss  always zero a module's bss by
                              *   hand on load, as if dlclose never unloaded   */
     int noaudio;            /* --noaudio  HuAudInit/msm succeed as silent stubs */
@@ -147,6 +149,19 @@ void port_mem_init(void);
 void* port_mem1_lo(void);
 void* port_mem1_hi(void);
 void* port_aram(void);
+/* Name the port-owned region an address falls in ("MEM1", "the guard above
+ * MEM1", ...), or NULL if the port does not own it.  The crash handler turns a
+ * fault address into a sentence with these. */
+const char* port_mem_region_name(const void* addr, long* off, const void** base,
+                                 const void** end);
+const char* port_mem_guard_of(const void* addr, const void** rlo,
+                              const void** rhi);
+void port_mem_regions_dump(void);
+/* --guardtest WHERE: deliberately step one byte outside a region, so that the
+ * guards and the crash handler's region line can be proved on a machine that
+ * is not the one the bug was found on.  WHERE is mem1-hi, mem1-lo, aram-hi,
+ * aram-lo or stack-lo. */
+void port_guard_selftest(const char* where);
 
 /* The high 32 bits of every address the game may truncate into a u32 field.
  * On the G4 these are zero and every reconstruction is the identity; on a

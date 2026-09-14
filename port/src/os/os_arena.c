@@ -25,7 +25,36 @@
 
 #define PORT_GAME_STACK 0x00800000u /* 8 MB, the stack the game itself runs on */
 
-static u8* region; /* [ game stack | MEM1 ], one mmap, one 4 GB window */
+/* ---- guard pages --------------------------------------------------------
+ *
+ * PLAN.md §17.7 spent an evening on a fault at 0x4800000, which turned out to
+ * be 16 MB above the top of MEM1 -- the place where the *host's* address space
+ * happened to run out, not the place where the bug was.  A pointer had walked
+ * off the end of a MEM1 array and written through 16 MB of whatever the
+ * process had mapped above it before anything noticed.
+ *
+ * So every region the port hands to the game is now mapped with PROT_NONE
+ * pages either side of it.  An overrun faults at the boundary, one page past
+ * the end of the thing it overran, and `port_mem_region_name` turns the
+ * address into a sentence.  The diagnosis becomes immediate and the corruption
+ * never happens at all, which matters more: a run that dies at 0x3800000 is
+ * worth more than a run that keeps going with a scribbled heap.
+ *
+ * The guards are 64 KB rather than one page on purpose.  A strength-reduced
+ * loop striding a struct at a time can step over a single 4 KB page without
+ * touching it; 64 KB is wide enough that nothing in this game jumps it.
+ *
+ * The layout is one mmap, because MEM1 and the game stack must share a 4 GB
+ * window (see below), and guarding the stack as well is free:
+ *
+ *   [guard][ game stack 8 MB ][guard][ MEM1 24 MB ][guard]
+ *
+ * ARAM gets the same treatment in its own mapping.  It used to be a calloc,
+ * where an overrun landed in the C heap and was invisible.
+ */
+#define PORT_GUARD_SIZE 0x00010000u /* 64 KB either side of every region */
+
+static u8* region; /* [ guard | stack | guard | MEM1 | guard ], one 4 GB window */
 static u8* mem1;
 static u8* aram;
 static void* arena_lo;
@@ -34,17 +63,123 @@ static void* arena_hi;
 uintptr_t port_text_base_hi;
 uintptr_t port_stack_base_hi;
 
+/* Every span the port knows the name of, in address order, including the
+ * guards.  The crash handler walks this to say what was hit. */
+#define PORT_REGION_MAX 8
+static struct port_region {
+    const char* name;
+    const u8* lo;
+    const u8* hi;
+    int guard;          /* 1 if this span is PROT_NONE */
+    const char* of;     /* for a guard: the region it protects */
+} regions[PORT_REGION_MAX];
+static int region_count;
+
+static void region_add(const char* name, const u8* lo, const u8* hi, int guard,
+                       const char* of) {
+    if (region_count < PORT_REGION_MAX) {
+        regions[region_count].name = name;
+        regions[region_count].lo = lo;
+        regions[region_count].hi = hi;
+        regions[region_count].guard = guard;
+        regions[region_count].of = of;
+        region_count++;
+    }
+}
+
+/* Make [lo, lo+len) unreadable and unwritable.  A failure here is not fatal:
+ * the port runs exactly as it did before, it just stops catching this class of
+ * bug, and saying so is better than refusing to start. */
+static void guard_off(u8* lo, size_t len, const char* what) {
+    if (mprotect(lo, len, PROT_NONE) != 0) {
+        port_log("port> warning: cannot guard %s at %p -- overruns will not "
+                 "fault at the boundary\n", what, (void*)lo);
+    }
+}
+
+/* Name the region an address falls in.  Returns NULL if the port does not know
+ * the address.  `off` is filled with the offset into whatever was named, and
+ * `base`/`end` with its bounds, so the caller can print all three. */
+const char* port_mem_region_name(const void* addr, long* off, const void** base,
+                                 const void** end) {
+    const u8* a = (const u8*)addr;
+    int i;
+    for (i = 0; i < region_count; i++) {
+        if (a >= regions[i].lo && a < regions[i].hi) {
+            if (off) {
+                *off = (long)(a - regions[i].lo);
+            }
+            if (base) {
+                *base = regions[i].lo;
+            }
+            if (end) {
+                *end = regions[i].hi;
+            }
+            return regions[i].name;
+        }
+    }
+    return NULL;
+}
+
+/* For the crash handler's second line: if the address is in a guard, which
+ * region did it run off, and in which direction. */
+const char* port_mem_guard_of(const void* addr, const void** rlo,
+                              const void** rhi) {
+    const u8* a = (const u8*)addr;
+    int i;
+    for (i = 0; i < region_count; i++) {
+        if (regions[i].guard && a >= regions[i].lo && a < regions[i].hi) {
+            int j;
+            for (j = 0; j < region_count; j++) {
+                if (!regions[j].guard && regions[j].name == regions[i].of) {
+                    if (rlo) {
+                        *rlo = regions[j].lo;
+                    }
+                    if (rhi) {
+                        *rhi = regions[j].hi;
+                    }
+                    break;
+                }
+            }
+            return regions[i].of;
+        }
+    }
+    return NULL;
+}
+
+void port_mem_regions_dump(void) {
+    int i;
+    port_log("port> memory map:\n");
+    for (i = 0; i < region_count; i++) {
+        port_log("port>   %p-%p  %8lu KB  %s%s\n", (const void*)regions[i].lo,
+                 (const void*)regions[i].hi,
+                 (unsigned long)((regions[i].hi - regions[i].lo) >> 10),
+                 regions[i].name, regions[i].guard ? "  (PROT_NONE)" : "");
+    }
+}
+
 void port_mem_init(void) {
-    size_t total = PORT_GAME_STACK + PORT_MEM1_SIZE;
+    /* [guard][ stack ][guard][ MEM1 ][guard] */
+    size_t total = PORT_GUARD_SIZE + PORT_GAME_STACK + PORT_GUARD_SIZE +
+                   PORT_MEM1_SIZE + PORT_GUARD_SIZE;
+    size_t aram_total = PORT_GUARD_SIZE + PORT_ARAM_SIZE + PORT_GUARD_SIZE;
+    u8* stack_lo;
+    u8* aram_map;
+
     region = mmap(NULL, total, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
     if (region == MAP_FAILED) {
         port_fatal("cannot map %zu bytes for the game stack + MEM1", total);
     }
-    mem1 = region + PORT_GAME_STACK;
-    aram = calloc(1, PORT_ARAM_SIZE);
-    if (!aram) {
-        port_fatal("cannot allocate %u bytes of ARAM", PORT_ARAM_SIZE);
+    stack_lo = region + PORT_GUARD_SIZE;
+    mem1 = stack_lo + PORT_GAME_STACK + PORT_GUARD_SIZE;
+
+    aram_map = mmap(NULL, aram_total, PROT_READ | PROT_WRITE,
+                    MAP_PRIVATE | MAP_ANON, -1, 0);
+    if (aram_map == MAP_FAILED) {
+        port_fatal("cannot map %zu bytes for ARAM", aram_total);
     }
+    aram = aram_map + PORT_GUARD_SIZE;
+    memset(aram, 0, PORT_ARAM_SIZE); /* calloc's zero, kept: ARInit relies on it */
     /* MEM1 must not straddle a 4 GB boundary: the game stores coroutine stack
      * pointers in u32 fields (HUPROCESS::base_sp, jmp_buf::sp) and the port
      * reconstructs them from this base.  On the G4 the base is zero. */
@@ -57,9 +192,30 @@ void port_mem_init(void) {
 
     arena_lo = mem1;
     arena_hi = mem1 + PORT_MEM1_SIZE;
+
+    /* Order matters only for the dump; the lookup is a linear scan. */
+    region_add("the guard below the game stack", region, stack_lo, 1,
+               "the game stack");
+    region_add("the game stack", stack_lo, stack_lo + PORT_GAME_STACK, 0, NULL);
+    region_add("the guard between the game stack and MEM1",
+               stack_lo + PORT_GAME_STACK, mem1, 1, "MEM1");
+    region_add("MEM1", mem1, mem1 + PORT_MEM1_SIZE, 0, NULL);
+    region_add("the guard above MEM1", mem1 + PORT_MEM1_SIZE,
+               mem1 + PORT_MEM1_SIZE + PORT_GUARD_SIZE, 1, "MEM1");
+    region_add("the guard below ARAM", aram_map, aram, 1, "ARAM");
+    region_add("ARAM", aram, aram + PORT_ARAM_SIZE, 0, NULL);
+    region_add("the guard above ARAM", aram + PORT_ARAM_SIZE,
+               aram + PORT_ARAM_SIZE + PORT_GUARD_SIZE, 1, "ARAM");
+
+    guard_off(region, PORT_GUARD_SIZE, "below the game stack");
+    guard_off(stack_lo + PORT_GAME_STACK, PORT_GUARD_SIZE,
+              "between the game stack and MEM1");
+    guard_off(mem1 + PORT_MEM1_SIZE, PORT_GUARD_SIZE, "above MEM1");
+    guard_off(aram_map, PORT_GUARD_SIZE, "below ARAM");
+    guard_off(aram + PORT_ARAM_SIZE, PORT_GUARD_SIZE, "above ARAM");
 }
 
-void* port_game_stack_top(void) { return region + PORT_GAME_STACK; }
+void* port_game_stack_top(void) { return region + PORT_GUARD_SIZE + PORT_GAME_STACK; }
 void* port_mem1_lo(void) { return mem1; }
 void* port_mem1_hi(void) { return mem1 + PORT_MEM1_SIZE; }
 void* port_aram(void) { return aram; }
@@ -300,3 +456,35 @@ u32 portMessTag(const void* p) {
 }
 
 u8* portMessPtr(u32 mess) { return (u8*)(uintptr_t)(mess & ~PORT_MESS_TAG); }
+
+/* ---- --guardtest --------------------------------------------------------
+ *
+ * The guards only earn their place if they actually fault, and the machine
+ * that finds the next bug is not always the machine that can reproduce it.
+ * `--guardtest mem1-hi` writes one byte one past the top of MEM1 and expects
+ * the crash handler to say so; the other names cover the other four edges.
+ * It is the regression test for §18.1 and it runs anywhere the port builds.
+ */
+void port_guard_selftest(const char* where) {
+    volatile u8* p = NULL;
+    if (!strcmp(where, "mem1-hi")) {
+        p = (volatile u8*)(mem1 + PORT_MEM1_SIZE);
+    } else if (!strcmp(where, "mem1-lo")) {
+        p = (volatile u8*)(mem1 - 1);
+    } else if (!strcmp(where, "aram-hi")) {
+        p = (volatile u8*)(aram + PORT_ARAM_SIZE);
+    } else if (!strcmp(where, "aram-lo")) {
+        p = (volatile u8*)(aram - 1);
+    } else if (!strcmp(where, "stack-lo")) {
+        p = (volatile u8*)(region + PORT_GUARD_SIZE - 1);
+    } else {
+        port_log("port> --guardtest: unknown place '%s' -- use mem1-hi, "
+                 "mem1-lo, aram-hi, aram-lo or stack-lo\n", where);
+        return;
+    }
+    port_log("port> --guardtest %s: writing one byte at %p, which should fault\n",
+             where, (void*)p);
+    *p = 0x5A;
+    port_log("port> --guardtest %s: IT DID NOT FAULT -- the guard is not "
+             "protecting this edge\n", where);
+}
