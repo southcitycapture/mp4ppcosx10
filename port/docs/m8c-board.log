@@ -1,0 +1,3381 @@
+Mario Party 4 -- native port, milestone M2a
+port> DVD: disc image /Users/zach/MarioParty4/mp4.nkit.iso, 357 files in the FST
+port> GL: ATI Radeon 9000 OpenGL Engine / 1.3 ATI-1.5.28, 6 texture units
+port> GL feature set used: combine3 1, crossbar 1, s3tc 1, blend_subtract 1, depth_texture 0, 6 units
+port> audio: 32000 Hz, 2 ch, 512-frame buffer, 64 KB ring (512 ms)
+port> --com4: all four players are CPU; instDll will dismiss its own instruction screen (src/REL/instDll/main.c:294)
+port> entering the game's own main()
+
+port> OSInit: MEM1 24 MB [0x2020000, 0x3820000), ARAM 16 MB, bus 162 MHz
+port> OSInit: RTC pinned to 1041472800 (2003-01-02T02:00:00Z), OSGetTime origin 3838914000000000 ticks
+port> DVDInit
+port> VIInit
+port> PADInit: no pad found; controller 1 = keyboard
+port> PADInit: rumble not available
+port> PADInit: controllers 2-4 unplugged (reference config: CPU players)
+port> pad: --play: board-start-com4.play -> /Users/zach/isle.app/Contents/Resources/movies/board-start-com4.play
+port> pad: --play board-start-com4.play: 460 directives, 0 marks
+port> OSCreateHeap 0: 0x214c000..0x3820000 (23375 KB)
+port> VIConfigure: 640x480 xfb, 640x480 efb, tv mode 0
+port> GXInit: FIFO 0x214c00c, 1048576 bytes (the port keeps no FIFO; the write-gather writers are ordinary calls under TARGET_PC)
+port> frame 1: overlay 0 (next 0) event 0
+port> roulette: frame 1 dealt mg 401 (m401dll, type 0)
+port> OSCreateThread 0x199430 func 0x41b24 (the soft-reset watcher; polled once per retrace, not run on a thread)
+HuMem> left memory space 2383KB(2441120)
+port> ARInit: 16 MB of ARAM
+port> MusyX SAL: 32000 Hz, 4 x 640-byte AI buffers (20 ms), 32-sample sub-frame
+port> musyx_mix: CPU mixer up, 50 voices, 1 studios, 32000 Hz
+port> MusyX SAL: mixing started
+port> musyx_aram: region [0x000000, 0x800000) zero_buf [0x000000, 0x000500) sample heap starts at 0x000500
+port> CARD: slot A = /Users/zach/board.raw (--freshcard: formatted, 59 free blocks)
+DLL DBG OUT
+objman>Call New Ovl 1(1)
+port> frame 2: overlay -1 (next 1) event 0
+++++++++++++++++++++ Start New OVL 1 (EVT:0 STAT:0x00000000) ++++++++++++++++++
+objman>Used Memory Size:000121e0
+objman>Used Memory Cnt:2
+objman>Init esp
+objman>Call objectsetup
+DLLStart 1 0
+Search:dll/bootdll.rel
+objdll>Link DLL:dll/bootdll.rel
+Rest Memory 580000
+port> REL bundles: 99 in /Users/zach/isle.app/Contents/MacOS/rels
+===== DLL Module Info dump ====
+                   ID:0x00000001
+             LinkPrev:0x00000000
+             LinkNext:0x00000000
+          Section num:14
+Section info tbl ofst:0x00000048
+           nameOffset:0x00000000
+             nameSize:47
+              version:0x00000002
+===============================
+==== DLL Module Header dump ====
+          bss Size:0x0000005c
+        rel Offset:0x00005c9d
+        imp Offset:0x00007a4d
+    prolog Section:1
+    epilog Section:1
+unresolved Section:0
+       prolog func:0x00000000
+       epilog func:0x00000054
+   unresolved func:0x00000000
+================================
+objdll>LinkOK 0225e578 00ad1200
+objdll> dll/bootdll.rel prolog start
+******* Boot ObjectSetup *********
+objman>InitObjMan start
+objman>InitObjMan end
+objdll> dll/bootdll.rel prolog end
+objman>ObjectSetup end
+port> frame 3: overlay 1 (next -1) event 0
+DLL DBG OUT
+Rest Memory 57d540
+ARAM Trans 808000
+Rest Memory 55d020
+ARAM Trans 80aaa0
+Rest Memory 506400
+ARAM Trans 82da60
+Rest Memory 564f40
+ARAM Trans 8a7640
+Rest Memory 5395a0
+data num 74000b
+Rest Memory 1f08c0
+port> status f60      bootdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.12 ms  0.0 fps
+port> status f120     bootdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.11 ms  359.8 fps
+port> status f180     bootdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.11 ms  660.2 fps
+port> status f240     bootdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.11 ms  602.4 fps
+port> status f300     bootdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.11 ms  267.3 fps
+port> status f360     bootdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.11 ms  389.2 fps
+port> status f420     bootdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.11 ms  660.8 fps
+port> status f480     bootdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.11 ms  661.3 fps
+port> status f540     bootdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.11 ms  610.1 fps
+0
+GroupSet 0
+***********GroupSet Error 0
+port> status f600     bootdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.11 ms  468.5 fps
+port> THP: movie/opmov_a00.thp skipped -- movie decode is M8 (see port/src/dvd/thp_stub.c)
+port> HuSprBegin: group 3 slot 0 names sprite 7, which is not a live sprite (data 0x0, attr 0010) -- dropped [1/32]
+port> status f660     bootdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.11 ms  618.6 fps
+port> status f720     bootdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.11 ms  765.0 fps
+>>>>>>>>MSM_SE_SEL_01 0
+>>>>>>>>SE Num 0
+port> audio: first non-silent sample at retrace 726 (12.03 s of mixed audio)
+port> status f780     bootdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.38 ms  6.8 fps
+port> status f840     bootdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.41 ms  6.8 fps
+port> musyx_mix: MEM1 sample id 1074 compType 0 at 0x2c9fb50 len 12059824: 00 00 00 0f 0f 00 00 0f 00 00 00 00 00 00 0f 00
+port> musyx_mix: MEM1 sample id 1073 compType 0 at 0x2c98890 len 12089200: 00 00 00 00 0f 00 00 0f 00 00 00 00 00 00 00 00
+port> musyx_mix: MEM1 sample id 1076 compType 0 at 0x2cc0430 len 11926480: 34 95 2f 1f ff 02 1f f0 33 20 f0 43 fa e7 71 be
+port> musyx_mix: MEM1 sample id 1075 compType 0 at 0x2ca6e10 len 12030448: 73 7e f0 d2 0e 01 13 fe 12 f3 20 26 1b e6 49 b6
+objman>Call New Ovl 74(1)
+OvlKill 1
+objdll>omDLLNumEnd 1 1
+Search:dll/bootdll.rel
++++++++++++ Find0: dll/bootdll.rel
+objdll>omDLLEnd 0 1
+objdll>End DLL:dll/bootdll.rel
+odjdll>Unlink DLL:dll/bootdll.rel
+objdll>Unlink DLL epilog
+objdll>Unlink DLL epilog finish
+objdll>End DLL finish
+port> frame 877: overlay -1 (next 74) event 0
+objman>Destory ObjMan
+++++++++++++++++++++ Start New OVL 74 (EVT:0 STAT:0x00000000) ++++++++++++++++++
+objman>Used Memory Size:00012b80
+objman>Used Memory Cnt:7
+objman>Init esp
+objman>Call objectsetup
+############CharGrpSet
+Del Group OK
+port> musyx_aram: aramRemoveData(22208) with an empty sample heap.  Expected: hwSaveSample only stores on the Dolphin target, so msm owns sample upload and MusyX only ever frees.  Clamped; further occurrences are counted, not printed.
+SOUND ##########################
+0
+GroupSet 0
+***********GroupSet Error 0
+Change AUX 0,1
+##########################
+DLLStart 74 0
+Search:dll/modeseldll.rel
+objdll>Link DLL:dll/modeseldll.rel
+Rest Memory 580000
+===== DLL Module Info dump ====
+                   ID:0x00000001
+             LinkPrev:0x00000000
+             LinkNext:0x00000000
+          Section num:15
+Section info tbl ofst:0x00000048
+           nameOffset:0x00000000
+             nameSize:53
+              version:0x00000002
+===============================
+==== DLL Module Header dump ====
+          bss Size:0x000001ca
+        rel Offset:0x0000d154
+        imp Offset:0x0001664c
+    prolog Section:1
+    epilog Section:1
+unresolved Section:0
+       prolog func:0x00000000
+       epilog func:0x00000054
+   unresolved func:0x00000000
+================================
+objdll>LinkOK 0225e578 00ab4050
+objdll> dll/modeseldll.rel prolog start
+******* MS ObjectSetup *********
+objman>InitObjMan start
+objman>InitObjMan end
+Rest Memory 5395a0
+objdll> dll/modeseldll.rel prolog end
+objman>ObjectSetup end
+port> frame 879: overlay 74 (next -1) event 0
+DLL DBG OUT
+data num 630000
+Rest Memory 441ce0
+port> status f900     modeseldll   board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.87 ms  9.3 fps
+port> status f960     modeseldll   board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.30 ms  221.5 fps
+port> status f1020    modeseldll   board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.73 ms  222.3 fps
+port> status f1080    modeseldll   board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.91 ms  215.6 fps
+port> status f1140    modeseldll   board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.97 ms  211.5 fps
+port> status f1200    modeseldll   board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.02 ms  210.0 fps
+Init
+port> status f1260    modeseldll   board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.85 ms  59.5 fps
+ARAM data num 86001f
+port> status f1320    modeseldll   board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.77 ms  62.2 fps
+port> CARD: created "MARIPA4BOX0", 16384 bytes (2 blocks)
+port> status f1380    modeseldll   board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.23 ms  57.0 fps
+port> THP: movie/opmov_s00.thp skipped -- movie decode is M8 (see port/src/dvd/thp_stub.c)
+port> HuSprBegin: group 1 slot 0 names sprite 12, which is not a live sprite (data 0x0, attr 0010) -- dropped [2/32]
+port> status f1440    modeseldll   board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.86 ms  53.7 fps
+port> status f1500    modeseldll   board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.18 ms  63.0 fps
+port> status f1560    modeseldll   board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.75 ms  65.1 fps
+port> status f1620    modeseldll   board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.26 ms  62.0 fps
+port> status f1680    modeseldll   board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.05 ms  59.2 fps
+port> status f1740    modeseldll   board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.10 ms  60.3 fps
+port> THP: movie/opmov_c00.thp skipped -- movie decode is M8 (see port/src/dvd/thp_stub.c)
+port> HuSprBegin: group 2 slot 0 names sprite 14, which is not a live sprite (data 0x0, attr 0010) -- dropped [3/32]
+port> status f1800    modeseldll   board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.00 ms  61.4 fps
+port> status f1860    modeseldll   board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.78 ms  64.5 fps
+port> status f1920    modeseldll   board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.75 ms  64.4 fps
+objman>Call New Ovl 70(1)
+OvlKill 1
+objdll>omDLLNumEnd 74 1
+Search:dll/modeseldll.rel
++++++++++++ Find0: dll/modeseldll.rel
+objdll>omDLLEnd 0 1
+objdll>End DLL:dll/modeseldll.rel
+odjdll>Unlink DLL:dll/modeseldll.rel
+objdll>Unlink DLL epilog
+objdll>Unlink DLL epilog finish
+objdll>End DLL finish
+port> frame 1960: overlay -1 (next 70) event 0
+objman>Destory ObjMan
+++++++++++++++++++++ Start New OVL 70 (EVT:0 STAT:0x00000000) ++++++++++++++++++
+objman>Used Memory Size:00012b80
+objman>Used Memory Cnt:7
+objman>Init esp
+objman>Call objectsetup
+DLLStart 70 0
+Search:dll/mentdll.rel
+objdll>Link DLL:dll/mentdll.rel
+Rest Memory 580000
+===== DLL Module Info dump ====
+                   ID:0x00000001
+             LinkPrev:0x00000000
+             LinkNext:0x00000000
+          Section num:15
+Section info tbl ofst:0x00000048
+           nameOffset:0x00000000
+             nameSize:47
+              version:0x00000002
+===============================
+==== DLL Module Header dump ====
+          bss Size:0x000036c4
+        rel Offset:0x000246f8
+        imp Offset:0x00036a90
+    prolog Section:1
+    epilog Section:1
+unresolved Section:0
+       prolog func:0x000000a4
+       epilog func:0x000000f8
+   unresolved func:0x00000000
+================================
+objdll>LinkOK 022841f8 00ae8470
+objdll> dll/mentdll.rel prolog start
+objman>InitObjMan start
+objman>InitObjMan end
+Rest Memory 5395a0
+0
+GroupSet 7
+***********GroupSet Error 0
+objdll> dll/mentdll.rel prolog end
+objman>ObjectSetup end
+port> frame 1961: overlay 70 (next -1) event 0
+DLL DBG OUT
+data num 600008
+Rest Memory 1ad6c0
+ARAM data num 120006
+port> status f1980    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.35 ms  31.9 fps
+########### ME_MainProcFunc000
+port> status f2040    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.18 ms  25.7 fps
+port> status f2100    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.41 ms  25.6 fps
+port> status f2160    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.41 ms  12.7 fps
+port> status f2220    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.41 ms  10.4 fps
+port> status f2280    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.41 ms  10.5 fps
+port> status f2340    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.41 ms  10.9 fps
+port> status f2400    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.42 ms  10.9 fps
+port> status f2460    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.93 ms  10.7 fps
+port> status f2520    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.69 ms  10.6 fps
+port> status f2580    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.06 ms  10.6 fps
+port> status f2640    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.86 ms  10.4 fps
+port> status f2700    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.13 ms  10.6 fps
+port> status f2760    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.26 ms  10.4 fps
+port> status f2820    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.24 ms  10.4 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+port> status f2880    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.36 ms  10.5 fps
+port> status f2940    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.34 ms  10.5 fps
+port> status f3000    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.44 ms  10.4 fps
+#########SE Entry Error<SE 54:ErrorNo -110>
+port> status f3060    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.34 ms  10.3 fps
+#########SE Entry Error<SE 109:ErrorNo -110>
+#########SE Entry Error<SE 57:ErrorNo -110>
+port> status f3120    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.85 ms  10.4 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f3180    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.05 ms  10.3 fps
+#########SE Entry Error<SE 110:ErrorNo -110>
+port> status f3240    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.20 ms  10.3 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+port> status f3300    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.54 ms  10.3 fps
+#########SE Entry Error<SE 111:ErrorNo -110>
+port> status f3360    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.20 ms  10.4 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+port> status f3420    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.30 ms  10.3 fps
+#########SE Entry Error<SE 112:ErrorNo -110>
+port> status f3480    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.64 ms  10.4 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+port> status f3540    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.08 ms  10.5 fps
+port> status f3600    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.75 ms  10.6 fps
+port> status f3660    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.37 ms  10.6 fps
+#########SE Entry Error<SE 57:ErrorNo -110>
+port> status f3720    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.21 ms  10.5 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+#########SE Entry Error<SE 83:ErrorNo -110>
+#########SE Entry Error<SE 54:ErrorNo -110>
+port> status f3780    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.13 ms  10.3 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+port> status f3840    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.59 ms  10.3 fps
+#########SE Entry Error<SE 57:ErrorNo -110>
+#########SE Entry Error<SE 84:ErrorNo -110>
+port> status f3900    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.66 ms  10.4 fps
+#########SE Entry Error<SE 84:ErrorNo -110>
+#########SE Entry Error<SE 84:ErrorNo -110>
+port> status f3960    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.60 ms  10.4 fps
+#########SE Entry Error<SE 84:ErrorNo -110>
+port> status f4020    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.74 ms  10.4 fps
+port> status f4080    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.12 ms  10.5 fps
+port> status f4140    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.42 ms  10.4 fps
+#########SE Entry Error<SE 54:ErrorNo -110>
+port> status f4200    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.92 ms  10.5 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f4260    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.62 ms  10.4 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+port> status f4320    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.81 ms  10.5 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+port> status f4380    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.07 ms  10.5 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+port> status f4440    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.02 ms  10.5 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+port> status f4500    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.59 ms  10.4 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+#########SE Entry Error<SE 54:ErrorNo -110>
+port> status f4560    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.53 ms  10.5 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+port> status f4620    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.81 ms  10.4 fps
+port> status f4680    mentdll      board 0 turn 0/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.61 ms  10.5 fps
+#########SE Entry Error<SE 84:ErrorNo -110>
+port> status f4740    mentdll      board 0 turn 1/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.46 ms  12.8 fps
+#########SE Entry Error<SE 84:ErrorNo -110>
+Rest Memory 3f5780
+Rest Memory 420c20
+#########SE Entry Error<SE 84:ErrorNo -110>
+port> status f4800    mentdll      board 0 turn 1/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.77 ms  18.8 fps
+#########SE Entry Error<SE 55:ErrorNo -110>
+port> status f4860    mentdll      board 0 turn 1/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.39 ms  19.0 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f4920    mentdll      board 0 turn 1/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.84 ms  19.0 fps
+#########SE Entry Error<SE 117:ErrorNo -110>
+#########SE Entry Error<SE 118:ErrorNo -110>
+#########SE Entry Error<SE 119:ErrorNo -110>
+#########SE Entry Error<SE 120:ErrorNo -110>
+#########SE Entry Error<SE 125:ErrorNo -110>
+port> status f4980    mentdll      board 0 turn 1/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.33 ms  18.3 fps
+#########SE Entry Error<SE 34:ErrorNo -110>
+port> status f5040    mentdll      board 0 turn 1/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.27 ms  18.9 fps
+port> status f5100    mentdll      board 0 turn 1/3  mg 401 (m401dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.19 ms  19.0 fps
+Rest Memory 2e2fa0
+ARAM Trans a4cf40
+Rest Memory 2da580
+ARAM Trans b8aba0
+Rest Memory 2ed200
+ARAM Trans cd1220
+Rest Memory 2c7a80
+ARAM Trans e04c20
+objman>Call New Ovl 89(1)
+OvlKill 1
+objdll>omDLLNumEnd 70 1
+Search:dll/mentdll.rel
++++++++++++ Find0: dll/mentdll.rel
+objdll>omDLLEnd 0 1
+objdll>End DLL:dll/mentdll.rel
+odjdll>Unlink DLL:dll/mentdll.rel
+objdll>Unlink DLL epilog
+objdll>Unlink DLL epilog finish
+objdll>End DLL finish
+port> frame 5101: overlay -1 (next 89) event 0
+objman>Destory ObjMan
+++++++++++++++++++++ Start New OVL 89 (EVT:0 STAT:0x00000000) ++++++++++++++++++
+objman>Used Memory Size:000212e0
+objman>Used Memory Cnt:15
+objman>Init esp
+objman>Call objectsetup
+SOUND ##########################
+0
+GroupSet 9
+***********GroupSet Error 0
+##########################
+DLLStart 89 0
+Search:dll/w01dll.rel
+objdll>Link DLL:dll/w01dll.rel
+Rest Memory 420c20
+===== DLL Module Info dump ====
+                   ID:0x00000001
+             LinkPrev:0x00000000
+             LinkNext:0x00000000
+          Section num:16
+Section info tbl ofst:0x00000048
+           nameOffset:0x00000000
+             nameSize:45
+              version:0x00000002
+===============================
+==== DLL Module Header dump ====
+          bss Size:0x0000081c
+        rel Offset:0x00012e34
+        imp Offset:0x0001f174
+    prolog Section:1
+    epilog Section:1
+unresolved Section:0
+       prolog func:0x00000030
+       epilog func:0x00000094
+   unresolved func:0x00000000
+================================
+objdll>LinkOK 0225e578 00aef550
+objdll> dll/w01dll.rel prolog start
+objman>InitObjMan start
+objman>InitObjMan end
+objdll> dll/w01dll.rel prolog end
+objman>ObjectSetup end
+port> frame 5102: overlay 89 (next -1) event 0
+DLL DBG OUT
+Rest Memory 37b3c0
+Rest Memory 334960
+data num 5e0000
+Rest Memory 31dea0
+ARAM data num 120006
+data num 190000
+Rest Memory 322ae0
+data num 6c0000
+Rest Memory 302e20
+data num 890000
+Rest Memory 31a860
+ARAM data num 7001d
+data num 50000
+Rest Memory 136ce0
+data num 90000
+Rest Memory 1424a0
+port> status f5160    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.33 ms  10.0 fps
+port> status f5220    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.41 ms  10.9 fps
+port> status f5280    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.41 ms  10.9 fps
+port> status f5340    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.41 ms  10.9 fps
+port> status f5400    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.41 ms  10.7 fps
+port> status f5460    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.41 ms  10.7 fps
+port> status f5520    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.42 ms  11.4 fps
+port> status f5580    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.41 ms  15.5 fps
+port> status f5640    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.41 ms  19.6 fps
+port> status f5700    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.41 ms  25.0 fps
+port> status f5760    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.41 ms  25.0 fps
+port> status f5820    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.41 ms  24.8 fps
+#########SE Entry Error<SE 269:ErrorNo -110>
+#########SE Entry Error<SE 269:ErrorNo -110>
+port> status f5880    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.48 ms  18.0 fps
+#########SE Entry Error<SE 333:ErrorNo -110>
+#########SE Entry Error<SE 333:ErrorNo -110>
+#########SE Entry Error<SE 397:ErrorNo -110>
+#########SE Entry Error<SE 397:ErrorNo -110>
+port> status f5940    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.31 ms  13.7 fps
+#########SE Entry Error<SE 461:ErrorNo -110>
+port> status f6000    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.28 ms  11.6 fps
+#########SE Entry Error<SE 54:ErrorNo -110>
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f6060    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.24 ms  11.7 fps
+port> status f6120    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.52 ms  11.7 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f6180    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.27 ms  11.5 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f6240    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.11 ms  11.7 fps
+#########SE Entry Error<SE 770:ErrorNo -110>
+#########SE Entry Error<SE 770:ErrorNo -110>
+#########SE Entry Error<SE 770:ErrorNo -110>
+#########SE Entry Error<SE 770:ErrorNo -110>
+port> status f6300    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.10 ms  11.5 fps
+#########SE Entry Error<SE 768:ErrorNo -110>
+#########SE Entry Error<SE 768:ErrorNo -110>
+#########SE Entry Error<SE 768:ErrorNo -110>
+#########SE Entry Error<SE 768:ErrorNo -110>
+#########SE Entry Error<SE 771:ErrorNo -110>
+#########SE Entry Error<SE 771:ErrorNo -110>
+#########SE Entry Error<SE 771:ErrorNo -110>
+port> status f6360    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.18 ms  11.2 fps
+#########SE Entry Error<SE 771:ErrorNo -110>
+port> status f6420    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.11 ms  11.3 fps
+port> status f6480    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.74 ms  11.4 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+#########SE Entry Error<SE 290:ErrorNo -110>
+port> status f6540    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.54 ms  11.7 fps
+port> status f6600    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.97 ms  11.9 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f6660    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.42 ms  11.7 fps
+#########SE Entry Error<SE 418:ErrorNo -110>
+port> status f6720    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.16 ms  11.6 fps
+port> status f6780    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.13 ms  11.7 fps
+port> status f6840    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.35 ms  11.7 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+#########SE Entry Error<SE 354:ErrorNo -110>
+port> status f6900    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.43 ms  11.7 fps
+port> status f6960    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.18 ms  11.8 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f7020    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.19 ms  11.8 fps
+port> status f7080    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.43 ms  11.7 fps
+#########SE Entry Error<SE 482:ErrorNo -110>
+port> status f7140    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.17 ms  11.8 fps
+port> status f7200    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.75 ms  12.1 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f7260    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.86 ms  12.1 fps
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+port> status f7320    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 9/0c 9/0c 9/0c 9/0c  aud 2.24 ms  11.9 fps
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 15:ErrorNo -110>
+#########SE Entry Error<SE 354:ErrorNo -110>
+#########SE Entry Error<SE 290:ErrorNo -110>
+#########SE Entry Error<SE 418:ErrorNo -110>
+port> status f7380    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 1.97 ms  11.8 fps
+#########SE Entry Error<SE 482:ErrorNo -110>
+port> status f7440    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.01 ms  11.8 fps
+port> status f7500    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.07 ms  11.7 fps
+port> status f7560    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.17 ms  11.4 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f7620    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.21 ms  11.5 fps
+port> status f7680    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.68 ms  12.0 fps
+#########SE Entry Error<SE 54:ErrorNo -110>
+port> status f7740    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.69 ms  12.1 fps
+port> status f7800    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.69 ms  18.1 fps
+port> status f7860    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.68 ms  16.7 fps
+port> status f7920    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 3.00 ms  16.7 fps
+port> status f7980    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.85 ms  17.1 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f8040    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.77 ms  17.0 fps
+data num 60017
+Rest Memory 1960c0
+port> status f8100    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.74 ms  14.4 fps
+#########SE Entry Error<SE 838:ErrorNo -110>
+#########SE Entry Error<SE 55:ErrorNo -110>
+port> status f8160    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.35 ms  16.1 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f8220    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.88 ms  16.0 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f8280    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.72 ms  16.0 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f8340    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.75 ms  16.0 fps
+#########SE Entry Error<SE 290:ErrorNo -110>
+port> status f8400    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.81 ms  16.0 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+#########SE Entry Error<SE 418:ErrorNo -110>
+port> status f8460    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.50 ms  16.1 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f8520    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.78 ms  15.7 fps
+#########SE Entry Error<SE 354:ErrorNo -110>
+port> status f8580    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.63 ms  15.6 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+#########SE Entry Error<SE 482:ErrorNo -110>
+port> status f8640    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 3.02 ms  15.5 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f8700    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.76 ms  15.5 fps
+port> status f8760    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.89 ms  15.3 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f8820    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.72 ms  16.0 fps
+port> status f8880    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.68 ms  16.4 fps
+#########SE Entry Error<SE 54:ErrorNo -110>
+port> status f8940    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.52 ms  16.1 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f9000    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.52 ms  15.8 fps
+#########SE Entry Error<SE 409:ErrorNo -110>
+#########SE Entry Error<SE 855:ErrorNo -110>
+port> status f9060    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.67 ms  14.0 fps
+#########SE Entry Error<SE 855:ErrorNo -110>
+#########SE Entry Error<SE 855:ErrorNo -110>
+#########SE Entry Error<SE 384:ErrorNo -110>
+#########SE Entry Error<SE 855:ErrorNo -110>
+#########SE Entry Error<SE 855:ErrorNo -110>
+#########SE Entry Error<SE 855:ErrorNo -110>
+#########SE Entry Error<SE 855:ErrorNo -110>
+#########SE Entry Error<SE 855:ErrorNo -110>
+#########SE Entry Error<SE 855:ErrorNo -110>
+#########SE Entry Error<SE 855:ErrorNo -110>
+#########SE Entry Error<SE 780:ErrorNo -110>
+#########SE Entry Error<SE 855:ErrorNo -110>
+#########SE Entry Error<SE 855:ErrorNo -110>
+port> status f9120    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.67 ms  14.0 fps
+#########SE Entry Error<SE 855:ErrorNo -110>
+#########SE Entry Error<SE 855:ErrorNo -110>
+port> status f9180    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.43 ms  14.1 fps
+#########SE Entry Error<SE 855:ErrorNo -110>
+#########SE Entry Error<SE 855:ErrorNo -110>
+#########SE Entry Error<SE 870:ErrorNo -110>
+port> status f9240    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.95 ms  14.0 fps
+#########SE Entry Error<SE 55:ErrorNo -110>
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f9300    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.44 ms  14.1 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f9360    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.21 ms  14.1 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+#########SE Entry Error<SE 389:ErrorNo -110>
+port> status f9420    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.81 ms  14.0 fps
+#########SE Entry Error<SE 389:ErrorNo -110>
+port> status f9480    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 3.00 ms  15.6 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f9540    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.96 ms  16.3 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f9600    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.89 ms  16.4 fps
+port> status f9660    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.79 ms  14.7 fps
+#########SE Entry Error<SE 775:ErrorNo -110>
+port> status f9720    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.37 ms  12.6 fps
+#########SE Entry Error<SE 770:ErrorNo -110>
+#########SE Entry Error<SE 768:ErrorNo -110>
+port> status f9780    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.43 ms  13.4 fps
+#########SE Entry Error<SE 771:ErrorNo -110>
+#########SE Entry Error<SE 780:ErrorNo -110>
+port> status f9840    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.43 ms  13.2 fps
+port> status f9900    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.71 ms  12.7 fps
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 325:ErrorNo -110>
+#########SE Entry Error<SE 389:ErrorNo -110>
+#########SE Entry Error<SE 453:ErrorNo -110>
+#########SE Entry Error<SE 325:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 389:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+port> status f9960    w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.51 ms  11.7 fps
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+port> status f10020   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.95 ms  14.4 fps
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+port> status f10080   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.58 ms  16.4 fps
+port> status f10140   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 3.07 ms  16.4 fps
+#########SE Entry Error<SE 269:ErrorNo -110>
+#########SE Entry Error<SE 269:ErrorNo -110>
+#########SE Entry Error<SE 269:ErrorNo -110>
+#########SE Entry Error<SE 1040:ErrorNo -110>
+port> status f10200   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.68 ms  16.4 fps
+port> status f10260   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.87 ms  16.4 fps
+port> status f10320   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.88 ms  16.5 fps
+#########SE Entry Error<SE 269:ErrorNo -110>
+#########SE Entry Error<SE 269:ErrorNo -110>
+#########SE Entry Error<SE 269:ErrorNo -110>
+#########SE Entry Error<SE 1027:ErrorNo -110>
+port> status f10380   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.78 ms  16.5 fps
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+port> status f10440   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.21 ms  16.0 fps
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 0:ErrorNo -110>
+#########SE Entry Error<SE 2:ErrorNo -110>
+port> status f10500   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.39 ms  15.0 fps
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+port> status f10560   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 3.09 ms  14.9 fps
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 839:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 290:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 15:ErrorNo -110>
+port> status f10620   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 3.04 ms  15.2 fps
+port> status f10680   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.97 ms  15.8 fps
+#########SE Entry Error<SE 775:ErrorNo -110>
+port> status f10740   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.62 ms  15.6 fps
+#########SE Entry Error<SE 770:ErrorNo -110>
+#########SE Entry Error<SE 768:ErrorNo -110>
+port> status f10800   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.16 ms  15.1 fps
+#########SE Entry Error<SE 771:ErrorNo -110>
+#########SE Entry Error<SE 780:ErrorNo -110>
+port> status f10860   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.22 ms  15.2 fps
+#########SE Entry Error<SE 389:ErrorNo -110>
+port> status f10920   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.79 ms  14.7 fps
+#########SE Entry Error<SE 389:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 325:ErrorNo -110>
+#########SE Entry Error<SE 389:ErrorNo -110>
+#########SE Entry Error<SE 453:ErrorNo -110>
+#########SE Entry Error<SE 325:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 389:ErrorNo -110>
+port> status f10980   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.94 ms  13.1 fps
+#########SE Entry Error<SE 389:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 389:ErrorNo -110>
+#########SE Entry Error<SE 389:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 389:ErrorNo -110>
+port> status f11040   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.92 ms  14.1 fps
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 389:ErrorNo -110>
+#########SE Entry Error<SE 389:ErrorNo -110>
+#########SE Entry Error<SE 389:ErrorNo -110>
+port> status f11100   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 3.27 ms  15.4 fps
+port> status f11160   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 3.31 ms  15.9 fps
+#########SE Entry Error<SE 397:ErrorNo -110>
+#########SE Entry Error<SE 397:ErrorNo -110>
+#########SE Entry Error<SE 1040:ErrorNo -110>
+port> status f11220   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.59 ms  16.0 fps
+port> status f11280   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.04 ms  16.3 fps
+port> status f11340   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.98 ms  16.3 fps
+port> status f11400   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.80 ms  16.4 fps
+#########SE Entry Error<SE 397:ErrorNo -110>
+#########SE Entry Error<SE 397:ErrorNo -110>
+#########SE Entry Error<SE 1027:ErrorNo -110>
+port> status f11460   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.65 ms  16.2 fps
+#########SE Entry Error<SE 389:ErrorNo -110>
+port> status f11520   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.54 ms  16.5 fps
+#########SE Entry Error<SE 389:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 389:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 389:ErrorNo -110>
+#########SE Entry Error<SE 389:ErrorNo -110>
+port> status f11580   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.95 ms  14.8 fps
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 389:ErrorNo -110>
+#########SE Entry Error<SE 389:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 389:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 389:ErrorNo -110>
+#########SE Entry Error<SE 842:ErrorNo -110>
+port> status f11640   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.63 ms  15.1 fps
+#########SE Entry Error<SE 778:ErrorNo -110>
+port> status f11700   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 3.19 ms  16.6 fps
+port> status f11760   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.63 ms  17.5 fps
+#########SE Entry Error<SE 779:ErrorNo -110>
+port> status f11820   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.71 ms  17.5 fps
+port> status f11880   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 3.12 ms  17.3 fps
+#########SE Entry Error<SE 835:ErrorNo -110>
+#########SE Entry Error<SE 419:ErrorNo -110>
+port> status f11940   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.34 ms  15.2 fps
+port> status f12000   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.93 ms  15.2 fps
+#########SE Entry Error<SE 837:ErrorNo -110>
+#########SE Entry Error<SE 829:ErrorNo -110>
+#########SE Entry Error<SE 346:ErrorNo -110>
+#########SE Entry Error<SE 474:ErrorNo -110>
+port> status f12060   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.70 ms  16.4 fps
+port> status f12120   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 1.77 ms  14.3 fps
+#########SE Entry Error<SE 320:ErrorNo -110>
+#########SE Entry Error<SE 384:ErrorNo -110>
+#########SE Entry Error<SE 448:ErrorNo -110>
+port> status f12180   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.75 ms  14.2 fps
+#########SE Entry Error<SE 775:ErrorNo -110>
+port> status f12240   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.88 ms  15.0 fps
+#########SE Entry Error<SE 770:ErrorNo -110>
+#########SE Entry Error<SE 768:ErrorNo -110>
+port> status f12300   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.54 ms  14.9 fps
+#########SE Entry Error<SE 771:ErrorNo -110>
+#########SE Entry Error<SE 780:ErrorNo -110>
+port> status f12360   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.49 ms  14.9 fps
+#########SE Entry Error<SE 325:ErrorNo -110>
+port> status f12420   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.67 ms  14.4 fps
+#########SE Entry Error<SE 325:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 389:ErrorNo -110>
+#########SE Entry Error<SE 325:ErrorNo -110>
+#########SE Entry Error<SE 453:ErrorNo -110>
+#########SE Entry Error<SE 389:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 325:ErrorNo -110>
+#########SE Entry Error<SE 325:ErrorNo -110>
+port> status f12480   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 3.16 ms  13.2 fps
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 325:ErrorNo -110>
+#########SE Entry Error<SE 325:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 325:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 325:ErrorNo -110>
+port> status f12540   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 3.00 ms  15.6 fps
+#########SE Entry Error<SE 325:ErrorNo -110>
+port> status f12600   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.32 ms  17.1 fps
+port> status f12660   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.80 ms  17.0 fps
+#########SE Entry Error<SE 333:ErrorNo -110>
+#########SE Entry Error<SE 333:ErrorNo -110>
+#########SE Entry Error<SE 1040:ErrorNo -110>
+port> status f12720   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 3.04 ms  16.6 fps
+port> status f12780   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.25 ms  17.1 fps
+#########SE Entry Error<SE 333:ErrorNo -110>
+#########SE Entry Error<SE 333:ErrorNo -110>
+port> status f12840   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.63 ms  16.9 fps
+#########SE Entry Error<SE 1027:ErrorNo -110>
+port> status f12900   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.75 ms  16.7 fps
+#########SE Entry Error<SE 325:ErrorNo -110>
+#########SE Entry Error<SE 325:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 325:ErrorNo -110>
+port> status f12960   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.71 ms  13.8 fps
+#########SE Entry Error<SE 325:ErrorNo -110>
+#########SE Entry Error<SE 2:ErrorNo -110>
+#########SE Entry Error<SE 325:ErrorNo -110>
+#########SE Entry Error<SE 325:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+port> status f13020   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.82 ms  13.2 fps
+#########SE Entry Error<SE 325:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 325:ErrorNo -110>
+#########SE Entry Error<SE 842:ErrorNo -110>
+#########SE Entry Error<SE 832:ErrorNo -110>
+port> status f13080   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.64 ms  15.3 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+port> status f13140   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.79 ms  16.5 fps
+port> status f13200   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.54 ms  16.5 fps
+#########SE Entry Error<SE 780:ErrorNo -110>
+#########SE Entry Error<SE 833:ErrorNo -110>
+port> status f13260   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.73 ms  16.4 fps
+#########SE Entry Error<SE 781:ErrorNo -110>
+#########SE Entry Error<SE 864:ErrorNo -110>
+#########SE Entry Error<SE 354:ErrorNo -110>
+port> status f13320   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.87 ms  16.1 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f13380   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.81 ms  16.5 fps
+#########SE Entry Error<SE 775:ErrorNo -110>
+port> status f13440   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.57 ms  16.6 fps
+#########SE Entry Error<SE 770:ErrorNo -110>
+#########SE Entry Error<SE 768:ErrorNo -110>
+port> status f13500   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.70 ms  16.2 fps
+#########SE Entry Error<SE 771:ErrorNo -110>
+#########SE Entry Error<SE 780:ErrorNo -110>
+port> status f13560   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.96 ms  16.1 fps
+port> status f13620   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.60 ms  16.4 fps
+#########SE Entry Error<SE 453:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 453:ErrorNo -110>
+#########SE Entry Error<SE 389:ErrorNo -110>
+#########SE Entry Error<SE 453:ErrorNo -110>
+#########SE Entry Error<SE 389:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+port> status f13680   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.64 ms  14.7 fps
+#########SE Entry Error<SE 453:ErrorNo -110>
+#########SE Entry Error<SE 453:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 453:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 453:ErrorNo -110>
+port> status f13740   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.82 ms  15.0 fps
+#########SE Entry Error<SE 453:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 770:ErrorNo -110>
+port> status f13800   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.41 ms  16.3 fps
+port> status f13860   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.46 ms  17.8 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+#########SE Entry Error<SE 780:ErrorNo -110>
+#########SE Entry Error<SE 827:ErrorNo -110>
+port> status f13920   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 3.10 ms  17.4 fps
+#########SE Entry Error<SE 824:ErrorNo -110>
+#########SE Entry Error<SE 851:ErrorNo -110>
+ARAM data num 120001
+port> status f13980   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 2.77 ms  17.5 fps
+port> status f14040   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 3.12 ms  17.5 fps
+#########SE Entry Error<SE 825:ErrorNo -110>
+port> status f14100   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 3.10 ms  17.4 fps
+#########SE Entry Error<SE 480:ErrorNo -110>
+#########SE Entry Error<SE 8:ErrorNo -110>
+port> status f14160   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/1c  aud 3.10 ms  17.6 fps
+port> status f14220   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/1c  aud 3.02 ms  18.1 fps
+port> status f14280   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/1c  aud 2.56 ms  18.4 fps
+port> status f14340   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/1c  aud 2.71 ms  18.5 fps
+port> status f14400   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/1c  aud 2.69 ms  18.5 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f14460   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 10/1c  aud 2.65 ms  18.5 fps
+#########SE Entry Error<SE 839:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 482:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+port> status f14520   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 13/1c  aud 2.78 ms  17.9 fps
+#########SE Entry Error<SE 15:ErrorNo -110>
+port> status f14580   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 13/1c  aud 2.86 ms  17.2 fps
+port> status f14640   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 13/1c  aud 3.30 ms  17.4 fps
+#########SE Entry Error<SE 852:ErrorNo -110>
+#########SE Entry Error<SE 853:ErrorNo -110>
+port> status f14700   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 13/1c  aud 2.83 ms  15.9 fps
+port> status f14760   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 13/1c  aud 2.48 ms  16.2 fps
+port> status f14820   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 13/1c  aud 2.72 ms  15.9 fps
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+port> status f14880   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 13/1c  aud 2.61 ms  15.9 fps
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+port> status f14940   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 13/1c  aud 2.17 ms  16.0 fps
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 773:ErrorNo -110>
+port> status f15000   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 13/1c  aud 2.61 ms  15.8 fps
+port> status f15060   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 13/1c  aud 2.91 ms  15.7 fps
+port> status f15120   w01dll       board 0 turn 1/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 10/0c 13/1c  aud 2.73 ms  16.0 fps
+Rest Memory 40a8e0
+port> roulette: frame 15158 dealt mg 403 (m403dll, type 0)
+objman>Call New Ovl 3(1)
+OvlKill 1
+objdll>omDLLNumEnd 89 1
+Search:dll/w01dll.rel
++++++++++++ Find0: dll/w01dll.rel
+objdll>omDLLEnd 0 1
+objdll>End DLL:dll/w01dll.rel
+odjdll>Unlink DLL:dll/w01dll.rel
+objdll>Unlink DLL epilog
+objdll>Unlink DLL epilog finish
+objdll>End DLL finish
+port> frame 15153: overlay -1 (next 3) event 0
+objman>Destory ObjMan
+++++++++++++++++++++ Start New OVL 3 (EVT:0 STAT:0x00000000) ++++++++++++++++++
+objman>Used Memory Size:000212e0
+objman>Used Memory Cnt:15
+objman>Init esp
+objman>Call objectsetup
+DLLStart 3 0
+Search:dll/instdll.rel
+objdll>Link DLL:dll/instdll.rel
+Rest Memory 40a8e0
+===== DLL Module Info dump ====
+                   ID:0x00000001
+             LinkPrev:0x00000000
+             LinkNext:0x00000000
+          Section num:15
+Section info tbl ofst:0x00000048
+           nameOffset:0x00000000
+             nameSize:47
+              version:0x00000002
+===============================
+==== DLL Module Header dump ====
+          bss Size:0x00000064
+        rel Offset:0x00006aa8
+        imp Offset:0x0000ad98
+    prolog Section:1
+    epilog Section:1
+unresolved Section:0
+       prolog func:0x00000000
+       epilog func:0x00000054
+   unresolved func:0x00000000
+================================
+objdll>LinkOK 0225e578 00af8d90
+objdll> dll/instdll.rel prolog start
+******* INST ObjectSetup *********
+objman>InitObjMan start
+objman>InitObjMan end
+0
+GroupSet 20
+***********GroupSet Error 0
+Rest Memory 3c3e80
+objdll> dll/instdll.rel prolog end
+objman>ObjectSetup end
+port> frame 15154: overlay 3 (next -1) event 0
+DLL DBG OUT
+data num 5e0000
+Rest Memory 3ad3c0
+ARAM data num 120006
+data num 6c0000
+Rest Memory 392340
+data num 190000
+Rest Memory 3b2000
+data num 890000
+Rest Memory 3a9d80
+port> status f15180   instdll      board 0 turn 1/3  mg 403 (m403dll)  coins/stars 13/0c 10/0c 10/0c 13/1c  aud 1.93 ms  15.9 fps
+#########SE Entry Error<SE 1211:ErrorNo -110>
+port> status f15240   instdll      board 0 turn 1/3  mg 403 (m403dll)  coins/stars 13/0c 10/0c 10/0c 13/1c  aud 1.51 ms  20.7 fps
+#########SE Entry Error<SE 1212:ErrorNo -110>
+#########SE Entry Error<SE 55:ErrorNo -110>
+port> status f15300   instdll      board 0 turn 1/3  mg 403 (m403dll)  coins/stars 13/0c 10/0c 10/0c 13/1c  aud 1.87 ms  18.8 fps
+#########SE Entry Error<SE 397:ErrorNo -110>
+#########SE Entry Error<SE 397:ErrorNo -110>
+#########SE Entry Error<SE 269:ErrorNo -110>
+#########SE Entry Error<SE 461:ErrorNo -110>
+#########SE Entry Error<SE 269:ErrorNo -110>
+#########SE Entry Error<SE 333:ErrorNo -110>
+#########SE Entry Error<SE 333:ErrorNo -110>
+Rest Memory 431680
+port> status f15360   instdll      board 0 turn 1/3  mg 403 (m403dll)  coins/stars 13/0c 10/0c 10/0c 13/1c  aud 1.63 ms  17.9 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+#########SE Entry Error<SE 57:ErrorNo -110>
+#########SE Entry Error<SE 277:ErrorNo -110>
+port> status f15420   instdll      board 0 turn 1/3  mg 403 (m403dll)  coins/stars 13/0c 10/0c 10/0c 13/1c  aud 2.21 ms  19.0 fps
+#########SE Entry Error<SE 1210:ErrorNo -110>
+port> status f15480   instdll      board 0 turn 1/3  mg 403 (m403dll)  coins/stars 13/0c 10/0c 10/0c 13/1c  aud 1.83 ms  20.0 fps
+objman>Call New Ovl 11(1)
+OvlKill 1
+objdll>omDLLNumEnd 3 1
+Search:dll/instdll.rel
++++++++++++ Find0: dll/instdll.rel
+objdll>omDLLEnd 0 1
+objdll>End DLL:dll/instdll.rel
+odjdll>Unlink DLL:dll/instdll.rel
+objdll>Unlink DLL epilog
+objdll>Unlink DLL epilog finish
+objdll>End DLL finish
+port> frame 15488: overlay -1 (next 11) event 0
+objman>Destory ObjMan
+++++++++++++++++++++ Start New OVL 11 (EVT:0 STAT:0x00000000) ++++++++++++++++++
+objman>Used Memory Size:000212e0
+objman>Used Memory Cnt:15
+objman>Init esp
+objman>Call objectsetup
+SOUND ##########################
+##########################
+DLLStart 11 0
+Search:dll/m403dll.rel
+objdll>Link DLL:dll/m403dll.rel
+Rest Memory 431680
+===== DLL Module Info dump ====
+                   ID:0x00000001
+             LinkPrev:0x00000000
+             LinkNext:0x00000000
+          Section num:15
+Section info tbl ofst:0x00000048
+           nameOffset:0x00000000
+             nameSize:47
+              version:0x00000002
+===============================
+==== DLL Module Header dump ====
+          bss Size:0x000000b8
+        rel Offset:0x00009e44
+        imp Offset:0x0000dfac
+    prolog Section:1
+    epilog Section:1
+unresolved Section:0
+       prolog func:0x00000000
+       epilog func:0x00000054
+   unresolved func:0x00000000
+================================
+objdll>LinkOK 0225e578 0a31cc50
+objdll> dll/m403dll.rel prolog start
+******* M403ObjectSetup *********
+objman>InitObjMan start
+objman>InitObjMan end
+objdll> dll/m403dll.rel prolog end
+objman>ObjectSetup end
+port> frame 15489: overlay 11 (next -1) event 0
+DLL DBG OUT
+data num 5e0001
+Rest Memory 3d4160
+ARAM data num 120006
+data num 6c0001
+Rest Memory 35bbc0
+data num 190001
+Rest Memory 3032e0
+data num 890001
+Rest Memory 2a2780
+#########SE Entry Error<SE 1313:ErrorNo -110>
+port> status f15540   m403dll      board 0 turn 1/3  mg 403 (m403dll)  coins/stars 13/0c 10/0c 10/0c 13/1c  aud 1.88 ms  14.3 fps
+#########SE Entry Error<SE 1316:ErrorNo -110>
+port> status f15600   m403dll      board 0 turn 1/3  mg 403 (m403dll)  coins/stars 13/0c 10/0c 10/0c 13/1c  aud 1.85 ms  15.9 fps
+#########SE Entry Error<SE 345:ErrorNo -110>
+#########SE Entry Error<SE 281:ErrorNo -110>
+#########SE Entry Error<SE 409:ErrorNo -110>
+#########SE Entry Error<SE 473:ErrorNo -110>
+port> status f15660   m403dll      board 0 turn 1/3  mg 403 (m403dll)  coins/stars 13/0c 10/0c 10/0c 13/1c  aud 2.75 ms  15.5 fps
+port> status f15720   m403dll      board 0 turn 1/3  mg 403 (m403dll)  coins/stars 13/0c 10/0c 10/0c 13/1c  aud 2.15 ms  15.8 fps
+#########SE Entry Error<SE 36:ErrorNo -110>
+port> status f15780   m403dll      board 0 turn 1/3  mg 403 (m403dll)  coins/stars 13/0c 10/0c 10/0c 13/1c  aud 2.03 ms  15.6 fps
+#########SE Entry Error<SE 12:ErrorNo -110>
+port> status f15840   m403dll      board 0 turn 1/3  mg 403 (m403dll)  coins/stars 13/0c 10/0c 10/0c 13/1c  aud 1.24 ms  15.8 fps
+port> status f15900   m403dll      board 0 turn 1/3  mg 403 (m403dll)  coins/stars 13/0c 10/0c 10/0c 13/1c  aud 1.28 ms  16.1 fps
+#########SE Entry Error<SE 390:ErrorNo -110>
+#########SE Entry Error<SE 326:ErrorNo -110>
+#########SE Entry Error<SE 454:ErrorNo -110>
+#########SE Entry Error<SE 262:ErrorNo -110>
+#########SE Entry Error<SE 326:ErrorNo -110>
+#########SE Entry Error<SE 390:ErrorNo -110>
+#########SE Entry Error<SE 454:ErrorNo -110>
+port> status f15960   m403dll      board 0 turn 1/3  mg 403 (m403dll)  coins/stars 13/0c 10/0c 10/0c 13/1c  aud 2.37 ms  15.7 fps
+#########SE Entry Error<SE 262:ErrorNo -110>
+#########SE Entry Error<SE 390:ErrorNo -110>
+#########SE Entry Error<SE 326:ErrorNo -110>
+#########SE Entry Error<SE 454:ErrorNo -110>
+#########SE Entry Error<SE 262:ErrorNo -110>
+#########SE Entry Error<SE 326:ErrorNo -110>
+#########SE Entry Error<SE 390:ErrorNo -110>
+#########SE Entry Error<SE 454:ErrorNo -110>
+#########SE Entry Error<SE 262:ErrorNo -110>
+#########SE Entry Error<SE 390:ErrorNo -110>
+#########SE Entry Error<SE 326:ErrorNo -110>
+#########SE Entry Error<SE 454:ErrorNo -110>
+#########SE Entry Error<SE 262:ErrorNo -110>
+#########SE Entry Error<SE 326:ErrorNo -110>
+#########SE Entry Error<SE 390:ErrorNo -110>
+port> status f16020   m403dll      board 0 turn 1/3  mg 403 (m403dll)  coins/stars 13/0c 10/0c 10/0c 13/1c  aud 2.23 ms  15.7 fps
+#########SE Entry Error<SE 454:ErrorNo -110>
+#########SE Entry Error<SE 262:ErrorNo -110>
+#########SE Entry Error<SE 390:ErrorNo -110>
+#########SE Entry Error<SE 326:ErrorNo -110>
+#########SE Entry Error<SE 454:ErrorNo -110>
+#########SE Entry Error<SE 262:ErrorNo -110>
+#########SE Entry Error<SE 390:ErrorNo -110>
+#########SE Entry Error<SE 326:ErrorNo -110>
+#########SE Entry Error<SE 454:ErrorNo -110>
+#########SE Entry Error<SE 262:ErrorNo -110>
+#########SE Entry Error<SE 390:ErrorNo -110>
+#########SE Entry Error<SE 326:ErrorNo -110>
+#########SE Entry Error<SE 454:ErrorNo -110>
+#########SE Entry Error<SE 390:ErrorNo -110>
+#########SE Entry Error<SE 326:ErrorNo -110>
+port> status f16080   m403dll      board 0 turn 1/3  mg 403 (m403dll)  coins/stars 13/0c 10/0c 10/0c 13/1c  aud 2.10 ms  15.7 fps
+#########SE Entry Error<SE 454:ErrorNo -110>
+#########SE Entry Error<SE 262:ErrorNo -110>
+#########SE Entry Error<SE 390:ErrorNo -110>
+#########SE Entry Error<SE 326:ErrorNo -110>
+#########SE Entry Error<SE 262:ErrorNo -110>
+#########SE Entry Error<SE 454:ErrorNo -110>
+#########SE Entry Error<SE 390:ErrorNo -110>
+#########SE Entry Error<SE 326:ErrorNo -110>
+#########SE Entry Error<SE 454:ErrorNo -110>
+#########SE Entry Error<SE 390:ErrorNo -110>
+#########SE Entry Error<SE 262:ErrorNo -110>
+port> status f16140   m403dll      board 0 turn 1/3  mg 403 (m403dll)  coins/stars 13/0c 10/0c 10/0c 13/1c  aud 2.11 ms  15.7 fps
+#########SE Entry Error<SE 390:ErrorNo -110>
+#########SE Entry Error<SE 454:ErrorNo -110>
+#########SE Entry Error<SE 262:ErrorNo -110>
+#########SE Entry Error<SE 454:ErrorNo -110>
+#########SE Entry Error<SE 390:ErrorNo -110>
+#########SE Entry Error<SE 262:ErrorNo -110>
+#########SE Entry Error<SE 390:ErrorNo -110>
+#########SE Entry Error<SE 454:ErrorNo -110>
+#########SE Entry Error<SE 390:ErrorNo -110>
+port> status f16200   m403dll      board 0 turn 1/3  mg 403 (m403dll)  coins/stars 13/0c 10/0c 10/0c 13/1c  aud 2.55 ms  15.6 fps
+#########SE Entry Error<SE 454:ErrorNo -110>
+#########SE Entry Error<SE 262:ErrorNo -110>
+#########SE Entry Error<SE 390:ErrorNo -110>
+#########SE Entry Error<SE 454:ErrorNo -110>
+#########SE Entry Error<SE 1315:ErrorNo -110>
+#########SE Entry Error<SE 1315:ErrorNo -110>
+#########SE Entry Error<SE 1314:ErrorNo -110>
+#########SE Entry Error<SE 454:ErrorNo -110>
+port> status f16260   m403dll      board 0 turn 1/3  mg 403 (m403dll)  coins/stars 13/0c 10/0c 10/0c 13/1c  aud 2.27 ms  19.2 fps
+#########SE Entry Error<SE 326:ErrorNo -110>
+#########SE Entry Error<SE 454:ErrorNo -110>
+#########SE Entry Error<SE 326:ErrorNo -110>
+#########SE Entry Error<SE 454:ErrorNo -110>
+#########SE Entry Error<SE 326:ErrorNo -110>
+#########SE Entry Error<SE 454:ErrorNo -110>
+#########SE Entry Error<SE 326:ErrorNo -110>
+port> status f16320   m403dll      board 0 turn 1/3  mg 403 (m403dll)  coins/stars 13/0c 10/0c 10/0c 13/1c  aud 2.38 ms  21.6 fps
+#########SE Entry Error<SE 454:ErrorNo -110>
+#########SE Entry Error<SE 326:ErrorNo -110>
+#########SE Entry Error<SE 454:ErrorNo -110>
+#########SE Entry Error<SE 326:ErrorNo -110>
+#########SE Entry Error<SE 454:ErrorNo -110>
+#########SE Entry Error<SE 326:ErrorNo -110>
+#########SE Entry Error<SE 454:ErrorNo -110>
+#########SE Entry Error<SE 326:ErrorNo -110>
+port> status f16380   m403dll      board 0 turn 1/3  mg 403 (m403dll)  coins/stars 13/0c 10/0c 10/0c 13/1c  aud 2.31 ms  21.4 fps
+#########SE Entry Error<SE 454:ErrorNo -110>
+#########SE Entry Error<SE 326:ErrorNo -110>
+#########SE Entry Error<SE 326:ErrorNo -110>
+#########SE Entry Error<SE 326:ErrorNo -110>
+port> status f16440   m403dll      board 0 turn 1/3  mg 403 (m403dll)  coins/stars 13/0c 10/0c 10/0c 13/1c  aud 2.41 ms  21.8 fps
+#########SE Entry Error<SE 326:ErrorNo -110>
+#########SE Entry Error<SE 326:ErrorNo -110>
+#########SE Entry Error<SE 326:ErrorNo -110>
+port> status f16500   m403dll      board 0 turn 1/3  mg 403 (m403dll)  coins/stars 13/0c 10/0c 10/0c 13/1c  aud 2.38 ms  21.8 fps
+#########SE Entry Error<SE 1315:ErrorNo -110>
+#########SE Entry Error<SE 1314:ErrorNo -110>
+#########SE Entry Error<SE 37:ErrorNo -110>
+port> status f16560   m403dll      board 0 turn 1/3  mg 403 (m403dll)  coins/stars 13/0c 10/0c 10/0c 13/1c  aud 2.42 ms  25.3 fps
+port> status f16620   m403dll      board 0 turn 1/3  mg 403 (m403dll)  coins/stars 13/0c 10/0c 10/0c 13/1c  aud 2.45 ms  26.7 fps
+port> status f16680   m403dll      board 0 turn 1/3  mg 403 (m403dll)  coins/stars 13/0c 10/0c 10/0c 13/1c  aud 2.46 ms  26.9 fps
+port> status f16740   m403dll      board 0 turn 1/3  mg 403 (m403dll)  coins/stars 13/0c 10/0c 10/0c 13/1c  aud 2.10 ms  26.8 fps
+port> status f16800   m403dll      board 0 turn 1/3  mg 403 (m403dll)  coins/stars 13/0c 10/0c 10/0c 13/1c  aud 2.45 ms  26.7 fps
+#########SE Entry Error<SE 484:ErrorNo -110>
+port> status f16860   m403dll      board 0 turn 1/3  mg 403 (m403dll)  coins/stars 13/0c 10/0c 10/0c 13/1c  aud 3.14 ms  26.4 fps
+port> status f16920   m403dll      board 0 turn 1/3  mg 403 (m403dll)  coins/stars 13/0c 10/0c 10/0c 13/1c  aud 2.75 ms  27.6 fps
+port> status f16980   m403dll      board 0 turn 1/3  mg 403 (m403dll)  coins/stars 13/0c 10/0c 10/0c 13/1c  aud 2.51 ms  27.9 fps
+objman>Ovl Return 1=4(1)
+OvlKill 1
+objdll>omDLLNumEnd 11 1
+Search:dll/m403dll.rel
++++++++++++ Find0: dll/m403dll.rel
+objdll>omDLLEnd 0 1
+objdll>End DLL:dll/m403dll.rel
+odjdll>Unlink DLL:dll/m403dll.rel
+objdll>Unlink DLL epilog
+objdll>Unlink DLL epilog finish
+objdll>End DLL finish
+port> frame 16986: overlay -1 (next 84) event 0
+objman>Destory ObjMan
+++++++++++++++++++++ Start New OVL 84 (EVT:0 STAT:0x00000000) ++++++++++++++++++
+objman>Used Memory Size:000212e0
+objman>Used Memory Cnt:15
+objman>Init esp
+objman>Call objectsetup
+DLLStart 84 0
+Search:dll/resultdll.rel
+objdll>Link DLL:dll/resultdll.rel
+Rest Memory 431680
+===== DLL Module Info dump ====
+                   ID:0x00000001
+             LinkPrev:0x00000000
+             LinkNext:0x00000000
+          Section num:14
+Section info tbl ofst:0x00000048
+           nameOffset:0x00000000
+             nameSize:51
+              version:0x00000002
+===============================
+==== DLL Module Header dump ====
+          bss Size:0x00001adc
+        rel Offset:0x0000a038
+        imp Offset:0x0000fa50
+    prolog Section:1
+    epilog Section:1
+unresolved Section:0
+       prolog func:0x00000000
+       epilog func:0x00000054
+   unresolved func:0x00000000
+================================
+objdll>LinkOK 0225e578 00aeac50
+objdll> dll/resultdll.rel prolog start
+******* RESULT ObjectSetup *********
+objman>InitObjMan start
+objman>InitObjMan end
+Rest Memory 5395a0
+objdll> dll/resultdll.rel prolog end
+objman>ObjectSetup end
+port> frame 16987: overlay 84 (next -1) event 0
+DLL DBG OUT
+data num 6f0000
+Rest Memory 498d80
+ARAM data num 70000
+Rest Memory 420c20
+#########SE Entry Error<SE 23:ErrorNo -110>
+port> status f17040   resultdll    board 0 turn 1/3  mg 403 (m403dll)  coins/stars 13/0c 10/0c 10/0c 13/1c  aud 1.11 ms  63.8 fps
+#########SE Entry Error<SE 9:ErrorNo -110>
+#########SE Entry Error<SE 27:ErrorNo -110>
+port> status f17100   resultdll    board 0 turn 1/3  mg 403 (m403dll)  coins/stars 13/0c 10/0c 563/0c 23/1c  aud 1.40 ms  133.0 fps
+port> status f17160   resultdll    board 0 turn 1/3  mg 403 (m403dll)  coins/stars 13/0c 10/0c 563/0c 23/1c  aud 1.26 ms  117.7 fps
+port> status f17220   resultdll    board 0 turn 1/3  mg 403 (m403dll)  coins/stars 13/0c 10/0c 563/0c 23/1c  aud 1.49 ms  131.2 fps
+ARAM data num 860020
+port> status f17280   resultdll    board 0 turn 1/3  mg 403 (m403dll)  coins/stars 13/0c 10/0c 563/0c 23/1c  aud 1.11 ms  130.7 fps
+port> status f17340   resultdll    board 0 turn 1/3  mg 403 (m403dll)  coins/stars 13/0c 10/0c 563/0c 23/1c  aud 1.39 ms  411.7 fps
+port> status f17400   resultdll    board 0 turn 1/3  mg 403 (m403dll)  coins/stars 13/0c 10/0c 563/0c 23/1c  aud 1.64 ms  281.8 fps
+objman>Ovl Return 1=3(1)
+OvlKill 1
+objdll>omDLLNumEnd 84 1
+Search:dll/resultdll.rel
++++++++++++ Find0: dll/resultdll.rel
+objdll>omDLLEnd 0 1
+objdll>End DLL:dll/resultdll.rel
+odjdll>Unlink DLL:dll/resultdll.rel
+objdll>Unlink DLL epilog
+objdll>Unlink DLL epilog finish
+objdll>End DLL finish
+port> frame 17430: overlay -1 (next 89) event 0
+objman>Destory ObjMan
+++++++++++++++++++++ Start New OVL 89 (EVT:0 STAT:0x00000000) ++++++++++++++++++
+objman>Used Memory Size:000212e0
+objman>Used Memory Cnt:15
+objman>Init esp
+objman>Call objectsetup
+SOUND ##########################
+0
+GroupSet 9
+***********GroupSet Error 0
+##########################
+DLLStart 89 0
+Search:dll/w01dll.rel
+objdll>Link DLL:dll/w01dll.rel
+Rest Memory 420c20
+port> w01dll: dlclose did not unload it; zeroed 2186 bytes of bss by hand
+===== DLL Module Info dump ====
+                   ID:0x00000001
+             LinkPrev:0x00000000
+             LinkNext:0x00000000
+          Section num:16
+Section info tbl ofst:0x00000048
+           nameOffset:0x00000000
+             nameSize:45
+              version:0x00000002
+===============================
+==== DLL Module Header dump ====
+          bss Size:0x0000081c
+        rel Offset:0x00012e34
+        imp Offset:0x0001f174
+    prolog Section:1
+    epilog Section:1
+unresolved Section:0
+       prolog func:0x00000030
+       epilog func:0x00000094
+   unresolved func:0x00000000
+================================
+objdll>LinkOK 0225e578 00aef550
+objdll> dll/w01dll.rel prolog start
+objman>InitObjMan start
+objman>InitObjMan end
+objdll> dll/w01dll.rel prolog end
+objman>ObjectSetup end
+port> frame 17431: overlay 89 (next -1) event 0
+DLL DBG OUT
+Rest Memory 37b3c0
+Rest Memory 334960
+data num 5e0000
+Rest Memory 31dea0
+ARAM data num 120006
+data num 6c0000
+Rest Memory 302e20
+data num 190000
+Rest Memory 322ae0
+data num 890000
+Rest Memory 31a860
+ARAM data num 7001d
+data num 50000
+Rest Memory 136ce0
+data num 90000
+Rest Memory 1424a0
+#########SE Entry Error<SE 838:ErrorNo -110>
+port> status f17460   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 563/0c 23/1c  aud 0.72 ms  34.2 fps
+#########SE Entry Error<SE 775:ErrorNo -110>
+#########SE Entry Error<SE 770:ErrorNo -110>
+#########SE Entry Error<SE 768:ErrorNo -110>
+port> status f17520   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 563/0c 23/1c  aud 1.16 ms  16.6 fps
+port> status f17580   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 563/0c 23/1c  aud 1.71 ms  16.5 fps
+#########SE Entry Error<SE 771:ErrorNo -110>
+#########SE Entry Error<SE 780:ErrorNo -110>
+port> status f17640   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 563/0c 23/1c  aud 1.58 ms  16.4 fps
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+port> status f17700   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 563/0c 23/1c  aud 1.41 ms  13.6 fps
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 2:ErrorNo -110>
+#########SE Entry Error<SE 816:ErrorNo -110>
+#########SE Entry Error<SE 813:ErrorNo -110>
+#########SE Entry Error<SE 813:ErrorNo -110>
+#########SE Entry Error<SE 836:ErrorNo -110>
+port> status f17760   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 563/0c 23/1c  aud 1.72 ms  12.8 fps
+#########SE Entry Error<SE 814:ErrorNo -110>
+#########SE Entry Error<SE 815:ErrorNo -110>
+port> status f17820   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 563/0c 23/1c  aud 2.16 ms  11.7 fps
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 55:ErrorNo -110>
+port> status f17880   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 563/0c 23/1c  aud 2.67 ms  11.6 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+port> status f17940   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 563/0c 23/1c  aud 2.60 ms  11.6 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+port> status f18000   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 563/0c 23/1c  aud 2.74 ms  11.4 fps
+port> status f18060   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 13/0c 10/0c 563/0c 23/1c  aud 2.57 ms  11.6 fps
+#########SE Entry Error<SE 14:ErrorNo -110>
+#########SE Entry Error<SE 14:ErrorNo -110>
+#########SE Entry Error<SE 14:ErrorNo -110>
+#########SE Entry Error<SE 14:ErrorNo -110>
+#########SE Entry Error<SE 14:ErrorNo -110>
+#########SE Entry Error<SE 14:ErrorNo -110>
+#########SE Entry Error<SE 14:ErrorNo -110>
+#########SE Entry Error<SE 14:ErrorNo -110>
+#########SE Entry Error<SE 14:ErrorNo -110>
+port> status f18120   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 4/0c 10/0c 563/0c 23/1c  aud 2.96 ms  11.8 fps
+#########SE Entry Error<SE 14:ErrorNo -110>
+#########SE Entry Error<SE 15:ErrorNo -110>
+port> status f18180   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 10/0c 563/0c 23/1c  aud 2.66 ms  11.9 fps
+#########SE Entry Error<SE 781:ErrorNo -110>
+#########SE Entry Error<SE 864:ErrorNo -110>
+#########SE Entry Error<SE 290:ErrorNo -110>
+port> status f18240   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 10/0c 563/0c 23/1c  aud 2.59 ms  11.8 fps
+port> status f18300   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 10/0c 563/0c 23/1c  aud 3.18 ms  11.6 fps
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 815:ErrorNo -110>
+port> status f18360   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 10/0c 563/0c 23/1c  aud 2.97 ms  12.0 fps
+#########SE Entry Error<SE 814:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+port> status f18420   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 10/0c 563/0c 23/1c  aud 2.85 ms  12.7 fps
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+port> status f18480   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 10/0c 563/0c 23/1c  aud 2.76 ms  12.7 fps
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+port> status f18540   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 10/0c 563/0c 23/1c  aud 2.95 ms  13.2 fps
+#########SE Entry Error<SE 0:ErrorNo -110>
+port> status f18600   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 10/0c 563/0c 23/1c  aud 3.05 ms  13.2 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+port> status f18660   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 10/0c 563/0c 23/1c  aud 2.79 ms  12.8 fps
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+port> status f18720   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 10/0c 563/0c 23/1c  aud 3.23 ms  12.5 fps
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 842:ErrorNo -110>
+#########SE Entry Error<SE 1042:ErrorNo -110>
+port> status f18780   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 10/0c 563/0c 23/1c  aud 2.88 ms  14.1 fps
+port> status f18840   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 10/0c 563/0c 23/1c  aud 2.96 ms  17.5 fps
+#########SE Entry Error<SE 291:ErrorNo -110>
+port> status f18900   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 10/0c 563/0c 23/1c  aud 2.55 ms  16.5 fps
+port> status f18960   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 10/0c 563/0c 23/1c  aud 2.62 ms  13.1 fps
+port> status f19020   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 10/0c 563/0c 23/1c  aud 2.88 ms  13.4 fps
+port> status f19080   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 10/0c 563/0c 23/1c  aud 3.56 ms  14.7 fps
+port> status f19140   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 10/0c 563/0c 23/1c  aud 2.83 ms  14.1 fps
+port> status f19200   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 10/0c 563/0c 23/1c  aud 2.84 ms  15.2 fps
+port> status f19260   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 10/0c 563/0c 23/1c  aud 2.95 ms  16.8 fps
+#########SE Entry Error<SE 261:ErrorNo -110>
+port> status f19320   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 10/0c 563/0c 23/1c  aud 2.80 ms  15.7 fps
+port> status f19380   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 10/0c 563/0c 23/1c  aud 2.81 ms  14.6 fps
+#########SE Entry Error<SE 775:ErrorNo -110>
+port> status f19440   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 10/0c 563/0c 23/1c  aud 3.24 ms  16.9 fps
+#########SE Entry Error<SE 770:ErrorNo -110>
+#########SE Entry Error<SE 768:ErrorNo -110>
+port> status f19500   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 10/0c 563/0c 23/1c  aud 2.90 ms  18.6 fps
+#########SE Entry Error<SE 771:ErrorNo -110>
+#########SE Entry Error<SE 780:ErrorNo -110>
+port> status f19560   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 10/0c 563/0c 23/1c  aud 2.78 ms  18.7 fps
+port> status f19620   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 10/0c 563/0c 23/1c  aud 2.66 ms  18.4 fps
+#########SE Entry Error<SE 389:ErrorNo -110>
+#########SE Entry Error<SE 389:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 839:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 418:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+port> status f19680   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 12/0c 563/0c 23/1c  aud 2.83 ms  16.6 fps
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 15:ErrorNo -110>
+port> status f19740   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 563/0c 23/1c  aud 2.41 ms  17.0 fps
+port> status f19800   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 563/0c 23/1c  aud 2.52 ms  17.1 fps
+#########SE Entry Error<SE 775:ErrorNo -110>
+#########SE Entry Error<SE 770:ErrorNo -110>
+#########SE Entry Error<SE 768:ErrorNo -110>
+port> status f19860   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 563/0c 23/1c  aud 2.34 ms  16.3 fps
+#########SE Entry Error<SE 3:ErrorNo -110>
+#########SE Entry Error<SE 2:ErrorNo -110>
+port> status f19920   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 563/0c 23/1c  aud 2.99 ms  15.9 fps
+#########SE Entry Error<SE 782:ErrorNo -110>
+#########SE Entry Error<SE 783:ErrorNo -110>
+#########SE Entry Error<SE 867:ErrorNo -110>
+port> status f19980   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 563/0c 23/1c  aud 3.22 ms  16.0 fps
+port> status f20040   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 563/0c 23/1c  aud 2.38 ms  16.3 fps
+#########SE Entry Error<SE 848:ErrorNo -110>
+port> status f20100   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 563/0c 23/1c  aud 2.83 ms  16.4 fps
+port> status f20160   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 563/0c 23/1c  aud 2.35 ms  16.5 fps
+port> status f20220   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 563/0c 23/1c  aud 2.74 ms  16.1 fps
+#########SE Entry Error<SE 786:ErrorNo -110>
+#########SE Entry Error<SE 785:ErrorNo -110>
+port> status f20280   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 563/0c 23/1c  aud 2.65 ms  15.9 fps
+port> status f20340   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 563/0c 23/1c  aud 2.80 ms  16.3 fps
+port> status f20400   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 563/0c 23/1c  aud 2.29 ms  16.3 fps
+#########SE Entry Error<SE 770:ErrorNo -110>
+#########SE Entry Error<SE 768:ErrorNo -110>
+port> status f20460   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 563/0c 23/1c  aud 2.78 ms  16.0 fps
+port> status f20520   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 563/0c 23/1c  aud 2.65 ms  15.8 fps
+#########SE Entry Error<SE 771:ErrorNo -110>
+#########SE Entry Error<SE 780:ErrorNo -110>
+#########SE Entry Error<SE 770:ErrorNo -110>
+#########SE Entry Error<SE 768:ErrorNo -110>
+port> status f20580   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 563/0c 23/1c  aud 2.54 ms  15.6 fps
+#########SE Entry Error<SE 771:ErrorNo -110>
+#########SE Entry Error<SE 780:ErrorNo -110>
+port> status f20640   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 563/0c 23/1c  aud 2.63 ms  15.5 fps
+port> status f20700   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 563/0c 23/1c  aud 2.92 ms  15.2 fps
+#########SE Entry Error<SE 329:ErrorNo -110>
+#########SE Entry Error<SE 329:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 329:ErrorNo -110>
+port> status f20760   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 563/0c 23/1c  aud 3.04 ms  13.9 fps
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 329:ErrorNo -110>
+#########SE Entry Error<SE 329:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 329:ErrorNo -110>
+#########SE Entry Error<SE 329:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+port> status f20820   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 563/0c 23/1c  aud 2.84 ms  13.7 fps
+#########SE Entry Error<SE 329:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 329:ErrorNo -110>
+#########SE Entry Error<SE 329:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+port> status f20880   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 563/0c 23/1c  aud 2.37 ms  14.7 fps
+#########SE Entry Error<SE 329:ErrorNo -110>
+#########SE Entry Error<SE 329:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 329:ErrorNo -110>
+#########SE Entry Error<SE 329:ErrorNo -110>
+port> status f20940   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 563/0c 23/1c  aud 2.38 ms  15.1 fps
+#########SE Entry Error<SE 329:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 329:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 329:ErrorNo -110>
+#########SE Entry Error<SE 329:ErrorNo -110>
+port> status f21000   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 563/0c 23/1c  aud 2.72 ms  15.4 fps
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 329:ErrorNo -110>
+#########SE Entry Error<SE 329:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 329:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 329:ErrorNo -110>
+port> status f21060   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 563/0c 23/1c  aud 2.59 ms  13.4 fps
+#########SE Entry Error<SE 329:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 787:ErrorNo -110>
+port> status f21120   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 563/0c 23/1c  aud 2.82 ms  12.9 fps
+port> status f21180   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 563/0c 23/1c  aud 2.93 ms  13.2 fps
+#########SE Entry Error<SE 839:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 354:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 15:ErrorNo -110>
+port> status f21240   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 566/0c 23/1c  aud 2.50 ms  14.0 fps
+port> status f21300   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 566/0c 23/1c  aud 2.64 ms  14.3 fps
+#########SE Entry Error<SE 775:ErrorNo -110>
+port> status f21360   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 566/0c 23/1c  aud 2.32 ms  17.6 fps
+#########SE Entry Error<SE 770:ErrorNo -110>
+#########SE Entry Error<SE 768:ErrorNo -110>
+port> status f21420   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 566/0c 23/1c  aud 2.58 ms  18.0 fps
+#########SE Entry Error<SE 771:ErrorNo -110>
+#########SE Entry Error<SE 780:ErrorNo -110>
+port> status f21480   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 566/0c 23/1c  aud 2.82 ms  18.2 fps
+port> status f21540   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 566/0c 23/1c  aud 2.96 ms  16.7 fps
+#########SE Entry Error<SE 453:ErrorNo -110>
+#########SE Entry Error<SE 453:ErrorNo -110>
+port> status f21600   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 566/0c 23/1c  aud 2.74 ms  16.3 fps
+port> status f21660   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 566/0c 23/1c  aud 2.78 ms  17.4 fps
+#########SE Entry Error<SE 461:ErrorNo -110>
+port> status f21720   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 566/0c 23/1c  aud 2.41 ms  17.4 fps
+#########SE Entry Error<SE 1040:ErrorNo -110>
+port> status f21780   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 566/0c 23/1c  aud 2.56 ms  17.0 fps
+port> status f21840   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 566/0c 23/1c  aud 2.67 ms  17.1 fps
+port> status f21900   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 566/0c 23/1c  aud 2.66 ms  17.0 fps
+#########SE Entry Error<SE 461:ErrorNo -110>
+port> status f21960   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 566/0c 23/1c  aud 3.00 ms  16.6 fps
+#########SE Entry Error<SE 1027:ErrorNo -110>
+port> status f22020   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 566/0c 23/1c  aud 2.81 ms  16.5 fps
+#########SE Entry Error<SE 453:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 839:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 482:ErrorNo -110>
+port> status f22080   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 566/0c 24/1c  aud 2.48 ms  14.9 fps
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 15:ErrorNo -110>
+port> status f22140   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 2.62 ms  16.4 fps
+port> status f22200   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 2.63 ms  16.9 fps
+port> status f22260   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 2.19 ms  17.3 fps
+#########SE Entry Error<SE 852:ErrorNo -110>
+#########SE Entry Error<SE 853:ErrorNo -110>
+port> status f22320   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 2.80 ms  16.1 fps
+port> status f22380   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 3.19 ms  15.9 fps
+port> status f22440   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 2.66 ms  15.9 fps
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+port> status f22500   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 2.71 ms  15.8 fps
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+port> status f22560   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 3.08 ms  15.8 fps
+#########SE Entry Error<SE 773:ErrorNo -110>
+port> status f22620   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 3.05 ms  15.8 fps
+port> status f22680   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 3.07 ms  15.9 fps
+Rest Memory 40a8e0
+port> status f22740   w01dll       board 0 turn 2/3  mg 65936 ((none))  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 2.78 ms  16.0 fps
+port> roulette: frame 22753 dealt mg 408 (m408dll, type 0)
+objman>Call New Ovl 3(1)
+OvlKill 1
+objdll>omDLLNumEnd 89 1
+Search:dll/w01dll.rel
++++++++++++ Find0: dll/w01dll.rel
+objdll>omDLLEnd 0 1
+objdll>End DLL:dll/w01dll.rel
+odjdll>Unlink DLL:dll/w01dll.rel
+objdll>Unlink DLL epilog
+objdll>Unlink DLL epilog finish
+objdll>End DLL finish
+port> frame 22748: overlay -1 (next 3) event 0
+objman>Destory ObjMan
+++++++++++++++++++++ Start New OVL 3 (EVT:0 STAT:0x00000000) ++++++++++++++++++
+objman>Used Memory Size:000212e0
+objman>Used Memory Cnt:15
+objman>Init esp
+objman>Call objectsetup
+DLLStart 3 0
+Search:dll/instdll.rel
+objdll>Link DLL:dll/instdll.rel
+Rest Memory 40a8e0
+port> instdll: dlclose did not unload it; zeroed 96 bytes of bss by hand
+===== DLL Module Info dump ====
+                   ID:0x00000001
+             LinkPrev:0x00000000
+             LinkNext:0x00000000
+          Section num:15
+Section info tbl ofst:0x00000048
+           nameOffset:0x00000000
+             nameSize:47
+              version:0x00000002
+===============================
+==== DLL Module Header dump ====
+          bss Size:0x00000064
+        rel Offset:0x00006aa8
+        imp Offset:0x0000ad98
+    prolog Section:1
+    epilog Section:1
+unresolved Section:0
+       prolog func:0x00000000
+       epilog func:0x00000054
+   unresolved func:0x00000000
+================================
+objdll>LinkOK 0225e578 00af8d90
+objdll> dll/instdll.rel prolog start
+******* INST ObjectSetup *********
+objman>InitObjMan start
+objman>InitObjMan end
+0
+GroupSet 25
+***********GroupSet Error 0
+Rest Memory 3c3e80
+objdll> dll/instdll.rel prolog end
+objman>ObjectSetup end
+port> frame 22749: overlay 3 (next -1) event 0
+DLL DBG OUT
+data num 5e0000
+Rest Memory 3ad3c0
+ARAM data num 120006
+data num 6c0000
+Rest Memory 392340
+data num 190000
+Rest Memory 3b2000
+data num 890000
+Rest Memory 3a9d80
+port> status f22800   instdll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 0.94 ms  18.5 fps
+#########SE Entry Error<SE 1211:ErrorNo -110>
+#########SE Entry Error<SE 1212:ErrorNo -110>
+port> status f22860   instdll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 2.01 ms  19.7 fps
+#########SE Entry Error<SE 55:ErrorNo -110>
+#########SE Entry Error<SE 397:ErrorNo -110>
+#########SE Entry Error<SE 397:ErrorNo -110>
+#########SE Entry Error<SE 269:ErrorNo -110>
+#########SE Entry Error<SE 461:ErrorNo -110>
+#########SE Entry Error<SE 269:ErrorNo -110>
+#########SE Entry Error<SE 333:ErrorNo -110>
+#########SE Entry Error<SE 333:ErrorNo -110>
+Rest Memory 3cbb20
+port> status f22920   instdll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 1.74 ms  17.6 fps
+port> status f22980   instdll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 1.83 ms  18.9 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+#########SE Entry Error<SE 57:ErrorNo -110>
+#########SE Entry Error<SE 277:ErrorNo -110>
+port> status f23040   instdll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 2.17 ms  19.6 fps
+#########SE Entry Error<SE 1210:ErrorNo -110>
+objman>Call New Ovl 16(1)
+OvlKill 1
+objdll>omDLLNumEnd 3 1
+Search:dll/instdll.rel
++++++++++++ Find0: dll/instdll.rel
+objdll>omDLLEnd 0 1
+objdll>End DLL:dll/instdll.rel
+odjdll>Unlink DLL:dll/instdll.rel
+objdll>Unlink DLL epilog
+objdll>Unlink DLL epilog finish
+objdll>End DLL finish
+port> frame 23083: overlay -1 (next 16) event 0
+objman>Destory ObjMan
+++++++++++++++++++++ Start New OVL 16 (EVT:0 STAT:0x00000000) ++++++++++++++++++
+objman>Used Memory Size:000212e0
+objman>Used Memory Cnt:15
+objman>Init esp
+objman>Call objectsetup
+SOUND ##########################
+##########################
+DLLStart 16 0
+Search:dll/m408dll.rel
+objdll>Link DLL:dll/m408dll.rel
+Rest Memory 3cbb20
+===== DLL Module Info dump ====
+                   ID:0x00000001
+             LinkPrev:0x00000000
+             LinkNext:0x00000000
+          Section num:15
+Section info tbl ofst:0x00000048
+           nameOffset:0x00000000
+             nameSize:47
+              version:0x00000002
+===============================
+==== DLL Module Header dump ====
+          bss Size:0x000075ac
+        rel Offset:0x000171fc
+        imp Offset:0x00022944
+    prolog Section:1
+    epilog Section:1
+unresolved Section:0
+       prolog func:0x00000000
+       epilog func:0x00000054
+   unresolved func:0x00000000
+================================
+objdll>LinkOK 0225e578 00ac1460
+objdll> dll/m408dll.rel prolog start
+//////////////////////////////////
+sndDist 6000.000000
+sndSpeed 3656.666748
+startDis 0.000000
+frontSurDis 300.000000
+backSurDis 300.000000
+//////////////////////////////////
+objman>InitObjMan start
+objman>InitObjMan end
+objdll> dll/m408dll.rel prolog end
+objman>ObjectSetup end
+port> frame 23084: overlay 16 (next -1) event 0
+DLL DBG OUT
+ARAM data num 610029
+data num 270024
+Rest Memory 3cbb20
+data num 5e0001
+Rest Memory 36e600
+ARAM data num 120006
+data num 6c0001
+Rest Memory 2f6060
+data num 190001
+Rest Memory 29d780
+data num 890001
+Rest Memory 23cc20
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+port> status f23100   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 1.79 ms  18.2 fps
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+port> status f23160   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 1.78 ms  19.7 fps
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+port> status f23220   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 2.59 ms  19.8 fps
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+#########SE Entry Error<SE 1362:ErrorNo -110>
+#########SE Entry Error<SE 1356:ErrorNo -110>
+port> status f23280   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 2.18 ms  19.9 fps
+port> status f23340   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 2.47 ms  19.8 fps
+port> status f23400   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 1.68 ms  20.6 fps
+port> status f23460   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 2.30 ms  20.5 fps
+#########SE Entry Error<SE 1361:ErrorNo -110>
+port> status f23520   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 1.96 ms  21.1 fps
+port> status f23580   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 1.75 ms  19.5 fps
+port> status f23640   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 1.88 ms  19.6 fps
+port> status f23700   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 2.40 ms  19.3 fps
+#########SE Entry Error<SE 1357:ErrorNo -110>
+port> status f23760   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 2.39 ms  19.6 fps
+#########SE Entry Error<SE 1363:ErrorNo -110>
+port> status f23820   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 1.88 ms  25.4 fps
+#########SE Entry Error<SE 36:ErrorNo -110>
+#########SE Entry Error<SE 12:ErrorNo -110>
+port> status f23880   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 1.51 ms  26.5 fps
+port> status f23940   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 1.38 ms  20.8 fps
+port> status f24000   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 1.46 ms  19.5 fps
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 1358:ErrorNo -110>
+#########SE Entry Error<SE 360:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 1359:ErrorNo -110>
+#########SE Entry Error<SE 1359:ErrorNo -110>
+port> status f24060   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 1.38 ms  17.8 fps
+#########SE Entry Error<SE 1359:ErrorNo -110>
+#########SE Entry Error<SE 1358:ErrorNo -110>
+#########SE Entry Error<SE 488:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 1359:ErrorNo -110>
+port> status f24120   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 1.39 ms  18.8 fps
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 1359:ErrorNo -110>
+#########SE Entry Error<SE 1359:ErrorNo -110>
+#########SE Entry Error<SE 1359:ErrorNo -110>
+#########SE Entry Error<SE 1359:ErrorNo -110>
+port> status f24180   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 1.58 ms  18.2 fps
+#########SE Entry Error<SE 1359:ErrorNo -110>
+#########SE Entry Error<SE 1358:ErrorNo -110>
+#########SE Entry Error<SE 424:ErrorNo -110>
+#########SE Entry Error<SE 1358:ErrorNo -110>
+#########SE Entry Error<SE 488:ErrorNo -110>
+#########SE Entry Error<SE 1359:ErrorNo -110>
+port> status f24240   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 1.57 ms  18.8 fps
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+port> status f24300   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 1.50 ms  17.7 fps
+#########SE Entry Error<SE 1359:ErrorNo -110>
+#########SE Entry Error<SE 1358:ErrorNo -110>
+#########SE Entry Error<SE 488:ErrorNo -110>
+#########SE Entry Error<SE 1359:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 1359:ErrorNo -110>
+port> status f24360   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 1.43 ms  16.0 fps
+#########SE Entry Error<SE 1359:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 1358:ErrorNo -110>
+#########SE Entry Error<SE 424:ErrorNo -110>
+#########SE Entry Error<SE 1358:ErrorNo -110>
+#########SE Entry Error<SE 296:ErrorNo -110>
+port> status f24420   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 1.49 ms  16.9 fps
+#########SE Entry Error<SE 1359:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 1359:ErrorNo -110>
+#########SE Entry Error<SE 1358:ErrorNo -110>
+#########SE Entry Error<SE 296:ErrorNo -110>
+port> status f24480   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 1.50 ms  16.5 fps
+#########SE Entry Error<SE 1359:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 1358:ErrorNo -110>
+#########SE Entry Error<SE 360:ErrorNo -110>
+port> status f24540   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 1.48 ms  19.2 fps
+#########SE Entry Error<SE 1358:ErrorNo -110>
+#########SE Entry Error<SE 424:ErrorNo -110>
+#########SE Entry Error<SE 19:ErrorNo -110>
+#########SE Entry Error<SE 1359:ErrorNo -110>
+#########SE Entry Error<SE 1359:ErrorNo -110>
+#########SE Entry Error<SE 19:ErrorNo -110>
+#########SE Entry Error<SE 1358:ErrorNo -110>
+#########SE Entry Error<SE 483:ErrorNo -110>
+port> status f24600   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 1.49 ms  19.5 fps
+#########SE Entry Error<SE 19:ErrorNo -110>
+port> status f24660   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 1.45 ms  17.1 fps
+port> status f24720   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 1.44 ms  18.5 fps
+port> status f24780   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 1.47 ms  18.8 fps
+#########SE Entry Error<SE 1358:ErrorNo -110>
+#########SE Entry Error<SE 296:ErrorNo -110>
+#########SE Entry Error<SE 1359:ErrorNo -110>
+#########SE Entry Error<SE 1357:ErrorNo -110>
+#########SE Entry Error<SE 1361:ErrorNo -110>
+port> status f24840   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 1.87 ms  17.3 fps
+port> status f24900   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 2.29 ms  14.1 fps
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 1359:ErrorNo -110>
+port> status f24960   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 2.29 ms  12.6 fps
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 1359:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 1358:ErrorNo -110>
+#########SE Entry Error<SE 360:ErrorNo -110>
+port> status f25020   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 2.34 ms  12.3 fps
+#########SE Entry Error<SE 1359:ErrorNo -110>
+port> status f25080   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 2.25 ms  13.5 fps
+#########SE Entry Error<SE 1358:ErrorNo -110>
+#########SE Entry Error<SE 419:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+port> status f25140   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 2.23 ms  14.3 fps
+#########SE Entry Error<SE 7:ErrorNo -110>
+port> status f25200   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 2.40 ms  14.8 fps
+port> status f25260   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 2.40 ms  15.3 fps
+#########SE Entry Error<SE 7:ErrorNo -110>
+port> status f25320   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 2.32 ms  13.6 fps
+#########SE Entry Error<SE 7:ErrorNo -110>
+port> status f25380   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 2.22 ms  13.8 fps
+#########SE Entry Error<SE 1358:ErrorNo -110>
+#########SE Entry Error<SE 355:ErrorNo -110>
+#########SE Entry Error<SE 1358:ErrorNo -110>
+#########SE Entry Error<SE 291:ErrorNo -110>
+#########SE Entry Error<SE 37:ErrorNo -110>
+port> status f25440   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 2.31 ms  14.6 fps
+port> status f25500   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 2.27 ms  16.5 fps
+Map 4
+port> status f25560   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 2.52 ms  19.9 fps
+#########SE Entry Error<SE 1360:ErrorNo -110>
+#########SE Entry Error<SE 282:ErrorNo -110>
+#########SE Entry Error<SE 410:ErrorNo -110>
+#########SE Entry Error<SE 346:ErrorNo -110>
+#########SE Entry Error<SE 474:ErrorNo -110>
+port> status f25620   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 2.03 ms  21.7 fps
+port> status f25680   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 2.94 ms  21.3 fps
+port> status f25740   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 2.48 ms  21.3 fps
+port> status f25800   m408dll      board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 2.48 ms  21.4 fps
+objman>Ovl Return 1=4(1)
+OvlKill 1
+objdll>omDLLNumEnd 16 1
+Search:dll/m408dll.rel
++++++++++++ Find0: dll/m408dll.rel
+objdll>omDLLEnd 0 1
+objdll>End DLL:dll/m408dll.rel
+odjdll>Unlink DLL:dll/m408dll.rel
+objdll>Unlink DLL epilog
+objdll>Unlink DLL epilog finish
+objdll>End DLL finish
+port> frame 25830: overlay -1 (next 84) event 0
+objman>Destory ObjMan
+++++++++++++++++++++ Start New OVL 84 (EVT:0 STAT:0x00000000) ++++++++++++++++++
+objman>Used Memory Size:000212e0
+objman>Used Memory Cnt:15
+objman>Init esp
+objman>Call objectsetup
+DLLStart 84 0
+Search:dll/resultdll.rel
+objdll>Link DLL:dll/resultdll.rel
+Rest Memory 580000
+port> resultdll: dlclose did not unload it; zeroed 6794 bytes of bss by hand
+===== DLL Module Info dump ====
+                   ID:0x00000001
+             LinkPrev:0x00000000
+             LinkNext:0x00000000
+          Section num:14
+Section info tbl ofst:0x00000048
+           nameOffset:0x00000000
+             nameSize:51
+              version:0x00000002
+===============================
+==== DLL Module Header dump ====
+          bss Size:0x00001adc
+        rel Offset:0x0000a038
+        imp Offset:0x0000fa50
+    prolog Section:1
+    epilog Section:1
+unresolved Section:0
+       prolog func:0x00000000
+       epilog func:0x00000054
+   unresolved func:0x00000000
+================================
+objdll>LinkOK 0225e578 00aeac50
+objdll> dll/resultdll.rel prolog start
+******* RESULT ObjectSetup *********
+objman>InitObjMan start
+objman>InitObjMan end
+Rest Memory 5395a0
+objdll> dll/resultdll.rel prolog end
+objman>ObjectSetup end
+port> frame 25831: overlay 84 (next -1) event 0
+DLL DBG OUT
+data num 6f0000
+Rest Memory 498d80
+ARAM data num 70000
+Rest Memory 420c20
+port> status f25860   resultdll    board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 1.73 ms  32.5 fps
+#########SE Entry Error<SE 23:ErrorNo -110>
+#########SE Entry Error<SE 9:ErrorNo -110>
+#########SE Entry Error<SE 9:ErrorNo -110>
+#########SE Entry Error<SE 9:ErrorNo -110>
+#########SE Entry Error<SE 9:ErrorNo -110>
+port> status f25920   resultdll    board 0 turn 2/3  mg 408 (m408dll)  coins/stars 3/0c 13/0c 566/0c 26/1c  aud 1.19 ms  136.2 fps
+port> status f25980   resultdll    board 0 turn 2/3  mg 408 (m408dll)  coins/stars 21/0c 570/0c 578/0c 28/1c  aud 1.35 ms  129.4 fps
+port> status f26040   resultdll    board 0 turn 2/3  mg 408 (m408dll)  coins/stars 21/0c 570/0c 578/0c 28/1c  aud 1.49 ms  127.9 fps
+ARAM data num 860020
+port> status f26100   resultdll    board 0 turn 2/3  mg 408 (m408dll)  coins/stars 21/0c 570/0c 578/0c 28/1c  aud 1.29 ms  148.9 fps
+port> status f26160   resultdll    board 0 turn 2/3  mg 408 (m408dll)  coins/stars 21/0c 570/0c 578/0c 28/1c  aud 1.24 ms  427.2 fps
+port> status f26220   resultdll    board 0 turn 2/3  mg 408 (m408dll)  coins/stars 21/0c 570/0c 578/0c 28/1c  aud 1.50 ms  283.5 fps
+objman>Ovl Return 1=3(1)
+OvlKill 1
+objdll>omDLLNumEnd 84 1
+Search:dll/resultdll.rel
++++++++++++ Find0: dll/resultdll.rel
+objdll>omDLLEnd 0 1
+objdll>End DLL:dll/resultdll.rel
+odjdll>Unlink DLL:dll/resultdll.rel
+objdll>Unlink DLL epilog
+objdll>Unlink DLL epilog finish
+objdll>End DLL finish
+port> frame 26254: overlay -1 (next 89) event 0
+objman>Destory ObjMan
+++++++++++++++++++++ Start New OVL 89 (EVT:0 STAT:0x00000000) ++++++++++++++++++
+objman>Used Memory Size:000212e0
+objman>Used Memory Cnt:15
+objman>Init esp
+objman>Call objectsetup
+SOUND ##########################
+0
+GroupSet 9
+***********GroupSet Error 0
+##########################
+DLLStart 89 0
+Search:dll/w01dll.rel
+objdll>Link DLL:dll/w01dll.rel
+Rest Memory 420c20
+port> w01dll: dlclose did not unload it; zeroed 2186 bytes of bss by hand
+===== DLL Module Info dump ====
+                   ID:0x00000001
+             LinkPrev:0x00000000
+             LinkNext:0x00000000
+          Section num:16
+Section info tbl ofst:0x00000048
+           nameOffset:0x00000000
+             nameSize:45
+              version:0x00000002
+===============================
+==== DLL Module Header dump ====
+          bss Size:0x0000081c
+        rel Offset:0x00012e34
+        imp Offset:0x0001f174
+    prolog Section:1
+    epilog Section:1
+unresolved Section:0
+       prolog func:0x00000030
+       epilog func:0x00000094
+   unresolved func:0x00000000
+================================
+objdll>LinkOK 0225e578 00aef550
+objdll> dll/w01dll.rel prolog start
+objman>InitObjMan start
+objman>InitObjMan end
+objdll> dll/w01dll.rel prolog end
+objman>ObjectSetup end
+port> frame 26255: overlay 89 (next -1) event 0
+DLL DBG OUT
+Rest Memory 37b3c0
+Rest Memory 334960
+data num 5e0000
+Rest Memory 31dea0
+ARAM data num 120006
+data num 6c0000
+Rest Memory 302e20
+data num 190000
+Rest Memory 322ae0
+data num 890000
+Rest Memory 31a860
+ARAM data num 7001d
+data num 50000
+Rest Memory 136ce0
+data num 90000
+Rest Memory 1424a0
+#########SE Entry Error<SE 838:ErrorNo -110>
+port> status f26280   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 578/0c 28/1c  aud 1.15 ms  33.5 fps
+#########SE Entry Error<SE 775:ErrorNo -110>
+#########SE Entry Error<SE 770:ErrorNo -110>
+#########SE Entry Error<SE 768:ErrorNo -110>
+port> status f26340   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 578/0c 28/1c  aud 1.03 ms  13.7 fps
+port> status f26400   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 578/0c 28/1c  aud 1.76 ms  13.5 fps
+#########SE Entry Error<SE 771:ErrorNo -110>
+#########SE Entry Error<SE 780:ErrorNo -110>
+port> status f26460   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 578/0c 28/1c  aud 1.60 ms  13.5 fps
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+port> status f26520   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 578/0c 28/1c  aud 1.45 ms  13.2 fps
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+port> status f26580   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 578/0c 28/1c  aud 1.70 ms  13.2 fps
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+port> status f26640   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 578/0c 28/1c  aud 2.14 ms  14.4 fps
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 842:ErrorNo -110>
+port> status f26700   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 578/0c 28/1c  aud 2.57 ms  13.1 fps
+port> status f26760   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 578/0c 28/1c  aud 2.10 ms  16.6 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f26820   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 578/0c 28/1c  aud 1.90 ms  16.3 fps
+#########SE Entry Error<SE 775:ErrorNo -110>
+#########SE Entry Error<SE 770:ErrorNo -110>
+#########SE Entry Error<SE 768:ErrorNo -110>
+port> status f26880   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 578/0c 28/1c  aud 2.43 ms  15.0 fps
+port> status f26940   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 578/0c 28/1c  aud 1.85 ms  15.2 fps
+#########SE Entry Error<SE 771:ErrorNo -110>
+#########SE Entry Error<SE 780:ErrorNo -110>
+port> status f27000   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 578/0c 28/1c  aud 1.61 ms  15.1 fps
+#########SE Entry Error<SE 389:ErrorNo -110>
+#########SE Entry Error<SE 389:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 389:ErrorNo -110>
+port> status f27060   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 578/0c 28/1c  aud 1.50 ms  13.9 fps
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 389:ErrorNo -110>
+#########SE Entry Error<SE 389:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 389:ErrorNo -110>
+#########SE Entry Error<SE 389:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+port> status f27120   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 578/0c 28/1c  aud 1.69 ms  13.6 fps
+#########SE Entry Error<SE 389:ErrorNo -110>
+#########SE Entry Error<SE 389:ErrorNo -110>
+port> status f27180   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 578/0c 28/1c  aud 1.68 ms  13.7 fps
+port> status f27240   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 578/0c 28/1c  aud 1.57 ms  15.1 fps
+#########SE Entry Error<SE 397:ErrorNo -110>
+#########SE Entry Error<SE 397:ErrorNo -110>
+#########SE Entry Error<SE 1040:ErrorNo -110>
+port> status f27300   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 578/0c 28/1c  aud 1.08 ms  14.8 fps
+port> status f27360   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 578/0c 28/1c  aud 0.99 ms  14.5 fps
+port> status f27420   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 578/0c 28/1c  aud 1.19 ms  14.8 fps
+#########SE Entry Error<SE 397:ErrorNo -110>
+#########SE Entry Error<SE 397:ErrorNo -110>
+#########SE Entry Error<SE 1027:ErrorNo -110>
+port> status f27480   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 578/0c 28/1c  aud 1.39 ms  15.1 fps
+#########SE Entry Error<SE 389:ErrorNo -110>
+#########SE Entry Error<SE 389:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 842:ErrorNo -110>
+port> status f27540   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 578/0c 28/1c  aud 1.43 ms  14.6 fps
+#########SE Entry Error<SE 1027:ErrorNo -110>
+port> status f27600   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 578/0c 28/1c  aud 1.35 ms  15.3 fps
+port> status f27660   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 578/0c 28/1c  aud 1.69 ms  15.2 fps
+#########SE Entry Error<SE 775:ErrorNo -110>
+port> status f27720   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 578/0c 28/1c  aud 2.23 ms  16.7 fps
+#########SE Entry Error<SE 770:ErrorNo -110>
+#########SE Entry Error<SE 768:ErrorNo -110>
+port> status f27780   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 578/0c 28/1c  aud 1.88 ms  16.5 fps
+#########SE Entry Error<SE 771:ErrorNo -110>
+#########SE Entry Error<SE 780:ErrorNo -110>
+port> status f27840   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 578/0c 28/1c  aud 1.66 ms  16.6 fps
+#########SE Entry Error<SE 325:ErrorNo -110>
+#########SE Entry Error<SE 325:ErrorNo -110>
+port> status f27900   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 578/0c 28/1c  aud 2.43 ms  15.2 fps
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 325:ErrorNo -110>
+#########SE Entry Error<SE 325:ErrorNo -110>
+#########SE Entry Error<SE 325:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+port> status f27960   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 578/0c 28/1c  aud 2.58 ms  14.4 fps
+#########SE Entry Error<SE 325:ErrorNo -110>
+#########SE Entry Error<SE 325:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 839:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 354:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+port> status f28020   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 2.55 ms  14.8 fps
+#########SE Entry Error<SE 15:ErrorNo -110>
+port> status f28080   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.66 ms  15.7 fps
+#########SE Entry Error<SE 775:ErrorNo -110>
+port> status f28140   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 2.04 ms  15.1 fps
+#########SE Entry Error<SE 770:ErrorNo -110>
+#########SE Entry Error<SE 768:ErrorNo -110>
+port> status f28200   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.58 ms  14.2 fps
+#########SE Entry Error<SE 771:ErrorNo -110>
+#########SE Entry Error<SE 780:ErrorNo -110>
+port> status f28260   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.88 ms  14.0 fps
+port> status f28320   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.90 ms  13.9 fps
+#########SE Entry Error<SE 453:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 453:ErrorNo -110>
+#########SE Entry Error<SE 453:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+port> status f28380   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.67 ms  12.3 fps
+#########SE Entry Error<SE 453:ErrorNo -110>
+#########SE Entry Error<SE 453:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 453:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 453:ErrorNo -110>
+port> status f28440   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 2.39 ms  12.6 fps
+#########SE Entry Error<SE 453:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 842:ErrorNo -110>
+port> status f28500   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.86 ms  14.9 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f28560   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 2.37 ms  16.4 fps
+port> status f28620   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.81 ms  16.5 fps
+#########SE Entry Error<SE 852:ErrorNo -110>
+#########SE Entry Error<SE 853:ErrorNo -110>
+port> status f28680   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.47 ms  16.6 fps
+port> status f28740   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.56 ms  16.3 fps
+port> status f28800   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.65 ms  16.4 fps
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+port> status f28860   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.79 ms  16.3 fps
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+port> status f28920   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.97 ms  16.1 fps
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 773:ErrorNo -110>
+port> status f28980   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.75 ms  16.2 fps
+port> status f29040   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 2.30 ms  16.0 fps
+Rest Memory 40a8e0
+port> status f29100   w01dll       board 0 turn 3/3  mg 65936 ((none))  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 2.35 ms  16.1 fps
+port> roulette: frame 29118 dealt mg 428 (m428dll, type 2)
+objman>Call New Ovl 3(1)
+OvlKill 1
+objdll>omDLLNumEnd 89 1
+Search:dll/w01dll.rel
++++++++++++ Find0: dll/w01dll.rel
+objdll>omDLLEnd 0 1
+objdll>End DLL:dll/w01dll.rel
+odjdll>Unlink DLL:dll/w01dll.rel
+objdll>Unlink DLL epilog
+objdll>Unlink DLL epilog finish
+objdll>End DLL finish
+port> frame 29113: overlay -1 (next 3) event 0
+objman>Destory ObjMan
+++++++++++++++++++++ Start New OVL 3 (EVT:0 STAT:0x00000000) ++++++++++++++++++
+objman>Used Memory Size:000212e0
+objman>Used Memory Cnt:15
+objman>Init esp
+objman>Call objectsetup
+DLLStart 3 0
+Search:dll/instdll.rel
+objdll>Link DLL:dll/instdll.rel
+Rest Memory 40a8e0
+port> instdll: dlclose did not unload it; zeroed 96 bytes of bss by hand
+===== DLL Module Info dump ====
+                   ID:0x00000001
+             LinkPrev:0x00000000
+             LinkNext:0x00000000
+          Section num:15
+Section info tbl ofst:0x00000048
+           nameOffset:0x00000000
+             nameSize:47
+              version:0x00000002
+===============================
+==== DLL Module Header dump ====
+          bss Size:0x00000064
+        rel Offset:0x00006aa8
+        imp Offset:0x0000ad98
+    prolog Section:1
+    epilog Section:1
+unresolved Section:0
+       prolog func:0x00000000
+       epilog func:0x00000054
+   unresolved func:0x00000000
+================================
+objdll>LinkOK 0225e578 00af8d90
+objdll> dll/instdll.rel prolog start
+******* INST ObjectSetup *********
+objman>InitObjMan start
+objman>InitObjMan end
+0
+GroupSet 45
+***********GroupSet Error 0
+Rest Memory 3c3e80
+objdll> dll/instdll.rel prolog end
+objman>ObjectSetup end
+port> frame 29114: overlay 3 (next -1) event 0
+DLL DBG OUT
+data num 6c0000
+Rest Memory 392340
+ARAM data num 120006
+data num 190000
+Rest Memory 3b2000
+data num 5e0000
+Rest Memory 3ad3c0
+data num 890000
+Rest Memory 3a9d80
+port> status f29160   instdll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.10 ms  15.5 fps
+#########SE Entry Error<SE 1211:ErrorNo -110>
+#########SE Entry Error<SE 1212:ErrorNo -110>
+port> status f29220   instdll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.90 ms  16.4 fps
+#########SE Entry Error<SE 55:ErrorNo -110>
+#########SE Entry Error<SE 333:ErrorNo -110>
+#########SE Entry Error<SE 333:ErrorNo -110>
+#########SE Entry Error<SE 461:ErrorNo -110>
+#########SE Entry Error<SE 269:ErrorNo -110>
+#########SE Entry Error<SE 397:ErrorNo -110>
+#########SE Entry Error<SE 397:ErrorNo -110>
+#########SE Entry Error<SE 269:ErrorNo -110>
+Rest Memory 490900
+port> status f29280   instdll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.78 ms  15.4 fps
+port> status f29340   instdll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.76 ms  15.5 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+#########SE Entry Error<SE 57:ErrorNo -110>
+#########SE Entry Error<SE 405:ErrorNo -110>
+port> status f29400   instdll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 2.24 ms  17.2 fps
+#########SE Entry Error<SE 1210:ErrorNo -110>
+objman>Call New Ovl 36(1)
+OvlKill 1
+objdll>omDLLNumEnd 3 1
+Search:dll/instdll.rel
++++++++++++ Find0: dll/instdll.rel
+objdll>omDLLEnd 0 1
+objdll>End DLL:dll/instdll.rel
+odjdll>Unlink DLL:dll/instdll.rel
+objdll>Unlink DLL epilog
+objdll>Unlink DLL epilog finish
+objdll>End DLL finish
+port> frame 29448: overlay -1 (next 36) event 0
+objman>Destory ObjMan
+++++++++++++++++++++ Start New OVL 36 (EVT:0 STAT:0x00000000) ++++++++++++++++++
+objman>Used Memory Size:000212e0
+objman>Used Memory Cnt:15
+objman>Init esp
+objman>Call objectsetup
+SOUND ##########################
+##########################
+DLLStart 36 0
+Search:dll/m428dll.rel
+objdll>Link DLL:dll/m428dll.rel
+Rest Memory 490900
+===== DLL Module Info dump ====
+                   ID:0x00000001
+             LinkPrev:0x00000000
+             LinkNext:0x00000000
+          Section num:15
+Section info tbl ofst:0x00000048
+           nameOffset:0x00000000
+             nameSize:47
+              version:0x00000002
+===============================
+==== DLL Module Header dump ====
+          bss Size:0x000002d4
+        rel Offset:0x00015282
+        imp Offset:0x0001e852
+    prolog Section:1
+    epilog Section:1
+unresolved Section:0
+       prolog func:0x00000000
+       epilog func:0x00000054
+   unresolved func:0x00000000
+================================
+objdll>LinkOK 0225e578 0a321200
+objdll> dll/m428dll.rel prolog start
+******* M428ObjectSetup *********
+objman>InitObjMan start
+objman>InitObjMan end
+objdll> dll/m428dll.rel prolog end
+objman>ObjectSetup end
+port> frame 29449: overlay 36 (next -1) event 0
+DLL DBG OUT
+data num 5e0001
+Rest Memory 4333e0
+ARAM data num 120006
+data num 890001
+Rest Memory 3d2880
+data num 6c0001
+Rest Memory 35a2e0
+data num 190001
+Rest Memory 301a00
+#########SE Entry Error<SE 1631:ErrorNo -110>
+#########SE Entry Error<SE 1632:ErrorNo -110>
+#########SE Entry Error<SE 1633:ErrorNo -110>
+port> status f29460   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.78 ms  18.9 fps
+port> status f29520   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.74 ms  16.0 fps
+port> status f29580   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 2.49 ms  16.2 fps
+port> status f29640   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 2.26 ms  16.0 fps
+port> status f29700   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 2.40 ms  16.5 fps
+#########SE Entry Error<SE 36:ErrorNo -110>
+port> status f29760   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.49 ms  16.8 fps
+#########SE Entry Error<SE 12:ErrorNo -110>
+port> status f29820   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 0.59 ms  17.1 fps
+port> status f29880   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 0.83 ms  17.0 fps
+port> status f29940   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.89 ms  16.8 fps
+port> status f30000   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.55 ms  16.9 fps
+port> status f30060   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.58 ms  16.9 fps
+port> status f30120   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.07 ms  17.1 fps
+port> status f30180   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.84 ms  16.5 fps
+port> status f30240   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.05 ms  16.4 fps
+port> status f30300   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.88 ms  16.1 fps
+port> status f30360   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.24 ms  16.2 fps
+port> status f30420   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 2.07 ms  16.1 fps
+port> status f30480   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.38 ms  16.1 fps
+port> status f30540   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.14 ms  16.1 fps
+port> status f30600   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.78 ms  16.1 fps
+port> status f30660   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 2.69 ms  16.0 fps
+port> status f30720   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 2.07 ms  16.5 fps
+port> status f30780   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 2.05 ms  16.5 fps
+#########SE Entry Error<SE 483:ErrorNo -110>
+#########SE Entry Error<SE 419:ErrorNo -110>
+#########SE Entry Error<SE 397:ErrorNo -110>
+port> status f30840   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.49 ms  15.9 fps
+#########SE Entry Error<SE 461:ErrorNo -110>
+port> status f30900   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 2.28 ms  15.8 fps
+port> status f30960   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.50 ms  16.2 fps
+port> status f31020   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 2.27 ms  15.9 fps
+port> status f31080   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.72 ms  16.4 fps
+port> status f31140   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 2.26 ms  16.1 fps
+port> status f31200   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.41 ms  16.2 fps
+port> status f31260   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.97 ms  16.1 fps
+port> status f31320   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.93 ms  16.0 fps
+port> status f31380   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.79 ms  16.0 fps
+port> status f31440   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.30 ms  16.3 fps
+port> status f31500   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.58 ms  16.0 fps
+port> status f31560   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.36 ms  16.1 fps
+port> status f31620   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.61 ms  16.1 fps
+port> status f31680   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.57 ms  16.2 fps
+port> status f31740   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.12 ms  16.4 fps
+port> status f31800   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.20 ms  16.2 fps
+port> status f31860   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.85 ms  16.6 fps
+#########SE Entry Error<SE 291:ErrorNo -110>
+port> status f31920   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.61 ms  16.7 fps
+#########SE Entry Error<SE 269:ErrorNo -110>
+#########SE Entry Error<SE 269:ErrorNo -110>
+#########SE Entry Error<SE 269:ErrorNo -110>
+port> status f31980   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.57 ms  16.7 fps
+port> status f32040   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.10 ms  16.2 fps
+port> status f32100   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.80 ms  16.1 fps
+port> status f32160   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.12 ms  16.2 fps
+port> status f32220   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.87 ms  16.0 fps
+port> status f32280   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.26 ms  16.2 fps
+port> status f32340   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 2.17 ms  16.3 fps
+port> status f32400   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.47 ms  16.7 fps
+port> status f32460   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.18 ms  16.8 fps
+port> status f32520   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.87 ms  16.0 fps
+port> status f32580   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 2.58 ms  15.9 fps
+port> status f32640   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 2.12 ms  16.1 fps
+port> status f32700   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 2.07 ms  16.4 fps
+port> status f32760   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.48 ms  16.8 fps
+port> status f32820   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 2.21 ms  16.6 fps
+#########SE Entry Error<SE 483:ErrorNo -110>
+#########SE Entry Error<SE 355:ErrorNo -110>
+port> status f32880   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.52 ms  16.8 fps
+port> status f32940   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 2.25 ms  16.4 fps
+port> status f33000   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.72 ms  16.5 fps
+port> status f33060   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 2.20 ms  16.6 fps
+port> status f33120   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.43 ms  16.9 fps
+port> status f33180   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.95 ms  16.8 fps
+port> status f33240   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.94 ms  16.7 fps
+port> status f33300   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.87 ms  16.4 fps
+#########SE Entry Error<SE 483:ErrorNo -110>
+#########SE Entry Error<SE 419:ErrorNo -110>
+port> status f33360   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.43 ms  16.3 fps
+port> status f33420   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.56 ms  16.5 fps
+port> status f33480   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.35 ms  16.8 fps
+port> status f33540   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.59 ms  16.8 fps
+port> status f33600   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.56 ms  16.3 fps
+port> status f33660   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.09 ms  16.5 fps
+port> status f33720   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.24 ms  16.7 fps
+port> status f33780   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.83 ms  16.3 fps
+#########SE Entry Error<SE 291:ErrorNo -110>
+#########SE Entry Error<SE 355:ErrorNo -110>
+port> status f33840   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.63 ms  16.1 fps
+port> status f33900   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.56 ms  15.8 fps
+port> status f33960   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.13 ms  16.0 fps
+port> status f34020   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.77 ms  16.2 fps
+port> status f34080   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.14 ms  16.3 fps
+port> status f34140   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.84 ms  16.2 fps
+port> status f34200   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.30 ms  16.2 fps
+#########SE Entry Error<SE 483:ErrorNo -110>
+#########SE Entry Error<SE 419:ErrorNo -110>
+port> status f34260   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 2.20 ms  15.9 fps
+port> status f34320   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.45 ms  16.1 fps
+port> status f34380   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.20 ms  15.9 fps
+port> status f34440   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.87 ms  16.6 fps
+port> status f34500   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 2.54 ms  16.5 fps
+port> status f34560   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 2.12 ms  16.5 fps
+port> status f34620   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 2.05 ms  16.2 fps
+port> status f34680   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.49 ms  16.7 fps
+port> status f34740   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 2.22 ms  16.0 fps
+#########SE Entry Error<SE 291:ErrorNo -110>
+port> status f34800   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.55 ms  16.2 fps
+port> status f34860   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 2.26 ms  15.7 fps
+port> status f34920   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.75 ms  16.1 fps
+port> status f34980   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 2.22 ms  16.1 fps
+port> status f35040   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.45 ms  16.3 fps
+port> status f35100   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.94 ms  16.1 fps
+port> status f35160   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.98 ms  16.2 fps
+#########SE Entry Error<SE 483:ErrorNo -110>
+port> status f35220   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.87 ms  15.9 fps
+port> status f35280   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.45 ms  15.9 fps
+port> status f35340   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.56 ms  16.1 fps
+port> status f35400   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.36 ms  16.2 fps
+port> status f35460   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.61 ms  16.1 fps
+port> status f35520   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.57 ms  16.3 fps
+#########SE Entry Error<SE 37:ErrorNo -110>
+port> status f35580   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.06 ms  16.1 fps
+port> status f35640   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.27 ms  16.1 fps
+port> status f35700   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.81 ms  15.9 fps
+#########SE Entry Error<SE 1634:ErrorNo -110>
+port> status f35760   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.64 ms  19.4 fps
+port> status f35820   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.51 ms  32.3 fps
+#########SE Entry Error<SE 356:ErrorNo -110>
+port> status f35880   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.20 ms  31.9 fps
+#########SE Entry Error<SE 420:ErrorNo -110>
+port> status f35940   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 2.00 ms  30.6 fps
+port> status f36000   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.42 ms  30.7 fps
+port> status f36060   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 2.08 ms  30.0 fps
+port> status f36120   m428dll      board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.44 ms  31.0 fps
+objman>Ovl Return 1=4(1)
+OvlKill 1
+objdll>omDLLNumEnd 36 1
+Search:dll/m428dll.rel
++++++++++++ Find0: dll/m428dll.rel
+objdll>omDLLEnd 0 1
+objdll>End DLL:dll/m428dll.rel
+odjdll>Unlink DLL:dll/m428dll.rel
+objdll>Unlink DLL epilog
+objdll>Unlink DLL epilog finish
+objdll>End DLL finish
+port> frame 36131: overlay -1 (next 84) event 0
+objman>Destory ObjMan
+++++++++++++++++++++ Start New OVL 84 (EVT:0 STAT:0x00000000) ++++++++++++++++++
+objman>Used Memory Size:000212e0
+objman>Used Memory Cnt:15
+objman>Init esp
+objman>Call objectsetup
+DLLStart 84 0
+Search:dll/resultdll.rel
+objdll>Link DLL:dll/resultdll.rel
+Rest Memory 490900
+port> resultdll: dlclose did not unload it; zeroed 6794 bytes of bss by hand
+===== DLL Module Info dump ====
+                   ID:0x00000001
+             LinkPrev:0x00000000
+             LinkNext:0x00000000
+          Section num:14
+Section info tbl ofst:0x00000048
+           nameOffset:0x00000000
+             nameSize:51
+              version:0x00000002
+===============================
+==== DLL Module Header dump ====
+          bss Size:0x00001adc
+        rel Offset:0x0000a038
+        imp Offset:0x0000fa50
+    prolog Section:1
+    epilog Section:1
+unresolved Section:0
+       prolog func:0x00000000
+       epilog func:0x00000054
+   unresolved func:0x00000000
+================================
+objdll>LinkOK 0225e578 00aeac50
+objdll> dll/resultdll.rel prolog start
+******* RESULT ObjectSetup *********
+objman>InitObjMan start
+objman>InitObjMan end
+Rest Memory 5395a0
+objdll> dll/resultdll.rel prolog end
+objman>ObjectSetup end
+port> frame 36132: overlay 84 (next -1) event 0
+DLL DBG OUT
+data num 6f0000
+Rest Memory 498d80
+ARAM data num 70000
+Rest Memory 420c20
+port> status f36180   resultdll    board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 570/0c 581/0c 28/1c  aud 1.16 ms  57.0 fps
+#########SE Entry Error<SE 23:ErrorNo -110>
+#########SE Entry Error<SE 9:ErrorNo -110>
+port> status f36240   resultdll    board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/0c 591/0c 28/1c  aud 1.39 ms  131.6 fps
+#########SE Entry Error<SE 27:ErrorNo -110>
+port> status f36300   resultdll    board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/0c 591/0c 28/1c  aud 1.21 ms  124.3 fps
+port> status f36360   resultdll    board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/0c 591/0c 28/1c  aud 1.56 ms  124.9 fps
+ARAM data num 860020
+port> status f36420   resultdll    board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/0c 591/0c 28/1c  aud 1.17 ms  159.5 fps
+port> status f36480   resultdll    board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/0c 591/0c 28/1c  aud 1.34 ms  401.4 fps
+port> status f36540   resultdll    board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/0c 591/0c 28/1c  aud 1.68 ms  274.3 fps
+objman>Ovl Return 1=3(1)
+OvlKill 1
+objdll>omDLLNumEnd 84 1
+Search:dll/resultdll.rel
++++++++++++ Find0: dll/resultdll.rel
+objdll>omDLLEnd 0 1
+objdll>End DLL:dll/resultdll.rel
+odjdll>Unlink DLL:dll/resultdll.rel
+objdll>Unlink DLL epilog
+objdll>Unlink DLL epilog finish
+objdll>End DLL finish
+port> frame 36569: overlay -1 (next 89) event 0
+objman>Destory ObjMan
+++++++++++++++++++++ Start New OVL 89 (EVT:0 STAT:0x00000000) ++++++++++++++++++
+objman>Used Memory Size:000212e0
+objman>Used Memory Cnt:15
+objman>Init esp
+objman>Call objectsetup
+SOUND ##########################
+0
+GroupSet 9
+***********GroupSet Error 0
+##########################
+DLLStart 89 0
+Search:dll/w01dll.rel
+objdll>Link DLL:dll/w01dll.rel
+Rest Memory 420c20
+port> w01dll: dlclose did not unload it; zeroed 2186 bytes of bss by hand
+===== DLL Module Info dump ====
+                   ID:0x00000001
+             LinkPrev:0x00000000
+             LinkNext:0x00000000
+          Section num:16
+Section info tbl ofst:0x00000048
+           nameOffset:0x00000000
+             nameSize:45
+              version:0x00000002
+===============================
+==== DLL Module Header dump ====
+          bss Size:0x0000081c
+        rel Offset:0x00012e34
+        imp Offset:0x0001f174
+    prolog Section:1
+    epilog Section:1
+unresolved Section:0
+       prolog func:0x00000030
+       epilog func:0x00000094
+   unresolved func:0x00000000
+================================
+objdll>LinkOK 0225e578 00aef550
+objdll> dll/w01dll.rel prolog start
+objman>InitObjMan start
+objman>InitObjMan end
+objdll> dll/w01dll.rel prolog end
+objman>ObjectSetup end
+port> frame 36570: overlay 89 (next -1) event 0
+DLL DBG OUT
+objman>Ovl Return 1=2(1)
+OvlKill 1
+objdll>omDLLNumEnd 89 1
+Search:dll/w01dll.rel
++++++++++++ Find0: dll/w01dll.rel
+objdll>omDLLEnd 0 1
+objdll>End DLL:dll/w01dll.rel
+odjdll>Unlink DLL:dll/w01dll.rel
+objdll>Unlink DLL epilog
+objdll>Unlink DLL epilog finish
+objdll>End DLL finish
+port> frame 36573: overlay -1 (next 78) event 0
+objman>Destory ObjMan
+++++++++++++++++++++ Start New OVL 78 (EVT:0 STAT:0x00000000) ++++++++++++++++++
+objman>Used Memory Size:000212e0
+objman>Used Memory Cnt:15
+objman>Init esp
+objman>Call objectsetup
+SOUND ##########################
+0
+GroupSet 8
+***********GroupSet Error 0
+##########################
+DLLStart 78 0
+Search:dll/mstory3dll.rel
+objdll>Link DLL:dll/mstory3dll.rel
+Rest Memory 580000
+===== DLL Module Info dump ====
+                   ID:0x00000001
+             LinkPrev:0x00000000
+             LinkNext:0x00000000
+          Section num:16
+Section info tbl ofst:0x00000048
+           nameOffset:0x00000000
+             nameSize:53
+              version:0x00000002
+===============================
+==== DLL Module Header dump ====
+          bss Size:0x00001d50
+        rel Offset:0x000202db
+        imp Offset:0x0003060b
+    prolog Section:1
+    epilog Section:1
+unresolved Section:0
+       prolog func:0x0000036c
+       epilog func:0x000003c0
+   unresolved func:0x00000000
+================================
+objdll>LinkOK 022841f8 0a322ba0
+objdll> dll/mstory3dll.rel prolog start
+objman>InitObjMan start
+objman>InitObjMan end
+Rest Memory 5395a0
+objdll> dll/mstory3dll.rel prolog end
+objman>ObjectSetup end
+port> frame 36574: overlay 78 (next -1) event 0
+DLL DBG OUT
+data num 5e0001
+Rest Memory 522ae0
+ARAM data num 120006
+data num 67000c
+Rest Memory 1b5a60
+data num 6c0001
+Rest Memory 13d4c0
+data num 190001
+Rest Memory e4be0
+data num 890001
+Rest Memory 84080
+port> status f36600   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/0c 591/0c 28/1c  aud 1.09 ms  28.0 fps
+port> status f36660   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/0c 591/0c 28/1c  aud 2.13 ms  15.3 fps
+#########SE Entry Error<SE 55:ErrorNo -110>
+port> status f36720   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/0c 591/0c 28/1c  aud 1.95 ms  15.5 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+#########SE Entry Error<SE 84:ErrorNo -110>
+port> status f36780   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/0c 591/0c 28/1c  aud 1.91 ms  15.5 fps
+#########SE Entry Error<SE 84:ErrorNo -110>
+#########SE Entry Error<SE 84:ErrorNo -110>
+#########SE Entry Error<SE 84:ErrorNo -110>
+port> status f36840   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/0c 591/0c 28/1c  aud 2.86 ms  15.3 fps
+#########SE Entry Error<SE 54:ErrorNo -110>
+port> status f36900   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/0c 591/0c 28/1c  aud 2.25 ms  15.4 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+#########SE Entry Error<SE 185:ErrorNo -110>
+port> status f36960   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/0c 591/0c 28/1c  aud 2.03 ms  15.1 fps
+port> status f37020   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/0c 591/0c 28/1c  aud 1.66 ms  14.5 fps
+#########SE Entry Error<SE 302:ErrorNo -110>
+#########SE Entry Error<SE 430:ErrorNo -110>
+#########SE Entry Error<SE 366:ErrorNo -110>
+#########SE Entry Error<SE 482:ErrorNo -110>
+port> status f37080   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/0c 591/0c 28/1c  aud 1.49 ms  14.4 fps
+port> status f37140   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/0c 591/0c 28/1c  aud 1.62 ms  14.4 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f37200   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/0c 591/0c 28/1c  aud 1.67 ms  14.1 fps
+#########SE Entry Error<SE 187:ErrorNo -110>
+#########SE Entry Error<SE 187:ErrorNo -110>
+#########SE Entry Error<SE 187:ErrorNo -110>
+#########SE Entry Error<SE 187:ErrorNo -110>
+port> status f37260   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/0c 591/0c 28/1c  aud 1.48 ms  14.2 fps
+#########SE Entry Error<SE 54:ErrorNo -110>
+port> status f37320   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/0c 591/0c 28/1c  aud 1.75 ms  14.9 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+#########SE Entry Error<SE 184:ErrorNo -110>
+port> status f37380   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/0c 591/0c 28/1c  aud 1.77 ms  14.0 fps
+#########SE Entry Error<SE 302:ErrorNo -110>
+#########SE Entry Error<SE 418:ErrorNo -110>
+#########SE Entry Error<SE 366:ErrorNo -110>
+#########SE Entry Error<SE 494:ErrorNo -110>
+port> status f37440   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/0c 591/0c 28/1c  aud 2.03 ms  13.7 fps
+port> status f37500   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/0c 591/0c 28/1c  aud 1.48 ms  13.8 fps
+port> status f37560   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/0c 591/0c 28/1c  aud 1.63 ms  14.0 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+#########SE Entry Error<SE 188:ErrorNo -110>
+#########SE Entry Error<SE 188:ErrorNo -110>
+#########SE Entry Error<SE 188:ErrorNo -110>
+#########SE Entry Error<SE 188:ErrorNo -110>
+port> status f37620   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/0c 591/0c 28/1c  aud 1.57 ms  14.1 fps
+port> status f37680   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/0c 591/0c 28/1c  aud 1.68 ms  14.3 fps
+#########SE Entry Error<SE 54:ErrorNo -110>
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f37740   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/0c 591/0c 28/1c  aud 1.50 ms  15.1 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f37800   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/0c 591/0c 28/1c  aud 1.70 ms  15.1 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f37860   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/0c 591/0c 28/1c  aud 1.81 ms  14.9 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f37920   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/0c 591/0c 28/1c  aud 2.05 ms  15.0 fps
+#########SE Entry Error<SE 158:ErrorNo -110>
+port> status f37980   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/0c 591/0c 28/1c  aud 1.43 ms  15.2 fps
+#########SE Entry Error<SE 159:ErrorNo -110>
+#########SE Entry Error<SE 54:ErrorNo -110>
+#########SE Entry Error<SE 154:ErrorNo -110>
+port> status f38040   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/0c 591/0c 28/1c  aud 1.65 ms  15.4 fps
+#########SE Entry Error<SE 302:ErrorNo -110>
+#########SE Entry Error<SE 366:ErrorNo -110>
+#########SE Entry Error<SE 494:ErrorNo -110>
+#########SE Entry Error<SE 420:ErrorNo -110>
+port> status f38100   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/0c 591/0c 28/1c  aud 1.55 ms  15.3 fps
+port> status f38160   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/0c 591/0c 28/1c  aud 1.66 ms  15.6 fps
+#########SE Entry Error<SE 824:ErrorNo -110>
+ARAM data num 120001
+port> status f38220   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/0c 591/0c 28/1c  aud 1.54 ms  15.1 fps
+#########SE Entry Error<SE 825:ErrorNo -110>
+port> status f38280   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/0c 591/0c 28/1c  aud 1.65 ms  15.2 fps
+#########SE Entry Error<SE 8:ErrorNo -110>
+port> status f38340   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/1c 591/0c 28/1c  aud 1.83 ms  15.2 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f38400   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/1c 591/0c 28/1c  aud 2.01 ms  15.5 fps
+port> status f38460   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/1c 591/0c 28/1c  aud 1.39 ms  15.7 fps
+#########SE Entry Error<SE 54:ErrorNo -110>
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f38520   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/1c 591/0c 28/1c  aud 1.61 ms  15.6 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f38580   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/1c 591/0c 28/1c  aud 1.62 ms  15.6 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+#########SE Entry Error<SE 158:ErrorNo -110>
+port> status f38640   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/1c 591/0c 28/1c  aud 1.65 ms  15.6 fps
+port> status f38700   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/1c 591/0c 28/1c  aud 1.55 ms  15.7 fps
+#########SE Entry Error<SE 159:ErrorNo -110>
+#########SE Entry Error<SE 54:ErrorNo -110>
+#########SE Entry Error<SE 154:ErrorNo -110>
+#########SE Entry Error<SE 302:ErrorNo -110>
+#########SE Entry Error<SE 366:ErrorNo -110>
+#########SE Entry Error<SE 494:ErrorNo -110>
+port> status f38760   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/1c 591/0c 28/1c  aud 1.65 ms  15.6 fps
+#########SE Entry Error<SE 420:ErrorNo -110>
+port> status f38820   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/1c 591/0c 28/1c  aud 1.94 ms  15.4 fps
+#########SE Entry Error<SE 824:ErrorNo -110>
+port> status f38880   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/1c 591/0c 28/1c  aud 1.93 ms  15.3 fps
+port> status f38940   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/1c 591/0c 28/1c  aud 1.41 ms  15.2 fps
+#########SE Entry Error<SE 825:ErrorNo -110>
+port> status f39000   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/1c 591/0c 28/1c  aud 1.61 ms  14.8 fps
+#########SE Entry Error<SE 8:ErrorNo -110>
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f39060   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/2c 591/0c 28/1c  aud 1.68 ms  14.7 fps
+port> status f39120   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/2c 591/0c 28/1c  aud 1.62 ms  15.2 fps
+#########SE Entry Error<SE 54:ErrorNo -110>
+port> status f39180   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/2c 591/0c 28/1c  aud 1.59 ms  15.1 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f39240   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/2c 591/0c 28/1c  aud 1.67 ms  15.0 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f39300   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/2c 591/0c 28/1c  aud 2.04 ms  15.0 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f39360   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/2c 591/0c 28/1c  aud 1.80 ms  15.1 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+#########SE Entry Error<SE 158:ErrorNo -110>
+port> status f39420   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/2c 591/0c 28/1c  aud 1.45 ms  15.4 fps
+port> status f39480   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/2c 591/0c 28/1c  aud 1.60 ms  15.1 fps
+#########SE Entry Error<SE 159:ErrorNo -110>
+#########SE Entry Error<SE 54:ErrorNo -110>
+#########SE Entry Error<SE 154:ErrorNo -110>
+#########SE Entry Error<SE 366:ErrorNo -110>
+#########SE Entry Error<SE 494:ErrorNo -110>
+#########SE Entry Error<SE 292:ErrorNo -110>
+#########SE Entry Error<SE 420:ErrorNo -110>
+port> status f39540   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/2c 591/0c 28/1c  aud 1.63 ms  14.9 fps
+#########SE Entry Error<SE 824:ErrorNo -110>
+port> status f39600   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/2c 591/0c 28/1c  aud 1.55 ms  14.9 fps
+#########SE Entry Error<SE 824:ErrorNo -110>
+port> status f39660   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/2c 591/0c 28/1c  aud 1.69 ms  14.2 fps
+#########SE Entry Error<SE 825:ErrorNo -110>
+port> status f39720   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/0c 999/2c 591/0c 28/1c  aud 1.73 ms  14.3 fps
+#########SE Entry Error<SE 825:ErrorNo -110>
+#########SE Entry Error<SE 8:ErrorNo -110>
+#########SE Entry Error<SE 8:ErrorNo -110>
+port> status f39780   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/1c 999/3c 591/0c 28/1c  aud 2.00 ms  14.2 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f39840   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/1c 999/3c 591/0c 28/1c  aud 1.77 ms  14.9 fps
+port> status f39900   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/1c 999/3c 591/0c 28/1c  aud 1.47 ms  15.0 fps
+#########SE Entry Error<SE 54:ErrorNo -110>
+port> status f39960   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/1c 999/3c 591/0c 28/1c  aud 1.62 ms  15.2 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+#########SE Entry Error<SE 158:ErrorNo -110>
+port> status f40020   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/1c 999/3c 591/0c 28/1c  aud 1.62 ms  15.4 fps
+port> status f40080   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/1c 999/3c 591/0c 28/1c  aud 1.52 ms  15.5 fps
+port> status f40140   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/1c 999/3c 591/0c 28/1c  aud 1.68 ms  15.4 fps
+port> status f40200   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/1c 999/3c 591/0c 28/1c  aud 1.78 ms  15.1 fps
+port> status f40260   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/1c 999/3c 591/0c 28/1c  aud 1.95 ms  15.0 fps
+port> status f40320   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/1c 999/3c 591/0c 28/1c  aud 1.70 ms  15.1 fps
+port> status f40380   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/1c 999/3c 591/0c 28/1c  aud 1.49 ms  15.0 fps
+port> status f40440   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/1c 999/3c 591/0c 28/1c  aud 1.66 ms  15.0 fps
+port> status f40500   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/1c 999/3c 591/0c 28/1c  aud 1.64 ms  15.1 fps
+port> status f40560   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/1c 999/3c 591/0c 28/1c  aud 1.49 ms  15.1 fps
+#########SE Entry Error<SE 166:ErrorNo -110>
+#########SE Entry Error<SE 166:ErrorNo -110>
+#########SE Entry Error<SE 166:ErrorNo -110>
+#########SE Entry Error<SE 166:ErrorNo -110>
+port> status f40620   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/1c 999/3c 591/0c 28/1c  aud 1.75 ms  14.7 fps
+#########SE Entry Error<SE 167:ErrorNo -110>
+#########SE Entry Error<SE 167:ErrorNo -110>
+#########SE Entry Error<SE 167:ErrorNo -110>
+#########SE Entry Error<SE 167:ErrorNo -110>
+port> status f40680   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/1c 999/3c 591/0c 28/1c  aud 1.78 ms  14.9 fps
+port> status f40740   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/1c 999/3c 591/0c 28/1c  aud 2.01 ms  14.7 fps
+port> status f40800   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/1c 999/3c 591/0c 28/1c  aud 1.52 ms  14.8 fps
+#########SE Entry Error<SE 168:ErrorNo -110>
+#########SE Entry Error<SE 168:ErrorNo -110>
+#########SE Entry Error<SE 168:ErrorNo -110>
+#########SE Entry Error<SE 168:ErrorNo -110>
+#########SE Entry Error<SE 159:ErrorNo -110>
+port> status f40860   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/1c 999/3c 591/0c 28/1c  aud 1.22 ms  15.2 fps
+#########SE Entry Error<SE 54:ErrorNo -110>
+port> status f40920   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/1c 999/3c 591/0c 28/1c  aud 1.64 ms  15.0 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f40980   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/1c 999/3c 591/0c 28/1c  aud 2.43 ms  14.0 fps
+port> status f41040   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/1c 999/3c 591/0c 28/1c  aud 2.47 ms  13.9 fps
+port> status f41100   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/1c 999/3c 591/0c 28/1c  aud 2.28 ms  14.1 fps
+port> status f41160   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/1c 999/3c 591/0c 28/1c  aud 2.52 ms  13.8 fps
+#########SE Entry Error<SE 827:ErrorNo -110>
+port> status f41220   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/1c 999/3c 591/0c 28/1c  aud 2.14 ms  13.8 fps
+Particle Count 160
+Particle Count 790
+#########SE Entry Error<SE 427:ErrorNo -110>
+#########SE Entry Error<SE 186:ErrorNo -110>
+#########SE Entry Error<SE 154:ErrorNo -110>
+port> status f41280   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/1c 999/3c 591/0c 28/1c  aud 1.94 ms  12.8 fps
+Finish
+HuMem>memory free error. 02b48fb0( call 0cc2e048)
+port> status f41340   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/1c 999/3c 591/0c 28/1c  aud 1.35 ms  12.9 fps
+port> status f41400   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/1c 999/3c 591/0c 28/1c  aud 2.12 ms  13.3 fps
+port> status f41460   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/1c 999/3c 591/0c 28/1c  aud 1.95 ms  13.3 fps
+port> status f41520   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/1c 999/3c 591/0c 28/1c  aud 2.12 ms  13.1 fps
+port> status f41580   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/1c 999/3c 591/0c 28/1c  aud 1.65 ms  13.1 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f41640   mstory3dll   board 0 turn 3/3  mg 428 (m428dll)  coins/stars 21/1c 999/3c 591/0c 28/1c  aud 2.08 ms  12.9 fps
+OvlKill 1
+objdll>omDLLNumEnd 78 1
+Search:dll/mstory3dll.rel
++++++++++++ Find0: dll/mstory3dll.rel
+objdll>omDLLEnd 0 1
+objdll>End DLL:dll/mstory3dll.rel
+odjdll>Unlink DLL:dll/mstory3dll.rel
+objdll>Unlink DLL epilog
+objdll>Unlink DLL epilog finish
+objdll>End DLL finish
+port> frame 41668: overlay -1 (next 78) event 0
+objman>Destory ObjMan
+++++++++++++++++++++ Start New OVL 78 (EVT:1 STAT:0x00000000) ++++++++++++++++++
+objman>Used Memory Size:000212e0
+objman>Used Memory Cnt:15
+objman>Init esp
+objman>Call objectsetup
+SOUND ##########################
+##########################
+DLLStart 78 0
+Search:dll/mstory3dll.rel
+objdll>Link DLL:dll/mstory3dll.rel
+Rest Memory 580000
+port> mstory3dll: dlclose did not unload it; zeroed 15192 bytes of bss by hand
+===== DLL Module Info dump ====
+                   ID:0x00000001
+             LinkPrev:0x00000000
+             LinkNext:0x00000000
+          Section num:16
+Section info tbl ofst:0x00000048
+           nameOffset:0x00000000
+             nameSize:53
+              version:0x00000002
+===============================
+==== DLL Module Header dump ====
+          bss Size:0x00001d50
+        rel Offset:0x000202db
+        imp Offset:0x0003060b
+    prolog Section:1
+    epilog Section:1
+unresolved Section:0
+       prolog func:0x0000036c
+       epilog func:0x000003c0
+   unresolved func:0x00000000
+================================
+objdll>LinkOK 022841f8 0a322ba0
+objdll> dll/mstory3dll.rel prolog start
+objman>InitObjMan start
+objman>InitObjMan end
+Rest Memory 5395a0
+data num 67005f
+Rest Memory 212f80
+objdll> dll/mstory3dll.rel prolog end
+objman>ObjectSetup end
+port> frame 41669: overlay 78 (next -1) event 1
+DLL DBG OUT
+ARAM data num 120006
+
+*** port: fault: signal 11 at address 0xfeb6feb6
+    region  not a region the port owns
+    pc   00000000000ac4fc  (image base 0000000000001000, offset ab4fc)
+    sp   000000000200f660
+    atos -o <binary> -l 0x1000 0xac4fc
+    in   gx_tev_report  (/Users/zach/isle.app/Contents/MacOS/isle)
+    backtrace (pc, then return addresses up the linkage chain):
+      #0  000ae164  gx_tex_bind + 672  [isle]
+      #1  000ac140  gx_tev_apply + 1100  [isle]
+      #2  000a6280  gl13_state_report + 3600  [isle]
+      #3  000a89a0  GXEnd + 96  [isle]
+      #4  0004126c  HuSprDisp + 1448  [isle]
+      #5  0003efbc  HuSprExec + 60  [isle]
+      #6  000273c8  Hu3DExec + 1588  [isle]
+      #7  0002bb30  mp4_game_main + 556  [isle]
+      #8  0009e33c  port_shutdown + 116  [isle]
+      #9  000bea78  port_call_on_stack + 32  [isle]
+
+---- SDK surface hit at boot: 8 distinct stubs, in first-call order ----
+   1  AIRegisterDMACallback                   1
+   2  THPInit                                 3
+   3  GXUnknownu16                        12384
+   4  PSVECSubtract                      603607
+   5  GXSetLineWidth                      12552
+   6  PSVECMag                             1111
+   7  PSVECAdd                            31350
+   8  PSVECScale                           6650
+---- 667658 stub calls total ----
