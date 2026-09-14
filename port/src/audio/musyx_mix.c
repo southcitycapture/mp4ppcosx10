@@ -114,13 +114,16 @@ typedef struct MixVoice {
     u32 curSample; /* absolute sample index; matches what hwGetPos() would
                      * report for this voice (see hw_dspctrl.c:456-486)     */
 
-    /* resampler: srcTypeSelect 2 has no lookahead; 0/1 keep one sample of
-     * history so a real 4-tap filter can replace the linear blend later
-     * without changing anything else about this struct.                    */
+    /* resampler: srcTypeSelect 2 has no lookahead; 0/1 keep the four-sample
+     * window the console's own polyphase filter keeps -- `_PBSRC` is
+     * `u16 last_samples[4]` (musyx/include/musyx/voice.h:98), zeroed at voice
+     * start (hw_dspctrl.c:916-920), so this is the DSP's state and not an
+     * invention of the port's.  hist[1] and hist[2] straddle the output
+     * position; hist[0] is one behind and hist[3] one ahead.               */
     u16 srcType;
     u32 pitch; /* 16.16, 0x10000 == 1.0x; adopted from changed[]&8           */
     u32 phase; /* 16.16, in [0, 0x10000)                                    */
-    s32 prevSample, curSampleValue;
+    s32 hist[4];
 
     u32 streamLoopCnt; /* stands in for the DSP's _PB.streamLoopCnt; nothing
                          * reads it yet -- see the report for what a host
@@ -147,6 +150,18 @@ static unsigned long stat_peak_abs; /* largest |sample| ever written to dest */
 static u32 stat_voices_active_this_frame;
 static u32 stat_max_concurrent_voices;
 static unsigned long stat_voices_no_extradata;
+
+/* M7: the two audio repairs, counted rather than asserted.  `stat_depop_cuts`
+ * is how many voices ended part-way through a frame -- the step the depop
+ * ramp exists to unwind -- and `stat_clicks` is the same rule wavstat.py
+ * applies to a --wav capture (a sample-to-sample step over half full scale),
+ * evaluated in process so a soak reports it without a capture. */
+static unsigned long stat_depop_cuts;
+static unsigned long stat_clicks;
+static long stat_worst_step;
+
+static void add_dpop(s32* sum, s32 delta);
+static void apply_depop(void);
 
 /* --perf-gated per-call cost, in seconds; port_now_seconds() is the same
  * clock port_perf_* already uses elsewhere, so this composes with --perf
@@ -535,15 +550,57 @@ static s32 voice_decode_advance(DSPvoice* dv, MixVoice* mv) {
     }
 }
 
+/* ---- the 4-tap polyphase resampler ----------------------------------------
+ *
+ * The console interpolated with a 4-tap polyphase filter, selected per voice
+ * by `srcCoefSelect` (hwSetPolyPhaseFilter, hardware.c:301); `_PBSRC` keeps
+ * `last_samples[4]` for exactly that.  **The coefficients themselves are not
+ * recoverable from this tree**: `dsp_import.c` is the assembled `dspSlave[]`
+ * ucode as hex and there is no symbolic table anywhere in `extern/musyx`.
+ * They are not taken from an emulator either -- PLAN.md §5.1's rule is that
+ * Dolphin is a reference runtime and never a source of code.
+ *
+ * So the port supplies a kernel of the same shape and the same cost: a
+ * Catmull-Rom 4-point cubic, tabulated over 256 phases in Q14.  It is a
+ * genuine 4-tap polyphase filter, it is continuous in its first derivative
+ * across sample boundaries (which linear interpolation is not, and which is
+ * the property that matters for the clicks), and it costs four 32x16
+ * multiplies where the linear blend cost one 64-bit multiply and a shift.
+ *
+ * Q14 rather than Q15 for a bound rather than a hope: Catmull-Rom's
+ * coefficients sum to 1 and their absolute values sum to at most 1.25 (at the
+ * half phase, [-1,9,9,-1]/16), so the accumulator cannot exceed
+ * 32768 * 1.25 * 16384 = 6.7e8 and stays inside s32 without a saturating add
+ * in the inner loop.
+ */
+#define SRC_PHASES 256
+#define SRC_Q 14
+static s16 src_coef[SRC_PHASES][4];
+
+static void src_table_init(void) {
+    int p;
+    for (p = 0; p < SRC_PHASES; p++) {
+        double t = (double)p / (double)SRC_PHASES;
+        double t2 = t * t, t3 = t2 * t;
+        /* Catmull-Rom, in the y(-1), y(0), y(1), y(2) basis. */
+        double c0 = -0.5 * t3 + t2 - 0.5 * t;
+        double c1 = 1.5 * t3 - 2.5 * t2 + 1.0;
+        double c2 = -1.5 * t3 + 2.0 * t2 + 0.5 * t;
+        double c3 = 0.5 * t3 - 0.5 * t2;
+        src_coef[p][0] = (s16)(c0 * (1 << SRC_Q) + (c0 >= 0 ? 0.5 : -0.5));
+        src_coef[p][1] = (s16)(c1 * (1 << SRC_Q) + (c1 >= 0 ? 0.5 : -0.5));
+        src_coef[p][2] = (s16)(c2 * (1 << SRC_Q) + (c2 >= 0 ? 0.5 : -0.5));
+        src_coef[p][3] = (s16)(c3 * (1 << SRC_Q) + (c3 >= 0 ? 0.5 : -0.5));
+    }
+}
+
 /* One resampled output sample.
  *
  * srcTypeSelect == 2 ("no SRC") advances exactly one input sample per output
- * sample, per spec.  0 and 1 are the console's interpolating resamplers (a
- * 4-tap polyphase filter selected by srcCoefSelect); this mixer does linear
- * interpolation between the two nearest source samples instead -- a
- * deliberate first-cut simplification -- but keeps a one-sample lookahead
- * (`prevSample`/`curSampleValue`) so dropping in the real 4-tap filter later
- * only touches this function. */
+ * sample, per spec.  0 and 1 are the console's interpolating resamplers; the
+ * 4-tap table above stands in for the DSP's polyphase filter, and
+ * `--resample1` keeps the linear blend M6 shipped so the two can be measured
+ * against each other on the same walk. */
 static s32 voice_output_sample(DSPvoice* dv, MixVoice* mv) {
     s32 out;
 
@@ -551,13 +608,23 @@ static s32 voice_output_sample(DSPvoice* dv, MixVoice* mv) {
         return voice_decode_advance(dv, mv);
     }
 
-    out = mv->prevSample + (s32)((((s64)(mv->curSampleValue - mv->prevSample)) *
-                                  (s64)(mv->phase & 0xFFFF)) >> 16);
+    if (port_opt.resample4) {
+        const s16* c = src_coef[(mv->phase & 0xFFFF) >> (16 - 8)];
+        out = (mv->hist[0] * c[0] + mv->hist[1] * c[1] + mv->hist[2] * c[2] +
+               mv->hist[3] * c[3]) >> SRC_Q;
+        if (out > 32767) out = 32767;
+        else if (out < -32768) out = -32768;
+    } else {
+        out = mv->hist[1] + (s32)((((s64)(mv->hist[2] - mv->hist[1])) *
+                                   (s64)(mv->phase & 0xFFFF)) >> 16);
+    }
     mv->phase += mv->pitch;
     while (mv->phase >= 0x10000u && !mv->ended) {
         mv->phase -= 0x10000u;
-        mv->prevSample = mv->curSampleValue;
-        mv->curSampleValue = voice_decode_advance(dv, mv);
+        mv->hist[0] = mv->hist[1];
+        mv->hist[1] = mv->hist[2];
+        mv->hist[2] = mv->hist[3];
+        mv->hist[3] = voice_decode_advance(dv, mv);
     }
     return out;
 }
@@ -732,11 +799,16 @@ static int start_voice(DSPvoice* dv, MixVoice* mv) {
         return 0;
     }
 
-    /* Resampler lookahead: for srcType 0/1 we linearly blend between two
-     * decoded samples, so prime both now.  srcType 2 does not need this,
-     * but priming is harmless (voice_output_sample never reads it there). */
-    mv->prevSample = voice_decode_advance(dv, mv);
-    mv->curSampleValue = mv->ended ? mv->prevSample : voice_decode_advance(dv, mv);
+    /* Resampler window.  The DSP zeroes `last_samples[]` at voice start
+     * (hw_dspctrl.c:916-920) rather than back-filling with the first sample,
+     * so hist[0] stays 0 and the filter eases in from silence -- which is the
+     * *start* of the same anti-step argument the depop path makes at the end.
+     * hist[1] is the first decoded sample, and hist[2..3] the lookahead the
+     * 4-tap kernel reads ahead of the output position. */
+    mv->hist[0] = 0;
+    mv->hist[1] = voice_decode_advance(dv, mv);
+    mv->hist[2] = mv->ended ? mv->hist[1] : voice_decode_advance(dv, mv);
+    mv->hist[3] = mv->ended ? mv->hist[2] : voice_decode_advance(dv, mv);
     mv->phase = 0;
 
     mv->live = 1;
@@ -855,6 +927,16 @@ static void render_voice(DSPvoice* dv, MixVoice* mv, DSPstudioinfo* stp) {
     u32 s, i;
     int done = 0;
     int main_live, auxa_live, auxb_live, surround_live;
+    /* The nine per-bus values this voice last put into the mix.  If it stops
+     * before the end of the frame, these are exactly the step it leaves
+     * behind, and they are what the depop path has to unwind -- the console
+     * calls them `_PB.dpop.a*` (musyx/include/musyx/voice.h:51) and folds
+     * them into the studio's `hostDPopSum` in HandleDepopVoice
+     * (hw_dspctrl.c:644). */
+    s32 dpop_l = 0, dpop_r = 0, dpop_s = 0;
+    s32 dpop_la = 0, dpop_ra = 0, dpop_sa = 0;
+    s32 dpop_lb = 0, dpop_rb = 0, dpop_sb = 0;
+    u32 last_idx = 0;
 
     if (dv->state == 1) {
         if (!start_voice(dv, mv)) {
@@ -946,25 +1028,38 @@ static void render_voice(DSPvoice* dv, MixVoice* mv, DSPstudioinfo* stp) {
              * setup. */
             if (raw != 0 && (main_live || auxa_live || auxb_live)) {
                 s32 e = apply_gain(raw, env);
+                last_idx = idx;
+                dpop_l = dpop_r = dpop_s = 0;
+                dpop_la = dpop_ra = dpop_sa = 0;
+                dpop_lb = dpop_rb = dpop_sb = 0;
                 if (main_live) {
-                    main_buf[BUS_L_OFF + idx] = clamp_accum((s64)main_buf[BUS_L_OFF + idx] + apply_gain(e, volL));
-                    main_buf[BUS_R_OFF + idx] = clamp_accum((s64)main_buf[BUS_R_OFF + idx] + apply_gain(e, volR));
+                    dpop_l = apply_gain(e, volL);
+                    dpop_r = apply_gain(e, volR);
+                    main_buf[BUS_L_OFF + idx] = clamp_accum((s64)main_buf[BUS_L_OFF + idx] + dpop_l);
+                    main_buf[BUS_R_OFF + idx] = clamp_accum((s64)main_buf[BUS_R_OFF + idx] + dpop_r);
                     if (surround_live) {
-                        main_buf[BUS_S_OFF + idx] = clamp_accum((s64)main_buf[BUS_S_OFF + idx] + apply_gain(e, volS));
+                        dpop_s = apply_gain(e, volS);
+                        main_buf[BUS_S_OFF + idx] = clamp_accum((s64)main_buf[BUS_S_OFF + idx] + dpop_s);
                     }
                 }
                 if (auxa_live) {
-                    auxa_buf[BUS_L_OFF + idx] = clamp_accum((s64)auxa_buf[BUS_L_OFF + idx] + apply_gain(e, volLa));
-                    auxa_buf[BUS_R_OFF + idx] = clamp_accum((s64)auxa_buf[BUS_R_OFF + idx] + apply_gain(e, volRa));
+                    dpop_la = apply_gain(e, volLa);
+                    dpop_ra = apply_gain(e, volRa);
+                    auxa_buf[BUS_L_OFF + idx] = clamp_accum((s64)auxa_buf[BUS_L_OFF + idx] + dpop_la);
+                    auxa_buf[BUS_R_OFF + idx] = clamp_accum((s64)auxa_buf[BUS_R_OFF + idx] + dpop_ra);
                     if (surround_live) {
-                        auxa_buf[BUS_S_OFF + idx] = clamp_accum((s64)auxa_buf[BUS_S_OFF + idx] + apply_gain(e, volSa));
+                        dpop_sa = apply_gain(e, volSa);
+                        auxa_buf[BUS_S_OFF + idx] = clamp_accum((s64)auxa_buf[BUS_S_OFF + idx] + dpop_sa);
                     }
                 }
                 if (auxb_live) {
-                    auxb_buf[BUS_L_OFF + idx] = clamp_accum((s64)auxb_buf[BUS_L_OFF + idx] + apply_gain(e, volLb));
-                    auxb_buf[BUS_R_OFF + idx] = clamp_accum((s64)auxb_buf[BUS_R_OFF + idx] + apply_gain(e, volRb));
+                    dpop_lb = apply_gain(e, volLb);
+                    dpop_rb = apply_gain(e, volRb);
+                    auxb_buf[BUS_L_OFF + idx] = clamp_accum((s64)auxb_buf[BUS_L_OFF + idx] + dpop_lb);
+                    auxb_buf[BUS_R_OFF + idx] = clamp_accum((s64)auxb_buf[BUS_R_OFF + idx] + dpop_rb);
                     if (surround_live) {
-                        auxb_buf[BUS_S_OFF + idx] = clamp_accum((s64)auxb_buf[BUS_S_OFF + idx] + apply_gain(e, volSb));
+                        dpop_sb = apply_gain(e, volSb);
+                        auxb_buf[BUS_S_OFF + idx] = clamp_accum((s64)auxb_buf[BUS_S_OFF + idx] + dpop_sb);
                     }
                 }
             }
@@ -1002,7 +1097,102 @@ static void render_voice(DSPvoice* dv, MixVoice* mv, DSPstudioinfo* stp) {
      * notify the sequencer and unlink the voice (hw_dspctrl.c:1224/1600/
      * 1657 all pair these two calls the same way). */
     if ((mv->ended || done) && mv->live) {
+        /* The step, banked.  A voice that ran to the last sample of the frame
+         * and *then* ended leaves nothing behind for this frame -- the next
+         * frame simply has one fewer voice, and the difference between the
+         * last sample of this frame and the first of the next is the step.
+         * So the value is banked whatever `last_idx` was; what
+         * `stat_depop_cuts` counts is the mid-frame case, which is the loud
+         * one and the one PLAN.md §16.7 localised. */
+        if (port_opt.depop) {
+            add_dpop(&stp->hostDPopSum.l, dpop_l);
+            add_dpop(&stp->hostDPopSum.r, dpop_r);
+            add_dpop(&stp->hostDPopSum.s, dpop_s);
+            add_dpop(&stp->hostDPopSum.lA, dpop_la);
+            add_dpop(&stp->hostDPopSum.rA, dpop_ra);
+            add_dpop(&stp->hostDPopSum.sA, dpop_sa);
+            add_dpop(&stp->hostDPopSum.lB, dpop_lb);
+            add_dpop(&stp->hostDPopSum.rB, dpop_rb);
+            add_dpop(&stp->hostDPopSum.sB, dpop_sb);
+            if (last_idx + 1 < BUS_LEN / 3) {
+                stat_depop_cuts++;
+            }
+        }
         finish_voice(dv, mv);
+    }
+}
+
+/* ---- the depop path (hw_dspctrl.c:631-705, 1880-1888) ----------------------
+ *
+ * A voice that stops does not stop at zero.  It stops at whatever its last
+ * output sample times its bus gain happened to be, and every later sample of
+ * that frame is missing that value -- a step, which is a click.  The DSP's
+ * answer is not to fade the voice (there is no time: the decision is made
+ * between frames) but to inject the step back into the bus as a DC offset and
+ * then ramp *that* to zero, which spreads one discontinuity of arbitrary size
+ * over 160 samples of at most 20 units each.
+ *
+ * `AddDpop` (hw_dspctrl.c:626) is the accumulator, `DoDepopFade`
+ * (hw_dspctrl.c:631) the ramp, and `DSPstudioinfo::hostDPopSum` -- a field
+ * this port already has, and never wrote until now -- is where the two meet.
+ */
+static void add_dpop(s32* sum, s32 delta) {
+    s32 v = *sum + delta;
+    if (v > 0x7fffff) v = 0x7fffff;
+    if (v < -0x7fffff) v = -0x7fffff;
+    *sum = v;
+}
+
+static void depop_bus(s32* bus, u32 off, s32* sum) {
+    s32 start = *sum;
+    s32 delta;
+    u32 i;
+    if (start == 0) {
+        return;
+    }
+    if (start <= -160) {
+        delta = (start <= -3200) ? 0x14 : (-start / 160);
+    } else if (start >= 160) {
+        delta = (start >= 3200) ? -0x14 : (-start / 160);
+    } else {
+        /* Below 160 the console's own arithmetic gives a delta of zero and
+         * leaves the offset in place forever.  A permanent DC of under 160
+         * units is inaudible but it is also pointless, and it would make two
+         * runs of the same seed differ in their *accumulated* residue rather
+         * than in anything audible, so the port retires it in one frame. */
+        delta = 0;
+    }
+    for (i = 0; i < FRAME_SAMPLES; i++) {
+        bus[off + i] = clamp_accum((s64)bus[off + i] + start + (s32)i * delta);
+    }
+    *sum = (delta == 0) ? 0 : start + delta * (s32)FRAME_SAMPLES;
+}
+
+static void apply_depop(void) {
+    u8 st;
+    if (!port_opt.depop) {
+        return;
+    }
+    for (st = 0; st < salMaxStudioNum; st++) {
+        DSPstudioinfo* stp = &dspStudio[st];
+        s32* mb;
+        s32* aa;
+        s32* ab;
+        if (stp->state != 1) {
+            continue;
+        }
+        mb = stp->main[salFrame];
+        aa = stp->auxA[salAuxFrame];
+        ab = stp->auxB[salAuxFrame];
+        depop_bus(mb, BUS_L_OFF, &stp->hostDPopSum.l);
+        depop_bus(mb, BUS_R_OFF, &stp->hostDPopSum.r);
+        depop_bus(mb, BUS_S_OFF, &stp->hostDPopSum.s);
+        depop_bus(aa, BUS_L_OFF, &stp->hostDPopSum.lA);
+        depop_bus(aa, BUS_R_OFF, &stp->hostDPopSum.rA);
+        depop_bus(aa, BUS_S_OFF, &stp->hostDPopSum.sA);
+        depop_bus(ab, BUS_L_OFF, &stp->hostDPopSum.lB);
+        depop_bus(ab, BUS_R_OFF, &stp->hostDPopSum.rB);
+        depop_bus(ab, BUS_S_OFF, &stp->hostDPopSum.sB);
     }
 }
 
@@ -1161,6 +1351,22 @@ static void render_output(short* dest) {
             u32 abs_r = (u32)(rs < 0 ? -rs : rs);
             if (abs_l > stat_peak_abs) stat_peak_abs = abs_l;
             if (abs_r > stat_peak_abs) stat_peak_abs = abs_r;
+            if (port_opt.clickstat) {
+                /* wavstat.py's rule, in process and on the same channel: the
+                 * left-channel sample-to-sample step, and how many exceed
+                 * half full scale.  Same threshold, so the number a soak
+                 * prints and the number a capture is measured at agree. */
+                static int have_prev;
+                static s32 prev_l;
+                if (have_prev) {
+                    long d = (long)ls - (long)prev_l;
+                    if (d < 0) d = -d;
+                    if (d > stat_worst_step) stat_worst_step = d;
+                    if (d > 16384) stat_clicks++;
+                }
+                prev_l = ls;
+                have_prev = 1;
+            }
             dest[i * 2 + 0] = ls;
             dest[i * 2 + 1] = rs;
         }
@@ -1170,6 +1376,7 @@ static void render_output(short* dest) {
 /* ---- public entry points ---------------------------------------------------- */
 
 void port_musyx_mix_init(void) {
+    src_table_init();
     num_voices = salNumVoices;
     voices = (MixVoice*)calloc(num_voices ? num_voices : 1, sizeof(MixVoice));
     mixer_up = (voices != NULL);
@@ -1205,6 +1412,11 @@ void port_musyx_mix_frame(short* dest) {
     zero_buses();
     mix_studio_inputs();
     mix_studio_voices();
+    /* After the voices, before the aux return: the step a cut voice leaves is
+     * in the dry bus, and the console injects the compensating offset into
+     * the same bus in the same frame (hw_dspctrl.c:1880, right after
+     * UPLOAD_LRS). */
+    apply_depop();
     fold_aux_return();
     render_output(dest);
 
@@ -1239,6 +1451,14 @@ void port_musyx_mix_report(void) {
              stat_frames_mixed, stat_voices_started, stat_voices_ended,
              (unsigned long)stat_peak_abs, stat_peak_abs > 32000 ? " (near full scale)" : "",
              stat_aram_clamped, stat_max_concurrent_voices, num_voices);
+    port_log("port> musyx_mix: resampler %s, depop %s; %lu voice(s) cut mid-frame\n",
+             port_opt.resample4 ? "4-tap Catmull-Rom" : "linear",
+             port_opt.depop ? "on" : "off", stat_depop_cuts);
+    if (port_opt.clickstat) {
+        port_log("port> musyx_mix: --clickstat: %lu step(s) over half full scale, "
+                 "worst step %ld (wavstat.py's rule, on the mixed left channel)\n",
+                 stat_clicks, stat_worst_step);
+    }
     if (stat_voices_no_extradata) {
         port_log("port> musyx_mix: %lu ADPCM voice(s) refused for a missing extraData "
                  "block\n",
