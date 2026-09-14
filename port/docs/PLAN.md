@@ -4757,8 +4757,52 @@ Not all 39 are bugs. The warning fires whenever GCC uses an out-of-bounds
 access to bound a loop, and that is harmless when the loop's own bound is
 already tight — `for (j = 0; j < 4; j++)` over a `[4]` array warns about the
 iteration that never happens. It is a bug when the loop's bound *exceeds* the
-array, because then the deletion is of a test that was doing real work. Telling
-the two apart needs the disassembly, one function at a time.
+array, because then the deletion is of a test that was doing real work.
+
+Telling the two apart does not need reading, though, and `ubaudit.sh --triage`
+is the two lines of shell that do it: compile each file twice, with and without
+`-fno-aggressive-loop-optimizations`, and print every function whose
+instruction count differs. No difference means the optimisation never acted and
+the warnings in that file are benign. A function that *gains* four or five
+instructions with the optimisation off has had a compare and a branch put back,
+and that is the m425dll shape exactly — `fn_1_E914` gained 319.
+
+Over the 39 sites that narrows it to eight functions in six files:
+
+| module | function | insns, aggressive on → off |
+|---|---|---|
+| `m453Dll/score.c` | `fn_1_8F48` | 134 → 138 |
+| | `fn_1_91D8` | 27 → 32 |
+| | `fn_1_940C` | 26 → 30 |
+| | `fn_1_9484` | 28 → 32 |
+| `ztardll/main.c` | `fn_1_40E4` | 97 → 102 |
+| `m449Dll/main.c` | `fn_1_758` | 3358 → 3363 |
+| `game/board/last5.c` | `ExecLast5` | 2554 → 2573 |
+| | `DestroyLast5`, `UpdateLotteryTicket` | 90 → 85, 187 → 183 |
+| `m428Dll/map.c` | `fn_1_8F90` | 115 → 112 |
+| `m443Dll/main.c` | `fn_1_3370` | 171 → 170 |
+| `m425Dll/thwomp.c` | `fn_1_109EC` | 159 → 160 |
+
+and the fourteen other modules drop out. `fn_1_E914` is not on the list any
+more, which is the check that the triage detects the thing that was fixed.
+
+`m453Dll/score.c` is the clearest of the remainder and reads like the same bug
+with a twist. `s16 unk_0C[4]` at 0x0C, and the module's loops index it to 5 and
+to 6 — `unk_0C[4]` is `unk_14` at 0x14 and `unk_0C[5]` is `unk_16` at 0x16, both
+of which the constructor fills with `espEntry` handles exactly as it fills the
+first four. So the array is `[6]` and the decomp named the last two
+individually, as it did in m425. The twist is `fn_1_91D8`, the destructor,
+which runs `for (var_r31 = 0; var_r31 < 7; var_r31++) espKill(unk_0C[var_r31])`
+— one past even the corrected array, into `s32 unk_18`. That last one looks
+like the game's own off-by-one rather than the decomp's, which is why the
+declaration has not been corrected here: fixing it to `[6]` makes the
+destructor's overrun explicit rather than making it go away, and deciding what
+to do about it wants a run of m453 more than it wants an opinion.
+
+Which is the general rule for the whole list. The flag makes every one of them
+behave the way the disc behaves. Correcting a declaration is a change to what
+the code *means*, and each one should be made against a minigame that can be
+played.
 
 So there are two changes here and they are deliberately different in kind.
 `patches.txt` corrects the one declaration whose right length is knowable from
@@ -4920,6 +4964,7 @@ which claims are which:
 | `--memmap` | the region table at boot, guards included |
 | `--rtcoffset SECS` | shift the deterministic clock's origin, so the port reaches `BoardRandInit` at the console's reading rather than 300 frames early |
 | `port/tools/ubaudit.sh` | recompile the mirror with `-Waggressive-loop-optimizations` and `-Warray-bounds`, which `-w` has been hiding since M1. 39 + 35 sites |
+| `port/tools/ubaudit.sh --triage` | of those, the ones GCC actually acted on: compile twice, with and without the optimisation, and diff the per-function instruction counts. 39 sites in 20 modules becomes 8 functions in 6 files |
 | `port/tools/audio_ab.sh` | the controlled resampler A/B as one command, both `aud` lines and both `--clickstat` counts, and the last status line of each run so the comparison can be checked |
 | `dsymutil` + `llvm-symbolizer` on a bundle | the REL modules are built with `-g` and keep every local symbol; a fault offset resolves to file and line without arithmetic. §17.7 did this by hand from `_epilog` and landed twelve lines away |
 | `G4_HOST=g4-jump` | needs `littlejelly` to be up on Tailscale. When it is not, and the LAN reuses `192.168.0.200`, there is no route to the lab at all — worth knowing before planning a session around it |
@@ -4937,11 +4982,14 @@ which claims are which:
    look first at the `omOvlKill` either side of `result_seq.c:602`. If it does
    not fire and the crash still happens, the reading in §18.4 is wrong and
    `HuSprCall` should range-check `data` itself and dump the order entry.
-3. **Work down §18.3's list of 39.** `-fno-aggressive-loop-optimizations` holds
-   the line, but each site is a struct declaration that is wrong, and a wrong
-   struct declaration in a decomp is worth fixing upstream — these are
-   contributions to the decompilation, not to the port. `m446Dll/cursor.c` has
-   six and is the place to start.
+3. **Work down §18.3's short list.** `--triage` already reduced 39 sites to
+   eight functions in six files, and `m453Dll/score.c` is written up there
+   ready to go. `-fno-aggressive-loop-optimizations` holds the line meanwhile,
+   but each of these is a struct declaration that is wrong, and a wrong struct
+   declaration in a decomp is worth fixing upstream — these are contributions
+   to the decompilation, not to the port. Each one wants the minigame it lives
+   in played once before and once after, which is now a single `--minigame`
+   flag.
 4. **Then M8's own scope**, which this session never reached: Nightmare CPU,
    widescreen or a higher internal resolution, THP, the launcher slot alongside
    the two Snowboard Kids apps, bring-your-own-disc, the `.dmg`.
