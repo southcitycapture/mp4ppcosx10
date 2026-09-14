@@ -155,6 +155,10 @@ void VIWaitForRetrace(void) {
     if (post_cb) {
         post_cb(retrace_count);
     }
+    /* The self-play harness parks game state here, after the game's own
+     * PadReadVSync post-callback, so that what it writes is the last word on
+     * the frame the game is about to run. */
+    port_selfplay_tick(retrace_count);
 
     if (port_opt.max_frames && (int)retrace_count >= port_opt.max_frames) {
         double wall = now_seconds() - first_retrace_at;

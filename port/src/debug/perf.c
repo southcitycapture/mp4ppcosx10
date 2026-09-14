@@ -28,6 +28,8 @@
 #include <string.h>
 
 static double t_gx, t_present, t_audio, t_frame_start, t_sleep;
+static double win_audio, win_t0;
+static int win_frames;
 static double gx_open, present_open, audio_open;
 static int gx_depth;
 
@@ -79,15 +81,35 @@ void port_perf_present_end(void) {
  * port/src/audio/audio_out_sdl.c -- which is exactly why it has to be counted
  * here and subtracted from `game` rather than left invisible. */
 void port_perf_audio_begin(void) {
-    if (port_opt.perf) {
+    if (port_opt.perf || port_opt.status) {
         audio_open = port_now_seconds();
     }
 }
 
 void port_perf_audio_end(void) {
-    if (port_opt.perf) {
-        t_audio += port_now_seconds() - audio_open;
+    if (port_opt.perf || port_opt.status) {
+        double d = port_now_seconds() - audio_open;
+        t_audio += d;
+        win_audio += d;
     }
+}
+
+/* A one-second rolling window, for --status.  --perf keeps whole-run
+ * distributions and prints them once at the end; a soak that runs all night
+ * needs the same two numbers *now*, so they are accumulated separately and
+ * consumed by the reader rather than by the reporter. */
+void port_perf_window(double* fps, double* aud_ms) {
+    double now = port_now_seconds();
+    double dt;
+    if (win_t0 == 0.0) {
+        win_t0 = now;
+    }
+    dt = now - win_t0;
+    *fps = dt > 0.0 ? (double)win_frames / dt : 0.0;
+    *aud_ms = win_frames ? win_audio * 1000.0 / (double)win_frames : 0.0;
+    win_audio = 0.0;
+    win_frames = 0;
+    win_t0 = now;
 }
 
 void port_perf_slept(double seconds) {
@@ -99,6 +121,7 @@ void port_perf_slept(double seconds) {
 /* Called from the retrace gate, once per frame, after the sleep. */
 void port_perf_frame(void) {
     double now, wall, game;
+    win_frames++;
     if (!port_opt.perf) {
         return;
     }
