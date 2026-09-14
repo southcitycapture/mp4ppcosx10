@@ -397,11 +397,22 @@ static void module_trace(u32 frame) {
                  frame);
         /* The one in force has been played: move the list on, so a run given
          * several names witnesses them all in one board. */
-        if (forced_mg >= 0 && omMgIndexGet((s16)last) == forced_mg &&
-            forced_mg_at + 1 < forced_mg_len && forced_mg_select(forced_mg_at + 1)) {
-            port_log("port> --minigame: next is %s (mg %d, type %d), %d of %d\n",
-                     screen_name(mgInfoTbl[forced_mg].ovl), forced_mg + 0x191,
-                     forced_mg_type, forced_mg_at + 1, forced_mg_len);
+        if (forced_mg >= 0 && omMgIndexGet((s16)last) == forced_mg) {
+            if (forced_mg_select(forced_mg_at + 1)) {
+                port_log("port> --minigame: next is %s (mg %d, type %d), %d of %d\n",
+                         screen_name(mgInfoTbl[forced_mg].ovl), forced_mg + 0x191,
+                         forced_mg_type, forced_mg_at + 1, forced_mg_len);
+            } else if (forced_mg_len > 1) {
+                /* The list is done.  Let the roulette have its own answers back
+                 * rather than pinning every remaining turn on the last name:
+                 * `--soak --minigame a,b,c,d` then means "these four first, then
+                 * whatever you like", which is the shape an overnight soak that
+                 * has four specific modules to witness wants. */
+                forced_mg = -1;
+                port_log("port> --minigame: list done after %d; the roulette is "
+                         "released\n",
+                         forced_mg_len);
+            }
         }
     }
     if (cur >= 0 && omMgIndexGet((s16)cur) >= 0) {
