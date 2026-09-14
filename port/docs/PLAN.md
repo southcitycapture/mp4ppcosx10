@@ -4318,3 +4318,60 @@ port> status f5520    w01dll  board 0 turn 1/10  mg 425 (m425dll)
       coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.55 ms  10.8 fps
 ```
 
+### 17.5 The clicks: two defects, both implemented, both switchable
+
+§16.7 left 25,306 sample-to-sample steps over half full scale in 100 seconds
+and named two suspects without confirming either. Both are now built, and
+both are on by default and switched *off* by a flag — `--nodepop`,
+`--resample1` — so an A/B is one word on a command line rather than a rebuild.
+
+**Depop is the one M6 called "not implemented" and it is the more interesting
+of the two, because the defect is not in the mixer's arithmetic at all.** A
+voice that stops does not stop at zero: it stops at whatever its last output
+sample times its bus gain happened to be, and every later sample of that frame
+is missing exactly that value. That is a step, and a step is a click, and no
+amount of care inside the mix loop can prevent it — the decision to end the
+voice is made between frames.
+
+The console's answer, which the port now copies, is not to fade the voice but
+to inject the step *back* into the bus as a DC offset and then ramp that to
+zero: `AddDpop` (`hw_dspctrl.c:626`) accumulates, `DoDepopFade` (`:631`) ramps
+at no more than 20 units a sample, `HandleDepopVoice` (`:644`) is called on
+every kill path, and `DSPstudioinfo::hostDPopSum` — a field this port has
+always had in its headers and never once written — is where they meet. One
+discontinuity of arbitrary size becomes 160 samples of at most 20.
+
+One deliberate difference from the console: below 160 units `DoDepopFade`
+computes a delta of zero and leaves the offset in the bus **forever**. A
+permanent DC under 160 units is inaudible, but it would also make two runs of
+the same seed differ in their accumulated residue rather than in anything
+audible, which §17.2 has just made a property worth protecting. The port
+retires it in one frame instead.
+
+**The resampler.** The mixer interpolated linearly between two samples; the
+console used a 4-tap polyphase filter, and `_PBSRC`'s `u16 last_samples[4]`
+(`musyx/include/musyx/voice.h:98`) is the state it kept for it. Linear
+interpolation is both a low-pass — §16.6's missing energy between 250 Hz and
+4 kHz — and a first-derivative discontinuity at every sample boundary.
+
+**The coefficients are not in this tree and were not taken from an emulator.**
+`dsp_import.c` is the assembled `dspSlave[]` ucode as hex; there is no
+symbolic SRC table anywhere in `extern/musyx`, and §5.1's rule is that Dolphin
+is a reference *runtime* and never a source of code. So the port supplies a
+kernel of the same shape and the same cost: a Catmull-Rom 4-point cubic over
+256 phases, tabulated in Q14. Q14 rather than Q15 buys a bound rather than a
+hope — Catmull-Rom's coefficients sum to 1 and their absolute values sum to at
+most 1.25, so the accumulator provably stays in `s32` and the inner loop needs
+no saturating add. Four 32x16 multiplies replace one 64-bit multiply and a
+shift, which on a 32-bit PowerPC is not obviously the more expensive of the
+two.
+
+`MixVoice`'s two-sample lookahead becomes the four-sample window, which is the
+change its own comment had been anticipating since M6.
+
+**And a counter, so the claim does not need a capture to check.**
+`--clickstat` applies `wavstat.py`'s exact rule — a left-channel
+sample-to-sample step over half full scale — in process, so a soak reports the
+number a `--wav` would have been measured at, and the report names which
+resampler and which depop setting produced it.
+
