@@ -4759,15 +4759,25 @@ already tight — `for (j = 0; j < 4; j++)` over a `[4]` array warns about the
 iteration that never happens. It is a bug when the loop's bound *exceeds* the
 array, because then the deletion is of a test that was doing real work.
 
-Telling the two apart does not need reading, though, and `ubaudit.sh --triage`
-is the two lines of shell that do it: compile each file twice, with and without
-`-fno-aggressive-loop-optimizations`, and print every function whose
-instruction count differs. No difference means the optimisation never acted and
-the warnings in that file are benign. A function that *gains* four or five
-instructions with the optimisation off has had a compare and a branch put back,
-and that is the m425dll shape exactly — `fn_1_E914` gained 319.
+`ubaudit.sh --triage` shortens the reading. It compiles each warning's file
+twice, with and without `-fno-aggressive-loop-optimizations`, and prints every
+function whose instruction count differs; a function that *gains* four or five
+instructions with the optimisation off has probably had a compare and a branch
+put back, which is the m425dll shape — `fn_1_E914` gained 319.
 
-Over the 39 sites that narrows it to eight functions in six files:
+**It is a shortlist and not a verdict, and this section said otherwise for one
+commit.** A codegen difference is not specific to a deleted loop bound:
+`-faggressive-loop-optimizations` changes loop analysis generally, and run over
+the whole mirror it perturbs a great many functions in files that emit no
+warning at all — eighteen files in the first third of the tree, of which two
+warn. So the difference only carries information about *this* bug when it is
+intersected with the warning, which is why the pass now runs the warning scan
+first and triages only the files it named. Even then the answer is "read these
+eight functions", not "these eight are bugs"; the verdict is in the
+disassembly, where a compare against the loop's constant bound is either there
+or missing.
+
+Within the 39 warned sites that leaves eight functions in six files:
 
 | module | function | insns, aggressive on → off |
 |---|---|---|
@@ -4783,8 +4793,9 @@ Over the 39 sites that narrows it to eight functions in six files:
 | `m443Dll/main.c` | `fn_1_3370` | 171 → 170 |
 | `m425Dll/thwomp.c` | `fn_1_109EC` | 159 → 160 |
 
-and the fourteen other modules drop out. `fn_1_E914` is not on the list any
-more, which is the check that the triage detects the thing that was fixed.
+and the fourteen other warned modules show no change at all, which is good
+evidence their warnings are the benign kind. `fn_1_E914` is not on the list any
+more, which is the check that the triage still sees the thing that was fixed.
 
 `m453Dll/score.c` is the clearest of the remainder and reads like the same bug
 with a twist. `s16 unk_0C[4]` at 0x0C, and the module's loops index it to 5 and
@@ -4964,7 +4975,7 @@ which claims are which:
 | `--memmap` | the region table at boot, guards included |
 | `--rtcoffset SECS` | shift the deterministic clock's origin, so the port reaches `BoardRandInit` at the console's reading rather than 300 frames early |
 | `port/tools/ubaudit.sh` | recompile the mirror with `-Waggressive-loop-optimizations` and `-Warray-bounds`, which `-w` has been hiding since M1. 39 + 35 sites |
-| `port/tools/ubaudit.sh --triage` | of those, the ones GCC actually acted on: compile twice, with and without the optimisation, and diff the per-function instruction counts. 39 sites in 20 modules becomes 8 functions in 6 files |
+| `port/tools/ubaudit.sh --triage` | of the warned files, the functions whose code the optimisation changes: compile twice, with and without it, and diff the per-function instruction counts. 39 sites in 20 modules becomes 8 functions to read in 6 files. A shortlist, not a verdict — see §18.3 |
 | `port/tools/audio_ab.sh` | the controlled resampler A/B as one command, both `aud` lines and both `--clickstat` counts, and the last status line of each run so the comparison can be checked |
 | `dsymutil` + `llvm-symbolizer` on a bundle | the REL modules are built with `-g` and keep every local symbol; a fault offset resolves to file and line without arithmetic. §17.7 did this by hand from `_epilog` and landed twelve lines away |
 | `G4_HOST=g4-jump` | needs `littlejelly` to be up on Tailscale. When it is not, and the LAN reuses `192.168.0.200`, there is no route to the lab at all — worth knowing before planning a session around it |
@@ -4996,3 +5007,89 @@ which claims are which:
 5. **A regression script**, still. §17.9 item 5 asked for one and it is still
    the thing that would have made this session's changes checkable in one
    command rather than four. `audio_ab.sh` is the shape of it.
+
+## 19. M8b log — the other eight loops, read and corrected *(2026-09-14)*
+
+Same session, same problem: the G4 is on the office LAN behind a jump host that
+is down, and `192.168.0.200` there is a stranger's machine. So this is the
+second consecutive milestone whose evidence is entirely instruction counts,
+disassembly and host measurement — and, as in §18, that turns out to be enough
+for the thing that was actually next.
+
+### 19.1 The eight functions, and what six of them were
+
+§18.9 item 3 left `--triage`'s shortlist as the work: eight functions in six
+files, of which `m453Dll/score.c` had been read and the rest had not. All six
+files are now corrected in `patches.txt` and written up, per case, with the
+evidence and the patch, in `port/docs/decomp-struct-notes.md` — which is the
+draft of the note the decompilation would be offered, not an issue and not a
+PR.
+
+Five are the m425 shape exactly. A field that is really the last element of the
+array above it gets its own name, the declared length comes up short, and the
+loop that runs to the *true* length hands GCC a licence to delete its exit
+test:
+
+| file | declared | actually | how that is known |
+|---|---|---|---|
+| `m453Dll/score.c` | `s16 unk_0C[4]` | `[6]` | `unk_14`/`unk_16` sit at 0x14/0x16 and the constructor fills them with `espEntry` handles in the same style as the first four; three loops run to 6 |
+| `m443Dll/main.c` | `s16 lbl_1_bss_10[1]` | `[2]` | a `< 2` loop fills it with two handles, and two lines later both are named by index. The decomp's own comment reads `// why only 1 long?` |
+| `m428Dll/map.c` | `s32 unk_0C[3]` | `[4]` | it holds a face's vertex indices and the quad case sets the count to 4 and writes four. The fourth lands on `s8 unk_18[4]`, which no line in the module names |
+| `m449Dll/main.c` | `s32 unk_1C4[4]` | `[16]` | a `< 0x10` loop bumps sixteen counters every frame; `0x1C4 + 16*4 == 0x204`, and `char unk1D4[0x30]` is exactly the gap |
+| `ztardll/main.c` | `s16 sp14[4]` | `[6]` | a *stack* array: eight characters minus the two the players hold, and the shuffle below draws `frandmod(6)` while the copy below that reads six |
+
+Each was proved the way §18.2 proved thwomp, per function: `fn_1_758`
+3358 → 3363 becomes 3363/3363, `fn_1_3370` 171 → 170 becomes 170/170,
+`m453`'s three constructors land exactly on their `-fno-aggressive` numbers.
+`ztardll` is the one that lands two instructions away instead of on the number,
+and it should: growing a stack array changes the frame, so that patch is not
+the pure declaration-merge the equality assumes. The equality that matters —
+the optimisation no longer has an undefined access to work from — holds in
+every case, and **all six files now emit no loop-optimisation warning at all**.
+
+### 19.2 Two of them are the game's bugs, not the decompiler's
+
+The other two are not declarations, and the difference is worth keeping visible
+because these are the only changes in §19 that alter what the program does.
+
+`m453Dll/score.c`'s destructor kills seven sprite handles where the constructor
+made six. The seventh reads the top half-word of `s32 unk_18` — a flag set to 0
+or 1, so on a big-endian machine it is 0 — and `espKill(0)` is not a no-op:
+`esprite.c:89` kills `esprite[0]`, which belongs to whoever created it, and
+decrements that entry's animation use count. Six made, six killed.
+
+`game/board/last5.c`'s lottery ticket loop is `j=3; while(j>=0) { j--; ... }`,
+so `j` takes 2, 1, 0 and then **-1**: the fourth pass writes `character[-1]`
+and sets sprite group member 0, which is the ticket background created twenty
+lines above with its own scale and attributes. Three is right — the ticket has
+three numbers and the draw loop calls `UpdateLotteryTicketMatch` with 0, 1, 2 —
+so `while(j>0)` is the loop that matches the rest of the function.
+
+Both are patched, both are argued at length in `patches.txt` rather than
+slipped in, and both want the screen they live on played before and after. That
+is §4 of the witness list.
+
+### 19.3 The shortlist's tail, and the calibration case
+
+Three of the eight functions still differ on/off *after* their file's warnings
+are gone: `m428Dll/map.c`'s `fn_1_8F90` (115/112, unchanged by its patch
+because the bytes written were always those bytes), `last5.c`'s three, and
+`m425Dll/thwomp.c`'s `fn_1_109EC` (159/160), which has had nothing to warn
+about since M8 corrected the file. That is the benign class `--triage`'s own
+caveat describes, and `fn_1_109EC` is kept in the write-up as the calibration
+case for it: a one-instruction difference in a file with no undefined access
+left is not evidence of anything.
+
+`ubaudit.sh` gained the mode that makes this kind of reading cheap:
+`--prove FILE` compiles one mirrored file both ways and prints the warnings and
+the per-function counts, so a correction is checked by running it before the
+patch and after. Two equalities, meaning two different things — see the comment
+at the top of the script, and the table at the top of `decomp-struct-notes.md`.
+
+### 19.4 What is *still* not tested
+
+Everything. Six corrected modules, two behaviour changes, and no minigame has
+been entered on hardware since M7. The list of runs that would fix that is now
+a file rather than a paragraph — `port/docs/g4-witness.md`, §19.6 below — and
+the first line of it is `tailscale status | grep littlejelly`, because two
+sessions have now been planned around a lab that was not reachable.

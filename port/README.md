@@ -235,6 +235,8 @@ crashed run does not leave a half-written save behind for the next one.
 | path | what |
 |---|---|
 | `docs/PLAN.md` | the plan and the engineering log |
+| `docs/decomp-struct-notes.md` | the eight loops the decomp's own array lengths were letting GCC delete, one case each: struct, declared vs actual length, the evidence, the patch. The draft of a note for upstream; not filed |
+| `docs/g4-witness.md` | the next hardware session as a list of single commands, in order, each with the evidence it produces and where that evidence lands |
 | `docs/inventory.md` | generated: every SDK symbol the game calls, with counts |
 | `docs/m1-boot.log` | the boot narration M1 reaches on the host, captured |
 | `docs/m2a-boot.log` | the boot narration M2a reaches on the host, captured |
@@ -252,6 +254,7 @@ crashed run does not leave a half-written save behind for the next one.
 | `ref/movies/board-start.txt` | the same walk on the Dolphin side, for `tools/mkgecko.py` |
 | `tests/mtx_test.c` | the matrix library against itself: `make -C port TARGET=host mtxtest` |
 | `tools/ubaudit.sh` | recompile the mirror with `-Waggressive-loop-optimizations` and `-Warray-bounds`, which the build's `-w` hides. A struct array declared one element short lets GCC delete a loop's exit test; that was the m425dll crash, and there are 39 more sites of the same shape (PLAN.md §18.3) |
+| `tools/ubaudit.sh --triage` \| `--prove FILE` | `--triage` narrows the 39 sites to the functions GCC actually changed; `--prove` compiles one mirrored file with and without the optimisation and prints the warnings and the per-function instruction counts, which is how a corrected declaration is proved without a console (PLAN.md §19.3) |
 | `tools/audio_ab.sh` | the resampler A/B as one command: the same walk twice, differing only by `--resample1`, with both `aud` lines and both `--clickstat` counts |
 | `Makefile` | the whole build, `TARGET=host` or `TARGET=ppc-darwin` |
 | `build-ppc.sh` | the Docker wrapper around the PowerPC cross build |
