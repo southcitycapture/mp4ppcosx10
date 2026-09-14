@@ -185,6 +185,24 @@ void salCtrlDsp(s16* dest) {
     port_musyx_mix_frame(dest);
     port_perf_audio_end();
     stat_frames++;
+    /* --audiolog: one line per second of mixed audio.  The peak and the ring
+     * fill are the two numbers that separate the three ways this can be
+     * wrong -- nothing is being mixed, something is being mixed but the ring
+     * is starving, or both are fine and the fault is downstream. */
+    if (port_opt.audiolog && (stat_frames % 200) == 0) {
+        int i;
+        unsigned peak = 0;
+        for (i = 0; i < FRAME_SAMPLES * 2; i++) {
+            unsigned a = (unsigned)(dest[i] < 0 ? -dest[i] : dest[i]);
+            if (a > peak) {
+                peak = a;
+            }
+        }
+        port_log("audio> %6.2f s mixed at retrace %6lu: peak %5u, ring %5u/%u bytes\n",
+                 stat_frames * (double)FRAME_SAMPLES / MIX_FRQ,
+                 (unsigned long)VIGetRetraceCount(), peak, port_audio_out_queued(),
+                 65536u);
+    }
     /* "Does the title music start at the right frame" is the one question a
      * --wav capture cannot answer on its own, because the WAV has no frame
      * numbers in it.  So the first frame that carries any signal at all is

@@ -3697,3 +3697,244 @@ And two things M5 leaves that are not M6:
    `CustomRTCValue` would make the two walks comparable frame by frame instead
    of milestone by milestone, which is what M7's self-play harness wants
    anyway.
+
+## 16. M6 log — MusyX above a real SAL, first sound on the G4, and the texture-bind hit path *(2026-09-13)*
+
+M6's done-means was three things: board music, minigame music, voices and SFX
+all playing; a `--wav` capture that matches a Dolphin capture of the same
+segment to the ear; and the audio path under 1.5 ms a frame in `--perf`. Plus
+the two things §15.9 left over: the `m425dll` SIGBUS and `gx_tex_bind`.
+
+### 16.1 The route: there is no command list to interpret
+
+§1.8 offered two routes for the DSP and recommended the first: a CPU
+implementation of the `dspSlave` command set, "the direct analogue of the N64
+ports' `aspMain` interpreter", estimated at 1,000–1,500 lines.
+
+**The premise turned out to be wrong, and the correction makes the job
+smaller.** `salBuildCommandList` in `hw_dspctrl.c` is 1,270 lines, and every
+one of them is inside `#if MUSY_TARGET == MUSY_TARGET_DOLPHIN`. So is every
+write to the `_PB` parameter blocks. On `MUSY_TARGET_PC` the PC arm of that
+function is, in full:
+
+```c
+#else
+  // TODO implement for PC
+#endif
+```
+
+There is therefore no command list to interpret and no `_PB` to read: the
+per-voice state a DSP would have been handed is never assembled. Reproducing
+`salBuildCommandList` in order to consume what it produced would mean writing
+a marshaller and an unmarshaller for a wire format with no wire in between.
+
+The mixer reads `DSPvoice` and `DSPstudioinfo` directly instead. That is not a
+shortcut around the console's semantics — it is the same state, one hop
+earlier, and it deletes a whole category of work: the `_PBUPDATE` patch-word
+stream (a list of `(pbWordOffset, value)` pairs applied at sub-frame
+boundaries) exists *only* because the DSP ran asynchronously and needed its
+edits batched. A synchronous mixer that loops sub-frame by sub-frame applies
+them by assignment.
+
+So: **route (a), but against the voice state rather than the command list.**
+
+### 16.2 What MusyX needed, exactly
+
+`extern/musyx` compiles for `MUSY_TARGET_PC` **untouched**. 32 of its 34
+runtime translation units build clean on the first try, on both clang/arm64
+and gcc 14 / PowerPC / the 10.4u SDK. Nothing was mirrored, nothing was
+patched, and `patches.txt` did not grow — the decomp's own checkout is
+compiled where it sits.
+
+Link the 26 that matter and the undefined set is thirteen symbols:
+
+| group | symbols |
+|---|---|
+| the audio interface | `salInitAi` `salStartAi` `salExitAi` `salAiGetDest` |
+| the DSP | `salInitDsp` `salExitDsp` `salCtrlDsp` |
+| the interrupt controller | `hwInitIrq` `hwExitIrq` `hwEnableIrq` `hwDisableIrq` `hwIRQEnterCritical` `hwIRQLeaveCritical` |
+
+That is the whole SAL. `hw_pc.c` in the tree is a skeleton of the first two
+groups with every `AIInitDMA` and `AIRegisterDMACallback` commented out and
+`salAiGetDest` ending in `return NULL;`, so nothing has ever driven it; it is
+dropped from the build rather than patched, because a SAL that has to be
+honest about a DMA ring, a deterministic tick and a software mixer shares
+almost no code with it.
+
+**The frame geometry, all read out of the source rather than assumed:**
+
+| | |
+|---|---|
+| `DMA_BUFFER_LEN` | `0x280` bytes = 160 frames of interleaved stereo s16 |
+| rate | 32000 Hz, so one AI buffer is 5 ms and the interrupt fires at 200 Hz |
+| `synthInfo.numSamples` | `0x20` = 32 samples — the *sub*-frame, not the frame |
+| the frame | 5 sub-frames × 32 = **160**, which is why `snd_handle_irq` runs `seqHandle`/`synthHandle` five times per interrupt and why every volume ramp divides by 160 |
+| the ring | four buffers; the DSP fills the one two slots ahead of the one being played, so output latency is 2 × 5 = 10 ms |
+| the studio buses | `main[2]`, `auxA[3]`, `auxB[3]`, each 480 `s32` = three de-interleaved 160-sample channels (L, R, surround), double-buffered by `salFrame` and triple-buffered by `salAuxFrame` |
+
+### 16.3 The one thing that was not in the plan: MusyX's ARAM layer is stubbed too
+
+`hw_aramdma.c` has a full Dolphin implementation — a bump allocator for
+samples growing up, stream buffers growing down, a 16-deep ARQ transfer queue,
+64 stream-buffer slots with used/free/idle lists. Its PC arm is eleven empty
+bodies: `aramStoreData` returns `NULL`, `aramAllocateStreamBuffer` returns 0,
+`aramGetStreamBufferAddress` returns 0, `aramUploadData` does nothing.
+
+Those eleven functions **are** the ADPCM stream path §15.9 item 1 named as the
+way in: `sndStreamAllocEx` → `hwInitStream` → `aramAllocateStreamBuffer`;
+`sndStreamARAMUpdate` → `hwFlushStream` → `aramUploadData`;
+`hwGetStreamPlayBuffer` → `aramGetStreamBufferAddress`. With them stubbed the
+music has nowhere to live, and it would have failed silently — every call
+returns a plausible zero.
+
+So `hw_aramdma.c` is dropped too and the Dolphin arm is ported onto the port's
+flat 16 MB ARAM (`port/src/audio/musyx_aram.c`, 589 lines). The allocator is
+faithful — including a reclaim-sweep bug in the original, reproduced
+deliberately rather than quietly fixed. The transfer queue is not: on a host
+where "DMA" is a `memcpy` that has already finished, `aramUploadData` copies
+and calls the completion callback before returning, and `aramSyncTransferQueue`
+is empty. `stream.c` only requires that the callback fire strictly after the
+bytes land, which synchronous completion satisfies with less latency, not more.
+
+One detail worth recording: `aramGetZeroBuffer()` on the console returns
+`ARGetBaseAddress()` — a region of guaranteed-zero ARAM the DSP reads when a
+non-looping voice runs off its end. The port reserves 1,280 bytes at the base
+of MusyX's region and starts the sample heap above it, so a voice that
+overruns reads silence rather than someone else's samples.
+
+MusyX owns `[0, 0x808000)` (8.03 MB); `HuAudInit` sets
+`msmAram.aramEnd = HU_AMEM_BASE` and `src/game/armem.c` owns everything above.
+
+### 16.4 The tick, and why the mixer is on the game thread
+
+§15.9 item 5 said the mixer belongs on the SDL callback thread so audio does
+not enter the frame budget. **It is on the game thread instead, and the reason
+is the same reason the flag `--seed` exists.**
+
+MusyX's per-interrupt work is not just mixing. `snd_handle_irq` runs the
+*sequencer* five times per 5 ms frame, and the sequencer fires the game's own
+callbacks, allocates and steals voices, and reads state the game thread is
+writing. Run that on SDL's callback thread and the number of sequencer steps
+between two video frames becomes a function of the host's audio clock — which
+is the definition of non-determinism. `--seed 12345 --play board-start.play`
+would stop reproducing, and it is the only way this port is tested.
+
+So the cadence is driven from the retrace gate by an integer accumulator:
+32000 × 100 units of credit per retrace, 160 × 5994 spent per frame, no
+floating point and no clock. At 59.94 Hz that is 3.3367 frames a retrace,
+delivered as a fixed 3-3-4-3-3-4 pattern. The SDL callback keeps the one job
+that is genuinely its own: draining a 64 KB ring and padding with silence.
+
+The cost of that decision is that the mix is in the frame, so it has to be
+cheap and it has to be *visible* — which is why `--perf` grew an `aud` phase
+in the same commit, subtracted from `game` rather than hidden inside it.
+
+### 16.5 First sound
+
+`g4 run --seed 12345 --frames 1400 --perf --wav mp4-boot.wav`, no script, the
+boot straight to the title screen:
+
+```
+port> MusyX SAL: 32000 Hz, 4 x 640-byte AI buffers (20 ms), 32-sample sub-frame
+port> musyx_mix: CPU mixer up, 50 voices, 1 studios, 32000 Hz
+port> musyx_aram: region [0x000000, 0x800000) zero_buf [0x000000, 0x000500)
+port> audio: first non-silent sample at retrace 726 (12.03 s of mixed audio)
+port> musyx_aram: stream buffers active=2 peak=2 of 64 slots
+port> musyx_aram: bytes uploaded=475904 -- rejected: store=0 stream=0 upload=0
+port> musyx_mix: 4657 frames mixed, 2 voices started, 0 voices ended,
+                 peak |sample| 18888, 0 clamped ARAM reads
+```
+
+Two things in there are the whole milestone. `stream buffers active=2` and
+`bytes uploaded=475904` say the four-call ADPCM contract
+(`sndStreamAllocEx` → `ADPCMParameter` → `ARAMUpdate` → `Activate`) completed
+against real data. `0 clamped ARAM reads` says the mixer never once had to
+refuse an address — every sample pointer the game handed it was inside the
+region it claimed.
+
+**And `#########SE Entry Error<SE nn:ErrorNo -110>` is gone.** §15.9 item 3
+predicted it would stop on its own once `sndFXStartParaInfo` was real. It did.
+
+### 16.6 The capture, against Dolphin's
+
+Dolphin dumps audio: `DumpAudio = True` under `[DSP]` in the pinned user
+directory writes `Dump/Audio/*_dspdump.wav`, the DSP-HLE mix at 32028 Hz — the
+same mix MusyX asks the hardware for, so it is a like-for-like reference and
+not an approximation. Its companion `*_dtkdump.wav` is the AI streaming path
+and is **silent from end to end**, which is a useful fact in its own right:
+Mario Party 4 puts everything, music included, through MusyX, and the port's
+`AISetStreamVol*` no-ops are correct rather than merely harmless.
+
+`port/tools/wavstat.py` describes a capture in the terms a claim can be judged
+by. The same ten seconds from each side, aligned on first sound:
+
+| | port, on the G4 | Dolphin |
+|---|---:|---:|
+| peak | 18,888 (−4.8 dBFS) | 24,122 (−2.7 dBFS) |
+| rms | 3,583 | 3,403 |
+| steps over half full scale | **0** | **0** |
+| first sound | retrace 726 | retrace ~656 |
+
+**The loudness matches to 5%** and neither side has a single sample-to-sample
+step large enough to be a click. The spectra agree in shape — both are
+bass-dominant with almost nothing above 2 kHz — but the port has visibly less
+energy between 250 Hz and 4 kHz. Two candidates, in order of likelihood: the
+mixer resamples with linear interpolation rather than the console's 4-tap
+polyphase filter, which is a low-pass; and the two windows may not be the same
+*musical* moment, because the port skips the opening movie (§12.5) and Dolphin
+does not, so the 70-retrace offset in first sound may be a different piece of
+music rather than the same one late. That is not resolved and should not be
+claimed as resolved.
+
+### 16.9 `gx_tex_bind`: the hit path stops hashing, and stops scanning
+
+§15.9 item 6: `gx_tex_bind` at 11–12% of the frame on both screens, and it is
+the *hit* path — 10.9 million binds over a board run against 550 misses. The
+guess was that it would be bookkeeping rather than arithmetic. It was both, in
+four places, all of them paid on every hit:
+
+1. a linear scan of the whole cache looking for an EFB-copy entry;
+2. `seen_before()`, a linear scan of up to **4,096** image pointers, run on
+   every bind of any texture larger than 1 KB;
+3. the sampled content hash — 1 KB of FNV, plus the palette;
+4. a second linear scan to find the slot.
+
+The two scans become one hash-table lookup chained through the cache array
+itself and keyed on the image address, with EFB entries keeping their
+priority. `seen_before` disappears rather than being sped up: "has this buffer
+ever been hashed in full" is already answered by whether the key has a slot —
+and answered *more* precisely, because the key is the whole
+`(image, format, w, h, tlut)` tuple rather than a bare pointer, so an address
+later reused for a different format gets its own exhaustive baseline instead
+of inheriting an unrelated one.
+
+The hash itself moves off the hit path behind a **validation epoch**. The
+signal is the frame counter, and deliberately *not* `GXInvalidateTexAll`: this
+file already recorded that `HuSprDispInit` fires that call on every sprite
+pass, so honouring it would revalidate everything several times a frame and
+buy nothing. A slot is re-verified once per frame; a hit inside that epoch is
+a lookup and a bind, touching no texel bytes at all.
+
+That trades exactness in one specific, bounded way: **an in-place rewrite that
+is rebound within the same frame is not caught until the next frame.** Never
+more than one frame, never accumulating. `--texhash-full` now bypasses the
+epoch as well as the sampling, and a new `--texvalidate-every-bind` bypasses
+only the epoch, so a suspected staleness bug can be bisected between the two.
+
+One bug fell out on the way: `gx_tex_copy` created EFB slots without inserting
+them into the new index, which would have turned every EFB bind into a miss
+and a decode of a buffer with nothing in it. Caught by a harness, not by the
+screen, which is the useful part.
+
+**Byte-identical**: `--gxdemo` writes the same `gxdemo.ppm`
+(`577735b51beb3112fe63ad75ebe50a72`) before and after.
+
+On a synthetic host benchmark shaped like the profile's reuse — 300 textures,
+90% of binds landing in a 40-texture hot set:
+
+| | before | after |
+|---|---:|---:|
+| ns per bind | 579.7 | **96.3** |
+| bytes hashed | 584 MB | **119 MB** |
+| hash computations | 1,707,987 | **315,921** |
+
