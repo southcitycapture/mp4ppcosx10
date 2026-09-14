@@ -154,9 +154,21 @@ static unsigned long stat_time_samples;
  */
 static u8* aram_base_ptr;
 
+/* When a read is refused, the interesting thing is not the count -- it is
+ * *which voice* asked and what its addressing looked like, because that is
+ * the difference between "one bad sample in the bank" and "a whole format's
+ * address arithmetic is in the wrong units".  The first few are described in
+ * full and the rest counted. */
+static const MixVoice* aram_blame;
+static const DSPvoice* aram_blame_dv;
+static int aram_clamp_shown;
+
+static void aram_clamp_report(u32 off);
+
 static u8 aram_read_u8(u32 off) {
     if (off >= PORT_ARAM_SIZE) {
         stat_aram_clamped++;
+        aram_clamp_report(off);
         return 0;
     }
     return aram_base_ptr[off];
@@ -166,6 +178,7 @@ static s16 aram_read_s16be(u32 byte_off) {
     u8 hi, lo;
     if (byte_off + 1 >= PORT_ARAM_SIZE) {
         stat_aram_clamped++;
+        aram_clamp_report(byte_off);
         return 0;
     }
     /* PCM16 sample data is big-endian in ARAM on both the console and (per
@@ -175,6 +188,28 @@ static s16 aram_read_s16be(u32 byte_off) {
     hi = aram_base_ptr[byte_off];
     lo = aram_base_ptr[byte_off + 1];
     return (s16)((hi << 8) | lo);
+}
+
+/* Name the first few refused reads in full.  `aram_blame` is set by
+ * render_voice for the voice currently being decoded, so this can say which
+ * format and which addressing produced the address, which is the whole
+ * difference between one bad sample in the bank and a format whose address
+ * arithmetic is in the wrong units. */
+static void aram_clamp_report(u32 off) {
+    const MixVoice* mv = aram_blame;
+    if (aram_clamp_shown >= 8 || !mv) {
+        return;
+    }
+    aram_clamp_shown++;
+    port_log("port> musyx_mix: ARAM read refused at 0x%08x (ARAM is %u MB).  "
+             "voice: compType %u, addrBase 0x%08x, curSample %u of length %u, "
+             "loop %s [%u..%u], frameOffset %u, pitch 0x%05x, srcType %u\n",
+             off, PORT_ARAM_SIZE >> 20, mv->compType, mv->addrBase, mv->curSample,
+             mv->length, mv->looping ? "on" : "off", mv->loopStart, mv->loopEnd,
+             mv->frameOffset, mv->pitch, mv->srcType);
+    if (aram_clamp_shown == 8) {
+        port_log("port> musyx_mix: (further refused reads are counted, not printed)\n");
+    }
 }
 
 /* ---- small helpers --------------------------------------------------------- */
@@ -676,6 +711,8 @@ static void render_voice(DSPvoice* dv, MixVoice* mv, DSPstudioinfo* stp) {
         return;
     }
     stat_voices_active_this_frame++;
+    aram_blame = mv;
+    aram_blame_dv = dv;
 
     /* Cheap "is this bus worth touching" gate, reproducing the console's own
      * mixerCtrl policy (hw_dspctrl.c:1131 for L/R, 1157-1166/1537-1544 for

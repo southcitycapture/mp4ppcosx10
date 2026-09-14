@@ -29,8 +29,16 @@ u32 __OSCoreClock;
 void OSInit(void) {
     __OSBusClock = PORT_BUS_CLOCK;
     __OSCoreClock = PORT_CORE_CLOCK;
-    port_log("port> OSInit: MEM1 %u MB, ARAM %u MB, bus %u MHz\n",
-             PORT_MEM1_SIZE >> 20, PORT_ARAM_SIZE >> 20, PORT_BUS_CLOCK / 1000000);
+    /* The two addresses are printed because a fault address is otherwise a
+     * riddle.  M5 left a SIGBUS at 0x04800000 in an m425dll draw hook (§15.6)
+     * and the single most useful thing to know about that number is whether
+     * it is the first byte past the top of MEM1 -- a read one element off the
+     * end of a small allocation that happened to sit at the top of the heap
+     * looks exactly like that.  With the bounds in the log it is a comparison
+     * rather than an inference. */
+    port_log("port> OSInit: MEM1 %u MB [%p, %p), ARAM %u MB, bus %u MHz\n",
+             PORT_MEM1_SIZE >> 20, port_mem1_lo(), port_mem1_hi(), PORT_ARAM_SIZE >> 20,
+             PORT_BUS_CLOCK / 1000000);
 }
 
 /* ---- time ---------------------------------------------------------------- */
