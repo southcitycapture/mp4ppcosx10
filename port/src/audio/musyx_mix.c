@@ -88,7 +88,17 @@ typedef struct MixVoice {
                    * only, from dsp_vptr->streamLoopPS (streams/vsamples)   */
     u8 looping;
 
-    u32 addrBase; /* smp_info.addr widened to u32, format-native units      */
+    u32 addrBase; /* smp_info.addr widened to u32, format-native units --
+                   * used ONLY for the currentAddr write-back formulas
+                   * (writeback_current_addr()), which must keep computing
+                   * exactly what hwGetPos()'s inverse expects.  NOT used for
+                   * actual memory access any more -- see readBase/readLen.  */
+    const u8* readBase; /* resolved host pointer to sample byte 0 (see
+                         * resolve_sample_ptr()); all decode reads index this
+                         * with a RELATIVE offset, never addrBase.            */
+    u32 readLen;        /* bytes valid from readBase; bound-checked on every
+                         * read via voice_read_u8()/voice_read_s16be().      */
+    u8 readKind;         /* SAMPLE_LOC_*, for aram_clamp_report() only        */
     u32 length;   /* smp_info.length: one-shot stops when curSample>=length */
     u32 loopStart;
     u32 loopEnd; /* inclusive: smp_info.loop + loopLength - 1               */
@@ -145,19 +155,99 @@ static double stat_time_sum;
 static double stat_time_worst;
 static unsigned long stat_time_samples;
 
-/* ---- ARAM access, bounds-checked ------------------------------------------
+/* ---- resolving a sample address: ARAM offset, or a MEM1 host pointer -----
  *
- * `smp_info.addr`/loop points ultimately come off disc data the port has not
- * independently validated, and this runs on real hardware -- a bad address
- * must degrade to silence, never to a wild read.  Every access funnels
- * through these three helpers so the clamp counter is exhaustive.
- */
-static u8* aram_base_ptr;
+ * A hardware run (15,400 frames on a real G4) turned up a real bug here,
+ * diagnosed against `hwSaveSample` (extern/musyx/src/musyx/runtime/
+ * hardware.c:559-576) -- worth recording in full because it is the single
+ * most surprising thing in this milestone.
+ *
+ * On Dolphin, a freshly loaded sample lives in main memory, and
+ * `hwSaveSample` is the call that moves it into ARAM and rewrites the sample
+ * directory's address to match:
+ *
+ *     *((u32*)data) = (u32)aramStoreData((void*)*((u32*)data), len);
+ *
+ * -- i.e. "take the main-memory pointer this SDIR entry currently holds,
+ * copy the bytes into ARAM, and replace the pointer with the ARAM address it
+ * landed at." That line, like the rest of `hwSaveSample`'s body, is wrapped
+ * in `#if MUSY_TARGET == MUSY_TARGET_DOLPHIN` and therefore never runs on
+ * this target. The consequence: `SDIR_DATA.addr` (and therefore
+ * `SAMPLE_INFO.addr`, via `dataGetSample`, synthdata.c:625) is left holding
+ * whatever it started as -- a genuine MEM1 pointer to the bank data the game
+ * loaded off disc -- for every ordinary sequenced sample. This mixer used to
+ * treat every `smp_info.addr` as an ARAM byte offset unconditionally, which
+ * is only true for the two paths that go through *this port's own*
+ * `aramStoreData`/`aramGetStreamBufferAddress` (musyx_aram.c): ADPCM stream
+ * buffers (compType 4) and virtual-sample ring buffers (compType 5's
+ * `vSampleInfo.loopBufferAddr`). Everything else -- every plain sequenced
+ * note, i.e. most of the game's actual sound -- was being read as an offset
+ * into the wrong 16 MB region, which is why the G4 run logged ~2000 refused
+ * reads per 160-sample frame and 16,967/10,696 started/ended voices: reading
+ * garbage past MEM1's own bounds routinely reads a sample "length" or "loop"
+ * field's worth of noise into what should have been silence.
+ *
+ * The fix is not to copy sample data into ARAM the way the console had to --
+ * a CPU mixer has no DSP-can-only-see-ARAM constraint, and 8 MB of copying
+ * to satisfy an obsolete one would be pure waste. Instead, resolve the
+ * address to a host pointer once, at voice start, by range:
+ *
+ *   - `[0, PORT_ARAM_SIZE)`: an ARAM byte offset (this port's own streaming
+ *     paths, and, in principle, the console's habit of siting sample data
+ *     below `HU_AMEM_BASE` -- see musyx_aram.c's banner). Resolves against
+ *     `port_aram()`.
+ *   - `[port_mem1_lo(), port_mem1_hi())`: a genuine MEM1 host pointer --
+ *     the SDIR_DATA.addr case above. Resolves to itself.
+ *   - Anything else is not a valid sample address at all and refuses the
+ *     voice outright rather than guessing.
+ *
+ * These two windows are cleanly separable in practice: ARAM offsets used by
+ * this port never exceed `PORT_ARAM_SIZE` (16 MB), while MEM1 sits at
+ * `[0x2000000, 0x3800000)` on the G4 (confirmed in the same hardware log,
+ * `OSInit: MEM1 24 MB [0x2000000, 0x3800000)`) and at whatever `mmap()` gave
+ * `port_mem_init()` (port/src/os/os_arena.c) on the dev host -- neither of
+ * which a small ARAM offset can collide with.
+ *
+ * Every decode read now goes through the RESOLVED per-voice pointer
+ * (`MixVoice::readBase`/`readLen`), bound-checked against that buffer's own
+ * length, not a blanket 16 MB. `MixVoice::addrBase` is kept *only* for the
+ * `currentAddr` write-back math in writeback_current_addr(): hwGetPos()'s
+ * inverse on the other end expects exactly the same units this mixer always
+ * wrote there, so that formula is deliberately untouched -- only the actual
+ * memory reads changed. */
+typedef enum { SAMPLE_LOC_INVALID = 0, SAMPLE_LOC_ARAM, SAMPLE_LOC_MEM1 } SampleLoc;
+
+static unsigned long stat_bad_sample_addr; /* addr in neither ARAM nor MEM1 */
+static int mem1_dump_shown;
+
+static int resolve_sample_ptr(void* addr, const u8** out_base, u32* out_len, SampleLoc* out_kind) {
+    uintptr_t p = (uintptr_t)addr;
+    uintptr_t mem1_lo = (uintptr_t)port_mem1_lo();
+    uintptr_t mem1_hi = (uintptr_t)port_mem1_hi();
+
+    if (p < PORT_ARAM_SIZE) {
+        *out_base = (const u8*)port_aram() + p;
+        *out_len = PORT_ARAM_SIZE - (u32)p;
+        *out_kind = SAMPLE_LOC_ARAM;
+        return 1;
+    }
+    if (p >= mem1_lo && p < mem1_hi) {
+        *out_base = (const u8*)addr;
+        *out_len = (u32)(mem1_hi - p);
+        *out_kind = SAMPLE_LOC_MEM1;
+        return 1;
+    }
+    *out_base = NULL;
+    *out_len = 0;
+    *out_kind = SAMPLE_LOC_INVALID;
+    stat_bad_sample_addr++;
+    return 0;
+}
 
 /* When a read is refused, the interesting thing is not the count -- it is
  * *which voice* asked and what its addressing looked like, because that is
  * the difference between "one bad sample in the bank" and "a whole format's
- * address arithmetic is in the wrong units".  The first few are described in
+ * address arithmetic is in the wrong units". The first few are described in
  * full and the rest counted. */
 static const MixVoice* aram_blame;
 static const DSPvoice* aram_blame_dv;
@@ -165,28 +255,36 @@ static int aram_clamp_shown;
 
 static void aram_clamp_report(u32 off);
 
-static u8 aram_read_u8(u32 off) {
-    if (off >= PORT_ARAM_SIZE) {
+static const char* sample_loc_name(SampleLoc k) {
+    switch (k) {
+    case SAMPLE_LOC_ARAM: return "ARAM";
+    case SAMPLE_LOC_MEM1: return "MEM1";
+    default: return "invalid";
+    }
+}
+
+static u8 voice_read_u8(MixVoice* mv, u32 off) {
+    if (off >= mv->readLen) {
         stat_aram_clamped++;
         aram_clamp_report(off);
         return 0;
     }
-    return aram_base_ptr[off];
+    return mv->readBase[off];
 }
 
-static s16 aram_read_s16be(u32 byte_off) {
+static s16 voice_read_s16be(MixVoice* mv, u32 off) {
     u8 hi, lo;
-    if (byte_off + 1 >= PORT_ARAM_SIZE) {
+    if (off + 1 >= mv->readLen) {
         stat_aram_clamped++;
-        aram_clamp_report(byte_off);
+        aram_clamp_report(off);
         return 0;
     }
-    /* PCM16 sample data is big-endian in ARAM on both the console and (per
+    /* PCM16 sample data is big-endian in memory on both the console and (per
      * the port's own convention, see port/src/gx/gx_draw.c's read_component)
      * the little-endian dev host; assemble the bytes explicitly so this is
      * correct either way rather than relying on host struct layout. */
-    hi = aram_base_ptr[byte_off];
-    lo = aram_base_ptr[byte_off + 1];
+    hi = mv->readBase[off];
+    lo = mv->readBase[off + 1];
     return (s16)((hi << 8) | lo);
 }
 
@@ -201,10 +299,12 @@ static void aram_clamp_report(u32 off) {
         return;
     }
     aram_clamp_shown++;
-    port_log("port> musyx_mix: ARAM read refused at 0x%08x (ARAM is %u MB).  "
-             "voice: compType %u, addrBase 0x%08x, curSample %u of length %u, "
-             "loop %s [%u..%u], frameOffset %u, pitch 0x%05x, srcType %u\n",
-             off, PORT_ARAM_SIZE >> 20, mv->compType, mv->addrBase, mv->curSample,
+    port_log("port> musyx_mix: %s read refused at relative offset 0x%08x (buffer is %u "
+             "bytes from its resolved base).  voice: compType %u, smp_info.addr %p, "
+             "addrBase 0x%08x, curSample %u of length %u, loop %s [%u..%u], "
+             "frameOffset %u, pitch 0x%05x, srcType %u\n",
+             sample_loc_name((SampleLoc)mv->readKind), off, mv->readLen, mv->compType,
+             aram_blame_dv ? aram_blame_dv->smp_info.addr : NULL, mv->addrBase, mv->curSample,
              mv->length, mv->looping ? "on" : "off", mv->loopStart, mv->loopEnd,
              mv->frameOffset, mv->pitch, mv->srcType);
     if (aram_clamp_shown == 8) {
@@ -265,18 +365,20 @@ static s16 setup_ramp(u16* last_vol, u16 vol) {
 static s32 sign_extend4(u32 nibble) { return ((s32)(nibble << 28)) >> 28; }
 
 /* Decode exactly the next ADPCM sample for `mv`, honouring loop wraparound,
- * and advance `mv->curSample`/`mv->frameOffset`.  `frame_byte_base` is the
- * ARAM byte address of sample 0 of frame 0 (== mv->addrBase for compType
- * 0/4/5; the seek-adjusted block start for compType 1). Returns the decoded
- * sample already normalised to the common s16 scale (see the gain-scaling
- * note in start_voice()). */
+ * and advance `mv->curSample`/`mv->frameOffset`.  `frame_byte` is the offset
+ * of this 8-byte frame RELATIVE to `mv->readBase` (sample byte 0), which is
+ * the same for every compType that reaches here -- 0/4/5 start at
+ * frameNo==0, and compType 1's seek already lands `curSample` on a frame
+ * boundary at voice-start (see start_voice()), so there is no separate base
+ * to add here. Returns the decoded sample already normalised to the common
+ * s16 scale (see the gain-scaling note in start_voice()). */
 static s32 adpcm_decode_advance(DSPvoice* dv, MixVoice* mv) {
     u32 frame_no = mv->curSample / 14u;
-    u32 frame_byte = mv->addrBase + frame_no * 8u;
+    u32 frame_byte = frame_no * 8u;
     s32 out;
 
     if (mv->frameOffset == 0) {
-        u8 ps = aram_read_u8(frame_byte);
+        u8 ps = voice_read_u8(mv, frame_byte);
         mv->predScale = ps;
     }
 
@@ -284,7 +386,7 @@ static s32 adpcm_decode_advance(DSPvoice* dv, MixVoice* mv) {
         u8 predictor = (u8)(mv->predScale >> 4);
         u8 scale = (u8)(mv->predScale & 0xF);
         u32 data_byte_index = 1u + mv->frameOffset / 2u;
-        u8 raw = aram_read_u8(frame_byte + data_byte_index);
+        u8 raw = voice_read_u8(mv, frame_byte + data_byte_index);
         u32 nibble = (mv->frameOffset & 1u) ? (raw & 0xF) : (raw >> 4);
         s32 s = sign_extend4(nibble);
         s32 c0 = mv->coefTab[predictor][0];
@@ -344,12 +446,27 @@ static s32 adpcm_decode_advance(DSPvoice* dv, MixVoice* mv) {
          * buffer. This only runs once per voice (`inLoopBuffer` latches). */
         if (mv->compType == 5 && !dv->vSampleInfo.inLoopBuffer &&
             dv->vSampleInfo.loopBufferLength != 0) {
+            SampleLoc kind;
             mv->addrBase = (u32)(uintptr_t)dv->vSampleInfo.loopBufferAddr;
-            mv->loopStart = 0;
-            mv->loopEnd = dv->vSampleInfo.loopBufferLength - 1;
-            mv->curSample = 0;
-            mv->frameOffset = 0;
-            dv->vSampleInfo.inLoopBuffer = 1;
+            /* The ring buffer is a different address from the seed sample
+             * (see the long comment above resolve_sample_ptr()), so the
+             * resolved read pointer has to be redone here too -- not just
+             * addrBase. It is allocated by this port's own
+             * aramGetStreamBufferAddress (musyx_aram.c), which always hands
+             * out an ARAM offset, so this should never fail in practice; if
+             * it somehow does, refuse cleanly rather than read through a
+             * stale (and by now wrong-length) pointer. */
+            if (resolve_sample_ptr(dv->vSampleInfo.loopBufferAddr, &mv->readBase, &mv->readLen,
+                                    &kind)) {
+                mv->readKind = (u8)kind;
+                mv->loopStart = 0;
+                mv->loopEnd = dv->vSampleInfo.loopBufferLength - 1;
+                mv->curSample = 0;
+                mv->frameOffset = 0;
+                dv->vSampleInfo.inLoopBuffer = 1;
+            } else {
+                mv->ended = 1;
+            }
         }
     } else if (!mv->looping && mv->curSample >= mv->length) {
         mv->ended = 1;
@@ -374,7 +491,7 @@ static s32 adpcm_decode_advance(DSPvoice* dv, MixVoice* mv) {
  * the two are audibly equivalent and the flat scale is what every later
  * volume/envelope multiply below expects. */
 static s32 pcm16_decode_advance(MixVoice* mv) {
-    s32 out = aram_read_s16be(mv->addrBase + mv->curSample * 2u);
+    s32 out = voice_read_s16be(mv, mv->curSample * 2u);
     mv->curSample++;
     if (mv->looping && mv->curSample > mv->loopEnd) {
         mv->curSample = mv->loopStart;
@@ -386,7 +503,7 @@ static s32 pcm16_decode_advance(MixVoice* mv) {
 }
 
 static s32 pcm8_decode_advance(MixVoice* mv) {
-    s8 raw = (s8)aram_read_u8(mv->addrBase + mv->curSample);
+    s8 raw = (s8)voice_read_u8(mv, mv->curSample);
     s32 out = (s32)raw << 8;
     mv->curSample++;
     if (mv->looping && mv->curSample > mv->loopEnd) {
@@ -560,6 +677,43 @@ static int start_voice(DSPvoice* dv, MixVoice* mv) {
         salDeactivateVoice(dv);
         return 0;
     }
+
+    /* Resolve the sample address to a host pointer once, here -- see the
+     * long comment above resolve_sample_ptr() for why this can no longer
+     * assume every smp_info.addr is an ARAM offset. addrBase (set in every
+     * arm above from the same smp->addr) stays as the currentAddr
+     * write-back needs it; readBase/readLen are what actual reads use. */
+    {
+        SampleLoc kind;
+        if (!resolve_sample_ptr(smp->addr, &mv->readBase, &mv->readLen, &kind)) {
+            port_log("port> musyx_mix: sample address %p is in neither ARAM "
+                     "[0, 0x%x) nor MEM1 [%p, %p) -- refusing voice (compType %u)\n",
+                     smp->addr, PORT_ARAM_SIZE, port_mem1_lo(), port_mem1_hi(),
+                     (unsigned)smp->compType);
+            salSynthSendMessage(dv, 0);
+            salDeactivateVoice(dv);
+            return 0;
+        }
+        mv->readKind = (u8)kind;
+        /* One-shot: what is actually AT the resolved address?  A valid
+         * DSPADPCM frame's header byte has predictor 0..7 in its high nibble,
+         * so a run of high nibbles above 7 says the pointer is wrong rather
+         * than the gain.  Printed for the first few MEM1-resolved voices
+         * only, which is the case under suspicion. */
+        if (kind == SAMPLE_LOC_MEM1 && mem1_dump_shown < 4) {
+            const u8* q = mv->readBase;
+            int k;
+            mem1_dump_shown++;
+            port_log("port> musyx_mix: MEM1 sample id %u compType %u at %p len %u:",
+                     (unsigned)dv->smp_id, (unsigned)mv->compType, (const void*)q,
+                     mv->readLen);
+            for (k = 0; k < 16; k++) {
+                port_log(" %02x", q[k]);
+            }
+            port_log("\n");
+        }
+    }
+
     dv->playInfo.posLo = 0;
     dv->playInfo.pitch = mv->pitch;
 
@@ -745,13 +899,34 @@ static void render_voice(DSPvoice* dv, MixVoice* mv, DSPstudioinfo* stp) {
 
     for (s = 0; s < NUM_SUBFRAMES && !done; s++) {
         u16 env_start = 0, env_delta = 0;
-        s32 env;
+        s32 env, env_step;
         u32 voice_done;
 
         apply_subframe_changes(dv, mv, s);
         voice_done = adsrHandle(&dv->adsr, &env_start, &env_delta);
         update_hostplayinfo(dv);
-        env = (s32)(s16)env_start;
+        /* Both of these casts are load-bearing, and getting either wrong is
+         * loud.  `adsrHandle` (synth_adsr.c:153) hands back a *volume* and a
+         * *delta* through two `u16*`, and they are not the same kind of
+         * number:
+         *
+         *   *adsr_start = old_volume >> 16;          -- 0..0x8000, unsigned.
+         *                                               0x8000 is the value a
+         *                                               voice starts at
+         *                                               (hw_dspctrl.c:895), so
+         *                                               reading it as s16
+         *                                               turns unity gain into
+         *                                               *minus* unity.
+         *   *adsr_delta = -(-currentDelta >> 21);    -- SIGNED, stuffed into a
+         *                                               u16.  Every release
+         *                                               ramp is negative.
+         *
+         * Adding the delta unsigned is what pinned the whole mix at full
+         * scale on the first board run: a release of -3 arrives as 65533, so
+         * a voice fading out instead ramps its gain up by 65533 per sample
+         * and clips everything else out of the mix with it. */
+        env = (s32)(u16)env_start;
+        env_step = (s32)(s16)env_delta;
 
         for (i = 0; i < SUBFRAME_SAMPLES; i++) {
             u32 idx = s * SUBFRAME_SAMPLES + i;
@@ -794,7 +969,15 @@ static void render_voice(DSPvoice* dv, MixVoice* mv, DSPstudioinfo* stp) {
                 }
             }
 
-            env += env_delta;
+            env += env_step;
+            /* A release can walk the envelope past zero inside a sub-frame;
+             * the console's own multiplier saturates rather than wrapping
+             * into a loud positive gain. */
+            if (env < 0) {
+                env = 0;
+            } else if (env > 0x8000) {
+                env = 0x8000;
+            }
             volL += dL; volR += dR; volS += dS;
             volLa += dLa; volRa += dRa; volSa += dSa;
             volLb += dLb; volRb += dRb; volSb += dSb;
@@ -987,7 +1170,6 @@ static void render_output(short* dest) {
 /* ---- public entry points ---------------------------------------------------- */
 
 void port_musyx_mix_init(void) {
-    aram_base_ptr = (u8*)port_aram();
     num_voices = salNumVoices;
     voices = (MixVoice*)calloc(num_voices ? num_voices : 1, sizeof(MixVoice));
     mixer_up = (voices != NULL);
@@ -1061,6 +1243,11 @@ void port_musyx_mix_report(void) {
         port_log("port> musyx_mix: %lu ADPCM voice(s) refused for a missing extraData "
                  "block\n",
                  stat_voices_no_extradata);
+    }
+    if (stat_bad_sample_addr) {
+        port_log("port> musyx_mix: %lu sample address(es) resolved to neither ARAM nor "
+                 "MEM1 -- voice(s) refused rather than read\n",
+                 stat_bad_sample_addr);
     }
     if (port_opt.perf && stat_time_samples) {
         port_log("port> musyx_mix: --perf: mean %.1f us/frame, worst %.1f us/frame, "

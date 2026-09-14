@@ -3886,6 +3886,60 @@ does not, so the 70-retrace offset in first sound may be a different piece of
 music rather than the same one late. That is not resolved and should not be
 claimed as resolved.
 
+### 16.8 The `m425dll` SIGBUS: not reproduced, and the reason is worth more than the attempt
+
+§15.6 left a SIGBUS at 0x04800000 in a `HU3DMODELHOOK` inside `m425Dll.bundle`,
+reached by the 15,400-frame board walk at frame 13,325, on both the scalar and
+the AltiVec builds. **Four board runs this milestone did not reach that module
+once**, and the reason is the useful finding:
+
+**`--seed` does not pin which minigame comes up.** The four runs, all
+`--seed 12345 --play board-start.play`:
+
+| run | card state | second minigame |
+|---|---|---|
+| 1 | the save the M5 session left | `m456dll` |
+| 2 | `--nocard` | never reached the board — the walk depends on the card flow |
+| 3 | card file deleted | `m456dll` |
+| 4 | as run 3 left it, audio now on | `m456dll` |
+
+The roulette reads the save file's played-minigame set as well as the RNG, and
+the save file is rewritten by every run, so "the same seed" is not the same
+experiment twice. That is an M7 problem with an M7 solution (§16.10 item 3):
+a harness that can set `GWPlayerCfg[i].diff` can set the minigame directly,
+and then reproducing a crash in a named module stops being a twenty-minute
+dice roll.
+
+**What the source review did settle.** Both of `m425dll`'s draw hooks build a
+display list at runtime with `GXBeginDisplayList` and replay it with a
+descriptor set immediately before, and the interesting one
+(`main.c:1495 fn_1_57D4` → `fn_1_5C20`) is also where §15.7's "four-input TEV
+stage" lives. The suspicious-looking thing there is real and is *not* a bug:
+the recorded stream writes five indices per vertex in the order
+`GXPosition1x16, GXColor1x16, GXTexCoord1x16, GXNormal1x16, GXNormal1x16`,
+while the descriptor at replay is POS, CLR0, TEX0, TEX1, NRM. The writer names
+do not match the slots — but they are not supposed to. GX assigns indices by
+the descriptor's own fixed attribute order (POS, NRM, CLR0, CLR1, TEX0…), and
+under *that* order every index lands in bounds, including the one that looks
+worst: the `NRM` array is a single `Vec` (`unk_1C = malloc(unk_2A * sizeof(Vec))`
+with `unk_2A == 1`) and the index that reaches it is the constant 0, because
+the writer that supplied it was `GXColor1x16(var_r30)`. The port's
+`begin_attr_order()` (gx_draw.c:345) uses exactly that order, so the port
+agrees with the hardware here and this is not the fault.
+
+**And one hypothesis is now disproved rather than merely unconfirmed.**
+0x04800000 looked like a read one element off the end of a small allocation
+sitting at the top of the heap — the first byte past MEM1. `OSInit` now prints
+MEM1's real bounds, and on this machine they are **[0x2000000, 0x3800000)**.
+0x04800000 is 16 MB above the top of MEM1, so it is not that. It is not ARAM
+either (ARAM is a separate `calloc`). Whatever it is, it is not "one past the
+arena", and the next person should not spend the hour this one did on that
+idea.
+
+The diagnostic that would have answered it in one line is now in the tree
+anyway (§16.7's `aram_clamp_report` is the audio-side twin of it, and the MEM1
+bounds are the graphics-side one), so the next occurrence describes itself.
+
 ### 16.9 `gx_tex_bind`: the hit path stops hashing, and stops scanning
 
 §15.9 item 6: `gx_tex_bind` at 11–12% of the frame on both screens, and it is
