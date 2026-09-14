@@ -38,12 +38,32 @@ mkdir -p "$OUT"
 
 COMMON="--rtc dolphin --freshcard --com4 --turbo --perf --clickstat --headless"
 
+: "${G4_WAIT_MAX:=5400}" # seconds to wait for one G4 run to finish
+
 run() {
     name=$1
     shift
     if [ -n "$G4" ]; then
-        "$repo/../isle-ppc-tools/g4/g4" run $COMMON --card "\$HOME/ab-$name.raw" "$@" \
-            > "$OUT/$name.log" 2>&1 || true
+        g4=$repo/../isle-ppc-tools/g4/g4
+        # `g4 run` hands the request to the console runner and returns in about
+        # four seconds -- it does NOT wait for the game to exit.  Launching both
+        # sides of an A/B through it without waiting runs the second `killall
+        # isle` over the first, and leaves two logs holding the twelve lines
+        # `g4 run` happened to tail.  So: launch, then poll the remote log for
+        # the runner's own EXITCODE line, then pull the whole thing.  --frames
+        # is what makes the run end by itself; without it this waits out
+        # G4_WAIT_MAX and says so.
+        "$g4" run $COMMON --card "\$HOME/ab-$name.raw" "$@" >/dev/null 2>&1 || true
+        waited=0
+        while [ "$waited" -lt "$G4_WAIT_MAX" ]; do
+            if "$g4" ssh 'grep -q EXITCODE "$HOME/isle-log.txt" 2>/dev/null' >/dev/null 2>&1; then
+                break
+            fi
+            sleep 15
+            waited=$((waited + 15))
+        done
+        [ "$waited" -lt "$G4_WAIT_MAX" ] || echo "  (warning: $name did not finish in ${G4_WAIT_MAX}s)"
+        "$g4" ssh 'cat "$HOME/isle-log.txt"' > "$OUT/$name.log" 2>&1 || true
     else
         "$repo/port/build-host/marioparty4" --image "$IMAGE_PATH" \
             $COMMON --card "$OUT/$name.raw" "$@" > "$OUT/$name.log" 2>&1 || true

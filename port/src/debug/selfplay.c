@@ -103,6 +103,17 @@ static const char* screen_name(int ovl) {
 static int forced_mg = -1; /* mgInfoTbl index */
 static int forced_mg_type;
 
+/* A comma-separated argument -- `--minigame m453,m443,m428,m449` -- parks the
+ * roulette on each in turn, advancing when the one in force has been played.
+ * The reason is arithmetic: on the G4 a boot into a board costs about eight
+ * minutes and a turn about twelve, so four modules witnessed one command each
+ * is two hours and four modules witnessed in one board is one.  A single name
+ * behaves exactly as before. */
+#define FORCED_MG_MAX 16
+static int forced_mg_list[FORCED_MG_MAX];
+static int forced_mg_len;
+static int forced_mg_at;
+
 static int mg_index_from_arg(const char* a) {
     int i;
     char want[32];
@@ -129,6 +140,23 @@ static int mg_index_from_arg(const char* a) {
         }
         return n; /* already an index */
     }
+}
+
+/* Take entry `n` of the list into force.  Returns 0 if there is no such entry
+ * or it does not name a minigame. */
+static int forced_mg_select(int n) {
+    int idx;
+    if (n < 0 || n >= forced_mg_len) {
+        return 0;
+    }
+    idx = forced_mg_list[n];
+    if (idx < 0 || idx >= 64 || mgInfoTbl[idx].ovl == 0xFFFF) {
+        return 0;
+    }
+    forced_mg_at = n;
+    forced_mg = idx;
+    forced_mg_type = mgInfoTbl[idx].type;
+    return 1;
 }
 
 /* ---- parking ---------------------------------------------------------------- */
@@ -367,6 +395,14 @@ static void module_trace(u32 frame) {
     if (last >= 0 && omMgIndexGet((s16)last) >= 0) {
         port_log("port> soak: left  minigame %-9s at frame %u\n", screen_name(last),
                  frame);
+        /* The one in force has been played: move the list on, so a run given
+         * several names witnesses them all in one board. */
+        if (forced_mg >= 0 && omMgIndexGet((s16)last) == forced_mg &&
+            forced_mg_at + 1 < forced_mg_len && forced_mg_select(forced_mg_at + 1)) {
+            port_log("port> --minigame: next is %s (mg %d, type %d), %d of %d\n",
+                     screen_name(mgInfoTbl[forced_mg].ovl), forced_mg + 0x191,
+                     forced_mg_type, forced_mg_at + 1, forced_mg_len);
+        }
     }
     if (cur >= 0 && omMgIndexGet((s16)cur) >= 0) {
         port_log("port> soak: enter minigame %-9s at frame %u (mg %d)\n",
@@ -379,18 +415,26 @@ static void module_trace(u32 frame) {
 
 void port_selfplay_init(void) {
     if (port_opt.minigame) {
-        forced_mg = mg_index_from_arg(port_opt.minigame);
-        if (forced_mg < 0 || forced_mg >= 64 || mgInfoTbl[forced_mg].ovl == 0xFFFF) {
+        char buf[256];
+        char* save = NULL;
+        char* tok;
+        snprintf(buf, sizeof(buf), "%s", port_opt.minigame);
+        for (tok = strtok_r(buf, ",", &save); tok != NULL && forced_mg_len < FORCED_MG_MAX;
+             tok = strtok_r(NULL, ",", &save)) {
+            forced_mg_list[forced_mg_len++] = mg_index_from_arg(tok);
+        }
+        if (!forced_mg_select(0)) {
             port_log("port> --minigame %s: no such minigame; the roulette is left "
                      "alone\n",
                      port_opt.minigame);
             forced_mg = -1;
+            forced_mg_len = 0;
         } else {
-            forced_mg_type = mgInfoTbl[forced_mg].type;
             port_log("port> --minigame %s: parking the roulette on %s (mg %d, "
-                     "type %d)\n",
+                     "type %d)%s\n",
                      port_opt.minigame, screen_name(mgInfoTbl[forced_mg].ovl),
-                     forced_mg + 0x191, forced_mg_type);
+                     forced_mg + 0x191, forced_mg_type,
+                     forced_mg_len > 1 ? ", then the rest of the list, one a turn" : "");
         }
     }
     if (port_opt.com4) {
