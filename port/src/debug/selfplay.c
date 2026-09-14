@@ -158,6 +158,31 @@ static void park_players(void) {
     }
 }
 
+/* What the roulette itself decided, whether or not it is being overridden.
+ *
+ * This is the number the Dolphin comparison needs: with `--rtc` the two rigs
+ * share the RNG's *origin*, and whether they then draw the same minigame is a
+ * question about everything between the origin and `BoardRandInit`, which
+ * reads `OSGetTime` at board setup rather than at boot.  Logging the draw
+ * costs nothing and answers it on whatever run happens to reach a board. */
+static void watch_roulette(u32 frame) {
+    static int last = -1;
+    int mg = (int)GWSystem.mg_next;
+    /* The parked value is our own writing, not a draw; reporting it would turn
+     * this into a one-line-a-frame ping-pong between what the game wrote and
+     * what we wrote back. */
+    if (mg == last || mg == forced_mg) {
+        return;
+    }
+    last = mg;
+    if (mg < 0 || mg >= 64 || mgInfoTbl[mg].ovl == 0xFFFF) {
+        return;
+    }
+    port_log("port> roulette: frame %u dealt mg %d (%s, type %d)%s\n", frame,
+             mg + 0x191, screen_name(mgInfoTbl[mg].ovl), (int)mgInfoTbl[mg].type,
+             forced_mg >= 0 && mg != forced_mg ? "  -- overridden by --minigame" : "");
+}
+
 static void park_minigame(void) {
     int i;
     if (forced_mg < 0) {
@@ -317,6 +342,7 @@ void port_selfplay_tick(u32 frame) {
         return;
     }
     park_players();
+    watch_roulette(frame);
     park_minigame();
     if (port_opt.soak) {
         module_trace(frame);

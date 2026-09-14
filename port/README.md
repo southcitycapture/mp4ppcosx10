@@ -170,6 +170,65 @@ ARAM carries real transfers. The captured runs are
 and [`docs/g4-m2a-boot.log`](docs/g4-m2a-boot.log) (M2a); §10 of
 [`docs/PLAN.md`](docs/PLAN.md) is the log entry.
 
+## Self-play, and reproducible runs
+
+Two things make a run of this port an experiment rather than an anecdote.
+
+**`--rtc SECS`** pins the console's real-time clock, which is the port's whole
+RNG story: the game has exactly two clock-derived seed sites -- `frand.c:13`
+by way of `init.c:77`, and `BoardRandInit` at `board/main.c:1432` -- and both
+read `OSGetTime` and nothing else. `--rtc` is `--seed` written in the units
+Dolphin is already configured in, so `--rtc dolphin` (1041472800, the pinned
+`CustomRTCValue` in `ref/dolphin-user/Config/Dolphin.ini`) puts the two rigs on
+the same clock.
+
+**`--card FILE` / `--freshcard`** pin the other input. The minigame roulette
+reads the save file's played set, and every run rewrites the save, so before
+this the same seed was not the same experiment twice.
+
+Together they give byte-identical runs *with audio on* -- proved by md5, not
+asserted:
+
+```sh
+g4 run --rtc dolphin --card ~/scratch.raw --freshcard --play board-start.play \
+       --turbo --frames 2000 --dumpframe 400,800,1200,1600 --shotdir ~/det1 \
+       --wav ~/det1.wav
+```
+
+Then the harness, which plays the game itself:
+
+| flag | what |
+|---|---|
+| `--com4` | all four players are CPU. The game supports this -- mentDll's own attract loop sets exactly these fields -- and it is what makes the minigame instruction screen dismiss itself, because instDll auto-starts after 60 frames when all four players are CPU |
+| `--minigame NAME\|ID` | park the roulette on one minigame: `--minigame m425dll`, `--minigame 425` and `--minigame 24` are the same thing. Reproducing a crash in a named module stops being a twenty-minute dice roll |
+| `--turns N` | the board's turn count |
+| `--status` | one line a second: screen, board, turn, the module the roulette dealt, coins and stars per player, `aud` ms and fps |
+| `--stuckwatch SEC` | the live screen has not changed in SEC seconds: name it |
+| `--soak` | all of the above, from boot, logging every minigame module entered and left, for as long as you leave it |
+
+```sh
+# reproduce a crash in one named module
+g4 run --rtc dolphin --card ~/scratch.raw --freshcard --com4 --minigame m425 \
+       --turns 10 --status --stuckwatch 90 --play board-start.play --turbo
+
+# leave it playing itself overnight
+g4 run --rtc dolphin --card ~/soak.raw --soak --turns 10 \
+       --play board-start.play --turbo --log ~/soak.log
+```
+
+The harness never presses a button it can avoid pressing. It writes the game's
+own globals -- `GWPlayerCfg`, `GWPlayer`, `GWSystem` -- from the retrace gate,
+which is the lesson the two Snowboard Kids ports' `menu_nav.c` taught: name the
+live screen and park the state the game would have set. `--play` is still what
+walks the menus, because a metronome of A presses is enough once no screen
+needs a *specific* button, and `board-start.play` is that metronome.
+
+**Save-file handling.** Slot A is
+`~/Library/Application Support/MarioParty4/memcard-slot-a.raw` unless `--card`
+names another file. A soak should always be given its own image and
+`--freshcard`, both so the roulette starts from a known played set and so a
+crashed run does not leave a half-written save behind for the next one.
+
 ## Layout
 
 | path | what |

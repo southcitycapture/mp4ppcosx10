@@ -4153,3 +4153,168 @@ On a synthetic host benchmark shaped like the profile's reuse — 300 textures,
    else, which is what makes `--seed` still work — but that is a property of
    the code, not a tested one. Two runs of the same seed with `--dumpframe`
    over a spread, md5-compared, is the assertion, and it costs nothing to run.
+
+---
+
+## 17. M7 log — a run that repeats itself, a game that plays itself, and the click that was two clicks *(2026-09-13)*
+
+M6 ended with four things it could not measure and one it could not reproduce.
+M7's job was to make the rig capable of answering all five, and the order was
+forced: nothing else is worth measuring until two runs of the same command
+produce the same bytes.
+
+### 17.1 `--rtc`, and the second input nobody had noticed
+
+§15.9 item 7 and §16.10 item 1 both asked for `--rtc` and both called it one
+line. It is one line. `--rtc SECS` is `--seed` written in the units the
+reference rig is already configured in — Unix seconds, the number Dolphin's
+`CustomRTCValue` holds — converted to 40.5 MHz ticks since 2000-01-01 and used
+as the deterministic clock's origin. `--rtc dolphin` is the pinned reference
+value, 1041472800.
+
+The interesting part is what it revealed about the *other* input.
+
+§16.8 spent four board runs failing to reach `m425dll` and concluded that the
+roulette reads the save file's played set. That is true, and it means the
+memory card is an input to every run — an input that every run also *writes*.
+So before M7 there was no way to run the same experiment twice, and "the same
+seed" was a statement about one of two inputs.
+
+`--card FILE` points slot A at a named image and `--freshcard` formats it at
+boot. With both, plus `--rtc`, a run is a function of its command line.
+
+### 17.2 Determinism, proved rather than asserted
+
+§16.10 item 5 asked for exactly this test and said it costs nothing. It cost
+two runs.
+
+Both runs, on the G4, the same command, audio **on** — which is the part that
+was never tested, because M6 asserted by design that the audio tick is an
+integer function of the retrace count and never checked:
+
+```
+g4 run --rtc dolphin --card ~/mp4-det.raw --freshcard \
+       --play board-start.play --turbo --frames 2000 \
+       --dumpframe 400,800,1200,1600 --shotdir ~/detN --wav ~/detN.wav
+```
+
+| artefact | run 1 | run 2 |
+|---|---|---|
+| `frame-00400.ppm` | `2e439de0b45927a6905565c49c9130c0` | *identical* |
+| `frame-00800.ppm` | `45da1034bf9692bb6dc04a74ac665dd6` | *identical* |
+| `frame-01200.ppm` | `b206514268de6a18416e7f725e0ff7aa` | *identical* |
+| `frame-01600.ppm` | `27faa18da48f3d0158c79d9c4d748931` | *identical* |
+| the whole `--wav` capture | `cedc7196840becbf0e63cf40639a58f5` | *identical* |
+
+Four frames spread over the boot and the menus, and 5,116,204 bytes of mixed
+audio, byte for byte. §16.4's design claim — the mixer is on the game thread
+so that the number of sequencer steps between two video frames is a function
+of the frame number and not of the host's audio clock — is now a tested
+property rather than an argument.
+
+*(A note for the next person: `--dumpframe` counts **presented** frames and
+`--frames` counts **retraces**, and the two are not equal. A run asked for
+`--frames 2400 --dumpframe ...,2400` writes three files, not four. Ask for a
+dump point comfortably inside the run.)*
+
+### 17.3 Do the port and Dolphin now deal the same minigame? No — and the
+### reason is not the clock
+
+They share the clock's *origin* and they still diverge, because neither RNG
+seed site reads the origin. `BoardRandInit` reads `OSGetTime()` **at board
+setup**, which is the origin plus however many ticks have elapsed since boot,
+and the two rigs do not agree about that: the port skips the DVD seek and the
+opening movie and reaches the title around frame 700 against the console's
+380. Three hundred frames is five seconds is 200 million ticks, and
+`boardRandSeed = OSGetTime()` turns five seconds into a completely different
+sequence.
+
+So `--rtc` does what §16.10 item 1 wanted for the *audio* comparison — the two
+rigs are on the same clock, and a capture from each is comparable
+window-for-window in a way it was not — and it does **not** close §15.4's dice
+gap on its own. What would: applying the offset as well, so that the port's
+`OSGetTime` at `BoardRandInit` equals the console's. That is measurable (the
+port's own `--ovllog` names the frame `w01dll` loads on each side) and it is
+one subtraction, but it is a different flag from this one and it should be
+called what it is.
+
+The harness makes the question much less urgent, which is why it is being left
+here rather than chased: `--minigame` reproduces a named minigame directly,
+and that was the only thing the dice gap was actually blocking.
+
+### 17.4 The harness: park the state, do not press the button
+
+The two Snowboard Kids ports' `menu_nav.c` is the model, and its rule is the
+whole of `port/src/debug/selfplay.c`: **name the live screen, and park the
+state the game would have set, rather than driving the buttons that would have
+set it.**
+
+`--play` is the other way, and `port/ref/movies/board-start.play` is the
+receipt: 300 lines of metronome, five captures to place two STARTs (§15.3),
+and a walk that breaks the moment a screen's entry animation changes length.
+Parking costs a line per fact and does not care how long an animation is.
+
+| flag | what it parks | where the game would have set it |
+|---|---|---|
+| `--com4` | `GWPlayerCfg[i].iscom = 1`, mirrored into `GWPlayer[i].com` | `mentDll/main.c:824-834`, the game's own attract loop, which sets exactly these fields |
+| `--turns N` | `GWSystem.max_turn` | `BoardPartyConfigSet`, `board/main.c:382` |
+| `--minigame` | `GWSystem.mg_next`, plus `GWPlayerCfg[i].group` for the chosen type | `mg_setup.c:292` and `E3setupDLL/mgselect.c:219-250` |
+| `--status` | nothing; reads `omcurovl`, `GWSystem`, `GWPlayer[]` | — |
+| `--stuckwatch` | nothing; watches `omcurovl` + `omovlevtno` | — |
+
+Nothing in `src/` is patched. `port/patches.txt` did not grow a line, because
+every one of these is a global the port already links.
+
+**`--com4` is worth more than it looks.** It is not only "four CPUs"; it is
+what makes the game dismiss its own instruction screen. `instDll/main.c:281-294`
+counts the CPU players and auto-starts after 60 frames when the count is four
+— which is precisely the START that cost §15.3 three captures to place. With
+`--com4` there is no START to place, on any screen, ever.
+
+**`--minigame` took two wrong turns on paper before the right one.** Both are
+worth recording because both look better than the answer:
+
+1. *Bias the candidate pool.* `GWSystem.mg_list = 2` makes `DetermineMGList`
+   draw only from `GWGameStat.mg_custom[]` (`mg_setup.c:331`) **and** skip the
+   recently-played filter (`:359`), so a one-entry custom pack looks like
+   exactly the right lever. It hangs the game. The draw loop
+   (`mg_setup.c:352-376`) runs `while (var_r30 < arg0->field01_bit0)` and only
+   advances `var_r30` on a candidate whose `name_mess` it has not already
+   taken. With a pool of one and a roulette wanting four, there is no exit.
+2. *Call `omOvlCallEx` directly*, the way `selmenuDll`'s debug launcher does
+   (`selmenuDll/main.c:696-720`). That is the right call from inside a
+   `HUPROCESS`; from the retrace gate it re-enters the object manager from
+   outside every process the object manager knows about.
+
+The answer is duller and safe: let the roulette run, and overwrite
+`GWSystem.mg_next` before `instDll`'s `ObjectSetup` reads it
+(`instDll/main.c:60`). The harness also logs what the roulette *would* have
+dealt, so the override costs no information:
+
+```
+port> roulette: frame 12163 dealt mg 456 (m456dll, type 0)  -- overridden by --minigame
+```
+
+The team split travels with the override, because a 2-vs-2 module reads
+`GWPlayerCfg[i].group` and m425 is a 2-vs-2.
+
+**The stuck-screen watchdog costs one compare a frame.** The N64 ports named
+the live overlay through `dladdr` and paid 27% of the frame for it, which is
+the lesson `sbk-port-speed-lesson` records. Here the live screen is an
+integer (`omcurovl`) and the name table is re-derived from the same
+`include/ovl_table.h` the game builds its own `_ovltbl` from, so the two
+cannot drift and the watch is a comparison:
+
+```
+port> STUCK: frame 9840, 91 s with no scene change.  live screen w01dll
+  (overlay 89, event 0, previous instdll), turn 3/10, mg_next 425
+```
+
+**The status line** carries what a screenshot cannot, including the four audio
+invariants §16.10 item 2 asked for:
+
+```
+port> status f5520    w01dll  board 0 turn 1/10  mg 425 (m425dll)
+      coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.55 ms  10.8 fps
+```
+
