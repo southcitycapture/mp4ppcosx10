@@ -90,6 +90,20 @@ fi
 SDL2_PREFIX=${SDL2_PREFIX:-$HOME/Apps/panther-sdl2/build-tiger-joy/prefix}
 IMAGE=${IMAGE:-ghcr.io/variantxyz/gcc-powerpc-apple-darwin8:build-gcc-14.2-MacOSXSDK10.4u}
 sdl_ref=$(otool -L "$out/Contents/MacOS/isle" 2>/dev/null | awk '/libSDL2/{print $1}' | head -1)
+# The host's otool is part of the Xcode toolchain and will refuse to run at all
+# when a licence prompt is pending, printing its complaint on stderr and
+# nothing on stdout.  That used to leave `sdl_ref` empty, skip this whole block
+# without a word, and ship a bundle that dies on the G4 with
+# "dyld: Library not loaded: /work/panther-sdl2/.../libSDL2-2.0.0.dylib".
+# The install name is a plain C string in the load commands, so read it out
+# with strings when otool has nothing to say.
+if [ -z "$sdl_ref" ]; then
+    sdl_ref=$(python3 -c "import re,sys
+d=open(sys.argv[1],'rb').read()
+m=re.search(rb'/[ -~]*libSDL2[^\\x00]*', d)
+print(m.group(0).decode() if m else '')" "$out/Contents/MacOS/isle" 2>/dev/null)
+    [ -n "$sdl_ref" ] && echo "  (otool said nothing; install name read out of the load commands)"
+fi
 if [ -n "$sdl_ref" ]; then
     sdl_leaf=$(basename "$sdl_ref")
     if [ -f "$SDL2_PREFIX/lib/$sdl_leaf" ]; then
