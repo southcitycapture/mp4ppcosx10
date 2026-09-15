@@ -108,6 +108,9 @@ typedef struct PortOptions {
                              *   instead of decoding every frame.  Built,
                              *   measured and OFF by default: PLAN.md 21.3     */
     /* ---- M9b ---- */
+    int noaicb;             /* --noaicb  do not run the game's AI DMA callback,
+                             *   i.e. leave the three msm periodic services
+                             *   dead the way the stub did (PLAN.md 22.4)     */
     int olddecode;          /* --olddecode  walk the old call-per-attribute
                              *   cursor instead of the per-primitive decode
                              *   plan.  Kept so the two can be A/B'd on the

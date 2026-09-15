@@ -140,8 +140,48 @@ void port_clock_report(void) {
                                                                          : "  *** WRONG");
 }
 
+/* ---- the spin-loop clock ---------------------------------------------------
+ *
+ * On the console the decrementer runs whether or not the game is doing
+ * anything, so a busy-wait like
+ *
+ *     tickStart = OSGetTick();
+ *     while ((msmMusGetNumPlay(TRUE) || msmSeGetNumPlay(TRUE)) &&
+ *            OSTicksToMilliseconds(OSGetTick() - tickStart) < 500) {}
+ *
+ * (`SNDGRP_WAIT`, src/game/audio.c:488) always ends: either the sounds stop or
+ * half a second passes.  The port's deterministic clock advances one 60 Hz
+ * frame per *retrace*, and a spin loop does not reach a retrace -- so under
+ * `--rtc` / `--deterministic` neither half of that condition can ever change
+ * and the loop is infinite.  It had never been reached, because the other
+ * half of the condition was accidentally always false: `numPlay` is only
+ * recomputed in `msmSePeriodicProc`, which never ran while the AI DMA
+ * callback was a stub (22.4).  Wiring that callback up made this the first
+ * thing the boot hit -- 102% of a CPU in `HuAudSndCharGrpSet`, five minutes
+ * in, the frame counter frozen at 840.
+ *
+ * So `OSGetTick` gets a virtual advance of its own: a fixed amount per call,
+ * which is deterministic (it is a pure function of how many times the game
+ * has asked) and is only visible to code that asks repeatedly without letting
+ * a frame go by -- which is exactly the spin loops it is for.  A millisecond
+ * per thousand calls makes `SNDGRP_WAIT` give up after about 30,000
+ * iterations, a few milliseconds of real time, and take the game's own
+ * documented timeout path.
+ *
+ * `OSGetTime` deliberately does *not* get it.  That is the clock both of the
+ * game's RNGs seed from (see above) and the one `--rtc` pins, and it must
+ * stay a function of the retrace count alone. */
+#define PORT_SPIN_TICKS (PORT_TIMER_CLOCK / 60 / 1000)
+static OSTime spin_ticks;
+
 OSTime OSGetTime(void) { return host_ticks(); }
-OSTick OSGetTick(void) { return (OSTick)host_ticks(); }
+
+OSTick OSGetTick(void) {
+    if (port_opt.deterministic) {
+        spin_ticks += PORT_SPIN_TICKS;
+    }
+    return (OSTick)(host_ticks() + spin_ticks);
+}
 
 OSTime OSCalendarTimeToTicks(OSCalendarTime* td) {
     struct tm tm;

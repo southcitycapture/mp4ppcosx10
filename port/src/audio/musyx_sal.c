@@ -53,6 +53,8 @@
  */
 #include "port.h"
 
+#include <dolphin/ai.h>
+
 #include <string.h>
 
 #include "musyx/hardware.h"
@@ -70,6 +72,8 @@ u32 VIGetRetraceCount(void);
 #define DMA_BUFFERS 4
 #define MIX_FRQ 32000u
 #define FRAME_SAMPLES 160
+
+static void ai_dma_tick(void); /* defined with AIRegisterDMACallback below */
 
 /* The retrace rate the port paces to (vi.c), as a rational so the tick can be
  * exact: 5994 / 100 Hz. */
@@ -182,6 +186,7 @@ void salCtrlDsp(s16* dest) {
         return;
     }
     port_perf_audio_begin();
+    ai_dma_tick();
     port_musyx_mix_frame(dest);
     port_perf_audio_end();
     stat_frames++;
@@ -309,6 +314,56 @@ void port_audio_report(void) {
 
 static u8 stream_vol_l, stream_vol_r;
 static u32 stream_play;
+
+/* ---- the AI DMA callback, and the three services that hang off it ----------
+ *
+ * This was a generated stub until M9b, and that is the m444 stall (PLAN.md
+ * 22.4).  On the console `AIRegisterDMACallback` installs a function the AI
+ * runs every time it finishes a DMA buffer -- 0x280 bytes, i.e. exactly one
+ * 160-sample DSP frame -- and MusyX puts its own `salCallback` there.  The
+ * *game* then chains itself in front of it (`msmSysInit` ->
+ * `AIRegisterDMACallback(msmSysServer)`, src/msm/msmsys.c:887) and every
+ * third callback runs the three periodic services:
+ *
+ *     msmMusPeriodicProc();      sequence fades, music state
+ *     msmSePeriodicProc();       *frees finished sound-effect players*
+ *     msmStreamPeriodicProc();   stream state and refill
+ *
+ * With the registration stubbed out, `msmSysServer` was installed into
+ * nothing and none of the three ever ran.  The one that shows is the middle
+ * one: a sound-effect player slot only returns to `status == 0` in
+ * `msmSePeriodicProc` (src/msm/msmse.c:160-171), so after the first `se.sfx`
+ * effects of the boot, every `msmSePlay` for the rest of the run returned
+ * MSM_ERR_CHANLIMIT.  That is the 65,180 `SE Entry Error<... -110>` lines in
+ * the soak log, the first of them at line 363, twelve hours before the stall
+ * -- and it is why a screen that waits for a sound it started can wait for
+ * ever.
+ *
+ * The cadence here is the console's: one call per DSP frame, from the same
+ * place the frame is rendered and therefore on the game thread, which is what
+ * the rest of this port does with MusyX for determinism.  It runs *before*
+ * the mix because on the console the game's handler ran before the MusyX one
+ * it chained to.  `--noaicb` puts the old behaviour back for an A/B. */
+static AIDCallback ai_dma_cb;
+
+/* Never NULL: the game calls whatever this returned as `sys.oldAIDCallback`
+ * without checking, because on the console MusyX's own callback was always
+ * already installed. */
+static void ai_dma_none(void) {}
+
+AIDCallback AIRegisterDMACallback(AIDCallback callback) {
+    AIDCallback old = ai_dma_cb != NULL ? ai_dma_cb : ai_dma_none;
+    ai_dma_cb = callback;
+    port_log("port> AI: DMA callback %s (one call per %d-sample DSP frame)\n",
+             callback != NULL ? "registered" : "cleared", FRAME_SAMPLES);
+    return old;
+}
+
+static void ai_dma_tick(void) {
+    if (ai_dma_cb != NULL && !port_opt.noaicb) {
+        ai_dma_cb();
+    }
+}
 
 void AIInit(u8* stack) { (void)stack; }
 void AIInitDMA(u32 addr, u32 len) {
