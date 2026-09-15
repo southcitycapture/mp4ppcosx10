@@ -107,6 +107,12 @@ typedef struct PortOptions {
     int dlcache;            /* --dlcache  replay cached display-list vertices
                              *   instead of decoding every frame.  Built,
                              *   measured and OFF by default: PLAN.md 21.3     */
+    /* ---- M9b ---- */
+    int olddecode;          /* --olddecode  walk the old call-per-attribute
+                             *   cursor instead of the per-primitive decode
+                             *   plan.  Kept so the two can be A/B'd on the
+                             *   same hardware and the same frame md5s
+                             *   (PLAN.md 21.4 / 22.1)                         */
     const char* perfwin;    /* --perfwin A-B[:NAME][,...]  per-scene fps out of
                              *   one run's own per-frame samples, so a baseline
                              *   costs one boot instead of three                */

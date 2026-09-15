@@ -45,6 +45,7 @@ unsigned gl13_frame_number(void);
 
 #include <math.h>
 #include <stdio.h>
+#include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -107,6 +108,10 @@ typedef struct Layout {
  * list's worth of source, because the cache stores the list in one piece. */
 static u8 src_buf[MAX_VERTS * SRC_MAX_STRIDE] __attribute__((aligned(16)));
 static u8 out_buf[MAX_VERTS * OUT_MAX_STRIDE] __attribute__((aligned(16)));
+/* Where a vertex goes when the primitive has already filled src_buf: it is
+ * decoded and thrown away, so the list still steps by the right number of
+ * bytes.  The old path dropped it out of transform_and_store(). */
+static u8 sink_vtx[SRC_MAX_STRIDE] __attribute__((aligned(16)));
 static Layout sl;              /* the source layout of the primitive in hand  */
 static int out_stride, out_off_clr, out_off_tex, out_ntex;
 static int nverts;             /* vertices in the primitive being assembled   */
@@ -397,6 +402,8 @@ static int color_bytes(u8 type) {
 
 /* ---- assembling a vertex --------------------------------------------------- */
 
+static void build_decode_plan(void);
+
 static void begin_attr_order(void) {
     static const int order[] = { GX_VA_POS,  GX_VA_NRM,  GX_VA_CLR0, GX_VA_CLR1,
                                  GX_VA_TEX0, GX_VA_TEX1, GX_VA_TEX2, GX_VA_TEX3,
@@ -518,6 +525,240 @@ static void begin_attr_order(void) {
         out_off_clr = 12;
         out_off_tex = 16;
         out_stride = 16 + 8 * out_ntex;
+    }
+
+    build_decode_plan();
+}
+
+
+/* ---- the per-primitive decode plan (PLAN.md 21.4) --------------------------
+ *
+ * M9 measured the vertex path three ways and ruled out arithmetic (the AltiVec
+ * batch bought nothing), bandwidth (a four-fold smaller vertex bought nothing)
+ * and the decode's input (not decoding at all bought 18% on one scene).  What
+ * was left was the decode's *shape*: `indexed()` was reached through
+ * `attr_written()` for every attribute of every vertex, re-read `cur_attr()`,
+ * branched down a chain on the attribute id and then called `read_component()`
+ * two or three times -- and that function switched on the component type and
+ * indexed a scale table on every one of those calls.  Three of the top four
+ * symbols on all three scenes were that structure, plus `saveGPR`/`restGPRx`
+ * at 4-8% purely as the prologue traffic it dragged in: about 1,280 cycles a
+ * vertex for something that is four loads and a multiply.
+ *
+ * None of it depends on the vertex.  Which attribute is next, where its array
+ * is, how wide its index is, what type its components are, what the fractional
+ * scale is, and which field of the packed source vertex it lands in are all
+ * settled by the vertex descriptor, the VAT and `GXSetArray` -- i.e. once per
+ * primitive.  So `begin_attr_order()` now settles them once into `plan[]`, and
+ * the inner loop walks that: no call, no cursor, no attribute-id chain, and
+ * one dense switch that GCC turns into a jump table.
+ *
+ * Exactness is the whole constraint, so three quiet behaviours of the old path
+ * are reproduced deliberately rather than dropped:
+ *
+ *   * an attribute the *descriptor* carries but the layout does not store --
+ *     a texcoord past the last one a texgen reads, or CLR1, or CLR0 when the
+ *     register material wins -- was still decoded into the `pending` staging
+ *     vertex by the old code.  Those steps keep a destination; it is just in
+ *     `pending` instead of in the vertex (`to_pending`).
+ *   * a texcoord slot the layout stores but the descriptor does *not* carry
+ *     read whatever `pending` held from some earlier primitive.  Nothing
+ *     writes it during this primitive, so it is a constant here: `fill[]`.
+ *   * `GXSetArray` with a null base or a zero stride left `pending` untouched.
+ *     That is `DEC_NONE`, which still steps the list pointer over the index.
+ *
+ * and `pending` is written back from the last decoded vertex at the end of the
+ * primitive, so the next primitive's `fill[]` sees exactly what it used to. */
+
+enum {
+    DEC_NONE = 0,
+    /* <type>_<components read>_<components written>; the written-but-unread
+     * component is the zero GX pads a 2-component position or a 1-component
+     * texcoord with. */
+    DEC_F32_2_3, DEC_F32_3_3, DEC_F32_1_2, DEC_F32_2_2,
+    DEC_S16_2_3, DEC_S16_3_3, DEC_S16_1_2, DEC_S16_2_2,
+    DEC_U16_2_3, DEC_U16_3_3, DEC_U16_1_2, DEC_U16_2_2,
+    DEC_S8_2_3,  DEC_S8_3_3,  DEC_S8_1_2,  DEC_S8_2_2,
+    DEC_U8_2_3,  DEC_U8_3_3,  DEC_U8_1_2,  DEC_U8_2_2,
+    DEC_CLR_RGBA8, DEC_CLR_RGBX8, DEC_CLR_RGB8,
+    DEC_CLR_RGB565, DEC_CLR_RGBA4, DEC_CLR_RGBA6
+};
+
+typedef struct DecStep {
+    const u8* base;   /* indexed: the array; direct: NULL                     */
+    f32 scale;        /* the VAT's fractional scale, folded in once           */
+    u16 dstoff;       /* byte offset into the vertex, or into `pending`       */
+    u8 stride;        /* indexed: the array's stride                          */
+    u8 idx;           /* 0 direct, 1 GX_INDEX8, 2 GX_INDEX16                  */
+    u8 advance;       /* direct: bytes of payload this step eats              */
+    u8 op;            /* DEC_*                                                */
+    u8 to_pending;    /* destination is the staging vertex, not the packed one */
+    u8 attr;          /* only for the display-list cache's index range        */
+} DecStep;
+
+static DecStep plan[GX_MAX_ATTR];
+static int nplan;
+static int plan_ok;          /* every step decodable: the fast loop may run   */
+static union { u32 u; u8 b[4]; } plan_clr; /* the register material, when it wins */
+static int plan_clr_const;
+static struct { u16 dstoff; f32 s, t; } plan_fill[GX_TEXCOORDS];
+static int plan_nfill;
+/* which slots the plan writes into the vertex, so `pending` can be refreshed
+ * from the last one at the end of the primitive */
+static struct { u16 dstoff; u8 k; } plan_back[GX_TEXCOORDS];
+static int plan_nback;
+
+/* The two type tables, both indexed by GXCompType. */
+static int dec_bytes_of(u8 type, int n) {
+    switch (type) {
+        case GX_U8:
+        case GX_S8: return n;
+        case GX_U16:
+        case GX_S16: return n * 2;
+        default: return n * 4;
+    }
+}
+
+static int dec_op_of(u8 type, int nread, int nwrite) {
+    int base;
+    switch (type) {
+        case GX_U8:  base = DEC_U8_2_3;  break;
+        case GX_S8:  base = DEC_S8_2_3;  break;
+        case GX_U16: base = DEC_U16_2_3; break;
+        case GX_S16: base = DEC_S16_2_3; break;
+        default:     base = DEC_F32_2_3; break;
+    }
+    if (nwrite == 3) {
+        return base + (nread == 3 ? 1 : 0);
+    }
+    return base + (nread == 2 ? 3 : 2);
+}
+
+static int dec_clr_op_of(u8 type) {
+    switch (type) {
+        case GX_RGB565: return DEC_CLR_RGB565;
+        case GX_RGB8:   return DEC_CLR_RGB8;
+        case GX_RGBA4:  return DEC_CLR_RGBA4;
+        case GX_RGBA6:  return DEC_CLR_RGBA6;
+        case GX_RGBX8:  return DEC_CLR_RGBX8;
+        default:        return DEC_CLR_RGBA8;
+    }
+}
+
+/* Called at the end of begin_attr_order(), once everything it settles is in
+ * hand: the layout, the texgen sources, and which colour wins. */
+static void build_decode_plan(void) {
+    int i, k;
+    int supplied[GX_TEXCOORDS];
+
+    nplan = 0;
+    plan_nfill = 0;
+    plan_nback = 0;
+    plan_ok = 1;
+    plan_clr_const = pi.no_clr0 || pi.chan_mode == 1;
+    /* in memory order, so the one store below is right on either endianness */
+    plan_clr.b[0] = gx.chan[0].mat.r;
+    plan_clr.b[1] = gx.chan[0].mat.g;
+    plan_clr.b[2] = gx.chan[0].mat.b;
+    plan_clr.b[3] = gx.chan[0].mat.a;
+    for (k = 0; k < GX_TEXCOORDS; k++) {
+        supplied[k] = 0;
+    }
+
+    for (i = 0; i < nactive; i++) {
+        int a = active[i];
+        u8 desc = gx.vcd[a];
+        const GXVatFmt* f = &gx.vat[vtxfmt][a];
+        const GXArraySpec* arr = &gx.array[a];
+        DecStep* s = &plan[nplan++];
+        int nread, nwrite;
+
+        s->attr = (u8)a;
+        s->base = NULL;
+        s->stride = 0;
+        s->scale = gx_frac_scale[f->frac & 31];
+        s->to_pending = 0;
+        s->dstoff = 0;
+        s->op = DEC_NONE;
+        s->advance = 0;
+        s->idx = desc == GX_INDEX16 ? 2 : desc == GX_INDEX8 ? 1 : 0;
+        if (s->idx) {
+            if (!arr->base || !arr->stride) {
+                /* the old indexed() bailed out here without touching anything;
+                 * the index is still consumed by the caller */
+                s->advance = s->idx;
+                continue;
+            }
+            s->base = arr->base;
+            s->stride = arr->stride;
+            s->advance = s->idx;
+        }
+
+        if (a == GX_VA_POS) {
+            nread = f->cnt == GX_POS_XYZ ? 3 : 2;
+            nwrite = 3;
+            s->op = (u8)dec_op_of(f->type, nread, nwrite);
+            s->dstoff = 0;
+            if (!s->idx) {
+                s->advance = (u8)dec_bytes_of(f->type, nread);
+            }
+        } else if (a == GX_VA_NRM) {
+            nread = nwrite = 3;
+            s->op = (u8)dec_op_of(f->type, nread, nwrite);
+            if (sl.off_nrm >= 0) {
+                s->dstoff = (u16)sl.off_nrm;
+            } else {
+                s->to_pending = 1;
+                s->dstoff = (u16)offsetof(Pending, nrm);
+            }
+            if (!s->idx) {
+                s->advance = (u8)dec_bytes_of(f->type, 3);
+            }
+        } else if (a == GX_VA_CLR0 || a == GX_VA_CLR1) {
+            s->op = (u8)dec_clr_op_of(f->type);
+            if (a == GX_VA_CLR0 && !plan_clr_const) {
+                s->dstoff = (u16)sl.off_clr;
+            } else {
+                s->to_pending = 1;
+                s->dstoff = (u16)(offsetof(Pending, clr) + 4 * (a - GX_VA_CLR0));
+            }
+            if (!s->idx) {
+                s->advance = (u8)color_bytes(f->type);
+            }
+        } else if (a >= GX_VA_TEX0 && a <= GX_VA_TEX7) {
+            k = a - GX_VA_TEX0;
+            nread = f->cnt == GX_TEX_ST ? 2 : 1;
+            nwrite = 2;
+            s->op = (u8)dec_op_of(f->type, nread, nwrite);
+            supplied[k] = 1;
+            if (k < sl.ntex) {
+                s->dstoff = (u16)(sl.off_tex + 8 * k);
+                plan_back[plan_nback].dstoff = s->dstoff;
+                plan_back[plan_nback].k = (u8)k;
+                plan_nback++;
+            } else {
+                s->to_pending = 1;
+                s->dstoff = (u16)(offsetof(Pending, tex) + 8 * k);
+            }
+            if (!s->idx) {
+                s->advance = (u8)dec_bytes_of(f->type, nread);
+            }
+        } else {
+            /* Not an attribute this port decodes (GX_VA_PNMTXIDX and the
+             * per-vertex texture-matrix indices; the port warns about those
+             * in GXSetVtxDesc).  Without a width the list cannot be stepped,
+             * so the plan is unusable and the caller keeps the old path. */
+            plan_ok = 0;
+        }
+    }
+
+    for (k = 0; k < sl.ntex; k++) {
+        if (!supplied[k]) {
+            plan_fill[plan_nfill].dstoff = (u16)(sl.off_tex + 8 * k);
+            plan_fill[plan_nfill].s = pending.tex[k][0];
+            plan_fill[plan_nfill].t = pending.tex[k][1];
+            plan_nfill++;
+        }
     }
 }
 
@@ -1642,6 +1883,199 @@ static void dlc_store(const void* list, u32 nbytes, u32 lh, u32 sh, u32 total,
     }
 }
 
+/* The display-list cache needs the range of each array a list actually read.
+ * It is only reached from the tracked instantiation of the decode loop. */
+static void dl_track_index(u8 attr, u32 ix) {
+    if (dl_maxidx[attr] == 0xFFFFFFFFu) {
+        dl_maxidx[attr] = dl_minidx[attr] = ix;
+    } else if (ix > dl_maxidx[attr]) {
+        dl_maxidx[attr] = ix;
+    } else if (ix < dl_minidx[attr]) {
+        dl_minidx[attr] = ix;
+    }
+}
+
+/* Big-endian is the disc's byte order and the G4's, so a 16- or 32-bit
+ * component is a load; PowerPC does the unaligned case in hardware.  The
+ * portable spelling is for the little-endian development host and is the same
+ * arithmetic read_component() does there. */
+#if defined(__BIG_ENDIAN__) || (defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
+#define DEC_U16(q, i) ((f32) * (const u16*)((q) + (i) * 2))
+#define DEC_S16(q, i) ((f32) * (const s16*)((q) + (i) * 2))
+#define DEC_F32(q, i) (*(const f32*)((q) + (i) * 4))
+#else
+#define DEC_U16(q, i) ((f32)(u16)(((q)[(i) * 2] << 8) | (q)[(i) * 2 + 1]))
+#define DEC_S16(q, i) ((f32)(s16)(((q)[(i) * 2] << 8) | (q)[(i) * 2 + 1]))
+static f32 dec_f32_portable(const u8* q) {
+    union { f32 f; u32 u; } c;
+    c.u = ((u32)q[0] << 24) | ((u32)q[1] << 16) | ((u32)q[2] << 8) | q[3];
+    return c.f;
+}
+#define DEC_F32(q, i) dec_f32_portable((q) + (i) * 4)
+#endif
+#define DEC_U8(q, i) ((f32)(q)[i])
+#define DEC_S8(q, i) ((f32)(s8)(q)[i])
+
+/* The two shapes every non-colour op has: read n, write n or n+1 with the
+ * extra component zeroed, scaling by the VAT's fraction. */
+#define DEC_CASE_TYPE(TAG, RD)                                                           \
+    case DEC_##TAG##_2_3:                                                                \
+        dp[0] = RD(q, 0) * sc;                                                           \
+        dp[1] = RD(q, 1) * sc;                                                           \
+        dp[2] = 0.0f;                                                                    \
+        break;                                                                           \
+    case DEC_##TAG##_3_3:                                                                \
+        dp[0] = RD(q, 0) * sc;                                                           \
+        dp[1] = RD(q, 1) * sc;                                                           \
+        dp[2] = RD(q, 2) * sc;                                                           \
+        break;                                                                           \
+    case DEC_##TAG##_1_2:                                                                \
+        dp[0] = RD(q, 0) * sc;                                                           \
+        dp[1] = 0.0f;                                                                    \
+        break;                                                                           \
+    case DEC_##TAG##_2_2:                                                                \
+        dp[0] = RD(q, 0) * sc;                                                           \
+        dp[1] = RD(q, 1) * sc;                                                           \
+        break;
+
+/* f32 is the same four cases without the multiply: the VAT's fraction does not
+ * apply to a float component, and read_component() did not apply it either. */
+#define DEC_CASE_F32                                                                     \
+    case DEC_F32_2_3:                                                                    \
+        dp[0] = DEC_F32(q, 0);                                                           \
+        dp[1] = DEC_F32(q, 1);                                                           \
+        dp[2] = 0.0f;                                                                    \
+        break;                                                                           \
+    case DEC_F32_3_3:                                                                    \
+        dp[0] = DEC_F32(q, 0);                                                           \
+        dp[1] = DEC_F32(q, 1);                                                           \
+        dp[2] = DEC_F32(q, 2);                                                           \
+        break;                                                                           \
+    case DEC_F32_1_2:                                                                    \
+        dp[0] = DEC_F32(q, 0);                                                           \
+        dp[1] = 0.0f;                                                                    \
+        break;                                                                           \
+    case DEC_F32_2_2:                                                                    \
+        dp[0] = DEC_F32(q, 0);                                                           \
+        dp[1] = DEC_F32(q, 1);                                                           \
+        break;
+
+#define DEC_CASE_COLOUR                                                                  \
+    case DEC_CLR_RGBA8:                                                                  \
+        memcpy(d, q, 4);                                                                 \
+        break;                                                                           \
+    case DEC_CLR_RGBX8:                                                                  \
+    case DEC_CLR_RGB8:                                                                   \
+        d[0] = q[0];                                                                     \
+        d[1] = q[1];                                                                     \
+        d[2] = q[2];                                                                     \
+        d[3] = 255;                                                                      \
+        break;                                                                           \
+    case DEC_CLR_RGB565: {                                                               \
+        u32 c = (u32)((q[0] << 8) | q[1]);                                               \
+        d[0] = (u8)(((c >> 11) & 0x1F) * 255 / 31);                                      \
+        d[1] = (u8)(((c >> 5) & 0x3F) * 255 / 63);                                       \
+        d[2] = (u8)((c & 0x1F) * 255 / 31);                                              \
+        d[3] = 255;                                                                      \
+        break;                                                                           \
+    }                                                                                    \
+    case DEC_CLR_RGBA4: {                                                                \
+        u32 c = (u32)((q[0] << 8) | q[1]);                                               \
+        d[0] = (u8)(((c >> 12) & 0xF) * 17);                                             \
+        d[1] = (u8)(((c >> 8) & 0xF) * 17);                                              \
+        d[2] = (u8)(((c >> 4) & 0xF) * 17);                                              \
+        d[3] = (u8)((c & 0xF) * 17);                                                     \
+        break;                                                                           \
+    }                                                                                    \
+    case DEC_CLR_RGBA6: {                                                                \
+        u32 c = ((u32)q[0] << 16) | ((u32)q[1] << 8) | q[2];                             \
+        d[0] = (u8)(((c >> 18) & 0x3F) * 255 / 63);                                      \
+        d[1] = (u8)(((c >> 12) & 0x3F) * 255 / 63);                                      \
+        d[2] = (u8)(((c >> 6) & 0x3F) * 255 / 63);                                       \
+        d[3] = (u8)((c & 0x3F) * 255 / 63);                                              \
+        break;                                                                           \
+    }
+
+/* One primitive's vertices, straight from the list into the packed source
+ * layout.  TRACK is the display-list cache's index-range bookkeeping, which is
+ * off in the shipped build; instantiating the loop twice keeps it out of the
+ * hot one entirely rather than paying a branch per attribute for it. */
+#define DECODE_RUN(NAME, TRACK)                                                          \
+    static const u8* NAME(const u8* p, const u8* end, u32 count) {                       \
+        u32 i;                                                                           \
+        u8* lastv = NULL;                                                                \
+        for (i = 0; i < count && p < end; i++) {                                         \
+            const DecStep* st = plan;                                                    \
+            u8* v;                                                                       \
+            int j;                                                                       \
+            if (sv_first + (u32)nverts >= MAX_VERTS) {                                   \
+                gx_warn("GXBegin: more than 65536 vertices in one primitive; truncated");\
+                v = sink_vtx; /* decoded and dropped, so the list still steps */         \
+            } else {                                                                     \
+                v = src_buf + (size_t)(sv_first + (u32)nverts) * sl.stride;               \
+                nverts++;                                                                \
+                lastv = v;                                                               \
+            }                                                                            \
+            if (plan_clr_const) {                                                        \
+                *(u32*)(v + sl.off_clr) = plan_clr.u;                                    \
+            }                                                                            \
+            for (j = 0; j < plan_nfill; j++) {                                           \
+                f32* t = (f32*)(v + plan_fill[j].dstoff);                                \
+                t[0] = plan_fill[j].s;                                                   \
+                t[1] = plan_fill[j].t;                                                   \
+            }                                                                            \
+            for (j = nplan; j > 0; j--, st++) {                                          \
+                const u8* q;                                                             \
+                u8* d;                                                                   \
+                f32* dp;                                                                 \
+                f32 sc;                                                                  \
+                if (st->idx == 2) {                                                      \
+                    u32 ix = ((u32)p[0] << 8) | p[1];                                     \
+                    q = st->base + (size_t)ix * st->stride;                              \
+                    if (TRACK) {                                                         \
+                        dl_track_index(st->attr, ix);                                    \
+                    }                                                                    \
+                    p += 2;                                                              \
+                } else if (st->idx == 1) {                                               \
+                    u32 ix = p[0];                                                       \
+                    q = st->base + (size_t)ix * st->stride;                              \
+                    if (TRACK) {                                                         \
+                        dl_track_index(st->attr, ix);                                    \
+                    }                                                                    \
+                    p += 1;                                                              \
+                } else {                                                                 \
+                    q = p;                                                               \
+                    p += st->advance;                                                    \
+                }                                                                        \
+                d = st->to_pending ? (u8*)&pending + st->dstoff : v + st->dstoff;        \
+                dp = (f32*)d;                                                            \
+                sc = st->scale;                                                          \
+                switch (st->op) {                                                        \
+                    DEC_CASE_F32                                                         \
+                    DEC_CASE_TYPE(S16, DEC_S16)                                          \
+                    DEC_CASE_TYPE(U16, DEC_U16)                                          \
+                    DEC_CASE_TYPE(S8, DEC_S8)                                            \
+                    DEC_CASE_TYPE(U8, DEC_U8)                                            \
+                    DEC_CASE_COLOUR                                                      \
+                    default: break; /* DEC_NONE: a null array, as before */              \
+                }                                                                        \
+            }                                                                            \
+        }                                                                                \
+        /* Leave `pending` holding the last vertex's texcoords, which is what the        \
+         * old path left behind and what the next primitive's fill[] reads. */           \
+        if (lastv) {                                                                     \
+            for (i = 0; i < (u32)plan_nback; i++) {                                      \
+                const f32* t = (const f32*)(lastv + plan_back[i].dstoff);                \
+                pending.tex[plan_back[i].k][0] = t[0];                                   \
+                pending.tex[plan_back[i].k][1] = t[1];                                   \
+            }                                                                            \
+        }                                                                                \
+        return p;                                                                        \
+    }
+
+DECODE_RUN(decode_run, 0)
+DECODE_RUN(decode_run_tracked, 1)
+
 void GXCallDisplayList(const void* list, u32 nbytes) {
     const u8* p = (const u8*)list;
     const u8* end = p + nbytes;
@@ -1817,69 +2251,68 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
             caching = 0;
             break;
         }
-        for (i = 0; i < count && p < end; i++) {
-            for (k = 0; k < nactive; k++) {
-                int attr = active[k];
-                u8 desc = gx.vcd[attr];
-                const GXVatFmt* f = &gx.vat[vtxfmt][attr];
-                if (desc == GX_INDEX16) {
-                    u32 ix = rd_be16(p);
-                    if (caching) {
-                        if (dl_maxidx[attr] == 0xFFFFFFFFu) {
-                            dl_maxidx[attr] = dl_minidx[attr] = ix;
-                        } else if (ix > dl_maxidx[attr]) {
-                            dl_maxidx[attr] = ix;
-                        } else if (ix < dl_minidx[attr]) {
-                            dl_minidx[attr] = ix;
+        /* The per-primitive decode plan (see build_decode_plan above): no
+         * cursor, no call per attribute, no switch on the attribute id, and
+         * the component type resolved once instead of two or three times a
+         * vertex.  `plan_ok` is false only for a descriptor carrying an
+         * attribute the port does not decode, which it also warns about; the
+         * old cursor path is still what GXBegin/GXEnd immediate mode uses. */
+        if (plan_ok && !port_opt.olddecode) {
+            p = caching ? decode_run_tracked(p, end, count)
+                        : decode_run(p, end, count);
+        } else {
+            for (i = 0; i < count && p < end; i++) {
+                for (k = 0; k < nactive; k++) {
+                    int attr = active[k];
+                    u8 desc = gx.vcd[attr];
+                    const GXVatFmt* f = &gx.vat[vtxfmt][attr];
+                    if (desc == GX_INDEX16) {
+                        u32 ix = rd_be16(p);
+                        if (caching) {
+                            dl_track_index((u8)attr, ix);
                         }
-                    }
-                    indexed(ix);
-                    p += 2;
-                } else if (desc == GX_INDEX8) {
-                    u32 ix = *p;
-                    if (caching) {
-                        if (dl_maxidx[attr] == 0xFFFFFFFFu) {
-                            dl_maxidx[attr] = dl_minidx[attr] = ix;
-                        } else if (ix > dl_maxidx[attr]) {
-                            dl_maxidx[attr] = ix;
-                        } else if (ix < dl_minidx[attr]) {
-                            dl_minidx[attr] = ix;
+                        indexed(ix);
+                        p += 2;
+                    } else if (desc == GX_INDEX8) {
+                        u32 ix = *p;
+                        if (caching) {
+                            dl_track_index((u8)attr, ix);
                         }
-                    }
-                    indexed(ix);
-                    p += 1;
-                } else { /* GX_DIRECT */
-                    int comps, bytes;
-                    if (attr == GX_VA_CLR0 || attr == GX_VA_CLR1) {
-                        bytes = color_bytes(f->type);
-                        read_color(p, f->type, pending.clr[attr - GX_VA_CLR0]);
-                        p += bytes;
+                        indexed(ix);
+                        p += 1;
+                    } else { /* GX_DIRECT */
+                        int comps, bytes;
+                        if (attr == GX_VA_CLR0 || attr == GX_VA_CLR1) {
+                            bytes = color_bytes(f->type);
+                            read_color(p, f->type, pending.clr[attr - GX_VA_CLR0]);
+                            p += bytes;
+                            attr_written();
+                            continue;
+                        }
+                        comps = attr == GX_VA_POS   ? (f->cnt == GX_POS_XYZ ? 3 : 2)
+                                : attr == GX_VA_NRM ? 3
+                                                    : (f->cnt == GX_TEX_ST ? 2 : 1);
+                        bytes = f->type == GX_U8 || f->type == GX_S8     ? 1
+                                : f->type == GX_U16 || f->type == GX_S16 ? 2
+                                                                         : 4;
+                        if (attr == GX_VA_POS) {
+                            pending.pos[0] = read_component(p, f->type, f->frac, 0);
+                            pending.pos[1] = read_component(p, f->type, f->frac, 1);
+                            pending.pos[2] =
+                                comps == 3 ? read_component(p, f->type, f->frac, 2) : 0.0f;
+                        } else if (attr == GX_VA_NRM) {
+                            pending.nrm[0] = read_component(p, f->type, f->frac, 0);
+                            pending.nrm[1] = read_component(p, f->type, f->frac, 1);
+                            pending.nrm[2] = read_component(p, f->type, f->frac, 2);
+                        } else {
+                            int t = attr - GX_VA_TEX0;
+                            pending.tex[t][0] = read_component(p, f->type, f->frac, 0);
+                            pending.tex[t][1] =
+                                comps == 2 ? read_component(p, f->type, f->frac, 1) : 0.0f;
+                        }
+                        p += (size_t)comps * bytes;
                         attr_written();
-                        continue;
                     }
-                    comps = attr == GX_VA_POS   ? (f->cnt == GX_POS_XYZ ? 3 : 2)
-                            : attr == GX_VA_NRM ? 3
-                                                : (f->cnt == GX_TEX_ST ? 2 : 1);
-                    bytes = f->type == GX_U8 || f->type == GX_S8   ? 1
-                            : f->type == GX_U16 || f->type == GX_S16 ? 2
-                                                                     : 4;
-                    if (attr == GX_VA_POS) {
-                        pending.pos[0] = read_component(p, f->type, f->frac, 0);
-                        pending.pos[1] = read_component(p, f->type, f->frac, 1);
-                        pending.pos[2] =
-                            comps == 3 ? read_component(p, f->type, f->frac, 2) : 0.0f;
-                    } else if (attr == GX_VA_NRM) {
-                        pending.nrm[0] = read_component(p, f->type, f->frac, 0);
-                        pending.nrm[1] = read_component(p, f->type, f->frac, 1);
-                        pending.nrm[2] = read_component(p, f->type, f->frac, 2);
-                    } else {
-                        int t = attr - GX_VA_TEX0;
-                        pending.tex[t][0] = read_component(p, f->type, f->frac, 0);
-                        pending.tex[t][1] =
-                            comps == 2 ? read_component(p, f->type, f->frac, 1) : 0.0f;
-                    }
-                    p += (size_t)comps * bytes;
-                    attr_written();
                 }
             }
         }
