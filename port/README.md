@@ -247,10 +247,16 @@ crashed run does not leave a half-written save behind for the next one.
 | `docs/g4-glinfo.log` | the Radeon 9000's own GL strings, limits and 77 extensions |
 | `docs/g4-gxdemo.png` | the GX self-test as the real card draws it |
 | `docs/g4-audio-first-sound.log` | the audio path on the G4 with audio on: the M6 hand-off |
+| `docs/m8c-guardtest.log` | the loader and all five guard edges on the real G4 (PLAN.md §20.1) |
+| `docs/m8c-m425.log` | m425 played to its result screen on the G4, the M7/M8 crash gone (§20.2) |
+| `docs/m8c-board.log` | a three-turn board to its results, and the fault that is still there (§20.4) |
+| `docs/m8c-audio-ab.log` | the resampler A/B on the G4, both sides, and the default it decided (§20.5) |
+| `docs/m8c-soak.log` | the overnight soak: every minigame module entered and left |
 | `docs/screenshots/` | both logos, the title with its 3D layer, the five menu screens, and the board and its first minigame |
 | `ref/movies/menu-walk-port.play` | the reference menu walk, rebased on the port's own clock |
 | `ref/movies/minigame-select.play` | the same walk, but taking the Mini-Game row of the mode ring |
 | `ref/movies/board-start.play` | past the board settings into Toad's Midway Madness and its first minigame |
+| `ref/movies/board-start-com4.play` | the same, for `--com4`: without the four late STARTs, which under four CPU players open the pause menu instead of the instruction screen (PLAN.md §20.6) |
 | `ref/movies/board-start.txt` | the same walk on the Dolphin side, for `tools/mkgecko.py` |
 | `tests/mtx_test.c` | the matrix library against itself: `make -C port TARGET=host mtxtest` |
 | `tools/ubaudit.sh` | recompile the mirror with `-Waggressive-loop-optimizations` and `-Warray-bounds`, which the build's `-w` hides. A struct array declared one element short lets GCC delete a loop's exit test; that was the m425dll crash, and there are 39 more sites of the same shape (PLAN.md §18.3) |

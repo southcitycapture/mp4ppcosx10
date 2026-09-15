@@ -5145,3 +5145,189 @@ been entered on hardware since M7. The list of runs that would fix that is now
 a file rather than a paragraph — `port/docs/g4-witness.md`, §19.6 below — and
 the first line of it is `tailscale status | grep littlejelly`, because two
 sessions have now been planned around a lab that was not reachable.
+
+## 20. M8c log — the witness session: six of the seven runs, and two new bugs *(2026-09-14)*
+
+The G4 was reachable. `port/docs/g4-witness.md` was the script and this is what
+happened when it was followed, in its order. Every claim below has a log or a
+screenshot under `port/docs/`, which is the point of the session: §18.7's
+evidence column was five rows of **not tested** and is now five rows of files.
+
+Nothing here is a milestone's worth of new work. What it is, is the first time
+in three sessions that the port ran on the machine it is for, and three of the
+things that went wrong went wrong *before* any game code ran, which is its own
+lesson about unattended runbooks.
+
+### 20.1 The bundle, the loader and the guards
+
+`--reltest` on the G4: 198/198 load+unload cycles clean, 0 failed, 0 missing an
+entry point, 0 still resident after `dlclose`. `--guardtest`, all five edges:
+each writes one byte past the edge, each takes signal 10, and the handler names
+the mapping and the offset into it —
+
+```
+*** port: fault: signal 11 at address 0x3820000
+    region  0 bytes into the guard above MEM1 [0x3820000, 0x3830000)
+            this is a guard page: MEM1 ran off its top end.
+```
+
+§18.7's first row said "host"; it now says hardware. `port/docs/m8c-guardtest.log`.
+
+**Two things had to be fixed to get that far, and neither was in the game.**
+
+`--play board-start.play` could not open its script: the scripts live in
+`port/ref/movies` on the Mac and the console runner's working directory on the
+G4 is the home directory. The run does not fail when the script is missing — it
+boots, draws the title screen and waits for a START that never comes, which
+looks exactly like a hang, and cost an hour before anyone read line 14 of the
+log. `make_bundle.sh` now ships the scripts as `Contents/Resources/movies` and
+`pad_play.c` looks there for any bare name.
+
+Then, an hour later, the same bundle would not start at all:
+
+```
+dyld: Library not loaded: /work/panther-sdl2/build-tiger-joy/prefix/lib/libSDL2-2.0.0.dylib
+```
+
+`make_bundle.sh` reads the SDL2 install name with `otool -L` and rewrites it to
+`@executable_path`. `otool` is an Xcode tool, a licence prompt had become
+pending on the Mac between the two installs, and a blocked `otool` prints its
+complaint on stderr and *nothing* on stdout — so the install name came back
+empty, the whole copy-and-rewrite block was skipped without a word, and the
+bundle shipped pointing at a Docker mount. It reads the name out of the load
+commands itself now, and says which route it took.
+
+### 20.2 m425 plays
+
+`--minigame m425 --com4 --rtc dolphin --freshcard --turbo`, one turn of Toad's
+Midway Madness into the parked roulette:
+
+```
+port> status f10980   m425dll    board 0 turn 1/10 ...
+port> status f14100   resultdll  board 0 turn 1/10 ...
+```
+
+The module is entered, four CPU players play it for some 3,600 frames, it hands
+off to `resultdll`, and it unloads through the ordinary `omDLLEnd`/Unlink path.
+No `port: fault:` anywhere in the run, and the guard pages that would have named
+one were proved live on the same machine an hour earlier. §18.2's correction of
+`unk_3C[6]` was proved at the level of the instructions; it is now proved at the
+level of the minigame. `port/docs/m8c-m425.log`,
+`port/docs/screenshots/mp4-minigame-m425.png`.
+
+### 20.3 The coin bonus: 553 coins out of a stack slot
+
+The status line is what found it, in both of the first two board runs: a player
+left every minigame result about 550 coins richer than the minigame was worth.
+Yoshi 13 → 566 in the m425 run, Peach 10 → 563 in the three-turn board. The same
+553 both times, and a different player each time, which is a stale stack slot
+read through a random index and not a game rule.
+
+`ResultCoinNumGet` fills `s16 coinNum[5]` — four players and a rounding
+remainder in `[4]` — and fills `[4]` only for minigame type 4, the battle games.
+For every other type the zero is inside `#ifdef NON_MATCHING`, because writing
+it does not match the original object. `ResultCoinAdd` then does
+
+```c
+coinNum[resultBonusPlayer] += coinNum[4];   /* resultBonusPlayer = frandmod(4) */
+```
+
+Under MWCC the slot held zero and the game shipped. Under GCC on the G4 it holds
+553. The fix is the decomp's own line, taken out of the `#ifdef` by
+`port/patches.txt`, and it goes on the upstream list beside `C_MTXIdentity` and
+`C_VECScale` (§15.1, §15.2) — three bugs now where the decompilation is correct
+about the original object and wrong about the program.
+
+### 20.4 A board to its results, and the end-of-game crash is still there
+
+Three turns of Toad's Midway Madness with four CPU players: the roulette dealt
+m403 and m408, m428 came up on the last turn, a star was bought, and then
+`mstory3dll` — the results. **The results sequence runs.**
+`port/docs/screenshots/mp4-board-results.png` is the Party Mode stage with the
+four characters on it and Toad presenting, a screen no session has seen. Then:
+
+```
+port> frame 41669: overlay 78 (next -1) event 1
+*** port: fault: signal 11 at address 0xfeb6feb6
+    in gx_tex_bind <- gx_tev_apply <- GXEnd <- HuSprDisp <- HuSprExec
+```
+
+which is `result_seq.c:602`'s tear-down and rebuild, exactly the moment §18.4
+nominated, one frame after it.
+
+So §18.4 was half right, and it is the half it warned about: the sprite guard
+did not fire and the crash still happened, which its own text says means the
+reading is incomplete. It is not *wrong* — `0xfeb6feb6` is `0xfeb6` twice, a
+pixel pair, which is the "grey pixel in a recycled block" §18.4 predicted for
+`0x88888888` — but the block passed the guard, because a recycled block is
+still inside a heap.
+
+Two changes came out of that, and the difference between them matters:
+
+- **A fix.** `HuSprGrpCopy` copies the whole `HUSPRITE` over the sprite
+  `HuSprCreate` just made, `bg` included, and `HuSprCreate` locked only `data`.
+  Two sprites then shared one background anim with a use count of one, and the
+  first kill freed it under the second. §18.4 found this by reading and left it
+  for want of a test; the crash is in the `bg` branch of `HuSprDisp`.
+- **An audit, twice corrected.** Reading the ANIMDATA the guard is about to draw
+  through — counts, `bank`, `pat`, `bmp`, and the same for `bg` — and dropping
+  what fails it dropped nine live board-HUD sprites, first for a bitmap count
+  over 4,096 and then for the counts at all. A guard that deletes graphics to
+  prevent a crash is the worse bug. The audit now **reports and does not drop**:
+  the first 32 failures are logged with the name of the test that failed, and
+  the sprite is drawn anyway. What drops is what M8 dropped and nothing more.
+
+The soak is what says whether the `bg` lock was the whole of it.
+
+### 20.5 The resampler A/B, and a default changed
+
+§18.5 asked for it, §19.5 did not write the bench that was meant to make it
+cheaper, and it takes twelve minutes. The same 18,000-frame walk twice, four CPU
+players, `--rtc dolphin --freshcard --turbo --headless`, differing only by the
+resampler:
+
+| run | aud mean | median | p95 | worst | clickstat |
+|---|---|---|---|---|---|
+| 4-tap Catmull-Rom | 2.00 ms | 1.99 | 3.56 | 28.30 | 36,328 steps |
+| linear | **1.75 ms** | 1.79 | 3.08 | **10.92** | **33,002 steps** |
+
+Both logs are 1,441 lines and both deal mg 401 at frame 1 and mg 412 at frame
+10,501, which is a stronger "same walk" check than the last-status-line one the
+script prints.
+
+Linear is cheaper on every column — 12% on the mean, and a worst frame of 10.92
+ms against 28.30 — and it *clicks less*, which is the one thing the 4-tap
+existed to buy. §18.5 made this decision in advance for exactly this outcome, so
+it is recorded rather than re-argued: **linear is the default and the 4-tap is
+`--resample4`.** `--resample1` stays so an A/B can name both sides.
+`port/docs/m8c-audio-ab.log`.
+
+### 20.6 Tooling: three runbook-shaped things that did not exist
+
+| flag / tool | what |
+|---|---|
+| `--minigame a,b,c,d` | park the roulette on each in turn, moving on when the one in force has been played, and release it when the list is done. Four corrected modules witnessed one command each is four boots and four first turns, about two hours on this machine; in one board it is one. `--soak --minigame a,b,c,d` means "these four first, then whatever you like" |
+| `--resample4` | the 4-tap, now that linear is the default |
+| `ref/movies/board-start-com4.play` | board-start.play without the four late STARTs. Under `--com4` the minigame instruction screen dismisses itself, so those STARTs land on the board and open the *pause menu*, and the A metronome — which runs to frame 29,960 — then walks into "Please choose which character's settings to change" and holds it there. The first witness board lost thirteen minutes of game time to it, and the watchdog never called it stuck, because that screen's cursor is alive |
+| `audio_ab.sh`, on the G4 | it had never worked. `g4 run` hands the request to the console runner and returns in four seconds, so the script launched the 4-tap side, returned, and launched the linear side, whose `killall isle` killed the run it was to be compared against; both logs held the twelve lines `g4 run` happened to tail. It now polls for the runner's `EXITCODE` line and pulls the whole log, and passes `--status`, without which its own "did both runs reach the same place" check printed two blank lines |
+| `make_bundle.sh` | ships `port/ref/movies`, and reads the SDL2 install name without `otool` |
+
+### 20.7 What M9 needs
+
+1. **The end-of-game crash, with the audit's own evidence.** The soak runs it
+   over and over. If a fault comes with an audit line naming the same sprite a
+   frame earlier, the block and the test that spotted it are both named, and
+   the question becomes which module freed it. If the `bg` lock cured it, the
+   soak says that instead, and §18.4 closes.
+2. **Whether the audit is right about an ANIMDATA at all.** It has been wrong
+   twice. Audit lines on a healthy board with no fault mean the reading of the
+   structure is wrong, not the sprite.
+3. **The four corrected modules still owe three screenshots.** m428 has been
+   played (§20.4, and `decomp-struct-notes.md` §4 is updated); m453, m443 and
+   m449 are the first three names in the soak's `--minigame` list and the
+   morning's log says whether they played.
+4. **Everything M8 listed and this session did not reach**: Nightmare CPU, the
+   enhancements (widescreen, internal resolution), THP, the launcher slot
+   beside the two Snowboard Kids apps, bring-your-own-disc, the `.dmg`.
+5. **The m428 screenshot has a white 3D scene behind a correct sprite HUD.**
+   Caught a frame or two after entry and probably nothing; worth one look.
