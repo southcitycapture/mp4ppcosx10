@@ -251,6 +251,7 @@ crashed run does not leave a half-written save behind for the next one.
 | `docs/m8c-m425.log` | m425 played to its result screen on the G4, the M7/M8 crash gone (§20.2) |
 | `docs/m8c-board.log` | a three-turn board to its results, and the fault that is still there (§20.4) |
 | `docs/m8c-audio-ab.log` | the resampler A/B on the G4, both sides, and the default it decided (§20.5) |
+| `docs/m8c-soak-run1.log` | the soak's first run: m453dll asks the DVD heap for 396 KB of a free 174 and the game panics (PLAN.md §20.8) |
 | `docs/m8c-soak.log` | the overnight soak: every minigame module entered and left |
 | `docs/screenshots/` | both logos, the title with its 3D layer, the five menu screens, and the board and its first minigame |
 | `ref/movies/menu-walk-port.play` | the reference menu walk, rebased on the port's own clock |

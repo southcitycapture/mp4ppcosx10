@@ -1,0 +1,898 @@
+Mario Party 4 -- native port, milestone M2a
+port> DVD: disc image /Users/zach/MarioParty4/mp4.nkit.iso, 357 files in the FST
+port> GL: ATI Radeon 9000 OpenGL Engine / 1.3 ATI-1.5.28, 6 texture units
+port> GL feature set used: combine3 1, crossbar 1, s3tc 1, blend_subtract 1, depth_texture 0, 6 units
+port> audio: 32000 Hz, 2 ch, 512-frame buffer, 64 KB ring (512 ms)
+port> --minigame m453,m443,m428,m449: parking the roulette on m453dll (mg 453, type 7), then the rest of the list, one a turn
+port> --com4: all four players are CPU; instDll will dismiss its own instruction screen (src/REL/instDll/main.c:294)
+port> --soak: playing itself; every minigame module entered and left is logged
+port> entering the game's own main()
+
+port> OSInit: MEM1 24 MB [0x2020000, 0x3820000), ARAM 16 MB, bus 162 MHz
+port> OSInit: RTC pinned to 1041472800 (2003-01-02T02:00:00Z), OSGetTime origin 3838914000000000 ticks
+port> DVDInit
+port> VIInit
+port> PADInit: no pad found; controller 1 = keyboard
+port> PADInit: rumble not available
+port> PADInit: controllers 2-4 unplugged (reference config: CPU players)
+port> pad: --play: board-start-com4.play -> /Users/zach/isle.app/Contents/Resources/movies/board-start-com4.play
+port> pad: --play board-start-com4.play: 460 directives, 0 marks
+port> OSCreateHeap 0: 0x214c000..0x3820000 (23375 KB)
+port> VIConfigure: 640x480 xfb, 640x480 efb, tv mode 0
+port> GXInit: FIFO 0x214c00c, 1048576 bytes (the port keeps no FIFO; the write-gather writers are ordinary calls under TARGET_PC)
+port> frame 1: overlay 0 (next 0) event 0
+port> roulette: frame 1 dealt mg 401 (m401dll, type 0)  -- overridden by --minigame
+port> OSCreateThread 0x199430 func 0x41914 (the soft-reset watcher; polled once per retrace, not run on a thread)
+HuMem> left memory space 2383KB(2441120)
+port> ARInit: 16 MB of ARAM
+port> MusyX SAL: 32000 Hz, 4 x 640-byte AI buffers (20 ms), 32-sample sub-frame
+port> musyx_mix: CPU mixer up, 50 voices, 1 studios, 32000 Hz
+port> MusyX SAL: mixing started
+port> musyx_aram: region [0x000000, 0x800000) zero_buf [0x000000, 0x000500) sample heap starts at 0x000500
+port> CARD: slot A = /Users/zach/soak.raw (--freshcard: formatted, 59 free blocks)
+DLL DBG OUT
+objman>Call New Ovl 1(1)
+port> frame 2: overlay -1 (next 1) event 0
+++++++++++++++++++++ Start New OVL 1 (EVT:0 STAT:0x00000000) ++++++++++++++++++
+objman>Used Memory Size:000121e0
+objman>Used Memory Cnt:2
+objman>Init esp
+objman>Call objectsetup
+DLLStart 1 0
+Search:dll/bootdll.rel
+objdll>Link DLL:dll/bootdll.rel
+Rest Memory 580000
+port> REL bundles: 99 in /Users/zach/isle.app/Contents/MacOS/rels
+===== DLL Module Info dump ====
+                   ID:0x00000001
+             LinkPrev:0x00000000
+             LinkNext:0x00000000
+          Section num:14
+Section info tbl ofst:0x00000048
+           nameOffset:0x00000000
+             nameSize:47
+              version:0x00000002
+===============================
+==== DLL Module Header dump ====
+          bss Size:0x0000005c
+        rel Offset:0x00005c9d
+        imp Offset:0x00007a4d
+    prolog Section:1
+    epilog Section:1
+unresolved Section:0
+       prolog func:0x00000000
+       epilog func:0x00000054
+   unresolved func:0x00000000
+================================
+objdll>LinkOK 0225e578 00ae4360
+objdll> dll/bootdll.rel prolog start
+******* Boot ObjectSetup *********
+objman>InitObjMan start
+objman>InitObjMan end
+objdll> dll/bootdll.rel prolog end
+objman>ObjectSetup end
+port> frame 3: overlay 1 (next -1) event 0
+DLL DBG OUT
+Rest Memory 57d540
+ARAM Trans 808000
+Rest Memory 55d020
+ARAM Trans 80aaa0
+Rest Memory 506400
+ARAM Trans 82da60
+Rest Memory 564f40
+ARAM Trans 8a7640
+Rest Memory 5395a0
+data num 74000b
+Rest Memory 1f08c0
+port> status f60      bootdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.11 ms  0.0 fps
+port> status f120     bootdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.11 ms  405.1 fps
+port> status f180     bootdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.11 ms  662.2 fps
+port> status f240     bootdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.11 ms  601.9 fps
+port> status f300     bootdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.11 ms  267.4 fps
+port> status f360     bootdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.11 ms  388.3 fps
+port> status f420     bootdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.11 ms  660.5 fps
+port> status f480     bootdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.11 ms  661.1 fps
+port> status f540     bootdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.11 ms  610.9 fps
+0
+GroupSet 0
+***********GroupSet Error 0
+port> status f600     bootdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.11 ms  467.8 fps
+port> THP: movie/opmov_a00.thp skipped -- movie decode is M8 (see port/src/dvd/thp_stub.c)
+port> HuSprBegin: group 3 slot 0 names sprite 7, which is not a live sprite (data 0x0, attr 0010, data NULL) -- dropped [1/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x29264d0 fails counts -- drawn anyway [1/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x29264d0 fails counts -- drawn anyway [2/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x29264d0 fails counts -- drawn anyway [3/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x29264d0 fails counts -- drawn anyway [4/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x29264d0 fails counts -- drawn anyway [5/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x29264d0 fails counts -- drawn anyway [6/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x29264d0 fails counts -- drawn anyway [7/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x29264d0 fails counts -- drawn anyway [8/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x29264d0 fails counts -- drawn anyway [9/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x29264d0 fails counts -- drawn anyway [10/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x29264d0 fails counts -- drawn anyway [11/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x29264d0 fails counts -- drawn anyway [12/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x29264d0 fails counts -- drawn anyway [13/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x29264d0 fails counts -- drawn anyway [14/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x29264d0 fails counts -- drawn anyway [15/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x29264d0 fails counts -- drawn anyway [16/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x29264d0 fails counts -- drawn anyway [17/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x29264d0 fails counts -- drawn anyway [18/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x29264d0 fails counts -- drawn anyway [19/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x29264d0 fails counts -- drawn anyway [20/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x29264d0 fails counts -- drawn anyway [21/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x29264d0 fails counts -- drawn anyway [22/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x29264d0 fails counts -- drawn anyway [23/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x29264d0 fails counts -- drawn anyway [24/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x29264d0 fails counts -- drawn anyway [25/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x29264d0 fails counts -- drawn anyway [26/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x29264d0 fails counts -- drawn anyway [27/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x29264d0 fails counts -- drawn anyway [28/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x29264d0 fails counts -- drawn anyway [29/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x29264d0 fails counts -- drawn anyway [30/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x29264d0 fails counts -- drawn anyway [31/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x29264d0 fails counts -- drawn anyway [32/32]
+port> status f660     bootdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.11 ms  617.8 fps
+port> status f720     bootdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.11 ms  765.4 fps
+>>>>>>>>MSM_SE_SEL_01 0
+>>>>>>>>SE Num 0
+port> audio: first non-silent sample at retrace 726 (12.03 s of mixed audio)
+port> status f780     bootdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.36 ms  7.0 fps
+port> status f840     bootdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.39 ms  6.9 fps
+port> musyx_mix: MEM1 sample id 1074 compType 0 at 0x2c9fb50 len 12059824: 00 00 00 0f 0f 00 00 0f 00 00 00 00 00 00 0f 00
+port> musyx_mix: MEM1 sample id 1073 compType 0 at 0x2c98890 len 12089200: 00 00 00 00 0f 00 00 0f 00 00 00 00 00 00 00 00
+port> musyx_mix: MEM1 sample id 1076 compType 0 at 0x2cc0430 len 11926480: 34 95 2f 1f ff 02 1f f0 33 20 f0 43 fa e7 71 be
+port> musyx_mix: MEM1 sample id 1075 compType 0 at 0x2ca6e10 len 12030448: 73 7e f0 d2 0e 01 13 fe 12 f3 20 26 1b e6 49 b6
+objman>Call New Ovl 74(1)
+OvlKill 1
+objdll>omDLLNumEnd 1 1
+Search:dll/bootdll.rel
++++++++++++ Find0: dll/bootdll.rel
+objdll>omDLLEnd 0 1
+objdll>End DLL:dll/bootdll.rel
+odjdll>Unlink DLL:dll/bootdll.rel
+objdll>Unlink DLL epilog
+objdll>Unlink DLL epilog finish
+objdll>End DLL finish
+port> frame 877: overlay -1 (next 74) event 0
+objman>Destory ObjMan
+++++++++++++++++++++ Start New OVL 74 (EVT:0 STAT:0x00000000) ++++++++++++++++++
+objman>Used Memory Size:00012b80
+objman>Used Memory Cnt:7
+objman>Init esp
+objman>Call objectsetup
+############CharGrpSet
+Del Group OK
+port> musyx_aram: aramRemoveData(22208) with an empty sample heap.  Expected: hwSaveSample only stores on the Dolphin target, so msm owns sample upload and MusyX only ever frees.  Clamped; further occurrences are counted, not printed.
+SOUND ##########################
+0
+GroupSet 0
+***********GroupSet Error 0
+Change AUX 0,1
+##########################
+DLLStart 74 0
+Search:dll/modeseldll.rel
+objdll>Link DLL:dll/modeseldll.rel
+Rest Memory 580000
+===== DLL Module Info dump ====
+                   ID:0x00000001
+             LinkPrev:0x00000000
+             LinkNext:0x00000000
+          Section num:15
+Section info tbl ofst:0x00000048
+           nameOffset:0x00000000
+             nameSize:53
+              version:0x00000002
+===============================
+==== DLL Module Header dump ====
+          bss Size:0x000001ca
+        rel Offset:0x0000d154
+        imp Offset:0x0001664c
+    prolog Section:1
+    epilog Section:1
+unresolved Section:0
+       prolog func:0x00000000
+       epilog func:0x00000054
+   unresolved func:0x00000000
+================================
+objdll>LinkOK 0225e578 00ab4140
+objdll> dll/modeseldll.rel prolog start
+******* MS ObjectSetup *********
+objman>InitObjMan start
+objman>InitObjMan end
+Rest Memory 5395a0
+objdll> dll/modeseldll.rel prolog end
+objman>ObjectSetup end
+port> frame 879: overlay 74 (next -1) event 0
+DLL DBG OUT
+data num 630000
+Rest Memory 441ce0
+port> status f900     modeseldll   board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.82 ms  9.4 fps
+port> status f960     modeseldll   board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.20 ms  227.7 fps
+port> status f1020    modeseldll   board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.61 ms  229.7 fps
+port> status f1080    modeseldll   board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.77 ms  220.3 fps
+port> status f1140    modeseldll   board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.83 ms  217.7 fps
+port> status f1200    modeseldll   board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.88 ms  219.1 fps
+Init
+port> status f1260    modeseldll   board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.72 ms  59.7 fps
+ARAM data num 86001f
+port> status f1320    modeseldll   board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.55 ms  63.4 fps
+port> CARD: created "MARIPA4BOX0", 16384 bytes (2 blocks)
+port> status f1380    modeseldll   board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.06 ms  59.3 fps
+port> THP: movie/opmov_s00.thp skipped -- movie decode is M8 (see port/src/dvd/thp_stub.c)
+port> HuSprBegin: group 1 slot 0 names sprite 12, which is not a live sprite (data 0x0, attr 0010, data NULL) -- dropped [2/32]
+port> status f1440    modeseldll   board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.68 ms  55.7 fps
+port> status f1500    modeseldll   board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.06 ms  61.5 fps
+port> status f1560    modeseldll   board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.65 ms  63.1 fps
+port> status f1620    modeseldll   board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.15 ms  59.7 fps
+port> status f1680    modeseldll   board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.93 ms  57.0 fps
+port> status f1740    modeseldll   board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.98 ms  58.6 fps
+port> THP: movie/opmov_c00.thp skipped -- movie decode is M8 (see port/src/dvd/thp_stub.c)
+port> HuSprBegin: group 2 slot 0 names sprite 14, which is not a live sprite (data 0x0, attr 0010, data NULL) -- dropped [3/32]
+port> status f1800    modeseldll   board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.89 ms  59.3 fps
+port> status f1860    modeseldll   board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.70 ms  61.6 fps
+port> status f1920    modeseldll   board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.66 ms  61.5 fps
+objman>Call New Ovl 70(1)
+OvlKill 1
+objdll>omDLLNumEnd 74 1
+Search:dll/modeseldll.rel
++++++++++++ Find0: dll/modeseldll.rel
+objdll>omDLLEnd 0 1
+objdll>End DLL:dll/modeseldll.rel
+odjdll>Unlink DLL:dll/modeseldll.rel
+objdll>Unlink DLL epilog
+objdll>Unlink DLL epilog finish
+objdll>End DLL finish
+port> frame 1960: overlay -1 (next 70) event 0
+objman>Destory ObjMan
+++++++++++++++++++++ Start New OVL 70 (EVT:0 STAT:0x00000000) ++++++++++++++++++
+objman>Used Memory Size:00012b80
+objman>Used Memory Cnt:7
+objman>Init esp
+objman>Call objectsetup
+DLLStart 70 0
+Search:dll/mentdll.rel
+objdll>Link DLL:dll/mentdll.rel
+Rest Memory 580000
+===== DLL Module Info dump ====
+                   ID:0x00000001
+             LinkPrev:0x00000000
+             LinkNext:0x00000000
+          Section num:15
+Section info tbl ofst:0x00000048
+           nameOffset:0x00000000
+             nameSize:47
+              version:0x00000002
+===============================
+==== DLL Module Header dump ====
+          bss Size:0x000036c4
+        rel Offset:0x000246f8
+        imp Offset:0x00036a90
+    prolog Section:1
+    epilog Section:1
+unresolved Section:0
+       prolog func:0x000000a4
+       epilog func:0x000000f8
+   unresolved func:0x00000000
+================================
+objdll>LinkOK 022841f8 00ad6830
+objdll> dll/mentdll.rel prolog start
+objman>InitObjMan start
+objman>InitObjMan end
+Rest Memory 5395a0
+0
+GroupSet 7
+***********GroupSet Error 0
+objdll> dll/mentdll.rel prolog end
+objman>ObjectSetup end
+port> frame 1961: overlay 70 (next -1) event 0
+DLL DBG OUT
+data num 600008
+Rest Memory 1ad6c0
+ARAM data num 120006
+port> status f1980    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.30 ms  30.6 fps
+########### ME_MainProcFunc000
+port> status f2040    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.18 ms  25.0 fps
+port> status f2100    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.39 ms  24.8 fps
+port> status f2160    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.39 ms  12.4 fps
+port> status f2220    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.39 ms  10.2 fps
+port> status f2280    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.39 ms  10.4 fps
+port> status f2340    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.39 ms  10.7 fps
+port> status f2400    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.40 ms  10.7 fps
+port> status f2460    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.87 ms  10.5 fps
+port> status f2520    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.54 ms  10.4 fps
+port> status f2580    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.93 ms  10.4 fps
+port> status f2640    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.69 ms  10.3 fps
+port> status f2700    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.06 ms  10.6 fps
+port> status f2760    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.10 ms  10.4 fps
+port> status f2820    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.16 ms  10.4 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+port> status f2880    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.26 ms  10.5 fps
+port> status f2940    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.25 ms  10.7 fps
+port> status f3000    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.26 ms  10.6 fps
+#########SE Entry Error<SE 54:ErrorNo -110>
+port> status f3060    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.18 ms  10.6 fps
+#########SE Entry Error<SE 109:ErrorNo -110>
+#########SE Entry Error<SE 57:ErrorNo -110>
+port> status f3120    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.72 ms  10.7 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f3180    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.91 ms  10.6 fps
+#########SE Entry Error<SE 110:ErrorNo -110>
+port> status f3240    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.04 ms  10.5 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+port> status f3300    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.38 ms  10.2 fps
+#########SE Entry Error<SE 111:ErrorNo -110>
+port> status f3360    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.12 ms  10.5 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+port> status f3420    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.16 ms  10.3 fps
+#########SE Entry Error<SE 112:ErrorNo -110>
+port> status f3480    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.48 ms  10.2 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+port> status f3540    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.96 ms  10.4 fps
+port> status f3600    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.65 ms  10.4 fps
+port> status f3660    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.29 ms  10.5 fps
+#########SE Entry Error<SE 57:ErrorNo -110>
+port> status f3720    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.06 ms  10.5 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+#########SE Entry Error<SE 83:ErrorNo -110>
+#########SE Entry Error<SE 54:ErrorNo -110>
+port> status f3780    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.99 ms  10.3 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+port> status f3840    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.33 ms  10.4 fps
+#########SE Entry Error<SE 57:ErrorNo -110>
+#########SE Entry Error<SE 84:ErrorNo -110>
+port> status f3900    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.53 ms  10.7 fps
+#########SE Entry Error<SE 84:ErrorNo -110>
+#########SE Entry Error<SE 84:ErrorNo -110>
+port> status f3960    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.51 ms  10.5 fps
+#########SE Entry Error<SE 84:ErrorNo -110>
+port> status f4020    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.65 ms  10.3 fps
+port> status f4080    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.05 ms  10.5 fps
+port> status f4140    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.34 ms  10.4 fps
+#########SE Entry Error<SE 54:ErrorNo -110>
+port> status f4200    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.81 ms  10.3 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f4260    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.47 ms  10.2 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+port> status f4320    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.71 ms  10.3 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+port> status f4380    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.94 ms  10.3 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+port> status f4440    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.90 ms  10.3 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+port> status f4500    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.43 ms  10.4 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+#########SE Entry Error<SE 54:ErrorNo -110>
+port> status f4560    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.44 ms  10.5 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+port> status f4620    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.70 ms  10.4 fps
+port> status f4680    mentdll      board 0 turn 0/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.46 ms  10.3 fps
+#########SE Entry Error<SE 84:ErrorNo -110>
+port> status f4740    mentdll      board 0 turn 1/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.31 ms  12.7 fps
+#########SE Entry Error<SE 84:ErrorNo -110>
+Rest Memory 3f5780
+Rest Memory 420c20
+#########SE Entry Error<SE 84:ErrorNo -110>
+port> status f4800    mentdll      board 0 turn 1/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.66 ms  18.5 fps
+#########SE Entry Error<SE 55:ErrorNo -110>
+port> status f4860    mentdll      board 0 turn 1/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.31 ms  18.9 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f4920    mentdll      board 0 turn 1/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.74 ms  18.7 fps
+#########SE Entry Error<SE 117:ErrorNo -110>
+#########SE Entry Error<SE 118:ErrorNo -110>
+#########SE Entry Error<SE 119:ErrorNo -110>
+#########SE Entry Error<SE 120:ErrorNo -110>
+#########SE Entry Error<SE 125:ErrorNo -110>
+port> status f4980    mentdll      board 0 turn 1/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.15 ms  18.6 fps
+#########SE Entry Error<SE 34:ErrorNo -110>
+port> status f5040    mentdll      board 0 turn 1/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.13 ms  18.7 fps
+port> status f5100    mentdll      board 0 turn 1/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.06 ms  18.8 fps
+Rest Memory 2e2fa0
+ARAM Trans a4cf40
+Rest Memory 2da580
+ARAM Trans b8aba0
+Rest Memory 2ed200
+ARAM Trans cd1220
+Rest Memory 2c7a80
+ARAM Trans e04c20
+objman>Call New Ovl 89(1)
+OvlKill 1
+objdll>omDLLNumEnd 70 1
+Search:dll/mentdll.rel
++++++++++++ Find0: dll/mentdll.rel
+objdll>omDLLEnd 0 1
+objdll>End DLL:dll/mentdll.rel
+odjdll>Unlink DLL:dll/mentdll.rel
+objdll>Unlink DLL epilog
+objdll>Unlink DLL epilog finish
+objdll>End DLL finish
+port> frame 5101: overlay -1 (next 89) event 0
+objman>Destory ObjMan
+++++++++++++++++++++ Start New OVL 89 (EVT:0 STAT:0x00000000) ++++++++++++++++++
+objman>Used Memory Size:000212e0
+objman>Used Memory Cnt:15
+objman>Init esp
+objman>Call objectsetup
+SOUND ##########################
+0
+GroupSet 9
+***********GroupSet Error 0
+##########################
+DLLStart 89 0
+Search:dll/w01dll.rel
+objdll>Link DLL:dll/w01dll.rel
+Rest Memory 420c20
+===== DLL Module Info dump ====
+                   ID:0x00000001
+             LinkPrev:0x00000000
+             LinkNext:0x00000000
+          Section num:16
+Section info tbl ofst:0x00000048
+           nameOffset:0x00000000
+             nameSize:45
+              version:0x00000002
+===============================
+==== DLL Module Header dump ====
+          bss Size:0x0000081c
+        rel Offset:0x00012e34
+        imp Offset:0x0001f174
+    prolog Section:1
+    epilog Section:1
+unresolved Section:0
+       prolog func:0x00000030
+       epilog func:0x00000094
+   unresolved func:0x00000000
+================================
+objdll>LinkOK 0225e578 0a308dd0
+objdll> dll/w01dll.rel prolog start
+objman>InitObjMan start
+objman>InitObjMan end
+objdll> dll/w01dll.rel prolog end
+objman>ObjectSetup end
+port> frame 5102: overlay 89 (next -1) event 0
+DLL DBG OUT
+Rest Memory 37b3c0
+Rest Memory 334960
+data num 5e0000
+Rest Memory 31dea0
+ARAM data num 120006
+data num 190000
+Rest Memory 322ae0
+data num 6c0000
+Rest Memory 302e20
+data num 890000
+Rest Memory 31a860
+ARAM data num 7001d
+data num 50000
+Rest Memory 136ce0
+data num 90000
+Rest Memory 1424a0
+port> status f5160    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.31 ms  9.8 fps
+port> status f5220    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.39 ms  10.7 fps
+port> status f5280    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.39 ms  10.7 fps
+port> status f5340    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.39 ms  10.8 fps
+port> status f5400    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.40 ms  10.6 fps
+port> status f5460    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.39 ms  10.7 fps
+port> status f5520    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.39 ms  11.4 fps
+port> status f5580    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.40 ms  15.1 fps
+port> status f5640    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.39 ms  19.4 fps
+port> status f5700    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.39 ms  24.9 fps
+port> status f5760    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.39 ms  24.9 fps
+port> status f5820    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.40 ms  24.5 fps
+#########SE Entry Error<SE 269:ErrorNo -110>
+#########SE Entry Error<SE 269:ErrorNo -110>
+port> status f5880    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.39 ms  17.8 fps
+#########SE Entry Error<SE 333:ErrorNo -110>
+#########SE Entry Error<SE 333:ErrorNo -110>
+#########SE Entry Error<SE 397:ErrorNo -110>
+#########SE Entry Error<SE 397:ErrorNo -110>
+port> status f5940    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.17 ms  13.5 fps
+#########SE Entry Error<SE 461:ErrorNo -110>
+port> status f6000    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.09 ms  11.6 fps
+#########SE Entry Error<SE 54:ErrorNo -110>
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f6060    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.09 ms  11.5 fps
+port> status f6120    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.35 ms  11.6 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f6180    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.10 ms  11.5 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f6240    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.96 ms  11.5 fps
+#########SE Entry Error<SE 770:ErrorNo -110>
+#########SE Entry Error<SE 770:ErrorNo -110>
+#########SE Entry Error<SE 770:ErrorNo -110>
+#########SE Entry Error<SE 770:ErrorNo -110>
+port> status f6300    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.96 ms  11.4 fps
+#########SE Entry Error<SE 768:ErrorNo -110>
+#########SE Entry Error<SE 768:ErrorNo -110>
+#########SE Entry Error<SE 768:ErrorNo -110>
+#########SE Entry Error<SE 768:ErrorNo -110>
+#########SE Entry Error<SE 771:ErrorNo -110>
+#########SE Entry Error<SE 771:ErrorNo -110>
+#########SE Entry Error<SE 771:ErrorNo -110>
+port> status f6360    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.02 ms  11.2 fps
+#########SE Entry Error<SE 771:ErrorNo -110>
+port> status f6420    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.97 ms  11.2 fps
+port> status f6480    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.62 ms  11.4 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+#########SE Entry Error<SE 290:ErrorNo -110>
+port> status f6540    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.44 ms  11.7 fps
+port> status f6600    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.86 ms  11.7 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f6660    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.26 ms  11.7 fps
+#########SE Entry Error<SE 418:ErrorNo -110>
+port> status f6720    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.00 ms  11.8 fps
+port> status f6780    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.97 ms  11.8 fps
+port> status f6840    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.20 ms  11.7 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+#########SE Entry Error<SE 354:ErrorNo -110>
+port> status f6900    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.26 ms  11.7 fps
+port> status f6960    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.02 ms  11.8 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f7020    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.04 ms  11.9 fps
+port> status f7080    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.25 ms  11.8 fps
+#########SE Entry Error<SE 482:ErrorNo -110>
+port> status f7140    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 2.01 ms  11.9 fps
+port> status f7200    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.65 ms  11.9 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f7260    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 1.75 ms  11.9 fps
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+port> status f7320    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 9/0c 9/0c 9/0c 9/0c  aud 2.10 ms  11.6 fps
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 15:ErrorNo -110>
+#########SE Entry Error<SE 354:ErrorNo -110>
+#########SE Entry Error<SE 290:ErrorNo -110>
+#########SE Entry Error<SE 418:ErrorNo -110>
+port> status f7380    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 1.85 ms  11.5 fps
+#########SE Entry Error<SE 482:ErrorNo -110>
+port> status f7440    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 1.88 ms  11.6 fps
+port> status f7500    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 1.93 ms  11.6 fps
+port> status f7560    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 1.99 ms  11.8 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f7620    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.03 ms  11.8 fps
+port> status f7680    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.47 ms  12.3 fps
+#########SE Entry Error<SE 54:ErrorNo -110>
+port> status f7740    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.48 ms  12.4 fps
+port> status f7800    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.46 ms  18.4 fps
+port> status f7860    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.46 ms  17.2 fps
+port> status f7920    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.74 ms  17.2 fps
+port> status f7980    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.63 ms  17.5 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f8040    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.56 ms  17.4 fps
+#########SE Entry Error<SE 775:ErrorNo -110>
+port> status f8100    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.53 ms  13.4 fps
+#########SE Entry Error<SE 770:ErrorNo -110>
+#########SE Entry Error<SE 768:ErrorNo -110>
+port> status f8160    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.52 ms  13.7 fps
+#########SE Entry Error<SE 771:ErrorNo -110>
+#########SE Entry Error<SE 780:ErrorNo -110>
+port> status f8220    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.50 ms  13.5 fps
+#########SE Entry Error<SE 261:ErrorNo -110>
+port> status f8280    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.61 ms  13.2 fps
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 325:ErrorNo -110>
+#########SE Entry Error<SE 389:ErrorNo -110>
+#########SE Entry Error<SE 453:ErrorNo -110>
+#########SE Entry Error<SE 325:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 389:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 261:ErrorNo -110>
+port> status f8340    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.72 ms  12.2 fps
+#########SE Entry Error<SE 261:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 842:ErrorNo -110>
+#########SE Entry Error<SE 832:ErrorNo -110>
+port> status f8400    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.47 ms  16.2 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+port> status f8460    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.33 ms  18.3 fps
+port> status f8520    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.78 ms  18.1 fps
+#########SE Entry Error<SE 780:ErrorNo -110>
+#########SE Entry Error<SE 833:ErrorNo -110>
+port> status f8580    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.83 ms  18.0 fps
+#########SE Entry Error<SE 781:ErrorNo -110>
+#########SE Entry Error<SE 864:ErrorNo -110>
+#########SE Entry Error<SE 290:ErrorNo -110>
+port> status f8640    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.99 ms  17.4 fps
+#########SE Entry Error<SE 28:ErrorNo -110>
+port> status f8700    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.53 ms  17.9 fps
+#########SE Entry Error<SE 775:ErrorNo -110>
+port> status f8760    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.60 ms  15.8 fps
+#########SE Entry Error<SE 770:ErrorNo -110>
+#########SE Entry Error<SE 768:ErrorNo -110>
+port> status f8820    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.62 ms  14.6 fps
+#########SE Entry Error<SE 771:ErrorNo -110>
+#########SE Entry Error<SE 780:ErrorNo -110>
+port> status f8880    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.57 ms  14.6 fps
+port> status f8940    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 2.67 ms  14.8 fps
+#########SE Entry Error<SE 389:ErrorNo -110>
+#########SE Entry Error<SE 389:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 325:ErrorNo -110>
+#########SE Entry Error<SE 453:ErrorNo -110>
+#########SE Entry Error<SE 839:ErrorNo -110>
+#########SE Entry Error<SE 325:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 418:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+port> status f9000    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 12/0c 10/0c 10/0c  aud 2.62 ms  13.9 fps
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 15:ErrorNo -110>
+port> status f9060    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 13/0c 10/0c 10/0c  aud 2.66 ms  14.4 fps
+port> status f9120    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 13/0c 10/0c 10/0c  aud 2.53 ms  14.7 fps
+#########SE Entry Error<SE 775:ErrorNo -110>
+#########SE Entry Error<SE 770:ErrorNo -110>
+#########SE Entry Error<SE 768:ErrorNo -110>
+port> status f9180    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 13/0c 10/0c 10/0c  aud 2.78 ms  15.0 fps
+port> status f9240    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 13/0c 10/0c 10/0c  aud 2.69 ms  15.1 fps
+#########SE Entry Error<SE 771:ErrorNo -110>
+#########SE Entry Error<SE 780:ErrorNo -110>
+port> status f9300    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 13/0c 10/0c 10/0c  aud 2.57 ms  15.1 fps
+#########SE Entry Error<SE 325:ErrorNo -110>
+#########SE Entry Error<SE 325:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+port> status f9360    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 13/0c 10/0c 10/0c  aud 2.76 ms  14.1 fps
+#########SE Entry Error<SE 453:ErrorNo -110>
+#########SE Entry Error<SE 839:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 354:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 15:ErrorNo -110>
+port> status f9420    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 13/0c 13/0c 10/0c  aud 2.95 ms  14.2 fps
+port> status f9480    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 13/0c 13/0c 10/0c  aud 2.71 ms  14.3 fps
+#########SE Entry Error<SE 775:ErrorNo -110>
+port> status f9540    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 13/0c 13/0c 10/0c  aud 2.48 ms  15.0 fps
+#########SE Entry Error<SE 770:ErrorNo -110>
+#########SE Entry Error<SE 768:ErrorNo -110>
+port> status f9600    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 13/0c 13/0c 10/0c  aud 2.73 ms  15.0 fps
+#########SE Entry Error<SE 771:ErrorNo -110>
+#########SE Entry Error<SE 780:ErrorNo -110>
+port> status f9660    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 13/0c 13/0c 10/0c  aud 2.72 ms  15.0 fps
+port> status f9720    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 13/0c 13/0c 10/0c  aud 2.97 ms  14.5 fps
+#########SE Entry Error<SE 453:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 453:ErrorNo -110>
+#########SE Entry Error<SE 453:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 453:ErrorNo -110>
+port> status f9780    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 13/0c 13/0c 10/0c  aud 2.58 ms  12.2 fps
+#########SE Entry Error<SE 453:ErrorNo -110>
+#########SE Entry Error<SE 769:ErrorNo -110>
+#########SE Entry Error<SE 839:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 482:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 7:ErrorNo -110>
+#########SE Entry Error<SE 15:ErrorNo -110>
+port> status f9840    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.63 ms  12.0 fps
+port> status f9900    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.37 ms  12.2 fps
+port> status f9960    w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.55 ms  12.7 fps
+#########SE Entry Error<SE 852:ErrorNo -110>
+#########SE Entry Error<SE 853:ErrorNo -110>
+port> status f10020   w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.34 ms  15.6 fps
+port> status f10080   w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.99 ms  15.9 fps
+port> status f10140   w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.21 ms  16.2 fps
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+port> status f10200   w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.64 ms  15.9 fps
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+port> status f10260   w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.67 ms  15.9 fps
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 772:ErrorNo -110>
+#########SE Entry Error<SE 773:ErrorNo -110>
+port> status f10320   w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.78 ms  15.8 fps
+port> status f10380   w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.46 ms  16.0 fps
+port> status f10440   w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.36 ms  16.0 fps
+Rest Memory 40a8e0
+port> status f10500   w01dll       board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 2.21 ms  16.1 fps
+port> roulette: frame 10501 dealt mg 412 (m412dll, type 0)  -- overridden by --minigame
+objman>Call New Ovl 3(1)
+OvlKill 1
+objdll>omDLLNumEnd 89 1
+Search:dll/w01dll.rel
++++++++++++ Find0: dll/w01dll.rel
+objdll>omDLLEnd 0 1
+objdll>End DLL:dll/w01dll.rel
+odjdll>Unlink DLL:dll/w01dll.rel
+objdll>Unlink DLL epilog
+objdll>Unlink DLL epilog finish
+objdll>End DLL finish
+port> frame 10496: overlay -1 (next 3) event 0
+objman>Destory ObjMan
+++++++++++++++++++++ Start New OVL 3 (EVT:0 STAT:0x00000000) ++++++++++++++++++
+objman>Used Memory Size:000212e0
+objman>Used Memory Cnt:15
+objman>Init esp
+objman>Call objectsetup
+DLLStart 3 0
+Search:dll/instdll.rel
+objdll>Link DLL:dll/instdll.rel
+Rest Memory 40a8e0
+===== DLL Module Info dump ====
+                   ID:0x00000001
+             LinkPrev:0x00000000
+             LinkNext:0x00000000
+          Section num:15
+Section info tbl ofst:0x00000048
+           nameOffset:0x00000000
+             nameSize:47
+              version:0x00000002
+===============================
+==== DLL Module Header dump ====
+          bss Size:0x00000064
+        rel Offset:0x00006aa8
+        imp Offset:0x0000ad98
+    prolog Section:1
+    epilog Section:1
+unresolved Section:0
+       prolog func:0x00000000
+       epilog func:0x00000054
+   unresolved func:0x00000000
+================================
+objdll>LinkOK 0225e578 00ae7810
+objdll> dll/instdll.rel prolog start
+******* INST ObjectSetup *********
+objman>InitObjMan start
+objman>InitObjMan end
+0
+GroupSet 69
+***********GroupSet Error 0
+Rest Memory 3c3e80
+objdll> dll/instdll.rel prolog end
+objman>ObjectSetup end
+port> frame 10497: overlay 3 (next -1) event 0
+DLL DBG OUT
+data num 890000
+Rest Memory 3a9d80
+ARAM data num 120006
+data num 190000
+Rest Memory 3b2000
+data num 6c0000
+Rest Memory 392340
+data num 5e0000
+Rest Memory 3ad3c0
+port> status f10560   instdll      board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 0.79 ms  16.8 fps
+#########SE Entry Error<SE 1211:ErrorNo -110>
+#########SE Entry Error<SE 1212:ErrorNo -110>
+port> status f10620   instdll      board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 1.87 ms  20.0 fps
+#########SE Entry Error<SE 55:ErrorNo -110>
+#########SE Entry Error<SE 333:ErrorNo -110>
+#########SE Entry Error<SE 333:ErrorNo -110>
+#########SE Entry Error<SE 269:ErrorNo -110>
+#########SE Entry Error<SE 269:ErrorNo -110>
+#########SE Entry Error<SE 461:ErrorNo -110>
+#########SE Entry Error<SE 397:ErrorNo -110>
+Rest Memory 2a77c0
+#########SE Entry Error<SE 397:ErrorNo -110>
+port> status f10680   instdll      board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 1.58 ms  17.8 fps
+#########SE Entry Error<SE 2:ErrorNo -110>
+port> status f10740   instdll      board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 1.79 ms  18.9 fps
+#########SE Entry Error<SE 57:ErrorNo -110>
+#########SE Entry Error<SE 469:ErrorNo -110>
+port> status f10800   instdll      board 0 turn 1/10  mg 453 (m453dll)  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 1.90 ms  19.2 fps
+#########SE Entry Error<SE 1210:ErrorNo -110>
+objman>Call New Ovl 60(1)
+OvlKill 1
+objdll>omDLLNumEnd 3 1
+Search:dll/instdll.rel
++++++++++++ Find0: dll/instdll.rel
+objdll>omDLLEnd 0 1
+objdll>End DLL:dll/instdll.rel
+odjdll>Unlink DLL:dll/instdll.rel
+objdll>Unlink DLL epilog
+objdll>Unlink DLL epilog finish
+objdll>End DLL finish
+port> frame 10831: overlay -1 (next 60) event 0
+objman>Destory ObjMan
+++++++++++++++++++++ Start New OVL 60 (EVT:0 STAT:0x00000000) ++++++++++++++++++
+objman>Used Memory Size:000212e0
+objman>Used Memory Cnt:15
+objman>Init esp
+objman>Call objectsetup
+SOUND ##########################
+##########################
+DLLStart 60 0
+Search:dll/m453dll.rel
+objdll>Link DLL:dll/m453dll.rel
+Rest Memory 2a77c0
+===== DLL Module Info dump ====
+                   ID:0x00000001
+             LinkPrev:0x00000000
+             LinkNext:0x00000000
+          Section num:15
+Section info tbl ofst:0x00000048
+           nameOffset:0x00000000
+             nameSize:47
+              version:0x00000002
+===============================
+==== DLL Module Header dump ====
+          bss Size:0x000000c8
+        rel Offset:0x0000a584
+        imp Offset:0x0000e944
+    prolog Section:1
+    epilog Section:1
+unresolved Section:0
+       prolog func:0x00000000
+       epilog func:0x00000054
+   unresolved func:0x00000000
+================================
+objdll>LinkOK 0225e578 00ac8220
+objdll> dll/m453dll.rel prolog start
+******* M453ObjectSetup *********
+objman>InitObjMan start
+objman>InitObjMan end
+data num 530000
+Rest Memory 2a7660
+ARAM data num 610037
+objdll> dll/m453dll.rel prolog end
+objman>ObjectSetup end
+port> frame 10832: overlay 60 (next -1) event 0
+port> soak: enter minigame m453dll   at frame 10838 (mg 453)
+DLL DBG OUT
+data num 220010
+Rest Memory 158e40
+data num 5e0001
+Rest Memory fb920
+ARAM data num 120006
+data num 6c0001
+Rest Memory 83380
+data num 190001
+Rest Memory 2aaa0
+data num 890001
+HuMem>memory alloc error 00060b40(10000000): Call 00010138
+dvd.c: Memory Allocation Error (Length 60b3c) (mode 1)
+Rest Memory 2aaa0
+
+*** OSPanic in "dvd.c" on line 75: 
+
+
+---- SDK surface hit at boot: 2 distinct stubs, in first-call order ----
+   1  AIRegisterDMACallback                   1
+   2  THPInit                                 3
+---- 4 stub calls total ----

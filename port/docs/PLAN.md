@@ -5312,6 +5312,41 @@ it is recorded rather than re-argued: **linear is the default and the 4-tap is
 | `audio_ab.sh`, on the G4 | it had never worked. `g4 run` hands the request to the console runner and returns in four seconds, so the script launched the 4-tap side, returned, and launched the linear side, whose `killall isle` killed the run it was to be compared against; both logs held the twelve lines `g4 run` happened to tail. It now polls for the runner's `EXITCODE` line and pulls the whole log, and passes `--status`, without which its own "did both runs reach the same place" check printed two blank lines |
 | `make_bundle.sh` | ships `port/ref/movies`, and reads the SDL2 install name without `otool` |
 
+### 20.8 The soak's first run: m453 will not load, and the audit is wrong about counts
+
+`--soak --com4 --minigame m453,m443,m428,m449` -- the first four turns parked on
+the corrected modules, then the roulette released. It reached the first one and
+died there, on the first minigame of the first board:
+
+```
+port> soak: enter minigame m453dll   at frame 10838 (mg 453)
+HuMem>memory alloc error 00060b40(10000000): Call 00010138
+dvd.c: Memory Allocation Error (Length 60b3c) (mode 1)
+*** OSPanic in "dvd.c" on line 75:
+```
+
+The DVD heap is 5.5 MB, five blocks of it are already out on loan to the same
+caller (`00010138`), 174 KB is free and m453's data wants 396 KB. This is not a
+fault, not a guard and not a struct: it is the game's own allocator saying no,
+and the game's own panic. Whether the five outstanding blocks are m453's or
+somebody's leak is the question, and `Call 00010138` names the site.
+
+It is worth saying what this costs: the soak was also carrying the only planned
+witness of m453, m443 and m449, and it died before the first of them finished.
+`decomp-struct-notes.md` §1, §2 and §5 still say **Untested**; only m428 (§4)
+was reached, on the three-turn board.
+
+The soak was restarted plain -- `--soak --com4`, no list -- and left running.
+The roulette deals m453 at random like any other, so the night either
+reproduces this or says it is m453-and-a-full-heap rather than m453.
+
+**And the audit has its first answer already.** All 32 of its reports, on a
+board that renders correctly, say `counts`, and most of them are on `bg`. So
+§20.7 item 2 is settled before M9 starts: the count fields are not what this
+reading of ANIMDATA thinks they are, and the audit's remaining value is in its
+three pointer tests. Whoever picks this up should fix the reading or drop the
+count test, not add to it.
+
 ### 20.7 What M9 needs
 
 1. **The end-of-game crash, with the audit's own evidence.** The soak runs it
@@ -5322,10 +5357,10 @@ it is recorded rather than re-argued: **linear is the default and the 4-tap is
 2. **Whether the audit is right about an ANIMDATA at all.** It has been wrong
    twice. Audit lines on a healthy board with no fault mean the reading of the
    structure is wrong, not the sprite.
-3. **The four corrected modules still owe three screenshots.** m428 has been
-   played (§20.4, and `decomp-struct-notes.md` §4 is updated); m453, m443 and
-   m449 are the first three names in the soak's `--minigame` list and the
-   morning's log says whether they played.
+3. **m453 will not load** (§20.8), and it took m443 and m449's only planned
+   witness down with it. `Call 00010138` names the allocation site; five blocks
+   of the 5.5 MB DVD heap are out on loan to it when m453 asks for 396 KB.
+   Re-run the four with `--minigame m443,m428,m449` once that is understood.
 4. **Everything M8 listed and this session did not reach**: Nightmare CPU, the
    enhancements (widescreen, internal resolution), THP, the launcher slot
    beside the two Snowboard Kids apps, bring-your-own-disc, the `.dmg`.
