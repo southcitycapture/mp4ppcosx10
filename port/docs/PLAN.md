@@ -5337,6 +5337,13 @@ witness of m453, m443 and m449, and it died before the first of them finished.
 was reached, on the three-turn board.
 
 The soak was restarted plain -- `--soak --com4`, no list -- and left running.
+At the point this log was written it had taken a board through turn 1 into
+m412dll (entered f10838, left f13803) and on into turn 2, with `aud` at 1.73 ms
+on linear, three stale-slot drops and 32 `counts` audits, and no fault.
+
+That restarted run is also the first hardware witness of §20.3's fix: the four
+players leave m412's result screen on 20/13/13/13 coins. Before the patch one
+of them would have left it on about 570.
 The roulette deals m453 at random like any other, so the night either
 reproduces this or says it is m453-and-a-full-heap rather than m453.
 
