@@ -5709,3 +5709,47 @@ M9b's, with `--drawlog-at 3000` and `--dumptex` pointed at it.
 6. **The two-konst case is now the whole `--gxwarn` table**, at 2.28 million a
    walk, and §3.9's `ATI_text_fragment_shader` backend is still where it goes.
    With the swap tables retired it is one of only two degradations left.
+
+### 21.8 The second overnight soak: a 20-turn board, 25 minigames, and a stall in m444 *(2026-09-15)*
+
+The first overnight run was wasted on the title screen (launched without
+`--play board-start-com4.play`, so nothing pressed Start: 7 hours, 280 false
+STUCK lines, nothing learned; `--soak` must imply the walk, see M9b item 7).
+Relaunched at 06:09 as `--soak --com4 --rtc dolphin --freshcard --play
+board-start-com4.play`, checked at 18:27, 12h18m up, no crash, no guard-page
+hit:
+
+| what | value |
+|---|---|
+| board | Toad's Midway Madness, 4 COM, 20 turns; reached turn 19 of 20 |
+| minigames entered | 25 (20 distinct modules: m404 ×2, m405, m408, m410, m412, m417, m419, m420, m426, m427, m428 ×2, m429, m430, m431, m432 ×2, m434, m439, m441, m443, m444 ×3) |
+| coins/stars at the stall | 114/1, 49/2, 53/1, 104/0 |
+| audio | 1.2 to 2.6 ms per mix, no underrun lines |
+| fps | 14 to 15 on the board, 6.5 in m444 |
+| STUCK | 4 lines, all real, all the same stall |
+
+**The stall.** The third visit to `m444dll` (dealt at frame 237161, type 5,
+entered at 237163) never ends; the first two (frames 42180 and 71210) played
+out normally. The game loop is running -- a 5-second `sample` puts 98% of
+the thread in `Hu3DExec`/`FaceDraw`/`GXCallDisplayList`, i.e. it is drawing
+the same screen at 6.5 fps and the game logic is sitting in a state that is
+waiting for something. The screen (`screenshots/mp4-m444-stall.png`) is the
+minigame's intro board: three portraits in the bottom slots, the fourth slot
+above blacked out, no rules text, no countdown. So the state it is waiting
+in is before play starts. Right after the entry the log has a burst of
+`SE Entry Error<SE 83:ErrorNo -110>` (the two good visits had bursts of SE
+267/769 instead), which is the sound layer refusing an entry -- worth
+checking whether the intro sequences on a sound callback that never fires
+because that entry was refused. Evidence saved: `soak/m9-soak2-isle-log.txt.gz`
+(full port log), `soak/m9-soak2-m444-stall.sample`, the screenshot.
+The process was left running at the stall for a debugger.
+
+Two other things the log shows and M9b should read: `port> m444dll: dlclose
+did not unload it; zeroed 148148 bytes of bss by hand` on every re-entry (the
+by-hand zero is the documented dlclose behaviour, but this stall is on a
+re-entry and that path is the difference between visit one and visit three),
+and `HuMem>memory free error` once, at frame ~42170, before the first m444
+deal.
+
+M9b item 7: make `--soak` imply the menu walk when no `--play` is given, and
+refuse to start a soak that is still on the title after 60 s.
