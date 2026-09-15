@@ -171,6 +171,9 @@ extern GXState gx;
 extern const void* gx_last_posmtx_caller;
 extern const void* gx_last_posmtx_arg;
 extern int gx_ready;
+/* incremented by every GXSetArray: the display-list cache memoises its
+ * array-contents hashes for the length of one of these, not one frame */
+extern unsigned gx_array_epoch;
 
 /* gx_draw.c */
 void gx_draw_reset(void);
@@ -183,6 +186,9 @@ void gx_tev_report(void);
 /* gx_tex.c */
 void gx_tex_init(void);
 void gx_tex_bind(int unit, GXTexObjPort* obj);
+/* ...through a GXSetTevSwapModeTable entry, packed two bits per output
+ * channel: the cache holds a separately re-encoded copy per (texture, swap). */
+void gx_tex_bind_swapped(int unit, GXTexObjPort* obj, u8 swap);
 int gx_tex_bind_tiled(int unit, GXTexObjPort* sheet, GXTexObjPort* map,
                       const GXIndTile* tile);
 GXTexObjPort* gx_bound_tex(unsigned id); /* NULL unless the unit holds a real object */

@@ -135,6 +135,7 @@ typedef struct GlcUnit {
     float env_color[4];
     float su, sv;          /* the NPOT fold, this unit's GL_TEXTURE matrix */
     const void* coord_ptr;
+    int coord_stride;
 } GlcUnit;
 
 typedef struct Glc {
@@ -168,6 +169,7 @@ typedef struct Glc {
     signed char vertex_array_on, color_array_on;
     const void* vertex_ptr;
     const void* color_ptr;
+    int vertex_stride, color_stride;
 } Glc;
 
 static Glc glc;
@@ -210,6 +212,7 @@ void glc_invalidate(void) {
             u->scale_rgb = u->scale_a = -1.0f;
             u->su = u->sv = -1.0f;
             u->coord_ptr = (const void*)-1;
+            u->coord_stride = -1;
             for (j = 0; j < 3; j++) {
                 u->src_rgb[j] = u->op_rgb[j] = -1;
                 u->src_a[j] = u->op_a[j] = -1;
@@ -219,6 +222,7 @@ void glc_invalidate(void) {
             }
         }
         glc.vertex_ptr = glc.color_ptr = (const void*)-1;
+        glc.vertex_stride = glc.color_stride = -1;
     }
     glc.valid = 1;
 }
@@ -367,28 +371,34 @@ void glc_modelview_identity(void) {
  * reads it from index zero, so the pointers are set once for the life of the
  * process and only the per-unit enables change. */
 void glc_vertex_array(const void* p, int stride) {
-    HIT(glc.vertex_array_on == 1 && glc.vertex_ptr == p);
+    /* The stride is part of the identity now: M9 packs the vertex to the
+     * primitive, so the same base pointer can be handed over with a different
+     * layout and eliding on the pointer alone would draw the old one. */
+    HIT(glc.vertex_array_on == 1 && glc.vertex_ptr == p && glc.vertex_stride == stride);
     if (glc.vertex_array_on != 1) {
         glc.vertex_array_on = 1;
         GL(glEnableClientState)(GL_VERTEX_ARRAY);
     }
     glc.vertex_ptr = p;
+    glc.vertex_stride = stride;
     GL(glVertexPointer)(3, GL_FLOAT, (GLsizei)stride, p);
 }
 
 void glc_color_array(const void* p, int stride) {
-    HIT(glc.color_array_on == 1 && glc.color_ptr == p);
+    HIT(glc.color_array_on == 1 && glc.color_ptr == p && glc.color_stride == stride);
     if (glc.color_array_on != 1) {
         glc.color_array_on = 1;
         GL(glEnableClientState)(GL_COLOR_ARRAY);
     }
     glc.color_ptr = p;
+    glc.color_stride = stride;
     GL(glColorPointer)(4, GL_UNSIGNED_BYTE, (GLsizei)stride, p);
 }
 
 void glc_coord_array(int unit, const void* p, int stride) {
     GlcUnit* u = &glc.unit[unit];
-    HIT(u->coord_array_on == (signed char)(p != NULL) && u->coord_ptr == p);
+    HIT(u->coord_array_on == (signed char)(p != NULL) && u->coord_ptr == p &&
+        u->coord_stride == stride);
     glc_client_active_texture(unit);
     if (p) {
         if (u->coord_array_on != 1) {
@@ -400,6 +410,7 @@ void glc_coord_array(int unit, const void* p, int stride) {
     }
     u->coord_array_on = (signed char)(p != NULL);
     u->coord_ptr = p;
+    u->coord_stride = stride;
 }
 
 

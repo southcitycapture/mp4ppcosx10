@@ -95,7 +95,74 @@ static void konst_color(const GXTevStage* s, int alpha, float* out) {
     }
 }
 
+/* ---- swap tables ----------------------------------------------------------
+ *
+ * `GXSetTevSwapModeTable` gives a stage a four-entry crossbar, and
+ * `GXSetTevSwapMode` points the stage's *texture* colour and its *rasterised*
+ * colour at one of four such tables.  Until M9 both were counted and ignored,
+ * 136,000 times a menu walk, and the most visible consequence was that the
+ * characters' eyes drew as nothing: the eye stage reads its texture through a
+ * table that reroutes the channels, and the port sampled the unswapped texels.
+ *
+ * The two sides are not the same problem.
+ *
+ * **The texture side is exact.**  The swap happens before the combiner, on
+ * texels that are ours to re-encode, so `gx_tex.c` keys the cache on
+ * (texture, swap) and stores a copy with the channels already moved.  That is
+ * not an approximation of the hardware; it is the same arithmetic done
+ * earlier.
+ *
+ * **The rasterised side is where GL 1.3 runs out.**  A texture unit chooses an
+ * operand per argument -- `GL_SRC_COLOR` or `GL_SRC_ALPHA` and their
+ * complements -- and that is the whole crossbar it has.  So the two tables the
+ * game can be expressing that GL can also say are the identity and "broadcast
+ * one channel", and of the four channels only alpha has an operand.  Anything
+ * else -- (G,B,R,A), say, or a table that pulls red into alpha -- has no
+ * fixed-function form at all and is still counted and named.  See PLAN.md 21. */
+#define SWAP_PACK(t) \
+    ((u8)((t)[0] | ((t)[1] << 2) | ((t)[2] << 4) | ((t)[3] << 6)))
+#define SWAP_IDENTITY ((u8)(GX_CH_RED | (GX_CH_GREEN << 2) | (GX_CH_BLUE << 4) | \
+                            (GX_CH_ALPHA << 6)))
+
+/* The stage's rasterised-colour table, or NULL when it is the identity. */
+static const u8* ras_table(const GXTevStage* s) {
+    const u8* t = gx.swap_tbl[s->ras_swap & 3];
+    if (SWAP_PACK(t) == SWAP_IDENTITY) {
+        return NULL;
+    }
+    return t;
+}
+
+/* `GX_CC_RASC` read through a swap table: the RGB the combiner should see.
+ * Returns the GL operand, and warns when the table asks for something the
+ * operand crossbar cannot say. */
+static GLenum ras_rgb_operand(const u8* t) {
+    if (!t) {
+        return GL_SRC_COLOR;
+    }
+    if (t[0] == GX_CH_RED && t[1] == GX_CH_GREEN && t[2] == GX_CH_BLUE) {
+        return GL_SRC_COLOR;
+    }
+    if (t[0] == t[1] && t[1] == t[2] && t[0] == GX_CH_ALPHA) {
+        return GL_SRC_ALPHA; /* the one broadcast GL 1.3 can express */
+    }
+    gx_warn("GXSetTevSwapMode: a rasterised-colour swap GL 1.3's operand "
+            "crossbar cannot express; the unswapped colour is used");
+    return GL_SRC_COLOR;
+}
+
+/* ...and the alpha the combiner should see. */
+static GLenum ras_alpha_operand(const u8* t) {
+    if (!t || t[3] == GX_CH_ALPHA) {
+        return GL_SRC_ALPHA;
+    }
+    gx_warn("GXSetTevSwapMode: a rasterised swap puts a colour channel into "
+            "alpha, which GL 1.3 cannot select; alpha is left alone");
+    return GL_SRC_ALPHA;
+}
+
 static Arg color_arg(const GXTevStage* s, u8 a) {
+    const u8* rt = ras_table(s);
     Arg r;
     memset(&r, 0, sizeof(r));
     r.operand = GL_SRC_COLOR;
@@ -115,8 +182,14 @@ static Arg color_arg(const GXTevStage* s, u8 a) {
             break;
         case GX_CC_TEXC: r.src = GL_TEXTURE; break;
         case GX_CC_TEXA: r.src = GL_TEXTURE; r.operand = GL_SRC_ALPHA; break;
-        case GX_CC_RASC: r.src = GL_PRIMARY_COLOR; break;
-        case GX_CC_RASA: r.src = GL_PRIMARY_COLOR; r.operand = GL_SRC_ALPHA; break;
+        case GX_CC_RASC:
+            r.src = GL_PRIMARY_COLOR;
+            r.operand = ras_rgb_operand(rt);
+            break;
+        case GX_CC_RASA:
+            r.src = GL_PRIMARY_COLOR;
+            r.operand = ras_alpha_operand(rt);
+            break;
         case GX_CC_ONE:
             r.src = GL_CONSTANT;
             r.is_const = 1;
@@ -141,6 +214,7 @@ static Arg color_arg(const GXTevStage* s, u8 a) {
 }
 
 static Arg alpha_arg(const GXTevStage* s, u8 a) {
+    const u8* rt = ras_table(s);
     Arg r;
     memset(&r, 0, sizeof(r));
     r.operand = GL_SRC_ALPHA;
@@ -152,7 +226,10 @@ static Arg alpha_arg(const GXTevStage* s, u8 a) {
             colorf(gx.tev_reg[1 + (a - GX_CA_A0)], r.konst);
             break;
         case GX_CA_TEXA: r.src = GL_TEXTURE; break;
-        case GX_CA_RASA: r.src = GL_PRIMARY_COLOR; break;
+        case GX_CA_RASA:
+            r.src = GL_PRIMARY_COLOR;
+            r.operand = ras_alpha_operand(rt);
+            break;
         case GX_CA_KONST:
             r.src = GL_CONSTANT;
             r.is_const = 1;
@@ -289,14 +366,15 @@ void gx_tev_apply(void) {
                     if (!map || !gx_tex_bind_tiled(i, bound, map, t)) {
                         gx_warn("indirect texturing: the fixed-function path "
                                 "draws the direct stage only (PLAN.md 3.4 case 3)");
-                        gx_tex_bind(i, bound);
+                        gx_tex_bind_swapped(i, bound, SWAP_PACK(gx.swap_tbl[s->tex_swap & 3]));
                     }
                 } else {
                     if (gx.num_ind && !s->direct) {
                         gx_warn("indirect texturing: the fixed-function path "
                                 "draws the direct stage only (PLAN.md 3.4 case 3)");
                     }
-                    gx_tex_bind(i, bound);
+                    gx_tex_bind_swapped(i, bound,
+                                        SWAP_PACK(gx.swap_tbl[s->tex_swap & 3]));
                 }
             } else {
                 /* A stage with no texture still has to run its combiner, and
@@ -313,9 +391,6 @@ void gx_tev_apply(void) {
                          alpha_arg(s, s->ain[2]), alpha_arg(s, s->ain[3]), s->aop,
                          s->abias, s->ascale, konst, &konst_set);
             glc_texenv_color(i, konst);
-            if (s->ras_swap || s->tex_swap) {
-                gx_warn("GXSetTevSwapMode: a non-identity swap table is ignored");
-            }
         }
     }
 }

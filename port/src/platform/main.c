@@ -131,8 +131,10 @@ static void usage(const char* argv0) {
             "  --resample1       linear interpolation; the default, kept so that an\n"
             "                    A/B can name both sides\n"
             "  --clickstat       count mix discontinuities as they are produced\n"
-            "  --nodlcache       decode every display list every frame instead\n"
-            "                    of replaying the cached vertices: the A/B\n"
+            "  --dlcache         replay a display list's cached decoded vertices\n"
+            "                    when its bytes and the arrays it indexes have\n"
+            "                    not moved.  Off: it is faster on the title and\n"
+            "                    slower on the character select (PLAN.md 21.3)\n"
             "  --perfwin SPEC    with --perf, also report fps over named frame\n"
             "                    windows: A-B[:NAME][,A-B[:NAME]...].  One boot\n"
             "                    then answers \"how fast is the title/the menu/the\n"
@@ -308,8 +310,8 @@ int port_parse_args(int argc, char** argv) {
             port_opt.resample4 = 0;
         } else if (!strcmp(a, "--resample4")) {
             port_opt.resample4 = 1;
-        } else if (!strcmp(a, "--nodlcache")) {
-            port_opt.nodlcache = 1;
+        } else if (!strcmp(a, "--dlcache")) {
+            port_opt.dlcache = 1;
         } else if (!strcmp(a, "--perfwin") && i + 1 < argc) {
             port_opt.perfwin = argv[++i];
             port_opt.perf = 1;

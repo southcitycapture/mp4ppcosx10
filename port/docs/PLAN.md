@@ -5373,3 +5373,322 @@ count test, not add to it.
    beside the two Snowboard Kids apps, bring-your-own-disc, the `.dmg`.
 5. **The m428 screenshot has a white 3D scene behind a correct sprite HUD.**
    Caught a frame or two after entry and probably nothing; worth one look.
+
+## 21. M9 log — the vertex path measured three ways, and the eyes *(2026-09-14)*
+
+The whole project is gated on speed: at 10 fps a soak, an audio judgement and a
+witness run each take six times longer than they need to. So M9 went at the
+vertex path first, with the one rule the two Snowboard Kids ports left behind —
+every optimisation keeps `--dumpframe` byte-identical for a fixed `--seed` /
+`--rtc` run, or it is re-based deliberately and says why.
+
+Three things were built. One of them is on.
+
+### 21.1 The baseline, and `--perfwin`
+
+M5 measured a scene by running the same walk to three different `--frames N`
+and subtracting: three boots, twenty minutes, three numbers. The per-frame
+samples `--perf` already collects were sitting there unused, so `--perfwin
+A-B[:NAME],...` now reports ms/frame, fps and the game/gx/present/audio split
+over named frame ranges out of one run. Every number below comes from one
+`--turbo --com4 --rtc dolphin --freshcard --play board-start-com4.play
+--frames 9000` run of the shipped build.
+
+**Baseline** (the M8c build, `--perfwin 700-870:title,2600-3600:charselect,6000-8900:board`):
+
+| scene | ms/frame | **fps** | game | **gx** | present | aud |
+|---|---:|---:|---:|---:|---:|---:|
+| title (700–870) | 131.20 | **7.62** | 2.69 | 126.64 | 1.43 | 0.44 |
+| character select (2600–3600) | 97.69 | **10.24** | 8.03 | 87.21 | 0.63 | 1.82 |
+| board (6000–8900) | 77.61 | **12.89** | 10.64 | 64.16 | 0.56 | 2.25 |
+| whole run (8,999 frames) | 68.98 | **14.5** | 7.31 | 59.43 | 0.62 | 1.63 |
+
+`gx` is 86% of the frame on every scene. The run draws 416 million vertices in
+8.4 million primitives over 9,000 frames — 46,000 vertices and 934 primitives
+a frame — through 7.67 million `GXCallDisplayList` calls, which is 850 a frame
+at about 54 vertices each. That last number is the one that reframed the
+problem: the game's display lists are *small*.
+
+**Reference frames** (`--dumpframe 800,3000,7000`), the correctness contract
+for everything that follows:
+
+| frame | scene | md5 |
+|---:|---|---|
+| 800 | title | `45da1034bf9692bb6dc04a74ac665dd6` |
+| 3000 | character select | `d77db3b6784149bf2ed2b07085852ccd` |
+| 7000 | board | `3488c83d092ed08a078e26ec7319d749` |
+
+**The baseline profile**, `sample` on the G4, 1 ms, main thread, percentages
+of in-thread busy samples. Samples are tagged with the overlay `--ovllog` last
+named, so a profile is attributed to a screen rather than predicted (`sampler.sh`).
+
+| # | title (7,372) | % | character select (7,247) | % | board (6,922) | % |
+|---:|---|---:|---|---:|---|---:|
+| 1 | `draw_now` | 38.1 | `draw_now` | 24.7 | `draw_now` | 29.9 |
+| 2 | `read_component` | 16.1 | `indexed` | 17.7 | `indexed` | 12.7 |
+| 3 | `indexed` | 15.0 | `read_component` | 13.5 | `read_component` | 11.4 |
+| 4 | `saveGPR` | 3.9 | `transform_and_store` | 4.7 | `saveGPR` | 3.8 |
+| 5 | `GXCallDisplayList` | 3.9 | `GXCallDisplayList` | 4.4 | `transform_and_store` | 3.6 |
+| 6 | `transform_and_store` | 3.7 | `saveGPR` | 4.2 | `GXCallDisplayList` | 3.2 |
+| 7 | `gldInitDispatch` | 1.8 | `gldInitDispatch` | 2.6 | `gldInitDispatch` | 2.5 |
+| 8 | `restGPRx` | 1.3 | `restGPRx` | 1.6 | `port_musyx_mix_frame` | 1.7 |
+| 9 | `gldCreateQuery` | 1.1 | `gldCreateQuery` | 1.3 | `restGPRx` | 1.5 |
+| 10 | `FaceDraw` | 0.4 | `PSMTXROMultVecArray` | 1.1 | `gldCreateQuery` | 1.2 |
+| 11 | `gl13_apply_raster_state` | 0.4 | `tex_bind_content_hash` | 0.9 | `PSMTXROMultVecArray` | 1.3 |
+| 12 | `port_musyx_mix_frame` | 0.4 | `gx_tev_apply` | 0.9 | `Hu3DMotionExec` | 1.1 |
+| 13 | — | — | `tex_content_hash` | 0.7 | `C_MTXConcat` | 1.0 |
+| 14 | — | — | `alpha_arg` | 0.7 | `tex_bind_content_hash` | 0.9 |
+| 15 | — | — | `glc_texenvi` | 0.7 | `gldCreateQuery` | 1.2 |
+
+`draw_now` is phase 2 of the vertex path with `finish_vertices` inlined into
+it. The decode — `indexed` + `read_component` + `transform_and_store` +
+`GXCallDisplayList` + the register save/restore thunks the call-per-attribute
+structure drags in — is 35–44% of the frame depending on the scene, and phase 2
+is another 25–38%. The GL driver itself is under 5%. **The vertex path is the
+frame**, which is what M4 and M5 both said.
+
+### 21.2 The compact vertex: built, measured, neutral, kept
+
+M5's parting reading was that the path is memory bound, not arithmetic bound:
+a `Vtx` was 96 bytes, and 329 million of them a run over a 133 MHz bus is
+about 31 GB of traffic. "Make the vertex smaller, or stop staging" was the
+prescription. So there is no `Vtx` any longer. There are two layouts, both
+packed to what the primitive in hand actually uses:
+
+* **source** — model-space position, the normal *only when the descriptor has
+  one*, one vertex colour, and only the raw texcoords a texgen will read back.
+  A board vertex is 36 bytes.
+* **output** — the transformed position, the final colour, and the generated
+  texcoords, which is everything GL's client arrays read and nothing else.
+  A board vertex is 24 bytes.
+
+Two fields went entirely rather than being packed. `clr1` was written by every
+vertex and read by nobody — GL has one primary colour, `gx_tev.c` only ever
+names `GL_PRIMARY_COLOR`, and the CPU lighting only runs channel 0. And the
+normal never reaches GL at all, so in the output layout it is a register.
+Phase 2 also became one pass instead of four: the same arithmetic per vertex in
+the same order, but a vertex is read once, held in registers and written once
+instead of being walked four times through a 96-byte stride.
+
+96 bytes to 24 is a four-fold cut in the traffic M5 named. Measured
+(`--nodlcache`, the same walk, the same seed):
+
+| scene | baseline fps | compact fps | Δ |
+|---|---:|---:|---:|
+| title | 7.62 | **7.63** | +0.1% |
+| character select | 10.24 | **10.36** | +1.2% |
+| board | 12.89 | **12.95** | +0.5% |
+| whole run | 14.5 | **14.6** | +0.7% |
+
+**Nothing.** All three reference md5s are byte-identical, so it is exactly the
+same frame drawn out of a quarter of the memory — and it is not faster. That
+retires M5's hypothesis rather than confirming it: the vertex path's cost is
+*not* the bytes moved. It is the instruction count and the dependent-load
+latency of a decoder that calls a function per attribute and switches on a
+type per component.
+
+The layout is kept anyway: it is smaller, it is simpler, it deletes two dead
+fields, and it is what makes the display-list cache storable at all. The
+AltiVec path went with it — it was already switched off as not-faster (§15.6),
+and every load, store and permute in it assumed `sizeof(Vtx) == 96`. Keeping a
+dead fast path that encodes a layout the port no longer has would be a lie in
+the source.
+
+### 21.3 The display-list vertex cache: built, measured, switched off
+
+92% of the board's primitives arrive through `GXCallDisplayList`, and none of
+what the decode produces depends on the camera, the matrices, the lights or
+the material. So the decoded **model-space** vertices are cached and a replay
+skips straight to phase 2. The key is the whole of the argument:
+
+* the list's bytes;
+* the vertex descriptor, the vertex-attribute table rows for the attributes
+  the descriptor names, and each array's base and stride;
+* **the contents of the array ranges the list actually reads**, because Mario
+  Party 4 animates geometry on the CPU (`ClusterExec` morphs, `EnvelopeExec`
+  skins) and a key that trusted the base pointer would freeze every animated
+  model;
+* and the handful of state bits phase 1 itself reads — whether there is a
+  normal, whether the colour is splatted from the register material and if so
+  which colour, and how many raw texcoords a texgen will read back.
+
+Three things had to be got right before it was even worth measuring, and each
+of them was a measurement:
+
+1. **The validity check hashed the wrong range.** The first version hashed
+   each array from index 0 to the highest index the list used. A display list
+   is one material's slice of a mesh, so that is everybody's vertices rather
+   than its own: **13.7 MB a frame** hashed to prove that 0.9 MB had not moved,
+   and the cache came out slower than the decode it replaced (11.8 fps against
+   the baseline's 14.5). Hashing the index *window* `[min..max]` instead cut it
+   to 4.7 MB a frame.
+2. **One entry per buffer was one too few.** The game calls the same list with
+   different state — the same model drawn twice with two different register
+   materials — and a quarter of all calls were missing with "state changed",
+   each a full re-decode. Entries are keyed on the state as well as the buffer.
+3. **The array-hash memo's lifetime was a frame, and that is wrong.** Several
+   lists read the same arrays, so the hash is memoised; keyed on the frame, a
+   model that is morphed, drawn, morphed again and drawn again inside one frame
+   validates against the hash taken before the second morph and replays
+   yesterday's vertices. Frame 3000's md5 moved, which is exactly how this was
+   found. The memo is now keyed on the `GXSetArray` epoch — the game points GX
+   at an object's arrays and then calls that object's lists, which is precisely
+   the interval over which the memo is sound.
+
+And with all three fixed it still does not pay:
+
+| scene | baseline fps | `--dlcache` fps | Δ |
+|---|---:|---:|---:|
+| title | 7.62 | **8.97** | **+18%** |
+| character select | 10.24 | **8.92** | **−14%** |
+| board | 12.89 | **12.95** | +0.5% |
+| whole run | 14.5 | 14.1 | −3% |
+
+68.8% of calls hit; 31% miss because the arrays were rewritten under them, and
+**every live entry in the run is animated — none is static**. That is the
+answer, and it is a fact about this game rather than about the cache: Mario
+Party 4 animates almost everything it draws, so the common case is an entry
+that pays the validity check *and* the decode. The title screen, whose models
+mostly sit still, gains 18%; the character select, where eight characters
+breathe and blink, loses 14%.
+
+So it is **kept and switched off**, for the same reason and in the same shape
+as M5's AltiVec batch: `--dlcache` turns it on, the default decodes every
+frame, and the measurement is the result. One caveat for whoever picks it up:
+the frame-3000 md5 was verified identical for the *prefix*-range version and
+for the layout change, and the `GXSetArray`-epoch fix in item 3 above is
+reasoned rather than measured — a run with `--dlcache` and `--dumpframe
+800,3000,7000` is the first thing M9b should do with it, and if it does not
+come back clean the cache should be deleted rather than debugged.
+
+### 21.4 What the three measurements together say
+
+This is the third time the vertex path has been attacked and the third time
+the obvious lever has not moved: batched AltiVec (M5) bought nothing, a
+four-fold smaller vertex (21.2) bought nothing, and not decoding at all (21.3)
+bought 18% on the one scene where it is allowed to work. Taken together they
+rule out arithmetic, they rule out bandwidth, and they rule out the decode's
+*input* — which leaves the decode's *shape* and phase 2's per-vertex work, and
+those are the same suspect: about 1,280 cycles per vertex at 1 GHz, for
+something that should cost two hundred.
+
+The structural candidate M9 did not get to, and the one M9b should take, is the
+call-per-attribute cursor. `indexed()` is reached through `attr_written()` for
+every attribute of every vertex; it re-reads `cur_attr()`, branches through a
+chain on the attribute id, and calls `read_component()` — which switches on the
+component type and indexes a scale table — two or three times. That is
+`saveGPR`/`restGPRx` at 4–8% between them purely as prologue traffic, and it is
+why the top three symbols are all decoder. Replacing it with a per-primitive
+*decode plan* — a small array of {source, byte offset, component count, type,
+scale, destination offset} built once in `begin_attr_order()` and walked with
+no calls and no switches in the inner loop — attacks all three of the top
+symbols at once, and unlike the three things M9 measured it reduces
+instructions rather than bytes. Nothing in M9 contradicts it; everything in M9
+points at it.
+
+The honest scoreboard against M9's own target of 30 fps on the menus and the
+board:
+
+| scene | target | M8c | M9 shipped | with `--dlcache` |
+|---|---:|---:|---:|---:|
+| title | 30 | 7.62 | 7.63 | 8.97 |
+| character select | 30 | 10.24 | 10.36 | 8.92 |
+| board | 30 | 12.89 | 12.95 | 12.95 |
+
+Not met, and not close. M9's contribution to it is a retired hypothesis, a
+measured dead end kept behind a flag, and a diagnosis with a name.
+
+### 21.5 Swap tables: implemented exactly, and the eyes are somebody else's bug
+
+`GXSetTevSwapModeTable` gives a TEV stage a four-entry crossbar and
+`GXSetTevSwapMode` points the stage's *texture* colour and its *rasterised*
+colour at one of four such tables. Both were counted and ignored — 135,802
+times over a board walk, the second-largest entry in the `--gxwarn` table.
+
+The two sides are not the same problem.
+
+**The texture side is exact, and needs no GL feature at all.** The swap happens
+before the combiner, on texels that are ours to re-encode, so the texture cache
+is keyed on `(image, format, w, h, lut, **swap**)` and a non-identity swap gets
+its own copy of the decoded RGBA with the channels already moved
+(`swizzle_rgba`). Two stages sampling the same texels through two different
+tables in the same frame get two entries, which is what the key is for. This is
+not an approximation of the hardware; it is the same arithmetic done earlier.
+
+**The rasterised side is where GL 1.3 runs out**, and the residual is worth
+naming precisely rather than waving at. A texture unit chooses an *operand* per
+argument — `GL_SRC_COLOR`, `GL_SRC_ALPHA` and their complements — and that is
+the entire crossbar it has. So of the tables GX can express, fixed-function GL
+can say exactly two: the identity, and "broadcast one channel", and of the four
+channels only alpha has an operand. `GX_CC_RASC` read through a table that
+replicates alpha becomes `GL_PRIMARY_COLOR` with `GL_SRC_ALPHA`, which is
+exact. A table like (G,B,R,A), or one that pulls red into alpha, has no
+fixed-function form at all; two new and more specific warnings name those, one
+per half.
+
+**The result, over the same 9,000-frame walk:**
+
+| warning | M8c | M9 |
+|---|---:|---:|
+| `TEV: a stage needs two different constants; the first wins` | 1,789,688 | 2,282,155 |
+| `GXSetTevSwapMode: a non-identity swap table is ignored` | 135,802 | **0 (retired)** |
+| `GXInitSpecularDir: specular is approximated by the diffuse term` | 34,353 | 44,902 |
+| *(the two new rasterised-swap residual warnings)* | — | **0** |
+
+Zero, and zero: every swap this game asks for is now reproduced exactly, and
+**none of them needs the part GL 1.3 cannot do**. (The other two counts are
+larger than M5's only because this walk is 9,000 frames against 11,000 of a
+different shape; they are the same two degradations, untouched.)
+
+**And the eyes did not change.** All three reference md5s are byte-identical
+with the swap tables implemented — including frame 3000, the character select.
+That is the actual finding, and it is worth more than the fix: the old warning
+fired on the *selector* (`ras_swap || tex_swap` — the stage naming table 1, 2
+or 3 rather than table 0), not on the table's contents, so 135,802 of those
+warnings were reporting a swap that was the identity anyway. Evaluating the
+real tables retires the warning honestly and changes not one pixel.
+
+So the characters' eyes are not a swap-table problem. `mp4-charselect-eyes.png`
+(frame 3000, shipped M9 build) shows what the screen actually looks like: the
+five hosts on stage have their eyes, and **Yoshi's portrait in the grid has
+none** — a green face with no eyes and no nostrils, while the other seven
+portraits are correct. One character out of eight, in the 2D portrait rather
+than the 3D model, is not a TEV crossbar; it is one texture or one stage in one
+place. That is a much smaller question than the one M9 was handed, and it is
+M9b's, with `--drawlog-at 3000` and `--dumptex` pointed at it.
+
+### 21.6 Tooling added
+
+| flag / tool | what |
+|---|---|
+| `--perfwin A-B[:NAME],...` | fps and the frame's split over named frame ranges, out of the samples `--perf` already keeps. One boot instead of three |
+| `--dlcache` | the display-list vertex cache, off by default (§21.3). Its report gives hits, the miss reason, the static/animated split of the live entries, and the megabytes the validity check actually walked — that last number is what found two of the three bugs in it |
+| `port/tools/g4_sampler.sh` | N `sample` profiles of the running port, each tagged with the overlay `--ovllog` last named, so a profile is attributed to a screen rather than predicted from a stopwatch |
+| stride in the GL client-array shadow | `glc_vertex_array`/`glc_color_array`/`glc_coord_array` compared pointers only. The packed layout hands the same base pointer over with a different stride, and eliding on the pointer alone would have drawn the previous layout |
+
+### 21.7 What M9b needs
+
+1. **The decode plan** (§21.4). Three measurements have ruled out arithmetic,
+   bandwidth and the decode's input; what is left is the call-per-attribute
+   cursor, and it is the top three symbols on all three scenes. Build the
+   per-primitive plan in `begin_attr_order()` and walk it with no calls and no
+   switches in the inner loop. Everything M9 measured points at it and nothing
+   contradicts it.
+2. **Verify or delete `--dlcache`.** One run with `--dlcache --dumpframe
+   800,3000,7000` against §21.1's three md5s. The `GXSetArray`-epoch memo fix
+   is reasoned, not measured. If it does not come back clean, delete the cache:
+   it is 400 lines that buy 18% on one scene and lose 14% on another.
+3. **Yoshi's portrait has no eyes** (§21.5), and it is not the swap table.
+   `--drawlog-at 3000` and `--dumptex` on the character select.
+4. **The immediate-mode batch was not built.** `GXBegin`/`GXEnd` sprite quads
+   still go one `glDrawArrays` per primitive. It was scoped for M9 and the
+   perf budget went into the three measurements above instead; the compact
+   output layout it needed is in place, so what is left is a deferred draw and
+   a cheap "has any GX state call happened since" test.
+5. **Everything M8 and M8c listed and neither reached**: the end-of-game crash
+   with the audit's evidence, m453's DVD heap, Nightmare CPU, widescreen and
+   internal resolution, THP, the launcher slot beside the two Snowboard Kids
+   apps, bring-your-own-disc, the `.dmg`.
+6. **The two-konst case is now the whole `--gxwarn` table**, at 2.28 million a
+   walk, and §3.9's `ATI_text_fragment_shader` backend is still where it goes.
+   With the swap tables retired it is one of only two degradations left.

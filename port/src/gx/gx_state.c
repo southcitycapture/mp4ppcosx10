@@ -154,10 +154,25 @@ void GXSetVtxAttrFmt(GXVtxFmt vtxfmt, GXAttr attr, GXCompCnt cnt, GXCompType typ
     }
 }
 
+/* Bumped by every GXSetArray, and used by the display-list cache in
+ * gx_draw.c as the lifetime of its array-contents memo.
+ *
+ * The frame was the wrong lifetime and the frame md5s said so.  The game
+ * points GX at an object's arrays and then calls that object's display lists,
+ * so within one such epoch the same array is read by several lists and hashing
+ * it once is exactly right -- but *across* a frame the CPU animates geometry
+ * (ClusterExec morphs, EnvelopeExec skins) and a model rewritten and drawn a
+ * second time in the same frame would have been validated against the hash
+ * taken before the rewrite.  That is one character on the character select
+ * drawing a frame late, which is what the M9 run that hashed per frame
+ * produced. */
+unsigned gx_array_epoch;
+
 void GXSetArray(GXAttr attr, const void* data, u8 stride) {
     if ((unsigned)attr < GX_MAX_ATTR) {
         gx.array[attr].base = (const u8*)data;
         gx.array[attr].stride = stride;
+        gx_array_epoch++;
     }
 }
 

@@ -104,8 +104,9 @@ typedef struct PortOptions {
     int resample4;          /* --resample1 clears it: the 4-tap resampler       */
     int clickstat;          /* --clickstat  count mix discontinuities in-process */
     /* ---- M9 ---- */
-    int nodlcache;          /* --nodlcache  decode every display list every
-                             *   frame, the way M8 did: the A/B for the cache  */
+    int dlcache;            /* --dlcache  replay cached display-list vertices
+                             *   instead of decoding every frame.  Built,
+                             *   measured and OFF by default: PLAN.md 21.3     */
     const char* perfwin;    /* --perfwin A-B[:NAME][,...]  per-scene fps out of
                              *   one run's own per-frame samples, so a baseline
                              *   costs one boot instead of three                */

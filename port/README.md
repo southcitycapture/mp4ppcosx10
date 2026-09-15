@@ -284,11 +284,12 @@ crashed run does not leave a half-written save behind for the next one.
 | `src/pad/` | PAD over the IOUSBLib Xbox One driver, SDL2 and the keyboard; `--play` / `--record` |
 | `src/audio/` | ARAM, the MusyX SAL replacement (`musyx_sal.c`), the CPU mixer that stands in for the `dspSlave` ucode (`musyx_mix.c`), MusyX's own ARAM allocator ported off its stubbed PC arm (`musyx_aram.c`), and the SDL output ring and `--wav` capture (`audio_out_sdl.c`) |
 | `extern/musyx` | *not* part of the port, but compiled into it: AxioDL's MIT MusyX reimplementation, built straight out of the decomp's checkout with `MUSY_TARGET_PC`, unmirrored and unpatched. The Makefile drops the five files that are skeletons or Dolphin-only on that target |
-| `src/debug/` | self-play, tracing, `--peek`, `--dumpdl`, `--perf` |
+| `src/debug/` | self-play, tracing, `--peek`, `--dumpdl`, `--perf` / `--perfwin` |
 | `src/ui/` | launcher and in-game overlay |
 | `scripts/` | input scripts and goldens |
 | `ref/` | emulator reference frames and `.dtm` recordings |
 | `resources/` | icons and bundle resources |
+| `tools/g4_sampler.sh` | `sample` profiles of the running port on the G4, each tagged with the scene `--ovllog` last named |
 
 ## Prerequisites
 

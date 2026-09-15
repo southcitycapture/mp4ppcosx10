@@ -56,21 +56,73 @@ unsigned gl13_frame_number(void);
 
 /* ---- the vertex buffer ---------------------------------------------------- */
 
-typedef struct Vtx {
+/* ---- two compact vertex layouts, and why the 96-byte one is gone -----------
+ *
+ * M5 built the batched AltiVec transform, measured it, and it bought nothing
+ * (PLAN.md 15.6).  The reading it left behind is the one this file now acts
+ * on: the vertex path is **memory bound**, not arithmetic bound.  A `Vtx` was
+ * 96 bytes -- three floats of position, three of normal, *two* RGBA colours
+ * and **eight** texcoord slots -- and 329 million vertices a run over a 133
+ * MHz bus is about 31 GB of traffic.  Vectorising a memory-bound loop is free
+ * and worth nothing, which is exactly what the measurement said.
+ *
+ * So there is no `Vtx` any more.  There are two layouts, both packed to
+ * exactly what the primitive in hand uses:
+ *
+ *   **source** -- what the decode produces and the display-list cache stores:
+ *   the *model-space* position, the model-space normal when the descriptor
+ *   has one, the vertex colour, and the raw texcoords a texgen will read
+ *   back.  `pos` 12 + `nrm` 0 or 12 + `clr0` 4 + 8 per copied texcoord.
+ *
+ *   **output** -- what GL's client arrays read: the transformed position, the
+ *   final colour, and the generated texcoords.  16 + 8 per texcoord slot.
+ *
+ * A board vertex is typically 36 bytes of source and 24 of output against the
+ * old 96 of both, which is the change the profile asked for.
+ *
+ * Two fields are simply gone rather than packed.  `clr1` was written by every
+ * vertex and read by nobody: GL has one primary colour, `gx_tev.c` only ever
+ * names `GL_PRIMARY_COLOR`, and the CPU lighting only runs channel 0.  And
+ * the normal never reaches GL at all -- lighting is done here (see the file
+ * header) -- so in the output layout it is a register, not a field.
+ *
+ * **The AltiVec path went with it.**  It was switched off by default because
+ * it was not faster, and every one of its loads, stores and permutes assumed
+ * `sizeof(Vtx) == 96` with the position quadword-aligned.  Keeping a dead
+ * fast path that encodes a layout the port no longer has would be a lie in
+ * the source; M9's answer to the same question is the layout itself. */
+typedef struct Layout {
+    int stride;
+    int off_nrm; /* -1 when the descriptor has no normal */
+    int off_clr;
+    int off_tex;
+    int ntex;
+} Layout;
+
+#define MAX_VERTS 65536
+#define SRC_MAX_STRIDE (12 + 12 + 4 + 8 * GX_TEXCOORDS)
+#define OUT_MAX_STRIDE (16 + 8 * GX_TEXCOORDS)
+
+/* One primitive's worth of output, and -- for the display-list path -- a whole
+ * list's worth of source, because the cache stores the list in one piece. */
+static u8 src_buf[MAX_VERTS * SRC_MAX_STRIDE] __attribute__((aligned(16)));
+static u8 out_buf[MAX_VERTS * OUT_MAX_STRIDE] __attribute__((aligned(16)));
+static Layout sl;              /* the source layout of the primitive in hand  */
+static int out_stride, out_off_clr, out_off_tex, out_ntex;
+static int nverts;             /* vertices in the primitive being assembled   */
+static u32 sv_first;           /* where in src_buf this primitive starts      */
+
+/* The writers still assemble into one uncompressed staging vertex: they arrive
+ * one attribute at a time and in descriptor order, so there is nothing to pack
+ * until the vertex is complete.  It is one vertex, not 65,536, so its size
+ * costs nothing. */
+typedef struct Pending {
     float pos[3];
     float nrm[3];
     unsigned char clr[2][4];
     float tex[GX_TEXCOORDS][2];
-} Vtx;
-
-#define MAX_VERTS 65536
-/* 16-byte aligned, and sizeof(Vtx) is 96, so every vertex's `pos` starts on
- * a quadword boundary -- which is what lets the AltiVec batch in
- * finish_vertices() use aligned loads and stores. */
-static Vtx verts[MAX_VERTS] __attribute__((aligned(16)));
-static int nverts;
-
-static Vtx pending;
+} Pending;
+static Pending pending;
 static int active[GX_MAX_ATTR]; /* attributes in descriptor order */
 static int nactive;
 static int acur;                /* which of them the next writer fills */
@@ -162,6 +214,8 @@ void gx_draw_reset(void) {
     }
 }
 
+static void dlc_report(void);
+
 void gx_draw_report(void) {
     if (!stat_prims) {
         return;
@@ -172,6 +226,7 @@ void gx_draw_report(void) {
     port_log("port> GX draw: %u primitive(s) off-world (|position matrix "
              "translation| over %.0f)\n",
              stat_offworld, (double)GX_OFFWORLD_LIMIT);
+    dlc_report();
 }
 
 /* ---- display-list record mode --------------------------------------------- */
@@ -442,10 +497,32 @@ static void begin_attr_order(void) {
             pi.vat[a] = &gx.vat[vtxfmt][a];
         }
     }
+
+    /* The two layouts, settled once per primitive with everything they depend
+     * on already in hand. */
+    {
+        int o = 12;
+        sl.ntex = pi.tex_copy_n;
+        sl.off_nrm = -1;
+        if (pi.have_nrm) {
+            sl.off_nrm = o;
+            o += 12;
+        }
+        sl.off_clr = o;
+        o += 4;
+        sl.off_tex = o;
+        o += 8 * sl.ntex;
+        sl.stride = o;
+
+        out_ntex = tex_slots;
+        out_off_clr = 12;
+        out_off_tex = 16;
+        out_stride = 16 + 8 * out_ntex;
+    }
 }
 
 static void transform_and_store(void);
-static void finish_vertices(int n);
+static void finish_vertices(const u8* s, int n);
 
 /* **A writer's name does not say which attribute it fills.**
  *
@@ -661,220 +738,164 @@ static void light_channel(int c, const float* wpos, const float* wnrm,
  * reference md5s were re-based deliberately -- see PLAN.md 15.5.
  */
 
-#ifdef __ALTIVEC__
-#include <altivec.h>
-#define vf32 __vector float
-
-/* (m[a], m[b], m[c], 0) -- a column of a row-major 3x4 or 3x3. */
-static vf32 column(const f32* m, int a, int b, int c) {
-    union { f32 f[4]; vf32 v; } u;
-    u.f[0] = m[a];
-    u.f[1] = m[b];
-    u.f[2] = m[c];
-    u.f[3] = 0.0f;
-    return u.v;
-}
-#endif
-
-static void finish_vertices(int n) {
+/* Phase 2: the whole run at once, source -> output.
+ *
+ * `s` is the run's first source vertex -- src_buf for an immediate primitive,
+ * and the cached copy for a display-list replay that hit (see the cache
+ * below), which is the whole point of storing the source rather than the
+ * output: the matrices move every frame and the model-space vertices do not.
+ *
+ * M5 ran this as four passes over the array (position, normal, lighting,
+ * texgen).  It is one pass now.  The arithmetic per vertex is unchanged and in
+ * the same order -- there is no dependency between vertices, so the passes
+ * were free to merge -- but a vertex is now read once, held in registers, and
+ * written once, instead of being walked four times through a 96-byte stride.
+ * The reference md5s do not move, and did not. */
+static void finish_vertices(const u8* s, int n) {
     const f32* m = pi.pos_mtx;
     const f32* nm = pi.nrm_mtx;
+    const int sstride = sl.stride, ostride = out_stride;
     int i;
 
     if (n <= 0) {
         return;
     }
+    for (i = 0; i < n; i++, s += sstride) {
+        u8* o = out_buf + (size_t)i * ostride;
+        f32* op = (f32*)o;
+        const f32* sp = (const f32*)s;
+        float px = sp[0], py = sp[1], pz = sp[2];
+        float nrm[3];
+        int t;
 
-#ifdef __ALTIVEC__
-    {
-        vf32 zero = (vf32)vec_splat_u32(0);
-        vf32 c0 = column(m, 0, 4, 8), c1 = column(m, 1, 5, 9),
-                   c2 = column(m, 2, 6, 10), c3 = column(m, 3, 7, 11);
-        vf32 half = vec_ctf(vec_splat_s32(1), 1);   /* 0.5f */
-        vf32 threehalf = vec_ctf(vec_splat_s32(3), 1); /* 1.5f */
-        /* verts[i] is quadword aligned (sizeof(Vtx) is 96), so A is
-         * (px, py, pz, nx) and B is (ny, nz, colour, colour). */
-        __vector unsigned char sel_pn = {
-            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 16, 17, 18, 19
-        }; /* (a.x, a.y, a.z, b.x) */
-        __vector unsigned char sel_nb = {
-            4, 5, 6, 7, 8, 9, 10, 11, 24, 25, 26, 27, 28, 29, 30, 31
-        }; /* (a.y, a.z, b.z, b.w) -- the two colour words come back untouched */
-        __vector unsigned char sel_pa = {
-            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 28, 29, 30, 31
-        }; /* (a.x, a.y, a.z, b.w) */
-        if (pi.have_nrm) {
-            vf32 n0 = column(nm, 0, 3, 6), n1 = column(nm, 1, 4, 7),
-                       n2 = column(nm, 2, 5, 8);
-            for (i = 0; i < n; i++) {
-                f32* q = &verts[i].pos[0];
-                vf32 A = vec_ld(0, q);
-                vf32 B = vec_ld(16, q);
-                vf32 P = vec_madd(c0, vec_splat(A, 0), c3);
-                vf32 N = vec_madd(n0, vec_splat(A, 3), zero);
-                vf32 len2, r, ok;
-                P = vec_madd(c1, vec_splat(A, 1), P);
-                N = vec_madd(n1, vec_splat(B, 0), N);
-                P = vec_madd(c2, vec_splat(A, 2), P);
-                N = vec_madd(n2, vec_splat(B, 1), N);
-                /* N's fourth lane is zero by construction, so the square sum
-                 * over all four lanes is the 3-vector's. */
-                len2 = vec_madd(N, N, zero);
-                len2 = vec_add(len2, vec_sld(len2, len2, 4));
-                len2 = vec_add(len2, vec_sld(len2, len2, 8));
-                r = vec_rsqrte(len2);
-                /* one Newton step, the same shape gx_rsqrtf uses */
-                r = vec_madd(r, vec_nmsub(vec_madd(r, r, zero), vec_madd(len2, half, zero),
-                                          threehalf),
-                             zero);
-                ok = (vf32)vec_cmpgt(len2, zero);
-                N = vec_sel(N, vec_madd(N, r, zero), (__vector unsigned int)ok);
-                vec_st(vec_perm(P, N, sel_pn), 0, q);
-                vec_st(vec_perm(N, B, sel_nb), 16, q);
-            }
-        } else {
-            for (i = 0; i < n; i++) {
-                f32* q = &verts[i].pos[0];
-                vf32 A = vec_ld(0, q);
-                vf32 P = vec_madd(c0, vec_splat(A, 0), c3);
-                P = vec_madd(c1, vec_splat(A, 1), P);
-                P = vec_madd(c2, vec_splat(A, 2), P);
-                vec_st(vec_perm(P, A, sel_pa), 0, q);
-            }
-        }
-    }
-#else
-    for (i = 0; i < n; i++) {
-        Vtx* v = &verts[i];
-        float px = v->pos[0], py = v->pos[1], pz = v->pos[2];
-        v->pos[0] = m[0] * px + m[1] * py + m[2] * pz + m[3];
-        v->pos[1] = m[4] * px + m[5] * py + m[6] * pz + m[7];
-        v->pos[2] = m[8] * px + m[9] * py + m[10] * pz + m[11];
-    }
-    if (pi.have_nrm) {
-        for (i = 0; i < n; i++) {
-            Vtx* v = &verts[i];
-            float nx = v->nrm[0], ny = v->nrm[1], nz = v->nrm[2];
+        op[0] = m[0] * px + m[1] * py + m[2] * pz + m[3];
+        op[1] = m[4] * px + m[5] * py + m[6] * pz + m[7];
+        op[2] = m[8] * px + m[9] * py + m[10] * pz + m[11];
+
+        if (sl.off_nrm >= 0) {
+            const f32* sn = (const f32*)(s + sl.off_nrm);
+            float nx = sn[0], ny = sn[1], nz = sn[2];
             float len2;
-            v->nrm[0] = nm[0] * nx + nm[1] * ny + nm[2] * nz;
-            v->nrm[1] = nm[3] * nx + nm[4] * ny + nm[5] * nz;
-            v->nrm[2] = nm[6] * nx + nm[7] * ny + nm[8] * nz;
-            len2 = v->nrm[0] * v->nrm[0] + v->nrm[1] * v->nrm[1] + v->nrm[2] * v->nrm[2];
+            nrm[0] = nm[0] * nx + nm[1] * ny + nm[2] * nz;
+            nrm[1] = nm[3] * nx + nm[4] * ny + nm[5] * nz;
+            nrm[2] = nm[6] * nx + nm[7] * ny + nm[8] * nz;
+            len2 = nrm[0] * nrm[0] + nrm[1] * nrm[1] + nrm[2] * nrm[2];
             if (len2 > 0.0f) {
                 float rl = gx_rsqrtf(len2);
-                v->nrm[0] *= rl;
-                v->nrm[1] *= rl;
-                v->nrm[2] *= rl;
+                nrm[0] *= rl;
+                nrm[1] *= rl;
+                nrm[2] *= rl;
             }
+        } else {
+            /* what the old phase 1 stored for a descriptor with no normal, and
+             * what a GX_TG_NRM texgen then read back */
+            nrm[0] = nrm[1] = 0.0f;
+            nrm[2] = 1.0f;
         }
-    }
-#endif
 
-    /* Lighting and texgen: both read the transformed position, so neither can
-     * move into phase 1, and neither vectorises the way the transform does --
-     * a texgen is a 2x4 against one vector and a lit channel is a loop over
-     * however many lights the material named. */
-    if (pi.chan_mode == 2) {
-        for (i = 0; i < n; i++) {
-            Vtx* v = &verts[i];
-            light_channel(0, v->pos, v->nrm, v->clr[0]);
-        }
-    }
-    if (pi.ntexgen || tex_slots) {
-        for (i = 0; i < n; i++) {
-            Vtx* v = &verts[i];
-            float raw[GX_TEXCOORDS][2];
-            int t, k;
-            for (k = 0; k < pi.tex_copy_n; k++) {
-                raw[k][0] = v->tex[k][0];
-                raw[k][1] = v->tex[k][1];
+        {
+            const u8* sc = s + sl.off_clr;
+            u8* oc = o + out_off_clr;
+            oc[0] = sc[0];
+            oc[1] = sc[1];
+            oc[2] = sc[2];
+            oc[3] = sc[3];
+            if (pi.chan_mode == 2) {
+                light_channel(0, op, nrm, oc);
             }
+        }
+
+        {
+            const f32* raw = (const f32*)(s + sl.off_tex);
+            f32* ot = (f32*)(o + out_off_tex);
             for (t = 0; t < pi.ntexgen; t++) {
-                float s, tc, in[3];
+                float sc, tc, in[3];
                 const f32* tm = pi.tg[t].mtx;
                 if (pi.tg[t].src_kind == 0) {
-                    k = pi.tg[t].src_k;
-                    in[0] = raw[k][0];
-                    in[1] = raw[k][1];
+                    const f32* r = raw + 2 * pi.tg[t].src_k;
+                    in[0] = r[0];
+                    in[1] = r[1];
                     in[2] = 1.0f;
                 } else if (pi.tg[t].src_kind == 1) {
-                    in[0] = v->pos[0];
-                    in[1] = v->pos[1];
-                    in[2] = v->pos[2];
+                    in[0] = op[0];
+                    in[1] = op[1];
+                    in[2] = op[2];
                 } else {
-                    in[0] = v->nrm[0];
-                    in[1] = v->nrm[1];
-                    in[2] = v->nrm[2];
+                    in[0] = nrm[0];
+                    in[1] = nrm[1];
+                    in[2] = nrm[2];
                 }
                 if (!tm) {
-                    s = in[0];
+                    sc = in[0];
                     tc = in[1];
                 } else {
-                    s = tm[0] * in[0] + tm[1] * in[1] + tm[2] * in[2] + tm[3];
+                    sc = tm[0] * in[0] + tm[1] * in[1] + tm[2] * in[2] + tm[3];
                     tc = tm[4] * in[0] + tm[5] * in[1] + tm[6] * in[2] + tm[7];
                     if (pi.tg[t].divide) {
-                        float q = tm[8] * in[0] + tm[9] * in[1] + tm[10] * in[2] + tm[11];
+                        float q =
+                            tm[8] * in[0] + tm[9] * in[1] + tm[10] * in[2] + tm[11];
                         if (q != 0.0f) {
-                            s /= q;
+                            sc /= q;
                             tc /= q;
                         }
                     }
                 }
-                v->tex[t][0] = s;
-                v->tex[t][1] = tc;
+                ot[2 * t] = sc;
+                ot[2 * t + 1] = tc;
             }
-            for (; t < tex_slots; t++) {
-                v->tex[t][0] = 0.0f;
-                v->tex[t][1] = 0.0f;
+            for (; t < out_ntex; t++) {
+                ot[2 * t] = 0.0f;
+                ot[2 * t + 1] = 0.0f;
             }
         }
     }
 }
 
-/* Phase 1: everything that does not need a matrix. */
+/* Phase 1: everything that does not need a matrix, packed into the source
+ * layout.  One vertex, one store of each field it actually has. */
 static void transform_and_store(void) {
-    Vtx* v;
+    u8* v;
     int k;
-    if (nverts >= MAX_VERTS) {
+    if (nverts >= MAX_VERTS || sv_first + (u32)nverts >= MAX_VERTS) {
         gx_warn("GXBegin: more than 65536 vertices in one primitive; truncated");
         return;
     }
-    v = &verts[nverts++];
-    /* Not `*v = pending`.  A Vtx is 96 bytes and every one of its fields is
-     * either overwritten below or unread by the draw; copying the whole thing
-     * per vertex was pure memory traffic in the hottest loop in the port. */
-    if (pi.no_clr0 || pi.chan_mode == 1) {
-        /* Both cases splat the register material, and both are constant for
-         * the whole primitive, so the copy from `pending` is skipped. */
-        v->clr[0][0] = gx.chan[0].mat.r;
-        v->clr[0][1] = gx.chan[0].mat.g;
-        v->clr[0][2] = gx.chan[0].mat.b;
-        v->clr[0][3] = gx.chan[0].mat.a;
-    } else {
-        v->clr[0][0] = pending.clr[0][0];
-        v->clr[0][1] = pending.clr[0][1];
-        v->clr[0][2] = pending.clr[0][2];
-        v->clr[0][3] = pending.clr[0][3];
+    v = src_buf + (size_t)(sv_first + (u32)nverts) * sl.stride;
+    nverts++;
+    {
+        f32* p = (f32*)v;
+        p[0] = pending.pos[0];
+        p[1] = pending.pos[1];
+        p[2] = pending.pos[2];
     }
-    v->clr[1][0] = pending.clr[1][0];
-    v->clr[1][1] = pending.clr[1][1];
-    v->clr[1][2] = pending.clr[1][2];
-    v->clr[1][3] = pending.clr[1][3];
-
-    v->pos[0] = pending.pos[0];
-    v->pos[1] = pending.pos[1];
-    v->pos[2] = pending.pos[2];
-    if (pi.have_nrm) {
-        v->nrm[0] = pending.nrm[0];
-        v->nrm[1] = pending.nrm[1];
-        v->nrm[2] = pending.nrm[2];
-    } else {
-        v->nrm[0] = v->nrm[1] = 0.0f;
-        v->nrm[2] = 1.0f;
+    if (sl.off_nrm >= 0) {
+        f32* np = (f32*)(v + sl.off_nrm);
+        np[0] = pending.nrm[0];
+        np[1] = pending.nrm[1];
+        np[2] = pending.nrm[2];
     }
-    for (k = 0; k < pi.tex_copy_n; k++) {
-        v->tex[k][0] = pending.tex[k][0];
-        v->tex[k][1] = pending.tex[k][1];
+    {
+        u8* c = v + sl.off_clr;
+        if (pi.no_clr0 || pi.chan_mode == 1) {
+            /* Both cases splat the register material, and both are constant for
+             * the whole primitive, so the copy from `pending` is skipped. */
+            c[0] = gx.chan[0].mat.r;
+            c[1] = gx.chan[0].mat.g;
+            c[2] = gx.chan[0].mat.b;
+            c[3] = gx.chan[0].mat.a;
+        } else {
+            c[0] = pending.clr[0][0];
+            c[1] = pending.clr[0][1];
+            c[2] = pending.clr[0][2];
+            c[3] = pending.clr[0][3];
+        }
+    }
+    {
+        f32* t = (f32*)(v + sl.off_tex);
+        for (k = 0; k < sl.ntex; k++) {
+            t[2 * k] = pending.tex[k][0];
+            t[2 * k + 1] = pending.tex[k][1];
+        }
     }
 }
 
@@ -1096,6 +1117,7 @@ void GXBegin(GXPrimitive type, GXVtxFmt fmt, u16 n) {
     vtxfmt = (u8)fmt;
     want_verts = n;
     nverts = 0;
+    sv_first = 0;
     in_prim = 1;
     begin_attr_order();
     GXLOG("GXBegin", "prim %02x fmt %d n %u, %d attrs", type, fmt, n, nactive);
@@ -1128,10 +1150,13 @@ static void draw_log(void) {
              "%d chan(s) ----\n",
              shown, prim, nverts, gx.num_tev, gx.num_texgens, gx.num_chans);
     for (i = 0; i < nverts && i < 4; i++) {
-        const Vtx* v = &verts[i];
+        const u8* o = out_buf + (size_t)i * out_stride;
+        const f32* op = (const f32*)o;
+        const u8* oc = o + out_off_clr;
+        const f32* ot = (const f32*)(o + out_off_tex);
         port_log("  v%d pos %8.2f %8.2f %8.2f  clr %3u %3u %3u %3u  st %6.3f %6.3f\n",
-                 i, v->pos[0], v->pos[1], v->pos[2], v->clr[0][0], v->clr[0][1],
-                 v->clr[0][2], v->clr[0][3], v->tex[0][0], v->tex[0][1]);
+                 i, op[0], op[1], op[2], oc[0], oc[1], oc[2], oc[3],
+                 out_ntex ? ot[0] : 0.0f, out_ntex ? ot[1] : 0.0f);
     }
     {
         const f32* m = gx.pos_mtx[gx.cur_pnmtx < 10 ? gx.cur_pnmtx : 0];
@@ -1189,18 +1214,20 @@ static void draw_log(void) {
     }
 }
 
-static void draw_now(void) {
-    if (!nverts) {
+/* The draw itself, once the source run is in hand.  `s` is where phase 2
+ * reads from: src_buf for a primitive the writers just assembled, and the
+ * cached copy for a display list that hit. */
+static void draw_run(const u8* s, int n) {
+    if (!n) {
         return;
     }
     stat_prims++;
-    stat_verts += (unsigned)nverts;
+    stat_verts += (unsigned)n;
     if (!gl13_live()) {
         return;
     }
-    /* Phase 2 of the vertex path: the whole run, transformed at once.  See the
-     * comment above finish_vertices. */
-    finish_vertices(nverts);
+    nverts = n; /* draw_log reads it */
+    finish_vertices(s, n);
     gl13_apply_transform();
     gl13_apply_raster_state();
     gx_tev_apply();
@@ -1209,26 +1236,31 @@ static void draw_now(void) {
      * sends you hunting for a texture upload that already happened. */
     draw_log();
 
-    /* `verts` is a static buffer and every draw reads it from index zero, so
-     * these three pointers never change for the life of the process; the
-     * cache turns 18 client-state calls a draw into none. */
-    glc_vertex_array(&verts[0].pos[0], (int)sizeof(Vtx));
-    glc_color_array(&verts[0].clr[0][0], (int)sizeof(Vtx));
+    /* `out_buf` is a static buffer and every draw reads it from index zero, so
+     * the base pointer never moves; the offsets and the stride do, because the
+     * layout is now packed to the primitive.  glc_* compares both. */
+    glc_vertex_array(out_buf, out_stride);
+    glc_color_array(out_buf + out_off_clr, out_stride);
     {
         int i;
         for (i = 0; i < gl13_max_tex_units; i++) {
             int stage = i < gx.num_tev ? i : -1;
-            if (stage >= 0 && gx.tev[stage].coord < GX_TEXCOORDS &&
+            if (stage >= 0 && gx.tev[stage].coord < out_ntex &&
                 gx_bound_tex(gx.tev[stage].map) != NULL) {
-                glc_coord_array(i, &verts[0].tex[gx.tev[stage].coord][0],
-                                (int)sizeof(Vtx));
+                glc_coord_array(i,
+                                out_buf + out_off_tex + 8 * gx.tev[stage].coord,
+                                out_stride);
             } else {
                 glc_coord_array(i, NULL, 0);
             }
         }
     }
-    GL(glDrawArrays)(gl_prim(prim), 0, nverts);
+    GL(glDrawArrays)(gl_prim(prim), 0, n);
     stat_draws++;
+}
+
+static void draw_now(void) {
+    draw_run(src_buf + (size_t)sv_first * sl.stride, nverts);
 }
 
 void GXEnd(void) {
@@ -1249,9 +1281,379 @@ void GXEnd(void) {
 
 static u32 rd_be16(const u8* p) { return (u32)((p[0] << 8) | p[1]); }
 
+/* ---- the display-list vertex cache -----------------------------------------
+ *
+ * 92% of the board's primitives arrive through `GXCallDisplayList`, and every
+ * frame the port decoded the same lists again from scratch: parse the opcode
+ * stream, follow every index into the game's own attribute arrays, convert
+ * each component out of its fixed-point type, and stage a vertex.  M5's
+ * profile put that decode -- `indexed` plus `read_component` -- at a quarter
+ * to a third of the frame, as large again as the transform it feeds.
+ *
+ * None of it depends on the camera, the matrices, the lights or the material.
+ * A display list is a fixed set of indices into arrays the game mostly writes
+ * once at model load, so its **model-space** vertices are the same every
+ * frame.  So they are decoded once and kept, and a replay skips straight to
+ * phase 2.
+ *
+ * **What the key has to contain** is the whole of the argument, because a
+ * cache that is wrong here draws last frame's geometry:
+ *
+ *   - the list's bytes (its indices and any direct attributes),
+ *   - the vertex descriptor and the whole vertex-attribute table, since the
+ *     same indices read differently through a different VAT,
+ *   - each array's base pointer and stride,
+ *   - **the contents of the array ranges the list actually reads** -- Mario
+ *     Party 4 does animate geometry on the CPU (`ClusterExec.c` morphs and
+ *     `EnvelopeExec.c` skins write back into the position array), so a key
+ *     that trusted the base pointer would freeze every animated model,
+ *   - and the handful of state bits phase 1 itself reads: whether the
+ *     descriptor has a normal, whether the colour comes from the vertex or is
+ *     splatted from the register material (and if so, that colour), and how
+ *     many raw texcoords a texgen will read back.
+ *
+ * The array-contents check is why this pays rather than merely moves the cost.
+ * An indexed position is six bytes in the array and thirty-six in the decoded
+ * source vertex, and the check only *reads* the array while the decode reads
+ * it, converts it and writes the vertex -- so validating is a small fraction
+ * of decoding, and it is exact rather than sampled.
+ *
+ * **And on this game it does not pay, so it is off by default** -- `--dlcache`
+ * turns it on.  PLAN.md 21.3 has the numbers: the title screen gains 18% and
+ * the character select loses 14%, because Mario Party 4 animates almost
+ * everything it draws and an animated model invalidates its entry every frame,
+ * paying the validity check *and* the decode.  This is M5's AltiVec finding
+ * again in a different place, and it is kept switched on a flag for the same
+ * reason: the measurement is the result.
+ */
+
+#define DLC_BUCKETS 1024
+#define DLC_MAX_BYTES (32u * 1024u * 1024u)
+#define DLC_MAX_ENTRY_BYTES (2u * 1024u * 1024u)
+
+typedef struct DlSeg {
+    u8 op;     /* the list's own opcode: primitive | vertex format */
+    u32 first; /* source vertex index within the entry              */
+    u32 count;
+} DlSeg;
+
+typedef struct DlEntry {
+    struct DlEntry* next;
+    const void* list;
+    u32 nbytes;
+    u32 list_hash;
+    u32 state_hash;
+    u32 array_hash;
+    /* The *window* of each array this list reads, in bytes from the array
+     * base.  Not the prefix: a display list is one material's slice of a mesh
+     * and its indices are a contiguous run, so [min..max] is its own vertices
+     * and [0..max] is everybody's.  The first M9 cache hashed the prefix and
+     * spent 13.7 MB a frame proving that 0.9 MB of vertices had not moved --
+     * it was slower than the decode it replaced. */
+    u32 arr_off[GX_MAX_ATTR];
+    u32 arr_len[GX_MAX_ATTR];
+    int stride;                 /* the source layout's stride              */
+    u32 nverts;
+    u8* src;
+    DlSeg* segs;
+    int nsegs;
+    int dynamic; /* its arrays have been rewritten under it at least once */
+    unsigned last_frame;
+    size_t bytes;
+} DlEntry;
+
+static DlEntry* dlc[DLC_BUCKETS];
+static size_t dlc_bytes;
+static unsigned stat_dlc_hit, stat_dlc_new, stat_dlc_list, stat_dlc_array,
+    stat_dlc_state, stat_dlc_evict, stat_dlc_big;
+/* How the *entries* split, which is the static/dynamic question: an entry that
+ * has ever been invalidated by its arrays moving is an animated model. */
+static unsigned stat_dlc_entries, stat_dlc_dynamic;
+
+static u32 hash_bytes(const void* pv, size_t n, u32 h) {
+    const u8* p = (const u8*)pv;
+    size_t i = 0;
+    /* PowerPC loads unaligned words in hardware, and GCC turns this memcpy
+     * into the single `lwz` it is. */
+    for (; i + 4 <= n; i += 4) {
+        u32 w;
+        memcpy(&w, p + i, 4);
+        h = (h ^ w) * 16777619u;
+    }
+    for (; i < n; i++) {
+        h = (h ^ p[i]) * 16777619u;
+    }
+    return h;
+}
+
+/* Everything phase 1 reads that is not the list's own bytes.
+ *
+ * Only the attributes the descriptor actually names are hashed.  The whole
+ * vertex-attribute table is 624 bytes and the whole array table 208, and this
+ * runs on every one of the ~850 `GXCallDisplayList` calls a board frame makes
+ * -- hashing all of it would have cost most of what the cache saves.  Four
+ * live attributes come to about 150 bytes. */
+static u32 dl_state_hash(void) {
+    const GXChanCtrl* cc = &gx.chan[0];
+    u32 h = 2166136261u;
+    u8 k[8];
+    int a, cm, t, copy_n = 0, splat;
+    h = hash_bytes(gx.vcd, sizeof(gx.vcd), h);
+    for (a = 0; a < GX_MAX_ATTR; a++) {
+        if (gx.vcd[a] != GX_NONE) {
+            int f;
+            for (f = 0; f < GX_MAX_VTXFMT; f++) {
+                h = hash_bytes(&gx.vat[f][a], sizeof(GXVatFmt), h);
+            }
+            h = hash_bytes(&gx.array[a].base, sizeof(gx.array[a].base), h);
+            h = hash_bytes(&gx.array[a].stride, sizeof(gx.array[a].stride), h);
+        }
+    }
+    if (gx.num_chans == 0) {
+        cm = 0;
+    } else if (!cc->enable) {
+        cm = cc->mat_src == GX_SRC_REG ? 1 : 0;
+    } else {
+        cm = 2;
+    }
+    for (t = 0; t < gx.num_texgens && t < GX_TEXCOORDS; t++) {
+        const GXTexGen* g = &gx.texgen[t];
+        int sk = -1;
+        if (g->src >= GX_TG_TEX0 && g->src <= GX_TG_TEX7) {
+            sk = (int)g->src - GX_TG_TEX0;
+        } else if (g->src != GX_TG_POS && g->src != GX_TG_NRM) {
+            sk = t;
+        }
+        if (sk >= 0 && sk + 1 > copy_n) {
+            copy_n = sk + 1;
+        }
+    }
+    splat = (cm == 1 || gx.vcd[GX_VA_CLR0] == GX_NONE);
+    k[0] = (u8)cm;
+    k[1] = (u8)copy_n;
+    k[2] = (u8)splat;
+    k[3] = splat ? cc->mat.r : 0;
+    k[4] = splat ? cc->mat.g : 0;
+    k[5] = splat ? cc->mat.b : 0;
+    k[6] = splat ? cc->mat.a : 0;
+    k[7] = 0;
+    return hash_bytes(k, sizeof(k), h);
+}
+
+/* The array-contents check, memoised for the frame.
+ *
+ * A model is one mesh and several display lists over the same position,
+ * normal, colour and texcoord arrays, so a board frame checks the same few
+ * hundred kilobytes over and over.  Hashing each (base, length) once a frame
+ * turns that back into one pass.  The memo is dropped at every frame boundary,
+ * so a model the CPU morphs between frames is caught; what it cannot see is an
+ * array rewritten *between two draws inside one frame*, which would need the
+ * same model animated and drawn twice in a frame from the same buffer, and the
+ * frame md5s say it does not happen. */
+/* 8,192 slots with a four-way probe, not 512 with none.  A board frame calls
+ * GXCallDisplayList about 850 times over a few thousand distinct (array,
+ * length) pairs; at 512 slots the memo thrashed, every thrash re-hashed
+ * kilobytes of vertex array, and the "cache" was slower than the decode it
+ * replaced -- which is what the first M9 measurement said, and is why
+ * `stat_arr_bytes` exists. */
+#define ARRHASH_SLOTS 8192
+#define ARRHASH_PROBE 4
+typedef struct ArrHash {
+    const u8* base;
+    u32 len;
+    u32 hash;
+    unsigned frame;
+} ArrHash;
+static ArrHash arr_memo[ARRHASH_SLOTS];
+static u32 arr_memo_next;
+/* Bytes actually walked, so the report can say whether the validity check or
+ * the decode it avoids is the expensive half. */
+static double stat_arr_bytes, stat_list_bytes;
+
+static u32 array_range_hash(const u8* base, u32 len, unsigned epoch) {
+    unsigned h0 = (((unsigned)(uintptr_t)base >> 4) ^ (len * 2654435761u)) &
+                  (ARRHASH_SLOTS - 1);
+    unsigned i;
+    ArrHash* m;
+    for (i = 0; i < ARRHASH_PROBE; i++) {
+        m = &arr_memo[(h0 + i) & (ARRHASH_SLOTS - 1)];
+        if (m->base == base && m->len == len && m->frame == epoch) {
+            return m->hash;
+        }
+    }
+    /* Take the first slot that is not already current for this frame, so a
+     * probe run never evicts a neighbour that is still being asked for. */
+    m = &arr_memo[h0];
+    for (i = 0; i < ARRHASH_PROBE; i++) {
+        ArrHash* c = &arr_memo[(h0 + i) & (ARRHASH_SLOTS - 1)];
+        if (c->frame != epoch) {
+            m = c;
+            break;
+        }
+    }
+    if (i == ARRHASH_PROBE) {
+        m = &arr_memo[(h0 + (arr_memo_next++ & (ARRHASH_PROBE - 1))) &
+                      (ARRHASH_SLOTS - 1)];
+    }
+    m->base = base;
+    m->len = len;
+    m->frame = epoch;
+    m->hash = hash_bytes(base, len, 2166136261u);
+    stat_arr_bytes += (double)len;
+    return m->hash;
+}
+
+static u32 dlc_array_hash(const u32* arr_off, const u32* arr_len) {
+    u32 h = 2166136261u;
+    int a;
+    for (a = 0; a < GX_MAX_ATTR; a++) {
+        if (arr_len[a] && gx.array[a].base) {
+            u32 r = array_range_hash(gx.array[a].base + arr_off[a], arr_len[a],
+                                     gx_array_epoch);
+            h = (h ^ r) * 16777619u;
+        }
+    }
+    return h;
+}
+
+static void dlc_free(DlEntry* e) {
+    dlc_bytes -= e->bytes;
+    free(e->src);
+    free(e->segs);
+    free(e);
+}
+
+/* Evict anything that has not been replayed for a couple of frames.  A scene
+ * change swaps every model at once, so this is a cliff rather than a trickle
+ * and an LRU list would be bookkeeping for nothing. */
+static unsigned dlc_last_sweep_frame;
+
+static void dlc_sweep_age(unsigned now, unsigned age) {
+    int b;
+    for (b = 0; b < DLC_BUCKETS; b++) {
+        DlEntry** pp = &dlc[b];
+        while (*pp) {
+            DlEntry* e = *pp;
+            if (e->last_frame + age < now) {
+                *pp = e->next;
+                stat_dlc_evict++;
+                stat_dlc_entries--;
+                dlc_free(e);
+            } else {
+                pp = &e->next;
+            }
+        }
+    }
+}
+
+static void dlc_sweep(unsigned now) { dlc_sweep_age(now, 2); }
+
+static void dlc_report(void) {
+    unsigned tot = stat_dlc_hit + stat_dlc_new + stat_dlc_list + stat_dlc_array +
+                   stat_dlc_state + stat_dlc_big;
+    if (!tot) {
+        return;
+    }
+    port_log("port> DL cache: %u calls, %u hits (%.1f%%), %u first-sight, "
+             "%u arrays rewritten, %u list changed, %u state changed, %u too big\n",
+             tot, stat_dlc_hit, 100.0 * stat_dlc_hit / tot, stat_dlc_new,
+             stat_dlc_array, stat_dlc_list, stat_dlc_state, stat_dlc_big);
+    port_log("port> DL cache: validity cost %.0f MB of array hashing and %.0f MB "
+             "of list hashing over the run\n",
+             stat_arr_bytes / 1048576.0, stat_list_bytes / 1048576.0);
+    port_log("port> DL cache: %u live entries, %u KB, %u evicted; %u of them "
+             "animated (their arrays moved), %u static\n",
+             stat_dlc_entries, (unsigned)(dlc_bytes / 1024), stat_dlc_evict,
+             stat_dlc_dynamic,
+             stat_dlc_entries > stat_dlc_dynamic ? stat_dlc_entries - stat_dlc_dynamic
+                                                 : 0);
+}
+
+/* Per-list decode bookkeeping: how far into each array the indices reached, so
+ * the validity check knows exactly which bytes to look at. */
+static u32 dl_minidx[GX_MAX_ATTR], dl_maxidx[GX_MAX_ATTR];
+static DlSeg dl_segs[1024];
+static int dl_nsegs;
+
+static void dlc_store(const void* list, u32 nbytes, u32 lh, u32 sh, u32 total,
+                      unsigned frame, int born_dynamic) {
+    DlEntry* e;
+    size_t sbytes = (size_t)total * (size_t)sl.stride;
+    size_t gbytes = (size_t)dl_nsegs * sizeof(DlSeg);
+    int a;
+    if (!total || dl_nsegs <= 0 || dl_nsegs > (int)(sizeof(dl_segs) / sizeof(dl_segs[0]))) {
+        return;
+    }
+    if (sbytes + gbytes > DLC_MAX_ENTRY_BYTES) {
+        stat_dlc_big++;
+        return;
+    }
+    if (dlc_bytes + sbytes + gbytes > DLC_MAX_BYTES) {
+        dlc_sweep(frame);
+        if (dlc_bytes + sbytes + gbytes > DLC_MAX_BYTES) {
+            stat_dlc_big++;
+            return;
+        }
+    }
+    e = (DlEntry*)calloc(1, sizeof(*e));
+    if (!e) {
+        return;
+    }
+    e->src = (u8*)malloc(sbytes);
+    e->segs = (DlSeg*)malloc(gbytes);
+    if (!e->src || !e->segs) {
+        free(e->src);
+        free(e->segs);
+        free(e);
+        return;
+    }
+    memcpy(e->src, src_buf, sbytes);
+    memcpy(e->segs, dl_segs, gbytes);
+    e->list = list;
+    e->nbytes = nbytes;
+    e->list_hash = lh;
+    e->state_hash = sh;
+    e->stride = sl.stride;
+    e->nverts = total;
+    e->nsegs = dl_nsegs;
+    e->last_frame = frame;
+    e->dynamic = born_dynamic;
+    e->bytes = sbytes + gbytes + sizeof(*e);
+    for (a = 0; a < GX_MAX_ATTR; a++) {
+        if (dl_maxidx[a] == 0xFFFFFFFFu || !gx.array[a].stride) {
+            e->arr_off[a] = 0;
+            e->arr_len[a] = 0;
+        } else {
+            u32 st = (u32)gx.array[a].stride;
+            e->arr_off[a] = dl_minidx[a] * st;
+            e->arr_len[a] = (dl_maxidx[a] - dl_minidx[a] + 1) * st;
+        }
+    }
+    e->array_hash = dlc_array_hash(e->arr_off, e->arr_len);
+    {
+        unsigned b = ((unsigned)(uintptr_t)list >> 5) & (DLC_BUCKETS - 1);
+        e->next = dlc[b];
+        dlc[b] = e;
+    }
+    dlc_bytes += e->bytes;
+    stat_dlc_entries++;
+    if (born_dynamic) {
+        stat_dlc_dynamic++;
+    }
+}
+
 void GXCallDisplayList(const void* list, u32 nbytes) {
     const u8* p = (const u8*)list;
     const u8* end = p + nbytes;
+    u32 state_h = 0, list_h = 0, total = 0;
+    unsigned frame;
+    DlEntry* hit = NULL;
+    DlEntry* found = NULL;
+    int caching;
+    /* 0 = this (buffer, state) pair has never been seen, 2 = the list's bytes
+     * changed, 3 = the arrays the list reads were rewritten under it (an
+     * animated model, which is the split the M9 log reports) */
+    int miss_reason = 0;
     if (dl_recording) {
         gx_warn("GXCallDisplayList inside a display list is not supported");
         return;
@@ -1259,6 +1661,108 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
     dl_replaying = 1;
     stat_dls++;
     port_perf_gx_begin();
+    frame = gl13_frame_number();
+    caching = port_opt.dlcache && nbytes > 0;
+    /* A scene change strands every entry it had; sweep on a slow cadence so
+     * the table does not grow to hold every model the walk has ever passed. */
+    if (caching && frame != dlc_last_sweep_frame && (frame & 255) == 0) {
+        dlc_last_sweep_frame = frame;
+        dlc_sweep_age(frame, 240);
+    }
+
+    if (caching) {
+        unsigned b = ((unsigned)(uintptr_t)list >> 5) & (DLC_BUCKETS - 1);
+        DlEntry* e;
+        state_h = dl_state_hash();
+        /* Keyed on the state as well as the buffer.  The game calls the same
+         * list with different state -- a model drawn twice with two different
+         * register materials, most obviously -- and an entry that could only
+         * hold one of them thrashed: the first M9 measurement had a quarter of
+         * all calls missing with "state changed", each one a full re-decode.
+         * They are separate entries now and the sweep is what bounds them. */
+        for (e = dlc[b]; e; e = e->next) {
+            if (e->list == list && e->nbytes == nbytes && e->state_hash == state_h) {
+                found = e;
+                break;
+            }
+        }
+        if (found) {
+            list_h = hash_bytes(list, nbytes, 2166136261u);
+            stat_list_bytes += (double)nbytes;
+            if (found->list_hash != list_h) {
+                miss_reason = 2;
+            } else if (found->array_hash !=
+                       dlc_array_hash(found->arr_off, found->arr_len)) {
+                miss_reason = 3;
+            } else {
+                hit = found;
+            }
+        } else {
+            miss_reason = 0;
+        }
+        if (hit) {
+            /* The replay.  Everything the miss path does *outside* the decode
+             * still happens per segment, including begin_attr_order -- which
+             * is what settles the matrices, the texgens and the layout for
+             * phase 2, and what counts an off-world draw. */
+            int i;
+            hit->last_frame = frame;
+            stat_dlc_hit++;
+            for (i = 0; i < hit->nsegs; i++) {
+                const DlSeg* g = &hit->segs[i];
+                prim = (u8)(g->op & 0xF8);
+                vtxfmt = (u8)(g->op & 0x07);
+                in_prim = 0;
+                nverts = 0;
+                begin_attr_order();
+                if (nactive == 0 || sl.stride != hit->stride) {
+                    break;
+                }
+                draw_run(hit->src + (size_t)g->first * hit->stride, (int)g->count);
+            }
+            nverts = 0;
+            port_perf_gx_end();
+            dl_replaying = 0;
+            return;
+        }
+        /* A miss that was not a first sight has already been counted by the
+         * reason it failed; drop the stale entry so the fresh decode can take
+         * its place. */
+        if (found) {
+            DlEntry** pp = &dlc[b];
+            while (*pp) {
+                if (*pp == found) {
+                    *pp = found->next;
+                    stat_dlc_entries--;
+                    if (found->dynamic && stat_dlc_dynamic) {
+                        stat_dlc_dynamic--;
+                    }
+                    dlc_free(found);
+                    break;
+                }
+                pp = &(*pp)->next;
+            }
+            found = NULL;
+        }
+        switch (miss_reason) {
+            case 2: stat_dlc_list++; break;
+            case 3: stat_dlc_array++; break;
+            default: stat_dlc_new++; break;
+        }
+        if (!list_h) {
+            list_h = hash_bytes(list, nbytes, 2166136261u);
+            stat_list_bytes += (double)nbytes;
+        }
+        {
+            int a;
+            for (a = 0; a < GX_MAX_ATTR; a++) {
+                dl_maxidx[a] = 0xFFFFFFFFu;
+                dl_minidx[a] = 0xFFFFFFFFu;
+            }
+        }
+        dl_nsegs = 0;
+    }
+
     /* --drawlog also explains display-list replays: the list's size and, per
      * opcode, the primitive, the vertex count and how many attributes the
      * current descriptor says each vertex carries.  `nactive == 0` is the
@@ -1281,6 +1785,7 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
         }
         if ((op & 0x80) == 0) {
             gx_warn("GXCallDisplayList: an unexpected opcode in a recorded list");
+            caching = 0;
             break;
         }
         if (p + 2 > end) {
@@ -1291,6 +1796,7 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
         prim = (u8)(op & 0xF8);
         vtxfmt = (u8)(op & 0x07);
         nverts = 0;
+        sv_first = total;
         in_prim = 1;
         begin_attr_order();
         if (port_opt.drawlog && dl_shown < port_opt.drawlog &&
@@ -1308,6 +1814,7 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
              * and abandon the list rather than hang. */
             gx_warn("GXCallDisplayList: the vertex descriptor is empty, so the "
                     "list cannot be stepped through; it is abandoned");
+            caching = 0;
             break;
         }
         for (i = 0; i < count && p < end; i++) {
@@ -1316,10 +1823,30 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
                 u8 desc = gx.vcd[attr];
                 const GXVatFmt* f = &gx.vat[vtxfmt][attr];
                 if (desc == GX_INDEX16) {
-                    indexed(rd_be16(p));
+                    u32 ix = rd_be16(p);
+                    if (caching) {
+                        if (dl_maxidx[attr] == 0xFFFFFFFFu) {
+                            dl_maxidx[attr] = dl_minidx[attr] = ix;
+                        } else if (ix > dl_maxidx[attr]) {
+                            dl_maxidx[attr] = ix;
+                        } else if (ix < dl_minidx[attr]) {
+                            dl_minidx[attr] = ix;
+                        }
+                    }
+                    indexed(ix);
                     p += 2;
                 } else if (desc == GX_INDEX8) {
-                    indexed(*p);
+                    u32 ix = *p;
+                    if (caching) {
+                        if (dl_maxidx[attr] == 0xFFFFFFFFu) {
+                            dl_maxidx[attr] = dl_minidx[attr] = ix;
+                        } else if (ix > dl_maxidx[attr]) {
+                            dl_maxidx[attr] = ix;
+                        } else if (ix < dl_minidx[attr]) {
+                            dl_minidx[attr] = ix;
+                        }
+                    }
+                    indexed(ix);
                     p += 1;
                 } else { /* GX_DIRECT */
                     int comps, bytes;
@@ -1357,9 +1884,25 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
             }
         }
         in_prim = 0;
+        if (caching) {
+            if (dl_nsegs < (int)(sizeof(dl_segs) / sizeof(dl_segs[0]))) {
+                dl_segs[dl_nsegs].op = op;
+                dl_segs[dl_nsegs].first = sv_first;
+                dl_segs[dl_nsegs].count = (u32)nverts;
+                dl_nsegs++;
+            } else {
+                caching = 0;
+            }
+        }
         draw_now();
+        total = sv_first + (u32)nverts;
         nverts = 0;
     }
+    if (caching) {
+        dlc_store(list, nbytes, list_h, state_h, total, frame,
+                  miss_reason == 3);
+    }
+    sv_first = 0;
     port_perf_gx_end();
     dl_replaying = 0;
 }

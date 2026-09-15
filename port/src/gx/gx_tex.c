@@ -356,6 +356,11 @@ typedef struct CacheEntry {
     u32 content;
     unsigned gl_name;
     u8 wrap_s, wrap_t, min_filt, mag_filt;
+    /* GXSetTevSwapModeTable, packed two bits per output channel (see
+     * GX_SWAP_IDENTITY).  It is part of the key, not of the bind: two stages
+     * can sample the same texels through two different swap tables in the
+     * same frame, and each wants its own re-encoded copy. */
+    u8 swap;
     int used;
     /* The Radeon 9000 has no ARB_texture_non_power_of_two, so an NPOT texture
      * is uploaded into the next power of two up and these are the fractions of
@@ -456,7 +461,7 @@ static void hash_remove(int slot) {
  * over a decoded one) and the regular (image, format, w, h, lut) scan.
  * `*is_efb` reports which kind was found. */
 static int find_slot(const void* image, u32 format, u16 w, u16 h, const void* lut,
-                      int* is_efb) {
+                      u8 swap, int* is_efb) {
     unsigned h0 = hash_key(image);
     int i, regular = -1;
     for (i = hash_head[h0]; i >= 0; i = cache[i].hash_next) {
@@ -469,7 +474,7 @@ static int find_slot(const void* image, u32 format, u16 w, u16 h, const void* lu
             return i;
         }
         if (regular < 0 && e->format == format && e->w == w && e->h == h &&
-            e->lut == lut) {
+            e->lut == lut && e->swap == swap) {
             regular = i;
         }
     }
@@ -651,6 +656,11 @@ static u32 tex_bind_content_hash(const GXTexObjPort* o, const GXTlutObjPort* tlu
     return content;
 }
 
+/* The identity swap table, packed: red->red, green->green, blue->blue,
+ * alpha->alpha. */
+#define GX_SWAP_IDENTITY ((u8)(0 | (1 << 2) | (2 << 4) | (3 << 6)))
+static void swizzle_rgba(u8* rgba, int w, int h, u8 swap);
+
 /* Decode fresh texels into `slot` and upload them: shared by a genuine miss
  * (a brand-new cache key) and a revalidation that found the bytes changed
  * under an existing key (an in-place rewrite, the old `stat_evict` case).
@@ -662,6 +672,9 @@ static void tex_bind_decode_and_upload(int slot, int unit, const GXTexObjPort* o
     int w = 0, h = 0;
     u8* rgba = decode(o, tlut, &w, &h);
     cache[slot].su = cache[slot].sv = 1.0f;
+    if (rgba) {
+        swizzle_rgba(rgba, w, h, cache[slot].swap);
+    }
     /* --dumptex: every texture the decoder produces, as it produced it,
      * written out the first time it is decoded.  "The draw is right and
      * the screen is black" is nearly always the texture, and looking at
@@ -785,7 +798,39 @@ static void tex_bind_finish(int unit, GXTexObjPort* o, int slot) {
     }
 }
 
-void gx_tex_bind(int unit, GXTexObjPort* o) {
+/* Re-encode a decoded RGBA8 image through a GX texture swap table.
+ *
+ * This is the exact half of PLAN.md 21's swap-table work.  A GX TEV stage
+ * routes the *texture* colour through a four-entry table before the combiner
+ * sees it -- `out.r = in[tbl[0]]` and so on -- and the character eyes are
+ * drawn by a stage that does exactly that.  GL 1.3 has no per-channel
+ * swizzle, but there is nothing to express: the swap is a property of the
+ * texels, so applying it to the texels once, at decode, is not an
+ * approximation of the hardware, it *is* the hardware. */
+static void swizzle_rgba(u8* rgba, int w, int h, u8 swap) {
+    const int sel[4] = { swap & 3, (swap >> 2) & 3, (swap >> 4) & 3,
+                         (swap >> 6) & 3 };
+    size_t n = (size_t)w * (size_t)h, i;
+    if (swap == GX_SWAP_IDENTITY) {
+        return;
+    }
+    for (i = 0; i < n; i++) {
+        u8* p = rgba + i * 4;
+        u8 in[4];
+        in[0] = p[0];
+        in[1] = p[1];
+        in[2] = p[2];
+        in[3] = p[3];
+        p[0] = in[sel[0]];
+        p[1] = in[sel[1]];
+        p[2] = in[sel[2]];
+        p[3] = in[sel[3]];
+    }
+}
+
+void gx_tex_bind(int unit, GXTexObjPort* o) { gx_tex_bind_swapped(unit, o, GX_SWAP_IDENTITY); }
+
+void gx_tex_bind_swapped(int unit, GXTexObjPort* o, u8 swap) {
     const GXTlutObjPort* tlut = NULL;
     int slot, is_efb;
     unsigned frame;
@@ -811,7 +856,7 @@ void gx_tex_bind(int unit, GXTexObjPort* o) {
      * EFB-copy scan (image only, and given priority) and the regular (image,
      * format, w, h, lut) scan. */
     slot = find_slot(o->image, o->format, o->width, o->height,
-                      tlut ? tlut->lut : NULL, &is_efb);
+                      tlut ? tlut->lut : NULL, swap, &is_efb);
 
     if (slot >= 0 && is_efb) {
         /* An EFB copy is bound as it stands: there is nothing at `image` to
@@ -902,6 +947,7 @@ void gx_tex_bind(int unit, GXTexObjPort* o) {
         cache[slot].format = o->format;
         cache[slot].w = o->width;
         cache[slot].h = o->height;
+        cache[slot].swap = swap;
         cache[slot].content = content;
         cache[slot].validated_epoch = cache_epoch;
         hash_insert(slot);
@@ -1062,7 +1108,7 @@ void gx_tex_copy(void* dest, int clear) {
      * `find_slot()` looks up in `gx_tex_bind` covers this entry too -- the
      * format/w/h/lut arguments below are irrelevant for an `efb` match, which
      * is keyed on `image` alone (see `find_slot()`). */
-    slot = find_slot(dest, 0, 0, 0, NULL, &i);
+    slot = find_slot(dest, 0, 0, 0, NULL, GX_SWAP_IDENTITY, &i);
     if (slot < 0) {
         if (cache_used == CACHE_MAX) {
             gx_warn("GXCopyTex: the texture cache is full; the copy is dropped");
