@@ -397,6 +397,23 @@ int port_parse_args(int argc, char** argv) {
             return 0;
         }
     }
+    /* --soak implies the menu walk.
+     *
+     * `--soak` alone boots into the attract loop and stays there: nothing
+     * presses Start, so the board it is supposed to soak never begins.  That
+     * is not a hypothetical -- it cost the 2026-09-14 overnight run seven
+     * hours of title screen and 280 STUCK lines (PLAN.md 21.8), and it is an
+     * easy mistake to make because every other soak flag is self-contained.
+     * The walk is shipped in the bundle next to the disc image, so naming it
+     * here costs nothing and there is no case where a soak wants the attract
+     * loop instead. An explicit --play still wins. */
+    if (port_opt.soak && port_opt.pad_play == NULL) {
+        port_opt.pad_play = "board-start-com4.play";
+        fprintf(stderr, "port> --soak implies --play %s (the menu walk); "
+                        "pass --play explicitly to override\n",
+                port_opt.pad_play);
+    }
+
     /* After the loop, so --rtc and --rtcoffset may be given in either order. */
     if (port_opt.rtc_seen) {
         port_opt.rtc_set = 1;

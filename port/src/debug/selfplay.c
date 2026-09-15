@@ -79,6 +79,9 @@
 /* Overlay id -> name, built from the same header the game's own `_ovltbl`
  * is built from, so the two cannot drift. */
 #define DLL(name) #name,
+/* the --play script's activity, for the title guard below */
+u32 pad_play_press_count(void);
+
 static const char* const ovl_name[] = {
 #include "ovl_table.h"
     NULL
@@ -458,6 +461,70 @@ void port_selfplay_init(void) {
     }
 }
 
+/* ---- the soak's title-screen guard -------------------------------------------
+ *
+ * The 2026-09-14 overnight soak spent seven hours on the attract loop because
+ * nothing pressed Start (PLAN.md 21.8).  `--soak` now implies the menu walk,
+ * which makes that exact mistake impossible -- but the failure it caused is
+ * worth a second, independent check, because "a script was named" and "the
+ * script is pressing anything" are different facts and only the second one
+ * gets the soak off the title.
+ *
+ * So: if the run is still in `bootdll` -- the boot logos, the title and the
+ * attract demo -- and the --play script has driven no button at all, the soak
+ * says so and stops rather than burning the night.  Sixty seconds is the
+ * number asked for and it is comfortable: the port reaches the title in about
+ * twelve seconds of wall clock and `board-start-com4.play` presses Start well
+ * before a minute is out.  The second, longer limit is for the case where a
+ * script *is* pressing buttons and the title is eating them anyway; four
+ * minutes is past the slowest boot this port has ever taken to the file
+ * select, so reaching it means the walk is not working.
+ */
+#define SOAK_TITLE_SILENT_S 60.0
+#define SOAK_TITLE_STUCK_S 240.0
+
+static void title_guard(u32 frame) {
+    static double t0;
+    static int done;
+    double now;
+    int on_title;
+
+    if (done) {
+        return;
+    }
+    if (t0 == 0.0) {
+        t0 = port_now_seconds();
+        return;
+    }
+    on_title = (int)omcurovl >= 0 && (int)omcurovl < OVL_COUNT &&
+               !strcasecmp(ovl_name[(int)omcurovl], "bootdll");
+    if (!on_title) {
+        done = 1; /* the walk worked; never look again */
+        return;
+    }
+    now = port_now_seconds() - t0;
+    if (now < SOAK_TITLE_SILENT_S) {
+        return;
+    }
+    if (now < SOAK_TITLE_STUCK_S && pad_play_press_count() != 0) {
+        return; /* something is pressing something: give it the longer limit */
+    }
+    done = 1;
+    port_log("\n*** port> --soak: still in bootdll (the title/attract loop) after "
+             "%.0f s, frame %u.\n", now, frame);
+    port_log("    the --play script has pressed a button on %u frames%s.\n",
+             pad_play_press_count(),
+             pad_play_press_count() == 0 ? " -- nothing is walking the menus" : "");
+    port_log("    a soak that never leaves the title learns nothing, so this run "
+             "stops here rather than\n"
+             "    spending the night on it.  The walk is "
+             "Contents/Resources/movies/board-start-com4.play;\n"
+             "    --soak uses it unless --play names another (PLAN.md 22.3).\n");
+    fflush(stdout);
+    fflush(stderr);
+    exit(3);
+}
+
 /* Once per retrace, from the gate in port/src/platform/vi.c, after the game's
  * own PadReadVSync post-callback -- so a parked value is the last word on the
  * frame the game is about to run. */
@@ -471,6 +538,7 @@ void port_selfplay_tick(u32 frame) {
     park_minigame();
     if (port_opt.soak) {
         module_trace(frame);
+        title_guard(frame);
     }
     if (port_opt.stuckwatch) {
         stuck_watch(frame);

@@ -64,5 +64,7 @@ void pad_play_shutdown(void);
  * GlobalCounter frame-for-frame along the boot/menu paths the reference rig's
  * scripts are captured on (notes.md §6.2). */
 void pad_play_step(u32 frame, PortPadRaw* raw);
+/* frames on which the --play script drove a non-zero button */
+u32 pad_play_press_count(void);
 
 #endif

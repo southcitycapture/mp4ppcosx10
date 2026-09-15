@@ -366,6 +366,14 @@ void pad_play_shutdown(void) {
     marks_len = marks_cap = 0;
 }
 
+/* How many frames the script has actually driven a button on.  The soak's
+ * title-screen guard asks this: "is anything pressing anything?" is a
+ * different question from "was a script named", and the overnight run that
+ * was lost to the attract loop failed the first one (PLAN.md 22.3). */
+static u32 script_presses;
+
+u32 pad_play_press_count(void) { return script_presses; }
+
 void pad_play_step(u32 frame, PortPadRaw* raw) {
     last_frame_seen = frame;
     have_last_frame = 1;
@@ -397,6 +405,9 @@ void pad_play_step(u32 frame, PortPadRaw* raw) {
             }
         }
         raw->button = buttons;
+        if (buttons != 0) {
+            script_presses++;
+        }
         if (has_stick) {
             raw->stickX = x;
             raw->stickY = y;
