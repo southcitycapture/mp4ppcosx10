@@ -36,7 +36,7 @@ repo=$(cd "$here/../.." && pwd)
 : "${OUT:=/tmp/mp4-audio-ab}"
 mkdir -p "$OUT"
 
-COMMON="--rtc dolphin --freshcard --com4 --turbo --perf --clickstat --headless"
+COMMON="--rtc dolphin --freshcard --com4 --turbo --perf --clickstat --headless --status"
 
 : "${G4_WAIT_MAX:=5400}" # seconds to wait for one G4 run to finish
 
@@ -70,9 +70,9 @@ run() {
     fi
 }
 
-echo "A: 4-tap Catmull-Rom (the default)"
-run 4tap "$@"
-echo "B: linear (--resample1)"
+echo "A: 4-tap Catmull-Rom (--resample4)"
+run 4tap --resample4 "$@"
+echo "B: linear (the default since PLAN.md 20.5)"
 run linear --resample1 "$@"
 
 echo

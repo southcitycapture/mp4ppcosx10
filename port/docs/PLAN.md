@@ -4957,15 +4957,15 @@ which claims are which:
 
 | claim | evidence |
 |---|---|
-| guards fault at the boundary and are named | `--guardtest`, all five edges, host |
+| guards fault at the boundary and are named | `--guardtest`, all five edges, host -- and on the G4 2026-09-14, `docs/m8c-guardtest.log` |
 | m425's loop lost its bound | disassembly of the shipped bundle, 655 insns, no bound test |
 | the declaration is why | `unk_3C[6]` restores it; 974 insns, matching `-fno-aggressive-loop-optimizations` |
 | 39 more sites of the same shape | `ubaudit.sh` over 349 files, 0 compile failures |
-| m425 now plays to its result screen | **not tested** |
+| m425 now plays to its result screen | **witnessed on the G4 2026-09-14** -- `docs/m8c-m425.log`, `docs/screenshots/mp4-minigame-m425.png`, §20.2 |
 | `0x88888888` is a use-after-free, not poison and not bss | grep of the whole tree; `memory.c` fills nothing; `portDLLClose` zeroes bss on re-entry |
-| the sprite guard stops the crash | **not tested** |
-| the audio A/B | **not run** |
-| a board completes into the results | **not tested** |
+| the sprite guard stops the crash | **no: witnessed and insufficient** -- the guard did not fire at the results and the crash moved to the texture bind, §20.4. Deepened, and still a guard |
+| the audio A/B | **run on the G4 2026-09-14** -- `docs/m8c-audio-ab.log`, §20.5 |
+| a board completes into the results | **partly**: three turns, the roulette's own minigames, and the Party Mode results stage all run; the transition out of it faults, §20.4 -- `docs/m8c-board.log`, `docs/screenshots/mp4-board-results.png` |
 
 ### 18.8 Tooling added
 

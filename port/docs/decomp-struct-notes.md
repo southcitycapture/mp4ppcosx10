@@ -186,7 +186,14 @@ and after — the patch does not change its code at all, because the bytes
 written were always those bytes; what changes is that writing them is now
 defined. See the † note above.
 
-**Untested.** Minigame m428 has not been played.
+**Played, 2026-09-14.** m428 was dealt by the roulette on turn 3 of the
+three-turn witness board on the G4 and played to its result screen with four
+CPU players, on a bundle built with this correction in place
+(`docs/m8c-board.log`, `docs/screenshots/mp4-minigame-m428.png`). No fault, and
+the module unloaded through the ordinary path. The screenshot catches the
+module a frame or two after entry -- the distance HUD's sprite column is drawn
+and the 3D scene behind it is still white -- which is worth another look but is
+not this correction's business either way.
 
 ## 5. `src/REL/m449Dll/main.c` — `s32 unk_1C4[4]` is `[16]`
 

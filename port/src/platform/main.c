@@ -126,7 +126,10 @@ static void usage(const char* argv0) {
             "  --soak            boot, walk into a four-CPU board, play it, and\n"
             "                    start another one when it ends, forever\n"
             "  --nodepop         switch off the voice cut-off ramp\n"
-            "  --resample1       linear interpolation instead of the 4-tap table\n"
+            "  --resample4       the 4-tap Catmull-Rom resampler instead of the\n"
+            "                    default linear interpolation (PLAN.md 20.5)\n"
+            "  --resample1       linear interpolation; the default, kept so that an\n"
+            "                    A/B can name both sides\n"
             "  --clickstat       count mix discontinuities as they are produced\n",
             argv0);
 }
@@ -222,7 +225,12 @@ int port_parse_args(int argc, char** argv) {
      * that every unadorned run -- including every run of the self-play soak --
      * exercises them, and an A/B is one word on the command line. */
     port_opt.depop = 1;
-    port_opt.resample4 = 1;
+    /* Linear, since the G4 measured both on the same walk (PLAN.md §20.5):
+     * 1.75 ms mean against the 4-tap's 2.00, a worst frame of 10.92 ms against
+     * 28.30, and fewer discontinuities, not more -- 33,002 against 36,328.
+     * The 4-tap was there to buy quality and on this hardware it buys none, so
+     * it is the flag now and linear is the default. */
+    port_opt.resample4 = 0;
     for (i = 1; i < argc; i++) {
         const char* a = argv[i];
         if (!strcmp(a, "--image") && i + 1 < argc) {
@@ -292,6 +300,8 @@ int port_parse_args(int argc, char** argv) {
             port_opt.depop = 0;
         } else if (!strcmp(a, "--resample1")) {
             port_opt.resample4 = 0;
+        } else if (!strcmp(a, "--resample4")) {
+            port_opt.resample4 = 1;
         } else if (!strcmp(a, "--clickstat")) {
             port_opt.clickstat = 1;
         } else if (!strcmp(a, "--reldir") && i + 1 < argc) {
