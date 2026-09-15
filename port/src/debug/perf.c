@@ -171,6 +171,80 @@ static void line(const char* name, float* v, int n) {
     free(c);
 }
 
+/* --perfwin A-B[:NAME][,...]: fps and the frame's split over a frame range,
+ * out of the samples this run already collected.
+ *
+ * A port is judged scene by scene -- the title is not the board and neither is
+ * the character select -- and M5 had to measure that by running the same walk
+ * three times to three different `--frames N` and subtracting, which costs
+ * three boots and about twenty minutes for three numbers.  The samples were
+ * there the whole time; only the report was missing.  Frame numbers are the
+ * sample index, which is the retrace count the gate has passed, so they are
+ * the same numbers `--ovllog` and `--dumpframe` print.
+ *
+ * `sum(frame)` is work with the pacing sleep already subtracted, so under
+ * `--turbo` -- which is how every measurement in PLAN.md 21 is taken -- the
+ * window's fps is what the machine can actually do on that scene. */
+static void perf_windows(void) {
+    const char* p = port_opt.perfwin;
+    if (!p || !*p) {
+        return;
+    }
+    port_log("  ---- --perfwin ----\n");
+    while (*p) {
+        char name[32];
+        long a = 0, b = 0;
+        int i, n = 0;
+        double sum = 0.0, gx = 0.0, pres = 0.0, game = 0.0, aud = 0.0;
+        char* e;
+        a = strtol(p, &e, 10);
+        if (e == p) {
+            break;
+        }
+        p = e;
+        if (*p == '-') {
+            b = strtol(p + 1, &e, 10);
+            p = e;
+        } else {
+            b = a;
+        }
+        name[0] = 0;
+        if (*p == ':') {
+            int k = 0;
+            p++;
+            while (*p && *p != ',' && k < (int)sizeof(name) - 1) {
+                name[k++] = *p++;
+            }
+            name[k] = 0;
+        }
+        for (i = (int)a; i <= (int)b && i < n_samples; i++) {
+            if (i < 0) {
+                continue;
+            }
+            sum += s_frame[i];
+            gx += s_gx[i];
+            pres += s_present[i];
+            game += s_game[i];
+            aud += s_audio[i];
+            n++;
+        }
+        if (n > 0 && sum > 0.0) {
+            port_log("  %-14s frames %ld-%ld (%d)  %6.2f ms/frame  %5.2f fps  "
+                     "[game %5.2f gx %5.2f present %5.2f aud %5.2f]\n",
+                     name[0] ? name : "window", a, b, n, sum / n, n * 1000.0 / sum,
+                     game / n, gx / n, pres / n, aud / n);
+        } else {
+            port_log("  %-14s frames %ld-%ld: no samples\n", name[0] ? name : "window", a,
+                     b);
+        }
+        if (*p == ',') {
+            p++;
+        } else {
+            break;
+        }
+    }
+}
+
 void port_perf_report(void) {
     double wall, gameclock;
     int i, over = 0;
@@ -199,4 +273,5 @@ void port_perf_report(void) {
              wall / gameclock > 1.02 ? "  (WALL CLOCK IS BEHIND: the gate is hiding an overrun)"
                                      : "  (keeping up)");
     port_log("  fps      %.1f effective\n", n_samples / wall);
+    perf_windows();
 }

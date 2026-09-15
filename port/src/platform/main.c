@@ -130,7 +130,13 @@ static void usage(const char* argv0) {
             "                    default linear interpolation (PLAN.md 20.5)\n"
             "  --resample1       linear interpolation; the default, kept so that an\n"
             "                    A/B can name both sides\n"
-            "  --clickstat       count mix discontinuities as they are produced\n",
+            "  --clickstat       count mix discontinuities as they are produced\n"
+            "  --nodlcache       decode every display list every frame instead\n"
+            "                    of replaying the cached vertices: the A/B\n"
+            "  --perfwin SPEC    with --perf, also report fps over named frame\n"
+            "                    windows: A-B[:NAME][,A-B[:NAME]...].  One boot\n"
+            "                    then answers \"how fast is the title/the menu/the\n"
+            "                    board\" instead of three\n",
             argv0);
 }
 
@@ -302,6 +308,11 @@ int port_parse_args(int argc, char** argv) {
             port_opt.resample4 = 0;
         } else if (!strcmp(a, "--resample4")) {
             port_opt.resample4 = 1;
+        } else if (!strcmp(a, "--nodlcache")) {
+            port_opt.nodlcache = 1;
+        } else if (!strcmp(a, "--perfwin") && i + 1 < argc) {
+            port_opt.perfwin = argv[++i];
+            port_opt.perf = 1;
         } else if (!strcmp(a, "--clickstat")) {
             port_opt.clickstat = 1;
         } else if (!strcmp(a, "--reldir") && i + 1 < argc) {
