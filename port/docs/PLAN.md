@@ -5561,6 +5561,23 @@ reasoned rather than measured — a run with `--dlcache` and `--dumpframe
 800,3000,7000` is the first thing M9b should do with it, and if it does not
 come back clean the cache should be deleted rather than debugged.
 
+**The profile after**, same tool, the shipped build (`draw_run` is the renamed
+`draw_now`, and `transform_and_store` is now inlined into `attr_written`):
+
+| # | character select (7,200) | % | board (6,922) | % |
+|---:|---|---:|---|---:|
+| 1 | `draw_run` | 23.2 | `draw_run` | 29.1 |
+| 2 | `indexed` | 17.9 | `indexed` | 13.5 |
+| 3 | `read_component` | 13.2 | `read_component` | 11.2 |
+| 4 | `attr_written` | 5.0 | `saveGPR` | 3.7 |
+| 5 | `saveGPR` | 4.1 | `attr_written` | 3.4 |
+| 6 | `GXCallDisplayList` | 3.6 | `gldInitDispatch` | 2.7 |
+| 7 | `gldInitDispatch` | 2.5 | `GXCallDisplayList` | 2.6 |
+
+Within a sample of the baseline's, symbol for symbol, which is the same answer
+the frame rates gave: the shape of the work did not change, only the number of
+bytes it touched.
+
 ### 21.4 What the three measurements together say
 
 This is the third time the vertex path has been attacked and the third time
