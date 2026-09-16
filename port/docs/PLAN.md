@@ -66,6 +66,27 @@ scarcest thing in the project. These rules apply to every session from M10 on.
    snapshot saved and named in the plan, so the next agent starts at the
    moment, not at the title.
 
+**Levers, in the order to pull them** (2026-09-16 evening):
+
+* **Vertex programs.** `g4-glinfo.log` lists `GL_ARB_vertex_program`,
+  `GL_ARB_vertex_buffer_object` and `GL_APPLE_vertex_array_range`. Phase 2
+  (transform, CPU lighting, texgen -- ~70% of the frame) maps onto an ARB
+  vertex program almost directly; the CPU then only decodes. Do this BEFORE
+  any CPU rewrite of phase 2: no point optimising a stage that can be
+  deleted. Same A/B discipline (§0 rule 3); the three md5s may legitimately
+  differ by rounding -- if so, audit the diff and re-base with a written
+  justification, never silently.
+* **A second bench.** The 2009 MacBook Pro on the wired LAN can run Snow
+  Leopard, and Snow Leopard runs PowerPC binaries under Rosetta. One-hour
+  test: copy the bundle, run it. If it runs, two benches, two agents, soaks
+  that never block daytime work.
+* **No-draw soaks.** With `--ffto`/`--nodraw` a soak covers a board in an
+  hour or two; run those overnight, several boards, every minigame, for
+  logic bugs, stalls, heap panics and crashes. Rendering bugs go to the
+  audit loop instead.
+* **Dolphin as the oracle.** Reference frames for all 60 minigames in an
+  afternoon from the gecko input schedules; comparison is then a diff.
+
 ## 1. Inventory of the game
 
 ### 1.1 Shape and size
