@@ -1,0 +1,8 @@
+#!/bin/sh
+# mpgdb CMDFILE OUTFILE  -- attach to the running isle, run CMDFILE, write to OUTFILE.
+# NEVER pipe gdb's stdout: a SIGPIPE while attached kills the inferior.
+P=`ps -axo pid,command | grep 'MacOS/isle' | grep -v grep | head -1 | sed -e 's/^ *//' -e 's/ .*//'`
+if [ -z "$P" ]; then echo "mpgdb: no isle running" 1>&2; exit 1; fi
+echo "mpgdb: pid $P" 1>&2
+gdb -batch -x "$1" "$HOME/isle.app/Contents/MacOS/isle" "$P" > "$2" 2>&1
+echo "mpgdb: wrote $2" 1>&2

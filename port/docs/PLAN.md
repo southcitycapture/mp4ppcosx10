@@ -6179,3 +6179,290 @@ M9c should therefore ask the question in this order:
 The twenty-five-minute reproduction in §22.4 is still the cheapest way in, but
 it should not be assumed to be the same bug as the overnight one until (1) is
 answered.
+
+## 23. M9c log — the ball that never left the chute *(2026-09-16)*
+
+M9b left the m444 stall reproducible in twenty-five minutes and the soak left it
+reproducible in nine hours, and §22.11 asked which of the two was the real bug.
+This session answered that with the debugger rather than another soak, which is
+what the user asked for: *"I'm curious… go the fast route."*
+
+### 23.1 The m444 stall: the debugger put it in one loop, and the numbers put it in one place
+
+**The reproduction, and one harness lesson first.** `--minigame m444` on its own
+does not stall — it sits on the title for ever, because `--minigame` does not
+imply the menu walk the way `--soak` does (§22.3). The command that reproduces
+is
+
+```sh
+g4 run --rtc dolphin --freshcard --com4 --minigame m444 --turns 10 \
+       --status --stuckwatch 150 --play board-start-com4.play --turbo
+```
+
+and it enters `m444dll` at frame ~10,700 and never leaves; a completing visit is
+about 3,850 frames (§22.11).
+
+**Two gdb rules, both learned the expensive way.** §0b of `g4-witness.md` already
+says never to `info symbol`. Two more, each of which cost a 25-minute
+reproduction:
+
+* **Never pipe gdb's output.** `gdb -batch … | head -60` closes the pipe, gdb
+  dies of `SIGPIPE` *while attached*, and the inferior dies with it
+  (`EXITCODE=137`). `port/tools/mpgdb` on the G4 now takes a command file and an
+  output file and redirects; nothing pipes.
+* **Any error inside a batch script aborts it before `detach`,** and the inferior
+  dies again (`EXITCODE=132`). So a script that touches an address it has not
+  proved is mapped is a script that kills the game. The safe shape is two
+  phases: `info sharedlibrary` on its own to get a module's slide, then `x/` at
+  addresses computed from `nm` — `x` on a mapped address cannot error, and a
+  REL's locals need no symbol lookup at all.
+
+**Phase one: which wait.** A safe walk of `Hu3DData[0..511]` printing every model
+with `hsf != 0 && motId != -1` located the coroutine without reading a single
+stack:
+
+```
+=== GlobalCounter=32270 Hu3DPauseF=0 minimumVcountf=1.000000
+m009 motId=  0 attr=00000800 motAttr=00000002 t=    90.000 sp= 1.000 en= 509.000
+m010 motId=  1 attr=00000800 motAttr=00000000 t=   119.000 sp= 1.000 en= 119.000
+m016 motId= 15 attr=00000005 motAttr=00000001 t=    92.000 sp= 1.000 en=  99.000
+m017 motId= 11 attr=00000804 motAttr=00000001 t=     7.000 sp= 1.000 en= 119.000
+m018 motId= 15 attr=00000005 …
+```
+
+`fn_1_D588` (`datalist.c`) creates the module's models in table order, so
+`lbl_1_bss_199C2[9]` is `Hu3DData[9]` and `[11]` is `Hu3DData[10]`. Read against
+`src/REL/m444dll/main.c`:
+
+* `m010` is at `t == en == 119`, so `Hu3DMotionEndCheck` at **main.c:285** has
+  already returned 1;
+* `m009` is at `t = 90.000` with `motAttr = 2` (`HU3D_MOTATTR_PAUSE`) — which is
+  exactly the state **main.c:296-297** leaves it in, `Hu3DMotionTimeSet(9,
+  lbl_1_data_140[0] = 90)` then `AttrSet(9, PAUSE)`;
+* `m017` (= `199C2[22]`) has `attr = 0x804`, i.e. **not** `DISPOFF`, and `m018`
+  (= `[26]`) has `attr = 0x005`, i.e. still `DISPOFF`.
+
+So the process is past line 297 and before line 322, and the only unbounded wait
+in that window is `fn_1_8DD0` — **the ball-drop loop**, `pinball.c:178`:
+
+```c
+    while (1) {
+        temp_r27 = fn_1_B1E8(&lbl_1_bss_1894, &lbl_1_bss_1888, arg0);
+        …
+        if (temp_r27 != -1) { break; }
+        HuPrcVSleep();
+    }
+```
+
+`fn_1_B1E8` returns a slot index only when the ball is within 3 units of one
+**and** moving slower than 1 (`pinball.c:905-911`). There is no other exit.
+§22.4's reading — the waits at main.c:285/292/390/478 — was the right
+neighbourhood and the wrong line: `m444dll` was never stuck on a motion.
+
+**Phase two: the numbers.** `info sharedlibrary` put `m444dll.bundle` at
+`0x11ce5000`; the rest is `nm` plus `x/3wf`:
+
+```
+wallcount lbl_1_bss_1884:   0x002f            (47 segments)
+vel       lbl_1_bss_1888:   0   0.353727371   0
+pos       lbl_1_bss_1894:   128   -98.5933228   0
+bounds lo lbl_1_bss_770 :  -145  -494.999969   0
+bounds hi lbl_1_bss_77C :   145   -55          0
+pinskip   lbl_1_bss_312 :   0x0009
+step ring lbl_1_bss_370 :   1.28  1.42  0.82  0.22  0.37  0.97  1.48  0.91
+                            0.31  0.28  0.88  1.29  0.82  0.22  0.37  0.97 …
+```
+
+Every one of those says the module is healthy and the ball is not:
+
+* `lbl_1_bss_1884 == 47` — `fn_1_D1E0` walked the (invisible, `DISPOFF`)
+  collision model `0x4B0002` and found 47 quads, so the HSF parse is fine;
+* the bounds are the real board, `(-145,-495)` to `(145,-55)`, not the
+  `±100000` sentinel `fn_1_D1E0` starts from;
+* the step ring is a **period-11 cycle** — `1.28, 1.42, 0.82, 0.22, 0.37, 0.97,
+  1.48, 0.91, 0.31, 0.28, 0.88` and again. The ball is not drifting, it is
+  orbiting;
+* `lbl_1_bss_312 == 9`. That is the module's *own* unstick — set to 10 whenever
+  the last 120 steps sum to less than `120*sqrt(6)` — and it was caught in the
+  act. It does not help, because all it does is suppress the five bumpers
+  (`lbl_1_bss_18B4`, at z = -300 and -400), and the ball is nowhere near them.
+
+Dumping all 47 segments says where it *is*. Segments 9, 10 and 12 are
+
+```
+ 9: (145,-85) -> (145,-380)     the launch chute's right wall
+10: (105,-85) -> (145,-85)      the launch chute's FLOOR
+12: (105,-375) -> (105,-85)     the launch chute's left wall
+```
+
+and the ball is at `(128.0, -98.59)` — inside the chute, 13.6 above segment 10,
+which is the radius the wall push uses. **The demo ball is sitting on the floor
+of its own launch chute, bouncing, for ever.**
+
+**What the game already knows about this function.** `fn_1_B1E8` carries four
+`#if VERSION_REV2` blocks — a zero-length-step break, a zero-direction guard
+before `VECNormalize`, a `temp_f30 < 0.000001` exclusion, and a second `+= 0.3`
+of gravity when the velocity is zero. They are Nintendo's own anti-hang patches
+to this exact function in the later disc revision, and `include/version.h` makes
+`VERSION_REV2` true for `VERSION_NO_ENG1`, which is the `-DVERSION=1` this port
+builds. **They are already compiled in.** They cover zero vectors; they do not
+cover a ball that is merely resting.
+
+### 23.2 The fix: a bound on the drop, and what it does not claim
+
+There is no way to free the ball from inside the physics without inventing
+physics, so the port bounds the loop instead. A drop that completes takes a few
+hundred frames — the whole module, three drops and all the cutscene, is 3,850.
+At **1,800 frames in one drop**, `fn_1_8DD0` puts the ball in the slot it is
+nearest, zeroes the velocity, and lets the next `fn_1_B1E8` report it. The slot
+comes from the module's own `lbl_1_data_454[round]` / `lbl_1_data_3A4[round]`
+tables, so the outcome is one the board could have dealt, and no completing drop
+can reach the code, so nothing that works today changes. It is
+`port/patches.txt` against `src/REL/m444dll/pinball.c`; `src/` is untouched.
+
+Witness, same command as above:
+
+```
+port> m444: drop 0 wedged at (128, -101); forcing slot 3
+port> m444: drop 1 wedged at (128, -144); forcing slot 2
+port> m444: drop 2 wedged at (128, -99); forcing slot 4
+objdll>Link DLL:dll/resultdll.rel
+objdll>Link DLL:dll/w01dll.rel
+```
+
+All three drops, the minigame's result screen, and back to the board for turn 2
+— the sequence the twelve-hour soak of §21.8 never got past.
+`screenshots/mp4-m444-plays.png` is the board mid-drop: the four player slots
+along the bottom, the launch chute up the right-hand side.
+
+**What is still open, and it is worth saying plainly.** The three wedge reports
+are all at **x = 128.0**, which is the launch x, and the velocity's x component
+was exactly `0` at the stall. The ball never leaves the chute at all in this
+port — on a console it is fired up the chute, over the bowl arc (segments 13-28,
+a radius-495 curve), and down through the board into the bins. That is a physics
+divergence, not a hang, and the watchdog papers over it: the minigame now plays
+and its outcome is legal, but the ball is not doing what it does on hardware.
+The cheapest next probe is a Dolphin capture of the same three drops against the
+same `--rtc dolphin` seed. It is M9d's question, not M9c's.
+
+### 23.3 The m453 DVD heap: the caller, recorded rather than guessed
+
+§22.7 read the block out of the heap dump — 2,983,488 bytes, `UNum ffffff00`,
+`Call 00010534`… no: `Call 00010488`, which `nm` resolves to `HuDvdDataReadWait
++ 0x58`, the plain `HuMemDirectMalloc` on the `mode != 1` path. That is one
+function with five callers (`HuDvdDataRead`, `HuDvdDataReadMulti`,
+`HuDvdDataReadDirect`, `HuDvdDataFastRead`, `HuDvdDataFastReadAsync`), so the
+dump could not say which. §22.10 item 3 asked for one more line of
+instrumentation; this is it, in `port/patches.txt` against `src/game/dvd.c`:
+
+```c
+    if(heap == HEAP_DVD && len > 0x100000) {
+        OSReport("port> dvdheap: %d bytes mode %d num %x  caller %p  caller2 %p\n",
+                 (int)len, (int)mode, (unsigned)num,
+                 __builtin_return_address(0), __builtin_return_address(1));
+    }
+```
+
+`--minigame m453 --turns 6` then answers it in one run, on the way to the same
+`OSPanic` §22.7 saw:
+
+```
+port> dvdheap: 1529578 bytes mode 0 num 0        caller 0xedc8   caller2 0x700e4
+port> dvdheap: 2983946 bytes mode 0 num 0        caller 0xedc8   caller2 0x11753508
+port> dvdheap: 1370450 bytes mode 1 num 10000000 caller 0x10b50  caller2 0xe6f8
+dvd.c: Memory Allocation Error (Length 60b3c) (mode 1)
+Rest Memory 2aaa0
+*** OSPanic in "dvd.c" on line 75:
+```
+
+`nm` on the binary, and `info sharedlibrary` for the one address that is not in
+it (`instDll.bundle` loads at `0x11750000`):
+
+| address | symbol |
+|---|---|
+| `0xedc8` | `HuDataDirReadAsync + 0x11c` |
+| `0x700e4` | `ExecMGSetup + 0x224` |
+| `0x11753508` | `InstMain + 0x5a4` (instDll) |
+| `0x10b50` | `HuDvdDataFastReadNum + 0x50` |
+| `0xe6f8` | `HuDataDirReadNum + 0x1e4` |
+
+So the 2.9 MB block is **a data *directory* image**, 2,983,946 bytes, which is
+`data/m450.bin` to the byte — and `objsub.c`'s `mgInfoTbl` entry for `m453dll`
+gives `DATADIR_M450` as its `data_dir`, so it is m453's own directory. The owner
+is `InstMain + 0x5a4`, which is `instDll/main.c:276`:
+
+```c
+    HuDataDirClose(DATADIR_INST);
+    statId = HuDataDirReadAsync(mgInfoTbl[instMgNo].data_dir);
+```
+
+The instruction screen **pre-loads the minigame's directory and deliberately
+hands it over**: three of `InstMain`'s exits close it (main.c:80, 317, 388), and
+the fourth — the normal one, `omOvlCallEx(mgInfoTbl[instMgNo].ovl, …)` at
+main.c:391 — does not, because the module that follows is going to read from it.
+`m453dll` does close it, in `score.c:73-74`, but that is its *results* code, long
+after the load that panics. `HuDataDirReadAsync` allocates with the plain
+`HuMemDirectMalloc`, which is why the block carries `UNum ffffff00` and why
+`HuMemDirectFreeNum(HEAP_DVD, HU_MEMNUM_OVL)` cannot reclaim it: that is correct,
+not a leak.
+
+**Which means §22.7's framing was wrong, and no block should be freed or
+re-tagged.** The `Rest Memory` trace says the heap is *clean* when instDll
+preloads — `ExecMGSetup`'s own 1.5 MB directory has already gone, leaving
+2,985,024 of 5,767,168 used. Everything after it is `m453dll`'s own working set:
+a second directory image of 1,370,450 (mode 1, so overlay-tagged, read through
+`HuDataDirReadNum`) and decoded files of 382,240 + 492,960 + 362,208 — the exact
+four blocks §22.7's heap dump listed. 2.9 + 1.37 + 1.24 = 5.59 MB of a 5.5 MB
+heap, and then a 396,092-byte read arrives with 174,752 free.
+
+`HeapSizeTbl` is the game's own `{0x240000, 0x140000, 0xA80000, 0x580000, 0}`,
+`DATA_EFF_SIZE` is `(size+1) & ~1`, and every length above comes out of the
+directory image rather than out of the port, so nothing here is the port
+allocating more than the console. **The port is about 400 KB heavier in
+`HEAP_DVD` at this moment than the console can be, and M9c did not find where.**
+The two candidates worth the next session's time are a block from an earlier
+overlay that `HuMemDirectFreeNum` is not reclaiming (the heap dump is clean of
+those at the preload, so it would have to arrive between), and a read that the
+console routes to `HEAP_MODEL`'s 10.5 MB which this port routes to `HEAP_DVD`.
+`--minigame m453` plus this instrumentation reproduces it in twelve minutes, and
+a `HuMemHeapDump(HeapTbl[HEAP_DVD], -1)` on the 396 KB failure already prints
+every live block, so the next step is a table, not a soak.
+
+**m453 is therefore not witnessed to its result screen.** It panics where it did.
+
+### 23.4 The end-of-game results crash
+
+Not reached. The m444 investigation took the session's hardware budget: four
+25-minute reproductions, two of which were lost to the gdb mistakes in §23.1
+before the rules there were written down. The crash is carried by the soak left
+running at the end of the session, which is the run that found it.
+
+### 23.5 The vertex path, phase 2
+
+Not started (§22.10 item 1). The three reference md5s are unchanged and unretested
+this session; nothing in M9c touches `gx_draw.c`.
+
+### 23.6 Tooling added
+
+| tool | what |
+|---|---|
+| `~/bin/mpgdb CMD OUT` (G4) | attach gdb to the running `isle`, run a command file, redirect to a file. It exists because piping gdb kills the game (§23.1) |
+| `port/tools/gdb/mot.gdb` | the safe `Hu3DData` motion-table walk — every model with `hsf != 0 && motId != -1`, no stack reads, no symbol lookups |
+| `port/patches.txt` `dvd.c` hook | one `OSReport` for any `HEAP_DVD` allocation over a megabyte, with `__builtin_return_address(0)` and `(1)` |
+
+### 23.7 What M9d needs
+
+1. **Why the m444 ball never leaves the chute** (§23.2). The watchdog makes the
+   minigame play; it does not make the ball behave. Dolphin capture of the same
+   three drops under the same `--rtc dolphin` seed is the comparison.
+2. **The 400 KB** (§23.3). `HuMemHeapDump` on the failing read, against a Dolphin
+   run of the same minigame.
+3. **The end-of-game results crash** (§22.10 item 4), still not witnessed since
+   M8c.
+4. **Phase 2 of the vertex path** (§22.10 item 1), untouched.
+5. `--minigame NAME` does not imply the menu walk the way `--soak` does; it sits
+   on the title and the watchdog reports a `bootdll` stall. Either it should
+   imply `board-start-com4.play` or the runbook should say so.
+6. `g4 stop` still does not kill a process spinning in game code (§22.10 item 6),
+   and now there is a second way to lose one: any gdb batch script that errors,
+   or whose output is piped, takes the inferior with it.

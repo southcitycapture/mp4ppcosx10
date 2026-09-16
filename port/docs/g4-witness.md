@@ -72,7 +72,22 @@ faulted, and `-batch` detaches from a corpse. Every command file starts
 with `set unwindonsignal on`, resolves addresses with `info line *ADDR`
 (no inferior call), and range-checks any pointer read off a saved stack.
 `port/tools/gdb/procs.gdb` is the safe walk of the coroutine list; copy its
-shape for anything new. The coroutines are all parked in `HuPrcVSleep`, so
+shape for anything new.
+
+**Two more rules, both learned on 2026-09-16 at the cost of a 25-minute
+reproduction each** (PLAN.md §23.1):
+
+* **Never pipe gdb's output.** `gdb -batch … | head` closes the pipe, gdb dies of
+  `SIGPIPE` *while attached*, and the game dies with it (`EXITCODE=137`). Use
+  `port/tools/gdb/mpgdb CMDFILE OUTFILE`, which redirects to a file; read the
+  file afterwards.
+* **Any error in a batch script aborts it before `detach`,** and the game dies
+  again (`EXITCODE=132`). So a script must not touch anything it has not proved
+  is there. The safe shape is two phases: `info sharedlibrary` on its own for a
+  module's load address, then `x/` at addresses computed from `nm` — `x` on a
+  mapped address cannot error, and a REL's file-local symbols need no lookup.
+  `x/f` in gdb-768 is an **8-byte double**; floats want `x/3wf`.
+  `port/tools/gdb/mot.gdb` is the safe `Hu3DData` motion walk. The coroutines are all parked in `HuPrcVSleep`, so
 the interesting frame is the *caller*, at `*(*(jump.sp) + 8)`.
 
 The loop: `port/build-ppc.sh -j8 && port/tools/g4_debug_sync.sh && g4 push-bin`.
