@@ -166,7 +166,10 @@ GAME_WARN := -w -Wno-implicit-function-declaration -Wno-return-mismatch \
 # so every object is built -gdwarf-2 -gstrict-dwarf.  The debug map points at
 # the .o files under /work/mp4/port/build-ppc-darwin, which on the G4 is a
 # symlink to ~/mp4-work (port/tools/g4_debug_sync.sh keeps it current).
-DEBUG_G = -gdwarf-2 -gstrict-dwarf
+# -fno-shrink-wrap: gdb-768 unwinds by prologue analysis, and a shrink-wrapped
+# function looks to it like one that never set up a frame ("No stack frame
+# has been allocated", backtrace ends at two frames inside draw_run).
+DEBUG_G = -gdwarf-2 -gstrict-dwarf -fno-shrink-wrap
 GAME_CFLAGS = -std=gnu11 -O2 $(DEBUG_G) -fno-strict-aliasing -fwrapv -fcommon \
               $(GAME_UBSAFE) \
               $(GAME_WARN) $(GAME_DEFS) $(GAME_INC) $(TARGET_CFLAGS)
