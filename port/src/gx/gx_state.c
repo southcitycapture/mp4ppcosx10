@@ -806,3 +806,18 @@ void GXReadMemMetric(u32* a, u32* b, u32* c, u32* d, u32* e, u32* f, u32* g, u32
     *a = *b = *c = *d = *e = *f = *g = *h = *i = *j = 0;
 }
 void __GXAbortWaitPECopyDone(void) {}
+
+/* ---- snapshots ------------------------------------------------------------
+ * GX state is the one piece of port memory the game can *feel* without ever
+ * reading it back: it is set once and then relied on for frames at a time (the
+ * projection, the viewport, the TEV chain, the vertex descriptor and the
+ * attribute array bases), so a restored run whose `gx` were reset would draw a
+ * different first frame than the run it continues.  It is plain data plus
+ * pointers into MEM1 and into the game's own text, both of which come back at
+ * the same addresses, so it is carried verbatim. */
+void gx_state_snap_register(void) {
+    port_snap_register("gx.state", &gx, sizeof(gx));
+    port_snap_register("gx.ready", &gx_ready, sizeof(gx_ready));
+    port_snap_register("gx.fifo_obj", &fifo_obj, sizeof(fifo_obj));
+    port_snap_register("gx.draw_sync_cb", &draw_sync_cb, sizeof(draw_sync_cb));
+}

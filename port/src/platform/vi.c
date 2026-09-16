@@ -57,6 +57,25 @@ void port_vi_init(void) {
     field = 0;
 }
 
+/* What a snapshot has to carry out of this file (PLAN.md §24.2).  The retrace
+ * count is the game's clock -- `VIGetRetraceCount` is read all over the game
+ * and the deterministic clock is a function of it -- and the two framebuffer
+ * pointers and the callbacks point into MEM1 and into the game's own text, so
+ * they are the same addresses in the restored process.  `next_retrace_at` and
+ * `first_retrace_at` are wall-clock pacing and are deliberately *not* carried:
+ * a restored run starts pacing from now. */
+void port_vi_snap_register(void) {
+    port_snap_register("vi.retrace_count", &retrace_count, sizeof(retrace_count));
+    port_snap_register("vi.field", &field, sizeof(field));
+    port_snap_register("vi.next_fb", &next_fb, sizeof(next_fb));
+    port_snap_register("vi.current_fb", &current_fb, sizeof(current_fb));
+    port_snap_register("vi.swap_pending", &swap_pending, sizeof(swap_pending));
+    port_snap_register("vi.black", &black, sizeof(black));
+    port_snap_register("vi.pre_cb", &pre_cb, sizeof(pre_cb));
+    port_snap_register("vi.post_cb", &post_cb, sizeof(post_cb));
+    port_snap_register("vi.mode", &mode, sizeof(mode));
+}
+
 void VIInit(void) { port_log("port> VIInit\n"); }
 
 void VIConfigure(const GXRenderModeObj* rm) {
@@ -109,6 +128,12 @@ static double next_retrace_at;
 static double first_retrace_at;
 
 void VIWaitForRetrace(void) {
+    /* Before the present, because it decides whether the *next* frame is
+     * drawn: --ffto's switch, and the snapshot ring's safe point (the top of
+     * the retrace is the one moment in the frame at which no GX call and no
+     * audio call is in progress).  See PLAN.md §24. */
+    port_ffto_tick();
+    port_snap_tick();
     if (swap_pending) {
         port_perf_present_begin();
         port_gx_present();

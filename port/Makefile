@@ -325,8 +325,15 @@ $(BUILD)/exports.txt: $(GAME_OBJS) $(PORT_OBJS) $(STUBS_OBJ)
 	@$(NM) -g $^ | awk 'NF==3 && $$2 != "U" {print $$3}' | sort -u > $@
 	@echo "link: $$(wc -l < $@) symbols exported to the REL bundles"
 
+# -map: the link map is what tells a snapshot which writable globals belong to
+# the game and which belong to the port (PLAN.md 24.2).  It is written next to
+# the binary as <exe>.snapmap by tools/gen_snapmap.py, as a sidecar rather than
+# a generated object, because a table compiled into the binary would move the
+# addresses it describes.
 $(EXE): $(GAME_OBJS) $(PORT_OBJS) $(STUBS_OBJ) $(BUILD)/exports.txt
-	$(CC) -o $@ $(GAME_OBJS) $(PORT_OBJS) $(STUBS_OBJ) $(LDFLAGS)
+	$(CC) -o $@ $(GAME_OBJS) $(PORT_OBJS) $(STUBS_OBJ) $(LDFLAGS) \
+	    -Wl,-map,$(EXE).map
+	@$(PYTHON) tools/gen_snapmap.py --map $(EXE).map --exe $@ --out $(EXE).snapmap
 	@echo "built $@ ($$(wc -c < $@) bytes)"
 
 $(BUILD)/rel/%.o: $(GEN)/%.c $(MIRROR_STAMP)

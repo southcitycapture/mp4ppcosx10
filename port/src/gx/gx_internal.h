@@ -232,6 +232,17 @@ void glc_vertex_array(const void* p, int stride);
 void glc_color_array(const void* p, int stride);
 void glc_coord_array(int unit, const void* p, int stride); /* NULL turns it off */
 int gl13_live(void);
+/* --nodraw / --ffto (PLAN.md 24.1): the renderer is switched off under a live
+ * context.  `gl13_live()` is 0 while it is, so every GL path already skips;
+ * these two are for the paths that would decode something first. */
+int gl13_draw_off(void);
+void gl13_set_draw_off(int v);
+/* Drop every decoded texture and every composed indirect tile, deleting their
+ * GL names if there is a context.  Called when drawing comes back on after a
+ * --nodraw stretch (the cache filled with entries that never got a GL name)
+ * and after a --restore (the cache belongs to the process, the textures belong
+ * to the snapshot's MEM1). */
+void gx_tex_flush_all(void);
 void gl13_write_ppm(const char* path);
 extern int gl13_have_combine3;
 extern int gl13_have_crossbar;

@@ -379,3 +379,32 @@ u8 AIGetStreamVolLeft(void) { return stream_vol_l; }
 u8 AIGetStreamVolRight(void) { return stream_vol_r; }
 void AISetStreamPlayState(u32 state) { stream_play = state; }
 u32 AIGetStreamPlayState(void) { return stream_play; }
+
+/* ---- snapshots ------------------------------------------------------------
+ * The mix is part of the determinism contract (PLAN.md §22.5): MusyX runs on
+ * the game thread, the game reads voice, stream and channel state back, and
+ * the DSP frame cadence is a function of the retrace count through
+ * `tick_credit`.  So the SAL's cursor comes back with the snapshot.  MusyX's
+ * own state is not here at all -- it is in the MusyX objects' globals and in
+ * ARAM, both of which the snapshot carries wholesale.
+ *
+ * `ai_buffers` is host memory allocated at boot, so what travels is its
+ * *contents*, restored into whatever address this process allocated. */
+void musyx_sal_snap_register(void) {
+    port_snap_register("musyx.ai_index", &ai_index, sizeof(ai_index));
+    port_snap_register("musyx.ai_started", &ai_started, sizeof(ai_started));
+    port_snap_register("musyx.sal_up", &sal_up, sizeof(sal_up));
+    port_snap_register("musyx.tick_credit", &tick_credit, sizeof(tick_credit));
+    port_snap_register("musyx.user_callback", &user_callback, sizeof(user_callback));
+    port_snap_register("musyx.ai_dma_cb", &ai_dma_cb, sizeof(ai_dma_cb));
+    port_snap_register("musyx.irq_level", &irq_level, sizeof(irq_level));
+    port_snap_register("musyx.stream_vol_l", &stream_vol_l, sizeof(stream_vol_l));
+    port_snap_register("musyx.stream_vol_r", &stream_vol_r, sizeof(stream_vol_r));
+    port_snap_register("musyx.stream_play", &stream_play, sizeof(stream_play));
+    port_snap_register("musyx.stat_frames", &stat_frames, sizeof(stat_frames));
+    port_snap_register("musyx.stat_retraces", &stat_retraces, sizeof(stat_retraces));
+    if (ai_buffers) {
+        port_snap_register("musyx.ai_buffers", ai_buffers,
+                           (unsigned long)DMA_BUFFERS * DMA_BUFFER_LEN);
+    }
+}

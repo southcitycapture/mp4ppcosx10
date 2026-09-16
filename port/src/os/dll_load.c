@@ -52,7 +52,18 @@ typedef struct DllModule {
     void* handle;
     int opens;
     int stuck; /* dlclose did not unload it; zero the bss by hand */
+    void* image; /* the loaded mach_header, once it has been opened */
+    int ordered; /* it is in load_order */
 } DllModule;
+
+/* The order in which modules were first mapped.  A snapshot replays exactly
+ * this list (PLAN.md §24.2): the game keeps pointers into module text and
+ * holds the dlopen handle itself in `omDllData.bss`, so a restore is only
+ * sound if every module comes back at the address it had.  Since the port
+ * never really unloads a module (see portDLLClose), that address is decided
+ * by the order of first loads and nothing else. */
+static DllModule* load_order[256];
+static int load_order_n;
 
 static DllModule* mods;
 static int mod_count;
@@ -261,6 +272,147 @@ static void zero_bss(void* handle, const char* name) {
              name, zeroed);
 }
 
+/* The loaded image a handle belongs to, found the same way `zero_bss` finds
+ * it: through the module's own `_prolog`, so no name lookup and no dladdr in
+ * a hot path (this runs once per module, at its first load). */
+static void* dll_image_of(void* handle) {
+    void* prolog = dlsym(handle, "_prolog");
+    Dl_info info;
+    if (!prolog || !dladdr(prolog, &info)) {
+        return NULL;
+    }
+    return info.dli_fbase;
+}
+
+/* ---- snapshots (PLAN.md 24.2) --------------------------------------------
+ * A module's `__data`, `__bss` and `__common` are its entire state: the REL's
+ * own globals.  The other sections of `__DATA` are dyld's (the lazy and
+ * non-lazy symbol pointers), and those are deliberately left out of a
+ * snapshot -- they are bindings into libSystem and into the main binary, and
+ * they belong to the process, not to the run. */
+#ifdef __LP64__
+static void dll_data_bounds(void* image, void** lo, unsigned long* size) {
+    const struct mach_header_64* mh = (const struct mach_header_64*)image;
+    static const char* const names[3] = { "__data", "__bss", "__common" };
+    char *blo = NULL, *bhi = NULL;
+    int k;
+    *lo = NULL;
+    *size = 0;
+    if (!mh) {
+        return;
+    }
+    for (k = 0; k < 3; k++) {
+        unsigned long n = 0;
+        char* p = (char*)getsectiondata(mh, "__DATA", names[k], &n);
+        if (p && n) {
+            if (!blo || p < blo) {
+                blo = p;
+            }
+            if (!bhi || p + n > bhi) {
+                bhi = p + n;
+            }
+        }
+    }
+    if (blo && bhi > blo) {
+        *lo = blo;
+        *size = (unsigned long)(bhi - blo);
+    }
+}
+#else
+static void dll_data_bounds(void* image, void** lo, unsigned long* size) {
+    const struct mach_header* mh = (const struct mach_header*)image;
+    static const char* const names[3] = { "__data", "__bss", "__common" };
+    const struct segment_command* seg = NULL;
+    const struct load_command* lc;
+    uint32_t ci;
+    long slide = 0;
+    char* blo = NULL;
+    char* bhi = NULL;
+    int k;
+
+    *lo = NULL;
+    *size = 0;
+    if (!mh) {
+        return;
+    }
+    lc = (const struct load_command*)((const char*)mh + sizeof(*mh));
+    for (ci = 0; ci < mh->ncmds; ci++) {
+        if (lc->cmd == LC_SEGMENT &&
+            !strncmp(((const struct segment_command*)lc)->segname, "__TEXT", 16)) {
+            seg = (const struct segment_command*)lc;
+            break;
+        }
+        lc = (const struct load_command*)((const char*)lc + lc->cmdsize);
+    }
+    slide = seg ? (long)((char*)mh - (long)seg->vmaddr) : 0;
+    for (k = 0; k < 3; k++) {
+        const struct section* sec =
+            getsectbynamefromheader((struct mach_header*)mh, "__DATA", names[k]);
+        if (sec && sec->size) {
+            char* s = (char*)(long)sec->addr + slide;
+            char* e = s + sec->size;
+            if (!blo || s < blo) {
+                blo = s;
+            }
+            if (!bhi || e > bhi) {
+                bhi = e;
+            }
+        }
+    }
+    if (blo && bhi > blo) {
+        *lo = blo;
+        *size = (unsigned long)(bhi - blo);
+    }
+}
+#endif
+
+int port_dll_snap_count(void) { return load_order_n; }
+
+int port_dll_snap_get(int i, const char** name, void** handle, void** image,
+                      void** data_lo, unsigned long* data_size) {
+    DllModule* m;
+    if (i < 0 || i >= load_order_n) {
+        return 0;
+    }
+    m = load_order[i];
+    *name = m->name;
+    *handle = m->handle;
+    *image = m->image;
+    dll_data_bounds(m->image, data_lo, data_size);
+    return 1;
+}
+
+/* --restore: map a module again, in the snapshot's order.  The caller checks
+ * that it came back at the same address; this only has to be the same call the
+ * original run made, in the same sequence, so that dyld makes the same
+ * decisions. */
+int port_dll_snap_reopen(const char* name, void** handle, void** image,
+                         void** data_lo, unsigned long* data_size) {
+    DllModule* m = find(name);
+    void* h;
+    if (!m) {
+        return 0;
+    }
+    h = dlopen(m->path, RTLD_NOW | RTLD_LOCAL);
+    if (!h) {
+        port_log("port> --restore: dlopen %s failed: %s\n", m->path, dlerror());
+        return 0;
+    }
+    m->handle = h;
+    m->opens++;
+    if (!m->ordered) {
+        m->image = dll_image_of(h);
+        m->ordered = 1;
+        if (load_order_n < (int)(sizeof(load_order) / sizeof(load_order[0]))) {
+            load_order[load_order_n++] = m;
+        }
+    }
+    *handle = h;
+    *image = m->image;
+    dll_data_bounds(m->image, data_lo, data_size);
+    return 1;
+}
+
 /* ---- the four entry points objdll.c calls -------------------------------- */
 
 void* portDLLOpen(const char* relpath) {
@@ -282,6 +434,13 @@ void* portDLLOpen(const char* relpath) {
     m->handle = h;
     m->opens++;
     stat_open++;
+    if (!m->ordered) {
+        m->image = dll_image_of(h);
+        m->ordered = 1;
+        if (load_order_n < (int)(sizeof(load_order) / sizeof(load_order[0]))) {
+            load_order[load_order_n++] = m;
+        }
+    }
     if (m->stuck || port_opt.relzerobss) {
         zero_bss(h, m->name);
     }

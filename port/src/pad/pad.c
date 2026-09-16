@@ -312,3 +312,15 @@ void port_pad_shutdown(void) {
         pad_sdl_shutdown();
     }
 }
+
+/* ---- snapshots ------------------------------------------------------------
+ * The pad's *readings* are re-derived every frame (from the replay script,
+ * which is a pure function of the frame number, or from a real controller).
+ * What the game set and expects to still be set is here: the sampling
+ * callback, the spec and analog modes, and the rumble commands in force. */
+void port_pad_snap_register(void) {
+    port_snap_register("pad.sampling_cb", &sampling_cb, sizeof(sampling_cb));
+    port_snap_register("pad.spec", &pad_spec, sizeof(pad_spec));
+    port_snap_register("pad.analog_mode", &analog_mode, sizeof(analog_mode));
+    port_snap_register("pad.motor_cmd", motor_cmd, sizeof(motor_cmd));
+}

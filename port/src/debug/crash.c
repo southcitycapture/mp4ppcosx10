@@ -135,6 +135,9 @@ static void handler(int sig, siginfo_t* info, void* uap) {
     port_log("\n*** port: signal %d at address %p\n", sig, info ? info->si_addr : NULL);
 #endif
     port_stub_report();
+    /* The whole point of the ring: a fault is where a snapshot stops being a
+     * curiosity and becomes the shortest way back to this moment. */
+    port_snap_report_existing();
     _exit(128 + sig);
 }
 

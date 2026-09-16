@@ -143,6 +143,31 @@ static void usage(const char* argv0) {
             "                    when its bytes and the arrays it indexes have\n"
             "                    not moved.  Off: it is faster on the title and\n"
             "                    slower on the character select (PLAN.md 21.3)\n"
+            "  teleport to the bug (M10):\n"
+            "  --nodraw          consume the game's GX command streams and emit\n"
+            "                    no GL: no vertex decode, no texture decode, no\n"
+            "                    present.  The game logic reads none of it, so\n"
+            "                    the run is the same run, roughly three times\n"
+            "                    faster.  The window keeps the last frame drawn\n"
+            "  --ffto N          --nodraw until frame N, then switch drawing on\n"
+            "                    and carry on at the normal pace: the way to be\n"
+            "                    at frame N of a deterministic run in a fraction\n"
+            "                    of the time.  --dumpframe N then still writes\n"
+            "                    the byte-identical frame\n"
+            "  --ffto-warm K     render K frames before N so the texture cache\n"
+            "                    and the EFB are warm when N is drawn (default 1)\n"
+            "  --snap-every K    write a snapshot every K frames\n"
+            "  --snap-keep N     keep the newest N snapshots (default 3)\n"
+            "  --snap-at N       one snapshot at frame N\n"
+            "  --snap-dir DIR    where the ring lives (default ~/MarioParty4/snaps)\n"
+            "  --restore FILE    resume the run in FILE: same binary, same arena\n"
+            "                    addresses, same modules.  Every other flag on\n"
+            "                    the line still applies, so a restore can be\n"
+            "                    --dumpframe'd or run under gdb\n"
+            "  --snapdiff        print a per-region digest of the arenas every\n"
+            "                    snapshot, to byte-diff a restored run against a\n"
+            "                    straight one at the same frame\n"
+            "\n"
             "  --perfwin SPEC    with --perf, also report fps over named frame\n"
             "                    windows: A-B[:NAME][,A-B[:NAME]...].  One boot\n"
             "                    then answers \"how fast is the title/the menu/the\n"
@@ -327,6 +352,24 @@ int port_parse_args(int argc, char** argv) {
         } else if (!strcmp(a, "--perfwin") && i + 1 < argc) {
             port_opt.perfwin = argv[++i];
             port_opt.perf = 1;
+        } else if (!strcmp(a, "--nodraw")) {
+            port_opt.nodraw = 1;
+        } else if (!strcmp(a, "--ffto") && i + 1 < argc) {
+            port_opt.ffto = atoi(argv[++i]);
+        } else if (!strcmp(a, "--ffto-warm") && i + 1 < argc) {
+            port_opt.ffto_warm = atoi(argv[++i]);
+        } else if (!strcmp(a, "--snap-every") && i + 1 < argc) {
+            port_opt.snap_every = atoi(argv[++i]);
+        } else if (!strcmp(a, "--snap-keep") && i + 1 < argc) {
+            port_opt.snap_keep = atoi(argv[++i]);
+        } else if (!strcmp(a, "--snap-at") && i + 1 < argc) {
+            port_opt.snap_now = atoi(argv[++i]);
+        } else if (!strcmp(a, "--snap-dir") && i + 1 < argc) {
+            port_opt.snap_dir = argv[++i];
+        } else if (!strcmp(a, "--restore") && i + 1 < argc) {
+            port_opt.restore = argv[++i];
+        } else if (!strcmp(a, "--snapdiff")) {
+            port_opt.snapdiff = 1;
         } else if (!strcmp(a, "--clickstat")) {
             port_opt.clickstat = 1;
         } else if (!strcmp(a, "--reldir") && i + 1 < argc) {
@@ -421,6 +464,20 @@ int port_parse_args(int argc, char** argv) {
                 port_opt.pad_play);
     }
 
+    /* M10 defaults, after the loop so the flags may come in any order.
+     * --ffto *is* --nodraw with an end: one frame of warm-up before N, because
+     * the texture cache is flushed when drawing comes back on and the first
+     * drawn frame has to re-upload what it binds (PLAN.md 24.1). */
+    if (port_opt.ffto) {
+        port_opt.nodraw = 1;
+    }
+    if (port_opt.ffto_warm <= 0) {
+        port_opt.ffto_warm = 1;
+    }
+    if (port_opt.snap_keep <= 0) {
+        port_opt.snap_keep = 3;
+    }
+
     /* After the loop, so --rtc and --rtcoffset may be given in either order. */
     if (port_opt.rtc_seen) {
         port_opt.rtc_set = 1;
@@ -449,6 +506,7 @@ void port_shutdown(int code) {
     port_thp_report();
     port_card_report();
     port_dll_report();
+    port_snap_report();
     port_reset_report();
     port_stub_report();
     exit(code);
@@ -517,6 +575,19 @@ int main(int argc, char** argv) {
         }
     }
     port_selfplay_init();
+    /* After every subsystem, because --ffto asks the GX backend to switch the
+     * renderer off and the snapshot registry has to see the buffers the audio
+     * and card layers just allocated. */
+    port_ffto_init();
+    port_snap_init();
+    if (port_snap_restore_pending()) {
+        /* Does not return: it copies the snapshot over this process's arenas,
+         * globals and modules and longjmps into the saved retrace.  The boot
+         * above was only ever there to build the host side -- window, GL
+         * context, audio device, disc, pad -- that a snapshot deliberately
+         * does not carry. */
+        port_snap_restore();
+    }
     port_call_on_stack(run_game, port_game_stack_top());
     return 0;
 }

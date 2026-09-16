@@ -2092,8 +2092,17 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
         gx_warn("GXCallDisplayList inside a display list is not supported");
         return;
     }
-    dl_replaying = 1;
     stat_dls++;
+    if (gl13_draw_off()) {
+        /* --nodraw / --ffto (PLAN.md 24.1).  A display list is the game
+         * handing GX a block of *its own* memory to read; the decode writes
+         * nothing the game can observe -- not one byte outside the port's own
+         * staging buffers -- so when nothing is going to be drawn there is
+         * nothing to do at all.  92% of the board's primitives arrive here,
+         * and this early return is most of what makes a fast-forward fast. */
+        return;
+    }
+    dl_replaying = 1;
     port_perf_gx_begin();
     frame = gl13_frame_number();
     caching = port_opt.dlcache && nbytes > 0;

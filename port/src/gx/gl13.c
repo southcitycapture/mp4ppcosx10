@@ -570,7 +570,34 @@ void gl13_shutdown(void) {
     gl_on = 0;
 }
 
-int gl13_live(void) { return gl_on; }
+/* --nodraw / --ffto: the renderer switched off underneath a live GL context.
+ *
+ * `gl13_live()` is already the question every GL-touching path in the backend
+ * asks -- the texture cache, the TEV chain, the EFB copy, phase 2 of the
+ * vertex path -- because `--headless` has to answer it too.  So switching the
+ * renderer off is not a new pipeline: it is this one function returning 0,
+ * plus the two places that would otherwise *decode* something before finding
+ * out that nobody wants it (the display-list vertex decode in gx_draw.c and
+ * the texture decode in gx_tex.c), which ask `gl13_draw_off()` directly.
+ *
+ * `gl_on` still means "there is a window and a context", so `gl13_write_ppm`,
+ * the shutdown path and `--dumpframe` keep working; drawing comes back with
+ * `gl13_set_draw_off(0)` and a texture-cache flush.  Nothing here is visible to
+ * the game: GX is a write-only command stream apart from the draw-sync token,
+ * which lives in gx_state.c and is untouched. */
+static int draw_off;
+
+int gl13_live(void) { return gl_on && !draw_off; }
+int gl13_draw_off(void) { return draw_off; }
+
+void gl13_set_draw_off(int v) {
+    draw_off = v ? 1 : 0;
+    if (!draw_off) {
+        /* Everything the shadow believes about GL state was recorded before
+         * the pause, and the pause emitted nothing; forget it all. */
+        glc_invalidate();
+    }
+}
 
 
 /* ---- per-frame ------------------------------------------------------------ */
@@ -1037,7 +1064,14 @@ void gl13_present(void) {
     port_scenelog();
     port_ovllog();
     port_nanwatch();
-    if (frame_wanted(frame_no)) {
+    if (frame_wanted(frame_no) && draw_off) {
+        /* --nodraw: the EFB holds whatever was last drawn, which is not this
+         * frame.  Writing it would put a wrong picture under the right name,
+         * and an md5 taken from it would be a lie. */
+        port_log("port> --dumpframe %u skipped: drawing is off (--nodraw); "
+                 "use --ffto %u to arrive there with the renderer on\n",
+                 frame_no, frame_no);
+    } else if (frame_wanted(frame_no)) {
         char path[1024];
         snprintf(path, sizeof(path), "%s/frame-%05u.ppm",
                  port_opt.shotdir ? port_opt.shotdir : ".", frame_no);
@@ -1047,8 +1081,8 @@ void gl13_present(void) {
         gl13_write_ppm(pending_shot);
         pending_shot = NULL;
     }
-    if (!gl_on) {
-        return;
+    if (!gl_on || draw_off) {
+        return; /* nothing was drawn, so there is nothing to show */
     }
     SDL_GL_SwapWindow(window);
     if (clear_pending) {
@@ -1082,6 +1116,15 @@ void gl13_present(void) {
 }
 
 unsigned gl13_frame_number(void) { return frame_no; }
+
+/* --restore sets the frame number back to the snapshot's, so --dumpframe,
+ * --perfwin, the texture cache's validation epoch and every log line agree
+ * with the run being continued rather than with this process's age. */
+void gl13_set_frame_number(unsigned n) { frame_no = n; }
+
+void gl13_snap_register(void) {
+    port_snap_register("gl13.frame_no", &frame_no, sizeof(frame_no));
+}
 
 void gl13_state_report(void) {
     unsigned e, l;

@@ -182,3 +182,20 @@ void OSResetSystem(BOOL reset, u32 resetCode, BOOL forceMenu) {
              "watcher ticks; quitting cleanly\n", ticks);
     port_shutdown(0);
 }
+
+/* ---- snapshots ------------------------------------------------------------
+ * The soft-reset watcher is the game's one OSThread, polled here instead of
+ * run (PLAN.md §10.4).  Its state is which thread the game created, whether it
+ * has been resumed and whether it is waiting -- all of it decides whether the
+ * game's own watcher body runs on the next retrace, so it belongs to the run.
+ * `tick_out` is a jmp_buf into *this* tick's frame and is deliberately not
+ * carried: a snapshot is only ever taken at the top of a retrace, outside the
+ * polled body. */
+void port_sreset_snap_register(void) {
+    port_snap_register("sreset.toe_thread", &toe_thread, sizeof(toe_thread));
+    port_snap_register("sreset.toe_func", &toe_func, sizeof(toe_func));
+    port_snap_register("sreset.toe_resumed", &toe_resumed, sizeof(toe_resumed));
+    port_snap_register("sreset.toe_awake", &toe_awake, sizeof(toe_awake));
+    port_snap_register("sreset.ticks", &ticks, sizeof(ticks));
+    port_snap_register("sreset.reset_hold", &reset_hold, sizeof(reset_hold));
+}

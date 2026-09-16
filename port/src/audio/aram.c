@@ -106,3 +106,18 @@ void ARQPostRequest(ARQRequest* task, u32 owner, u32 type, u32 priority, uintptr
 }
 
 void port_arq_service(void) { /* nothing pending: transfers complete inline */ }
+
+/* ---- snapshots ------------------------------------------------------------
+ * ARAM's *contents* travel with the arena; what is here is the port's own
+ * view of the hardware: whether AR/ARQ have been initialised, the DMA
+ * completion callback the game installed, and ARQ's chunk size.  Transfers
+ * themselves complete inline (see port_arq_service), so there is never one in
+ * flight at the top of a retrace, which is the only place a snapshot is
+ * taken. */
+void port_aram_snap_register(void) {
+    port_snap_register("aram.ar_inited", &ar_inited, sizeof(ar_inited));
+    port_snap_register("aram.dma_callback", &dma_callback, sizeof(dma_callback));
+    port_snap_register("aram.dma_bytes", &dma_bytes, sizeof(dma_bytes));
+    port_snap_register("aram.arq_inited", &arq_inited, sizeof(arq_inited));
+    port_snap_register("aram.chunk_size", &chunk_size, sizeof(chunk_size));
+}

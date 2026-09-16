@@ -969,3 +969,22 @@ BOOL CARDSetFastMode(BOOL enable) {
     return FALSE;
 }
 void CARDSetDiskID(const void* id) { (void)id; }
+
+/* ---- snapshots ------------------------------------------------------------
+ * The card is state the game both reads and writes, and `--freshcard` makes it
+ * part of a deterministic run: the save file's played-minigame set decides
+ * which minigames the roulette may deal.  The image lives in a host buffer, so
+ * the snapshot carries its *contents* and the restore puts them back into
+ * whatever buffer this process allocated; the file on disk is left alone,
+ * which is deliberate -- a restore must not rewrite the player's card. */
+void port_card_snap_register(void) {
+    int i;
+    static const char* const names[CARD_SLOTS] = { "card.slot-a", "card.slot-b" };
+    for (i = 0; i < CARD_SLOTS; i++) {
+        if (slot[i].img) {
+            port_snap_register(names[i], slot[i].img, (unsigned long)CARD_IMAGE_SIZE);
+        }
+        port_snap_register(i == 0 ? "card.state-a" : "card.state-b", &slot[i].mounted,
+                           sizeof(slot[i].mounted));
+    }
+}

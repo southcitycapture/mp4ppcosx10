@@ -119,6 +119,24 @@ typedef struct PortOptions {
     const char* perfwin;    /* --perfwin A-B[:NAME][,...]  per-scene fps out of
                              *   one run's own per-frame samples, so a baseline
                              *   costs one boot instead of three                */
+    /* ---- M10: teleport to the bug ---- */
+    int nodraw;             /* --nodraw  the GX interpreter consumes the
+                             *   command streams and emits no GL and decodes
+                             *   no vertices.  The game logic never reads any
+                             *   of it, so the frame costs ~30% of itself     */
+    int ffto;               /* --ffto N  run to frame N with drawing off and
+                             *   the pacing gate open, then switch drawing
+                             *   back on and carry on normally (PLAN.md 24.1) */
+    int ffto_warm;          /* --ffto-warm K  frames rendered before N so the
+                             *   texture cache and the EFB are warm; 1        */
+    int snap_every;         /* --snap-every K  write a snapshot every K frames */
+    int snap_keep;          /* --snap-keep N   keep the newest N (ring)        */
+    const char* snap_dir;   /* --snap-dir DIR  where the ring lives            */
+    const char* restore;    /* --restore FILE  resume from this snapshot       */
+    int snap_now;           /* --snap-at N  one snapshot at frame N, then go on */
+    int snapdiff;           /* --snapdiff  dump arena digests per region, to
+                             *   byte-diff a restored run against a straight
+                             *   one at the same frame                        */
 } PortOptions;
 
 extern PortOptions port_opt;
@@ -192,6 +210,26 @@ void port_guard_selftest(const char* where);
  * port/src/os/jmp_host.c. */
 extern uintptr_t port_text_base_hi;
 extern uintptr_t port_stack_base_hi;
+
+/* ---- M10: fast-forward and snapshots (src/debug/snapshot.c) -------------- */
+/* --ffto: drawing is off until frame N, so a deterministic run reaches N in a
+ * fraction of the wall clock.  Called at the top of every retrace, before the
+ * present that would number the next frame. */
+void port_ffto_init(void);
+void port_ffto_tick(void);
+/* The snapshot ring.  Taken at the top of the retrace, outside any GX or
+ * audio call, which is the only point at which the game's own state is
+ * quiescent and the port's coroutine is the game's. */
+void port_snap_init(void);
+void port_snap_tick(void);
+void port_snap_report_existing(void); /* the fault handler asks for this */
+/* Port-side state that a snapshot must carry because it is not in the arenas:
+ * counters, clocks, replay positions.  Everything else the port owns is a host
+ * resource and is re-derived on restore (PLAN.md 24.2). */
+void port_snap_register(const char* name, void* p, unsigned long size);
+int port_snap_restore_pending(void); /* --restore was given and not yet done */
+void port_snap_restore(void);        /* ...do it; does not return */
+void port_snap_report(void);
 
 /* ---- host loop ----------------------------------------------------------- */
 void port_vi_init(void);

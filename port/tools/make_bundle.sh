@@ -58,6 +58,13 @@ rm -rf "$out"
 mkdir -p "$out/Contents/MacOS" "$out/Contents/Resources"
 cp "$exe" "$out/Contents/MacOS/isle"
 chmod 755 "$out/Contents/MacOS/isle"
+# The snapmap goes with the binary: it is the table of the game's own writable
+# globals, without which --snap-every/--restore cannot work (PLAN.md 24.2).
+# It is named after the executable, so inside the bundle it is isle.snapmap.
+if [ -f "$exe.snapmap" ]; then
+    cp "$exe.snapmap" "$out/Contents/MacOS/isle.snapmap"
+    echo "  snapmap: $(awk '/^ranges/{print $2}' "$exe.snapmap") game data ranges"
+fi
 # The 99 REL modules, one dlopen'ed Mach-O bundle each.  They go next to the
 # executable because that is where --reldir defaults to (<exe dir>/rels), so
 # nothing has to be told where they are.

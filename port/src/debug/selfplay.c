@@ -547,3 +547,18 @@ void port_selfplay_tick(u32 frame) {
         status_line(frame);
     }
 }
+
+/* ---- snapshots ------------------------------------------------------------
+ * The harness's own position in the run: which minigame it is parking on and
+ * how far down a `--minigame a,b,c` list it has got.  Everything else in this
+ * file is diagnostics (the stuck watch's timers, the status line's cadence)
+ * and is allowed to restart with the process. */
+void port_selfplay_snap_register(void) {
+    port_snap_register("selfplay.forced_mg", &forced_mg, sizeof(forced_mg));
+    port_snap_register("selfplay.forced_mg_type", &forced_mg_type,
+                       sizeof(forced_mg_type));
+    port_snap_register("selfplay.forced_mg_list", forced_mg_list,
+                       sizeof(forced_mg_list));
+    port_snap_register("selfplay.forced_mg_len", &forced_mg_len, sizeof(forced_mg_len));
+    port_snap_register("selfplay.forced_mg_at", &forced_mg_at, sizeof(forced_mg_at));
+}

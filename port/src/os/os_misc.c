@@ -329,3 +329,19 @@ BOOL OSUnlink(OSModuleInfo* oldModule) {
     (void)oldModule;
     return TRUE;
 }
+
+/* ---- snapshots ------------------------------------------------------------
+ * The deterministic clock *is* game state: `OSGetTime` seeds both of the RNGs
+ * and `OSGetTick` paces a dozen wait loops, and both are pure functions of
+ * these counters under --rtc/--deterministic.  A restored run that started
+ * them from zero would seed differently and deal a different minigame, which
+ * is exactly the divergence the milestone is meant to rule out. */
+void os_misc_snap_register(void) {
+    port_snap_register("os.det_ticks", &det_ticks, sizeof(det_ticks));
+    port_snap_register("os.wall_origin", &wall_origin, sizeof(wall_origin));
+    port_snap_register("os.spin_ticks", &spin_ticks, sizeof(spin_ticks));
+    port_snap_register("os.clock_t0", &clock_t0, sizeof(clock_t0));
+    port_snap_register("os.int_enabled", &int_enabled, sizeof(int_enabled));
+    port_snap_register("os.sound_mode", &sound_mode, sizeof(sound_mode));
+    port_snap_register("os.progressive", &progressive, sizeof(progressive));
+}

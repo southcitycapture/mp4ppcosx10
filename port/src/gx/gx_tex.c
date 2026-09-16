@@ -837,6 +837,12 @@ void gx_tex_bind_swapped(int unit, GXTexObjPort* o, u8 swap) {
     if (!o || o->magic != TEXOBJ_MAGIC) {
         return;
     }
+    if (gl13_draw_off()) {
+        /* --nodraw: nothing will sample it, and decoding a texture is the
+         * second most expensive thing this backend does.  The cache is
+         * flushed when drawing comes back, so nothing stale survives. */
+        return;
+    }
 
     /* The validation epoch: bumped the first time any bind observes a new
      * frame number.  See the long comment above this function's old body,
@@ -1307,6 +1313,9 @@ int gx_tex_bind_tiled(int unit, GXTexObjPort* sheet, GXTexObjPort* map,
     if (!sheet || !map || sheet->magic != TEXOBJ_MAGIC || map->magic != TEXOBJ_MAGIC) {
         return 0;
     }
+    if (gl13_draw_off()) {
+        return 0; /* --nodraw: composing a background nobody will see */
+    }
     if (ts <= 0 || tt <= 0 || sps <= 0 || spt <= 0) {
         return 0;
     }
@@ -1517,4 +1526,47 @@ void gx_tex_tile_report(void) {
     }
     port_log("port> indirect tiling: %u composed backgrounds, %u cache hits\n",
              stat_tile_build, stat_tile_hit);
+}
+
+/* Drop the lot: every decoded texture, every composed indirect tile, and the
+ * GL names both of them hold.  Two callers, and both of them need it to be
+ * this brutal rather than clever:
+ *
+ *   - drawing coming back on after `--nodraw` (PLAN.md 24.1).  A bind taken
+ *     while the renderer was off still *cached* the key -- the hash table does
+ *     not know about GL -- but never generated a name or uploaded a texel.  A
+ *     later bind would then hit that entry, find `gl_name == 0`, and draw
+ *     untextured.  Flushing makes the first drawn frame take the cold-miss
+ *     path for everything it binds, which is what makes it byte-identical to
+ *     the same frame of a straight run.
+ *   - `--restore` (PLAN.md 24.2).  The cache is keyed on addresses in MEM1
+ *     and the snapshot has just replaced MEM1 wholesale; every content hash in
+ *     it describes texels that are no longer there.
+ *
+ * It costs one frame of re-uploads, which is why it is never done per frame. */
+void gx_tex_flush_all(void) {
+    int i;
+    for (i = 0; i < (int)cache_used; i++) {
+        if (gl13_live() && cache[i].gl_name) {
+            GLuint n = cache[i].gl_name;
+            GL(glDeleteTextures)(1, &n);
+        }
+    }
+    for (i = 0; i < tiles_used; i++) {
+        if (gl13_live() && tiles[i].gl_name) {
+            GLuint n = tiles[i].gl_name;
+            GL(glDeleteTextures)(1, &n);
+        }
+    }
+    memset(cache, 0, sizeof(cache));
+    memset(tiles, 0, sizeof(tiles));
+    cache_used = 0;
+    tiles_used = 0;
+    for (i = 0; i < (int)TEX_HASH_SIZE; i++) {
+        hash_head[i] = -1;
+    }
+    cache_epoch = 0;
+    cache_epoch_frame = 0;
+    cache_epoch_started = 0;
+    glc_invalidate();
 }
