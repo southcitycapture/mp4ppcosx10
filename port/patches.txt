@@ -450,3 +450,31 @@ src/REL/resultDll/main.c	#ifdef NON_MATCHING\n            coinNum[4] = 0;\n#endi
 # it alone for want of a test; the end-of-game crash is in the bg branch of
 # HuSprDisp, so it now has one.
 src/game/sprman.c	            HuSprData[new_sprite] = *old_sprite;	            HuSprData[new_sprite] = *old_sprite;\n            if(HuSprData[new_sprite].bg) {\n                HuSprAnimLock(HuSprData[new_sprite].bg);\n            }
+
+# ------------------------------------------------- REL/m444dll/pinball.c
+# The m444 drop watchdog -- the stall that ate two overnight soaks (PLAN.md 23.1).
+#
+# `fn_1_8DD0` spins in `HuPrcVSleep` until `fn_1_B1E8` reports which slot the
+# ball fell into.  `fn_1_B1E8` reports a slot only when the ball is within 3
+# units of one *and* moving slower than 1, and it has no other exit.  Read out
+# of a stalled process at frame 14,700, the demo ball is sitting on the board's
+# own collision segment (105,-85)-(145,-85) -- the floor of the launch chute --
+# at (128.0, -98.59) with velocity (0, 0.354, 0), stepping 0.2 to 1.5 units in
+# an eleven-frame cycle that never leaves.  `lbl_1_bss_1884` is 47, the bounds
+# are the real (-145,-495)..(145,-55), so nothing is mis-parsed: the ball has
+# simply lost its launch energy inside the chute.
+#
+# Nothing in the module can free it.  The one unstick it has -- `lbl_1_bss_312`,
+# set to 10 whenever the last 120 steps sum to less than 120*sqrt(6) -- only
+# suppresses the five bumpers at z=-300/-400, never the 47 wall segments, and it
+# was observed *firing continuously* (value 9) at the stall.  The four
+# `#if VERSION_REV2` guards Nintendo added to this very function are compiled in
+# (the port builds VERSION=1 = ENG1 = REV2) and only cover zero-length vectors.
+#
+# So the port gives the loop a bound.  A drop that completes takes a few hundred
+# frames; thirty seconds of one is a hang.  At that point the ball is put in the
+# slot it is nearest -- the outcome the physics was heading for -- and the next
+# `fn_1_B1E8` reports it.  No completing drop can reach this code, so no run that
+# works today changes.
+src/REL/m444dll/pinball.c	s16 fn_1_B1E8(Vec *arg0, Vec *arg1, s16 arg2);\n\ns16 fn_1_8DD0(s16 arg0)\n{	s16 fn_1_B1E8(Vec *arg0, Vec *arg1, s16 arg2);\n\nextern Vec *lbl_1_data_454[];\nextern s16 lbl_1_data_3A4[];\n\ns16 fn_1_8DD0(s16 arg0)\n{\n    s32 port_stuck = 0;
+src/REL/m444dll/pinball.c	    fn_1_8180(1);\n    while (1) {\n        temp_r27 = fn_1_B1E8(&lbl_1_bss_1894, &lbl_1_bss_1888, arg0);	    fn_1_8180(1);\n    while (1) {\n        if (++port_stuck > 1800) {\n            s16 port_round = (arg0 < 0 || arg0 >= 3) ? 0 : arg0;\n            Vec *port_slot = lbl_1_data_454[port_round];\n            s16 port_i;\n            s16 port_best = 0;\n            float port_d;\n            float port_bd = 1e30f;\n            for (port_i = 0; port_i < lbl_1_data_3A4[port_round]; port_i++) {\n                float port_dx = port_slot[port_i].x - lbl_1_bss_1894.x;\n                float port_dy = port_slot[port_i].y - lbl_1_bss_1894.y;\n                port_d = (port_dx * port_dx) + (port_dy * port_dy);\n                if (port_d < port_bd) {\n                    port_bd = port_d;\n                    port_best = port_i;\n                }\n            }\n            OSReport("port> m444: drop %d wedged at (%d, %d); forcing slot %d\\n", (int)port_round, (int)lbl_1_bss_1894.x, (int)lbl_1_bss_1894.y, (int)port_best);\n            lbl_1_bss_1894 = port_slot[port_best];\n            lbl_1_bss_1888.x = lbl_1_bss_1888.y = lbl_1_bss_1888.z = 0.0f;\n            port_stuck = 0;\n        }\n        temp_r27 = fn_1_B1E8(&lbl_1_bss_1894, &lbl_1_bss_1888, arg0);
