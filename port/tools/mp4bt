@@ -1,0 +1,11 @@
+#!/bin/sh
+# mp4bt [pid] -- attach gdb to the running port, print every thread's
+# backtrace, detach. The game keeps running. Needs /work/mp4 -> ~/mp4-work
+# so gdb finds the .o debug map, and zach in procmod (or run under sudo).
+pid=${1:-$(ps -axo pid,command | grep "MacOS/isle" | grep -v grep | awk '{print $1}' | head -n 1)}
+[ -n "$pid" ] || { echo "mp4bt: no isle process"; exit 1; }
+cmd=/tmp/mp4bt.$$.gdb
+printf 'thread apply all bt 25\ndetach\nquit\n' > $cmd
+gdb -batch -x $cmd /Users/zach/isle.app/Contents/MacOS/isle $pid 2>&1 \
+  | grep -vE 'unknown load command|^warning: Could not find object|^Reading symbols|^Loaded symbols|^\.+( done)?$|^$'
+rm -f $cmd

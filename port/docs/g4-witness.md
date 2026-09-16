@@ -44,6 +44,30 @@ disc image is already in `~/MarioParty4/` (§README "Running on the G4").
 
 ---
 
+## 0b. There is a debugger now *(2026-09-16)*
+
+The G4 has gdb: Xcode 3.0's `DeveloperToolsCLI.pkg` (gdb-768, plus nm, otool,
+atos, malloc_history) installed from the Leopard disc image on the Mac
+(`os-images/leopard-10.5.4-install.toast`, `Optional Installs/Xcode Tools/Packages`).
+`zach` is in group `procmod`, and `taskgated` runs `-p`, so gdb attaches
+without sudo; `sudo gdb`, `sudo ~/bin/mp4peek` and `sudo date` are NOPASSWD.
+
+What makes it useful:
+
+* objects are built `-gdwarf-2 -gstrict-dwarf` (Makefile `DEBUG_G`) — gdb-768
+  cannot read GCC 14's DWARF 5 (`Cannot handle DW_FORM_<unknown>`);
+* the debug map in the binary names `/work/mp4/port/build-ppc-darwin/...`,
+  and on the G4 `/work/mp4 -> ~/mp4-work`; `port/tools/g4_debug_sync.sh`
+  ships the `.o` tree there after every build, mtimes preserved;
+* `mp4bt [pid]` on the G4 prints every thread's backtrace with file:line and
+  detaches; the game keeps running. For anything more, a command file:
+  `gdb -batch -x cmds.gdb ~/isle.app/Contents/MacOS/isle PID` (gdb-768 has no
+  `-ex`; give it the executable explicitly or it looks for a file named PID).
+
+The loop: `port/build-ppc.sh -j8 && port/tools/g4_debug_sync.sh && g4 push-bin`.
+A binary and its `.o` tree must come from the same build, or gdb reads the
+wrong lines.
+
 ## 1. m425 to its result screen — the M8 crash, witnessed
 
 §18.2 proved the `unk_3C[6]` correction at the level of the instructions. This

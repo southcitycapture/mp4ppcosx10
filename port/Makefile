@@ -161,10 +161,16 @@ GAME_WARN := -w -Wno-implicit-function-declaration -Wno-return-mismatch \
 # in 20 modules with the same shape.  The individual declarations are worth
 # fixing one at a time in patches.txt; this flag is what makes the other 38
 # not be a crash in the meantime.  It only changes code where it fires.
-GAME_CFLAGS = -std=gnu11 -O2 -g -fno-strict-aliasing -fwrapv -fcommon \
+# Debug info the G4's gdb can read.  Xcode 3.0's gdb-768 (2007) rejects the
+# DWARF 5 that GCC 14 emits by default ("Cannot handle DW_FORM_<unknown>"),
+# so every object is built -gdwarf-2 -gstrict-dwarf.  The debug map points at
+# the .o files under /work/mp4/port/build-ppc-darwin, which on the G4 is a
+# symlink to ~/mp4-work (port/tools/g4_debug_sync.sh keeps it current).
+DEBUG_G = -gdwarf-2 -gstrict-dwarf
+GAME_CFLAGS = -std=gnu11 -O2 $(DEBUG_G) -fno-strict-aliasing -fwrapv -fcommon \
               $(GAME_UBSAFE) \
               $(GAME_WARN) $(GAME_DEFS) $(GAME_INC) $(TARGET_CFLAGS)
-PORT_CFLAGS = -std=gnu11 -O2 -g -fno-strict-aliasing -fcommon \
+PORT_CFLAGS = -std=gnu11 -O2 $(DEBUG_G) -fno-strict-aliasing -fcommon \
               -Wall -Wno-unused-parameter -Wno-unknown-pragmas \
               $(GAME_DEFS) $(GAME_INC) $(SDL_CFLAGS) $(TARGET_CFLAGS)
 LDFLAGS   = $(TARGET_LDFLAGS) -lm $(SDL_LIBS) \
@@ -260,7 +266,7 @@ $(BUILD)/port/%.o: %.c $(MIRROR_STAMP)
 # dependency and no $(GEN)/include on the path.  `-w` for the same reason the
 # game's own sources get it: this is upstream code compiled as it is written,
 # and the port's -Wall is a statement about the port's own files.
-MUSYX_CFLAGS = -std=gnu11 -O2 -g -fno-strict-aliasing -fwrapv -fcommon -w \
+MUSYX_CFLAGS = -std=gnu11 -O2 $(DEBUG_G) -fno-strict-aliasing -fwrapv -fcommon -w \
                $(GAME_DEFS) -I$(ROOT)/extern/musyx/include -Iinclude $(TARGET_CFLAGS)
 $(BUILD)/musyx/%.o: $(MUSYX_DIR)/%.c
 	@mkdir -p $(dir $@)
@@ -304,7 +310,7 @@ $(BUILD)/port/sdk_stubs.o: $(STUBS_C)
 
 $(BUILD)/port/sdk_stubs_untyped.o: $(STUBS_U_C)
 	@mkdir -p $(dir $@)
-	$(CC) -std=gnu11 -O2 -g -Iinclude $(TARGET_CFLAGS) -c -o $@ $<
+	$(CC) -std=gnu11 -O2 $(DEBUG_G) -Iinclude $(TARGET_CFLAGS) -c -o $@ $<
 
 stubs: $(STUBS_C)
 
