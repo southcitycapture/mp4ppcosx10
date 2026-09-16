@@ -606,3 +606,28 @@ void port_musyx_aram_report(void) {
              g_bytesUploaded, g_storeRejected, g_streamRejected, g_uploadRejected,
              g_removeMismatches);
 }
+
+/* ---- snapshots ------------------------------------------------------------
+ * ARAM's bytes travel with the arena; this is the port's *bookkeeping* over
+ * them -- the two bump cursors, the stream-buffer table and the three lists
+ * that thread it -- and MusyX holds ARAM offsets that only mean anything
+ * against it.  The list pointers point into `g_streamBuffers`, which is a
+ * static array in the binary and therefore at the same address in every run of
+ * the same build. */
+void port_aram_musyx_snap_register(void) {
+    port_snap_register("aramx.initialized", &g_initialized, sizeof(g_initialized));
+    port_snap_register("aramx.base", &g_aramBase, sizeof(g_aramBase));
+    port_snap_register("aramx.top", &g_aramTop, sizeof(g_aramTop));
+    port_snap_register("aramx.write", &g_aramWrite, sizeof(g_aramWrite));
+    port_snap_register("aramx.stream", &g_aramStream, sizeof(g_aramStream));
+    port_snap_register("aramx.upload_cb", &g_uploadCallback, sizeof(g_uploadCallback));
+    port_snap_register("aramx.upload_chunk", &g_uploadChunkSize,
+                       sizeof(g_uploadChunkSize));
+    port_snap_register("aramx.stream_buffers", g_streamBuffers,
+                       sizeof(g_streamBuffers));
+    port_snap_register("aramx.used", &g_usedStreamBuffers, sizeof(g_usedStreamBuffers));
+    port_snap_register("aramx.free", &g_freeStreamBuffers, sizeof(g_freeStreamBuffers));
+    port_snap_register("aramx.idle", &g_idleStreamBuffers, sizeof(g_idleStreamBuffers));
+    port_snap_register("aramx.active", &g_streamBuffersActive,
+                       sizeof(g_streamBuffersActive));
+}

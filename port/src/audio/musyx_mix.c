@@ -1386,10 +1386,55 @@ static void render_output(short* dest) {
 
 /* ---- public entry points ---------------------------------------------------- */
 
+/* The voice array is allocated once, at a fixed size, and never handed back.
+ *
+ * It is the console's *DSP state*: every voice's sample cursor, ADPCM decode
+ * history, resampler window and loop bookkeeping -- state that on the
+ * GameCube lived in the DSP's own registers and that MusyX reads back through
+ * `hwGetPos`/`hwIsActive` to decide when a sound has finished.  So a snapshot
+ * has to carry it (PLAN.md 24.2), and a restored process has to have somewhere
+ * to put it *before* the game's audio init would have created it -- which in a
+ * restored process never runs.  Hence a fixed MIX_MAX_VOICES rather than
+ * `salNumVoices`: the registry entry must be the same size in the run that
+ * takes a snapshot and the run that restores it.
+ *
+ * The first restore without this mixed nothing at all: `voices` was NULL, the
+ * mixer was down, and MusyX's own state then diverged within fifty frames
+ * because no voice ever reported itself finished (PLAN.md 24.4). */
+#define MIX_MAX_VOICES 64
+
+void port_musyx_mix_voices_ensure(void) {
+    /* Same reasoning as gx_draw_reset in port_gx_init: the resampler's
+     * coefficient table is the process's, not the game's init's. */
+    src_table_init();
+    if (!voices) {
+        voices = (MixVoice*)calloc(MIX_MAX_VOICES, sizeof(MixVoice));
+    }
+}
+
+void port_musyx_mix_snap_register(void) {
+    port_musyx_mix_voices_ensure();
+    if (!voices) {
+        return;
+    }
+    port_snap_register("musyx.mix_voices", voices,
+                       (unsigned long)MIX_MAX_VOICES * sizeof(MixVoice));
+    port_snap_register("musyx.mix_num_voices", &num_voices, sizeof(num_voices));
+    port_snap_register("musyx.mixer_up", &mixer_up, sizeof(mixer_up));
+}
+
 void port_musyx_mix_init(void) {
     src_table_init();
     num_voices = salNumVoices;
-    voices = (MixVoice*)calloc(num_voices ? num_voices : 1, sizeof(MixVoice));
+    if (num_voices > MIX_MAX_VOICES) {
+        port_log("port> musyx_mix: %u voices is more than the %d a snapshot "
+                 "can carry; snapshots of this run will not restore\n",
+                 num_voices, MIX_MAX_VOICES);
+    }
+    port_musyx_mix_voices_ensure();
+    if (voices) {
+        memset(voices, 0, (size_t)MIX_MAX_VOICES * sizeof(MixVoice));
+    }
     mixer_up = (voices != NULL);
     stat_frames_mixed = 0;
     stat_voices_started = 0;
@@ -1448,9 +1493,10 @@ void port_musyx_mix_frame(short* dest) {
 }
 
 void port_musyx_mix_shutdown(void) {
+    /* The array is kept -- its address is in the snapshot registry -- and only
+     * emptied.  It is 64 voices, not a leak worth the risk. */
     if (voices) {
-        free(voices);
-        voices = NULL;
+        memset(voices, 0, (size_t)MIX_MAX_VOICES * sizeof(MixVoice));
     }
     mixer_up = 0;
 }

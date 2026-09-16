@@ -71,9 +71,11 @@ unsigned gl13_frame_number(void);
 void gl13_set_frame_number(unsigned n);
 int port_dll_snap_count(void);
 int port_dll_snap_get(int i, const char** name, void** handle, void** image,
-                      void** data_lo, unsigned long* data_size);
+                      void** data_lo, unsigned long* data_size, int* open,
+                      int* stuck);
 int port_dll_snap_reopen(const char* name, void** handle, void** image,
-                         void** data_lo, unsigned long* data_size);
+                         void** data_lo, unsigned long* data_size, int open,
+                         int stuck);
 
 /* The port modules that own a piece of the run.  Each one registers its own
  * statics; a file's statics are only visible inside it. */
@@ -87,6 +89,8 @@ void port_selfplay_snap_register(void);
 void port_aram_snap_register(void);
 void port_sreset_snap_register(void);
 void port_pad_snap_register(void);
+void port_musyx_mix_snap_register(void);
+void port_aram_musyx_snap_register(void);
 
 extern int gcsetjmp(void* jump);
 extern int gclongjmp(void* jump, int status);
@@ -125,6 +129,8 @@ typedef struct {
     u32 image;
     u32 data_lo;
     u32 data_size;
+    u32 open;  /* the game has it linked right now */
+    u32 stuck; /* ...and whether its bss needs zeroing by hand on re-entry */
 } SnapMod;
 
 typedef struct {
@@ -323,24 +329,31 @@ static void snap_diff_dump(unsigned frame) {
     const u8* m = (const u8*)port_mem1_lo();
     const u8* a = (const u8*)port_aram();
     u32 i;
+    int r;
+    long slide = image_slide();
+
+    /* 64 KB granularity: coarse enough to be one log line, fine enough that
+     * the offset it names can be looked up against the heap bases the boot
+     * prints (OSCreateHeap) and turned into "which heap". */
     port_log("port> snapdiff f%u mem1:", frame);
-    for (i = 0; i < PORT_MEM1_SIZE; i += 0x00400000u) {
-        port_log(" %08x", fnv(m + i, 0x00400000u, 2166136261u));
+    for (i = 0; i < PORT_MEM1_SIZE; i += 0x00010000u) {
+        port_log(" %08x", fnv(m + i, 0x00010000u, 2166136261u));
     }
     port_log("\nport> snapdiff f%u aram:", frame);
     for (i = 0; i < PORT_ARAM_SIZE; i += 0x00400000u) {
         port_log(" %08x", fnv(a + i, 0x00400000u, 2166136261u));
     }
     port_log("\nport> snapdiff f%u gdata:", frame);
-    {
-        u32 h = 2166136261u;
-        long slide = image_slide();
-        int r;
-        for (r = 0; r < nranges; r++) {
-            h = fnv((const void*)((char*)(long)ranges[r].addr + slide),
-                    ranges[r].size, h);
-        }
-        port_log(" %08x", h);
+    for (r = 0; r < nranges; r++) {
+        port_log(" %08x", fnv((const void*)((char*)(long)ranges[r].addr + slide),
+                              ranges[r].size, 2166136261u));
+    }
+    /* The port's own registered state, entry by entry and by name: if a
+     * restored run diverges, the first line that differs from the straight
+     * run's names the thing that was not carried. */
+    port_log("\nport> snapdiff f%u regs:", frame);
+    for (r = 0; r < reg_count; r++) {
+        port_log(" %s=%08x", reg[r].name, fnv(reg[r].p, reg[r].size, 2166136261u));
     }
     port_log("\n");
 }
@@ -403,8 +416,10 @@ static void snap_write(const char* path) {
         const char* name = NULL;
         void *handle = NULL, *image = NULL, *lo = NULL;
         unsigned long size = 0;
+        int open = 0, stuck = 0;
         SnapMod m;
-        if (!port_dll_snap_get(i, &name, &handle, &image, &lo, &size)) {
+        if (!port_dll_snap_get(i, &name, &handle, &image, &lo, &size, &open,
+                               &stuck)) {
             continue;
         }
         memset(&m, 0, sizeof(m));
@@ -413,6 +428,8 @@ static void snap_write(const char* path) {
         m.image = (u32)(uintptr_t)image;
         m.data_lo = (u32)(uintptr_t)lo;
         m.data_size = (u32)size;
+        m.open = (u32)open;
+        m.stuck = (u32)stuck;
         ok &= wr(f, &m, sizeof(m));
         if (lo && size) {
             ok &= wr(f, lo, size);
@@ -493,10 +510,12 @@ void port_snap_tick(void) {
         return;
     }
     frame = gl13_frame_number();
-    if (port_opt.snapdiff && port_opt.snap_every &&
-        frame && (frame % (unsigned)port_opt.snap_every) == 0) {
+    if (port_opt.snapdiff) {
+        /* Every 50 frames, and independent of the snapshot cadence: the point
+         * of a diff run is to find the *first* frame at which a restored run
+         * stops agreeing with a straight one. */
         static unsigned last_diff;
-        if (frame != last_diff) {
+        if (frame && (frame % 50) == 0 && frame != last_diff) {
             last_diff = frame;
             snap_diff_dump(frame);
         }
@@ -589,16 +608,19 @@ void port_snap_restore(void) {
         if (!rd(f, &m, sizeof(m))) {
             port_fatal("--restore: truncated at module %d", i);
         }
-        if (!port_dll_snap_reopen(m.name, &handle, &image, &lo, &size)) {
+        if (!port_dll_snap_reopen(m.name, &handle, &image, &lo, &size,
+                                  (int)m.open, (int)m.stuck)) {
             port_fatal("--restore: cannot load REL bundle %s again", m.name);
         }
-        if ((u32)(uintptr_t)image != m.image || (u32)(uintptr_t)handle != m.handle) {
-            port_fatal("--restore: %s came back at a different address this "
-                       "run (image %08x vs %08x, handle %08x vs %08x).  dyld "
-                       "is not placing the bundles deterministically, so this "
-                       "snapshot cannot be restored on this machine",
-                       m.name, (u32)(uintptr_t)image, m.image,
-                       (u32)(uintptr_t)handle, m.handle);
+        /* Only the image address is compared.  dyld's own handle is a
+         * malloc'd object and moves from run to run, which is exactly why the
+         * game is handed the mach_header as its token instead (dll_load.c). */
+        (void)handle;
+        if ((u32)(uintptr_t)image != m.image) {
+            port_fatal("--restore: %s came back at %08x, not %08x.  The module "
+                       "bundles are linked at fixed addresses (-seg1addr), so "
+                       "this means a different build or a different loader",
+                       m.name, (u32)(uintptr_t)image, m.image);
         }
         if ((u32)(uintptr_t)lo != m.data_lo || (u32)size != m.data_size) {
             port_fatal("--restore: %s __DATA moved (%08x+%x vs %08x+%x)", m.name,
@@ -682,6 +704,8 @@ void port_snap_init(void) {
     port_aram_snap_register();
     port_sreset_snap_register();
     port_pad_snap_register();
+    port_musyx_mix_snap_register();
+    port_aram_musyx_snap_register();
     port_log("port> snapshot: %d registry entries, ring in %s%s\n", reg_count,
              snap_dir, port_opt.restore ? " (restoring)" : "");
     if (port_opt.dlcache) {

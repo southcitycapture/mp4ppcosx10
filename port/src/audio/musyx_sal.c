@@ -55,6 +55,7 @@
 
 #include <dolphin/ai.h>
 
+#include <stdlib.h>
 #include <string.h>
 
 #include "musyx/hardware.h"
@@ -120,9 +121,27 @@ void hwIRQLeaveCritical(void) {}
 
 /* ---- the audio interface -------------------------------------------------- */
 
+/* The DMA buffers belong to the *port*, not to the game's call that first
+ * asked for them.  Two reasons, both about snapshots (PLAN.md 24.2): a
+ * restored process never runs the game's audio init, so `salAiGetDest` would
+ * hand MusyX `NULL + index * 0x280` -- which is precisely the SIGBUS at
+ * 0x780 that the first restore died of -- and the snapshot registry holds the
+ * buffer's address, so it must not be freed and re-allocated underneath it. */
+/* Plain malloc, not salMalloc: `salHooks.malloc` is the game's own allocator
+ * and is NULL until MusyX has been initialised, which in a restored process
+ * never happens (the game's init ran in the process that took the snapshot). */
+static void ai_buffers_ensure(void) {
+    if (!ai_buffers) {
+        ai_buffers = (u8*)malloc(DMA_BUFFER_LEN * DMA_BUFFERS);
+        if (ai_buffers) {
+            memset(ai_buffers, 0, DMA_BUFFER_LEN * DMA_BUFFERS);
+        }
+    }
+}
+
 bool salInitAi(SND_SOME_CALLBACK callback, u32 flags, u32* outFreq) {
     (void)flags;
-    ai_buffers = (u8*)salMalloc(DMA_BUFFER_LEN * DMA_BUFFERS);
+    ai_buffers_ensure();
     if (!ai_buffers) {
         return FALSE;
     }
@@ -156,8 +175,8 @@ bool salStartAi(void) {
 bool salExitAi(void) {
     ai_started = 0;
     sal_up = 0;
-    salFree(ai_buffers);
-    ai_buffers = NULL;
+    /* Kept, not freed: 2.5 KB whose address is in the snapshot registry. */
+    memset(ai_buffers, 0, DMA_BUFFER_LEN * DMA_BUFFERS);
     return TRUE;
 }
 
@@ -391,6 +410,7 @@ u32 AIGetStreamPlayState(void) { return stream_play; }
  * `ai_buffers` is host memory allocated at boot, so what travels is its
  * *contents*, restored into whatever address this process allocated. */
 void musyx_sal_snap_register(void) {
+    ai_buffers_ensure();
     port_snap_register("musyx.ai_index", &ai_index, sizeof(ai_index));
     port_snap_register("musyx.ai_started", &ai_started, sizeof(ai_started));
     port_snap_register("musyx.sal_up", &sal_up, sizeof(sal_up));

@@ -2368,6 +2368,14 @@ void GXCopyDisp(void* dest, GXBool clear) {
 /* ---- the port's own hooks --------------------------------------------------- */
 
 void port_gx_init(void) {
+    /* The port's own lookup tables belong to the *process*, not to the game's
+     * `GXInit`.  A restored run never calls GXInit -- the game did that in the
+     * process that took the snapshot -- so a table that only `gx_draw_reset`
+     * filled was all zeroes, `byte_scale[255]` was 0.0, and every lit vertex
+     * came out black: the restored board rendered the right scene with the
+     * characters as silhouettes (PLAN.md 24.4).  Filling them here costs
+     * nothing and removes the whole class. */
+    gx_draw_reset();
     gx_tex_init();
     gl13_init();
     gx_logging = port_opt.gxlog;

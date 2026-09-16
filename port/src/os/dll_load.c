@@ -52,8 +52,13 @@ typedef struct DllModule {
     void* handle;
     int opens;
     int stuck; /* dlclose did not unload it; zero the bss by hand */
-    void* image; /* the loaded mach_header, once it has been opened */
-    int ordered; /* it is in load_order */
+    void* image;        /* the loaded mach_header, once it has been opened  */
+    void* first_handle; /* what dlopen returned the first time: the module's
+                         * identity, which a later dlopen of the same path
+                         * returns again.  `handle` is NULL while the game has
+                         * the module unlinked, so it is the wrong thing for a
+                         * snapshot to compare (PLAN.md 24.2). */
+    int ordered;        /* it is in load_order */
 } DllModule;
 
 /* The order in which modules were first mapped.  A snapshot replays exactly
@@ -175,10 +180,18 @@ static DllModule* find(const char* relpath) {
     return NULL;
 }
 
-static DllModule* by_handle(void* handle) {
+/* The token the *game* holds (in `omDllData.bss`) is the module's loaded
+ * mach_header, not dyld's `dlopen` handle.  The handle is a malloc'd object
+ * inside dyld, so its address differs from run to run even when everything
+ * else about the run is identical -- which made a snapshot unrestorable, since
+ * the game's own memory carries the token and a restore cannot rewrite it
+ * (PLAN.md 24.2).  The header address is fixed by the bundle's own
+ * `-seg1addr` and is therefore the same in every run of the same build.  The
+ * real handle stays here, in the loader's table. */
+static DllModule* by_token(void* token) {
     int i;
     for (i = 0; i < mod_count; i++) {
-        if (mods[i].handle == handle) {
+        if (mods[i].image == token && token != NULL) {
             return &mods[i];
         }
     }
@@ -369,15 +382,18 @@ static void dll_data_bounds(void* image, void** lo, unsigned long* size) {
 int port_dll_snap_count(void) { return load_order_n; }
 
 int port_dll_snap_get(int i, const char** name, void** handle, void** image,
-                      void** data_lo, unsigned long* data_size) {
+                      void** data_lo, unsigned long* data_size, int* open,
+                      int* stuck) {
     DllModule* m;
     if (i < 0 || i >= load_order_n) {
         return 0;
     }
     m = load_order[i];
     *name = m->name;
-    *handle = m->handle;
+    *handle = m->first_handle;
     *image = m->image;
+    *open = m->handle != NULL;
+    *stuck = m->stuck;
     dll_data_bounds(m->image, data_lo, data_size);
     return 1;
 }
@@ -387,7 +403,8 @@ int port_dll_snap_get(int i, const char** name, void** handle, void** image,
  * original run made, in the same sequence, so that dyld makes the same
  * decisions. */
 int port_dll_snap_reopen(const char* name, void** handle, void** image,
-                         void** data_lo, unsigned long* data_size) {
+                         void** data_lo, unsigned long* data_size, int open,
+                         int stuck) {
     DllModule* m = find(name);
     void* h;
     if (!m) {
@@ -398,16 +415,21 @@ int port_dll_snap_reopen(const char* name, void** handle, void** image,
         port_log("port> --restore: dlopen %s failed: %s\n", m->path, dlerror());
         return 0;
     }
-    m->handle = h;
     m->opens++;
     if (!m->ordered) {
         m->image = dll_image_of(h);
+        m->first_handle = h;
         m->ordered = 1;
         if (load_order_n < (int)(sizeof(load_order) / sizeof(load_order[0]))) {
             load_order[load_order_n++] = m;
         }
     }
-    *handle = h;
+    /* The module is mapped either way -- the port never really unloads one --
+     * but the game's own view of it comes back from the snapshot, so the
+     * loader's table has to agree: unlinked stays unlinked. */
+    m->handle = open ? h : NULL;
+    m->stuck = stuck;
+    *handle = m->first_handle;
     *image = m->image;
     dll_data_bounds(m->image, data_lo, data_size);
     return 1;
@@ -436,6 +458,7 @@ void* portDLLOpen(const char* relpath) {
     stat_open++;
     if (!m->ordered) {
         m->image = dll_image_of(h);
+        m->first_handle = h;
         m->ordered = 1;
         if (load_order_n < (int)(sizeof(load_order) / sizeof(load_order[0]))) {
             load_order[load_order_n++] = m;
@@ -447,10 +470,17 @@ void* portDLLOpen(const char* relpath) {
     if (port_opt.verbose) {
         port_log("port> REL %s: dlopen ok (%s), open #%d\n", m->name, m->path, m->opens);
     }
-    return h;
+    if (!m->image) {
+        port_log("port> REL %s: loaded, but its image address is unknown -- "
+                 "snapshots of this run cannot be restored\n", m->name);
+        return h;
+    }
+    return m->image;
 }
 
-s32 portDLLProlog(void* handle) {
+s32 portDLLProlog(void* token) {
+    DllModule* m = by_token(token);
+    void* handle = m && m->handle ? m->handle : token;
     DLLProlog fn = (DLLProlog)dlsym(handle, "_prolog");
     if (!fn) {
         port_log("port> REL: no _prolog exported: %s\n", dlerror());
@@ -459,7 +489,9 @@ s32 portDLLProlog(void* handle) {
     return fn();
 }
 
-void portDLLEpilog(void* handle) {
+void portDLLEpilog(void* token) {
+    DllModule* m = by_token(token);
+    void* handle = m && m->handle ? m->handle : token;
     DLLEpilog fn = (DLLEpilog)dlsym(handle, "_epilog");
     if (fn) {
         fn();
@@ -488,9 +520,10 @@ void portDLLEpilog(void* handle) {
  * of.  `--reldlclose` restores the strict close, which is what `--reltest`
  * runs with, so the unload path stays proven rather than merely remembered.
  */
-s32 portDLLClose(void* handle) {
-    DllModule* m = by_handle(handle);
-    if (!handle) {
+s32 portDLLClose(void* token) {
+    DllModule* m = by_token(token);
+    void* handle = m ? m->handle : token;
+    if (!token) {
         return TRUE;
     }
     if (!port_opt.reldlclose) {
@@ -507,7 +540,7 @@ s32 portDLLClose(void* handle) {
         }
         return TRUE;
     }
-    if (dlclose(handle) != 0) {
+    if (handle == NULL || dlclose(handle) != 0) {
         port_log("port> REL: dlclose failed: %s\n", dlerror());
         return FALSE;
     }
@@ -528,9 +561,9 @@ s32 portDLLClose(void* handle) {
  * it entered again with a fresh, zeroed bss.  Close it and open it again --
  * which is the same five-point contract, expressed the only way dyld offers.
  * If the close did not really unload, portDLLOpen zeroes the bss by hand. */
-void* portDLLReenter(const char* name, void* handle) {
+void* portDLLReenter(const char* name, void* token) {
     stat_reenter++;
-    portDLLClose(handle);
+    portDLLClose(token);
     return portDLLOpen(name);
 }
 

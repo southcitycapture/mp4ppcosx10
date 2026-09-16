@@ -359,7 +359,7 @@ define REL_MODULE_RULE
 $$(REL_DIR)/$(1).$$(REL_EXT): $$(patsubst %.c,$$(BUILD)/rel/%.o,$$(REL_SRCS_$(1))) \
         $$(REL_RT_OBJ) $$(if $$(REL_SRCS_$(1)),,$$(REL_PH_OBJ)) $$(EXE) resources/rel_exports.txt
 	@mkdir -p $$(REL_DIR)
-	@$$(CC) $$(REL_LDFLAGS) -o $$@ \
+	@$$(CC) $$(REL_LDFLAGS) -Wl,-seg1addr,$$(REL_SEG1_$(1)) -o $$@ \
 	    $$(patsubst %.c,$$(BUILD)/rel/%.o,$$(REL_SRCS_$(1))) $$(REL_RT_OBJ) \
 	    $$(if $$(REL_SRCS_$(1)),,$$(REL_PH_OBJ))
 endef

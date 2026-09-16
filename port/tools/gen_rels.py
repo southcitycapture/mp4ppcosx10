@@ -95,6 +95,19 @@ def main():
     for name, srcs in mods:
         lines.append("REL_SRCS_%s := %s" % (name, " ".join(srcs)))
     lines.append("")
+    # A fixed load address per module (PLAN.md 24.2).  dyld places a bundle
+    # wherever it likes unless the bundle asks, and "wherever it likes" depends
+    # on everything else the process has mapped -- so the same module came back
+    # 340 KB lower in a run that loaded it at a different point, and a snapshot
+    # taken in one run could not be restored in the other: the game keeps
+    # pointers into module text and holds the dlopen handle itself.  Each
+    # module is therefore linked at its own slot, a megabyte apart (the largest
+    # bundle is 160 KB), in a window nothing else uses.  It also makes a
+    # backtrace address mean the same thing in every run, which gdb likes.
+    lines.append("# fixed -seg1addr per module: see port/tools/gen_rels.py")
+    for i, (name, _srcs) in enumerate(mods):
+        lines.append("REL_SEG1_%s := 0x%08x" % (name, 0x30000000 + i * 0x00100000))
+    lines.append("")
     os.makedirs(os.path.dirname(os.path.abspath(args.out)) or ".", exist_ok=True)
     text = "\n".join(lines)
     old = open(args.out).read() if os.path.exists(args.out) else None
