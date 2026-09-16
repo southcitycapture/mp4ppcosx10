@@ -64,6 +64,17 @@ What makes it useful:
   `gdb -batch -x cmds.gdb ~/isle.app/Contents/MacOS/isle PID` (gdb-768 has no
   `-ex`; give it the executable explicitly or it looks for a file named PID).
 
+**How to not kill the process you are debugging** (learned 2026-09-16 at
+the cost of the third-visit m444 repro, seven hours in): Apple gdb-768
+answers `info symbol ADDR` and some `print`s on an unmapped address by
+calling `objc_lookUpClass` *inside the game*; if that faults, the game has
+faulted, and `-batch` detaches from a corpse. Every command file starts
+with `set unwindonsignal on`, resolves addresses with `info line *ADDR`
+(no inferior call), and range-checks any pointer read off a saved stack.
+`port/tools/gdb/procs.gdb` is the safe walk of the coroutine list; copy its
+shape for anything new. The coroutines are all parked in `HuPrcVSleep`, so
+the interesting frame is the *caller*, at `*(*(jump.sp) + 8)`.
+
 The loop: `port/build-ppc.sh -j8 && port/tools/g4_debug_sync.sh && g4 push-bin`.
 A binary and its `.o` tree must come from the same build, or gdb reads the
 wrong lines.
