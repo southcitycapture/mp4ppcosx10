@@ -6031,3 +6031,114 @@ because the five hosts on the stage below are drawn at twice the size.
 Nothing was changed. The cost was one `--dumptex` run and a magnifier, and the
 saving is that the two-konst work in §22.8 is not competing with a texture bug
 that was never there.
+
+### 22.7 `m453dll`'s DVD heap: reproduced, and the heap dump names the block
+
+`--minigame m453,m443,m449 --turns 6` reaches the module on turn one and dies
+exactly where §20.8 said it would:
+
+```
+HuMem>memory alloc error 00060b40(10000000): Call 00010534
+dvd.c: Memory Allocation Error (Length 60b3c) (mode 1)
+Rest Memory 2aaa0
+*** OSPanic in "dvd.c" on line 75:
+```
+
+What is new is the heap dump the game prints just before it, which says what
+the 5.5 MB `HEAP_DVD` is actually holding when a 396 KB read fails with 174 KB
+free. Five live blocks, and `nm` turns the `Call` column into names, because
+both call sites are in the port's own copy of the same function:
+
+| block | size | UNum | `Call` | |
+|---|---:|---|---|---|
+| `0314c03c` | **2,983,488** | `ffffff00` | `00010488` | `HuDvdDataReadWait` + 0x58 — plain `HuMemDirectMalloc`, so **`HuMemDirectFreeNum(HEAP_DVD, HU_MEMNUM_OVL)` does not free it** |
+| `0342487c` | 1,370,496 | `10000000` | `00010534` | `HuDvdDataReadWait` + 0x104, `HuMemDirectMallocNum`, tagged to the overlay |
+| `035731fc` | 382,240 | `10000000` | `00010534` | " |
+| `035d071c` | 492,960 | `10000000` | `00010534` | " |
+| `03648cbc` | 362,208 | `10000000` | `00010534` | " |
+| `036a159c` | 174,752 | free | | |
+
+So four fifths of the heap is overlay-tagged and will come back when the
+overlay is killed; the one that will not is a single **2.9 MB** buffer read
+through `HuDvdDataRead` (mode 0) whose owner is supposed to free it by hand.
+That is the block to chase, and the next session can chase it with one more
+line of instrumentation rather than another twenty-five-minute run: the port
+already knows the return address, it just needs to record the *caller's*
+caller for a `HEAP_DVD` allocation of more than a megabyte. Evidence:
+`soak/m9b-m453-dvdheap.log.gz`.
+
+**The end-of-game results crash was not reached.** The plan was for this same
+run to carry on to a six-turn board's results screen, and the panic above
+ended it on turn one. It is left to the overnight soak (§22.9), which plays a
+ten-turn board to its results and is the run that found the crash in the first
+place.
+
+### 22.8 What the profile says now, and why the immediate-mode batch was not built
+
+`g4_sampler.sh` on the board with the shipped M9b build
+(`soak/m9b-board-profile.txt`), flat, top of stack:
+
+| symbol | samples | |
+|---|---:|---|
+| `draw_run` | 2,740 | phase 2: transform, CPU lighting, texgen, and the draw |
+| `GXCallDisplayList` | 1,197 | the decode, now inlined into it |
+| `gldInitDispatch` | 223 | the GL driver's dispatch |
+| `port_musyx_mix_frame` | 124 | |
+| `gldCreateQuery` | 117 | |
+| `PSMTXROMultVecArray` | 110 | |
+| `saveGPR` / `restGPRx` | 44 / 55 | was 3.8-4.2% before |
+
+`indexed` and `read_component` are not in the profile at all — they were the
+second and third entries on every scene in §21.1 — and the register-save
+thunks have collapsed with them. **Phase 2 is now the frame**, at roughly
+seven parts to three against the decode.
+
+That is also the measured reason §21.7's item 4, the immediate-mode
+`GXBegin`/`GXEnd` quad batch, was not built. The whole GL dispatch cost
+visible here is `gldInitDispatch` + `gldCreateQuery`, about 340 of ~5,500
+in-thread samples, i.e. **6% of the frame for every draw the run makes** —
+and the immediate-mode quads are a minority of those: the same 9,000-frame
+walk reports 8,411,126 primitives against 7,669,131 display-list calls, so
+even coalescing every immediate quad to nothing could not reach a whole
+percent of the frame. It would have been a day's careful work against a
+`draw_run` that is eight times larger. The batch stays on the list, behind
+phase 2, and now with a number attached rather than an intuition.
+
+Nothing was done to §21.7 item 6 (the two-konst TEV stage through
+`ATI_text_fragment_shader`), `GXInitSpecularDir`, or `--rtcoffset` either;
+they were the explicitly conditional tail of the work list and the budget went
+into the m444 investigation and the card fix.
+
+### 22.9 Tooling added
+
+| flag / tool | what |
+|---|---|
+| `--olddecode` | the old call-per-attribute cursor, so the decode plan can be A/B'd on the same binary and the same md5s (§22.1) |
+| `--noaicb` | do not call the game's AI DMA callback, i.e. leave the three `msm` periodic services dead the way the stub did (§22.4) |
+| `port/tools/mp4peek.c` + `build-peek.sh` | read the `HUPROCESS` list and `msmse.c`'s SE player table out of a *running* port process (`task_for_pid` + `vm_read_overwrite`), built against the mirrored headers so `offsetof` agrees with the binary. The G4 has no gdb and no gcore; this is what a stalled soak gets read with, given root or `procmod` |
+| `--soak` implies `--play board-start-com4.play` | and refuses to keep soaking the title (§22.3) |
+| `--freshcard` uses a scratch card | it used to format the player's own save file; see the commit and §22.7's neighbour below |
+
+### 22.10 What M9c needs
+
+1. **Phase 2.** `draw_run` is seven parts of the vertex path's ten
+   (§22.8) and nothing has been done to it since M3 settled the
+   per-primitive invariants. The transform is `PSMTXROMultVecArray` plus the
+   texgen and the CPU lighting, per vertex, in the same call-shaped structure
+   the decode has just stopped using. The decode plan is the template: settle
+   it per primitive, walk it per vertex.
+2. **`m444dll`'s intro stall**, now reproducible in twenty-five minutes with
+   `--minigame m444` instead of twelve hours (§22.4). It is `event 0` and the
+   waits in that sequence are on `Hu3DMotionEndCheck` / `Hu3DMotionTimeGet`,
+   so the question is which model's motion never ends.
+3. **The 2.9 MB `HEAP_DVD` block** (§22.7): record the caller's caller for a
+   `HEAP_DVD` allocation over a megabyte and the owner names itself.
+4. **The end-of-game results crash**, still not witnessed since M8c; the
+   overnight soak is carrying it.
+5. The tail of §21.7 that M9b did not reach: the immediate-mode quad batch
+   (with §22.8's number as its budget), the two-konst stage through
+   `ATI_text_fragment_shader`, `GXInitSpecularDir`, `--rtcoffset`.
+6. `g4 stop` does not kill a process spinning in the game's own code
+   (§22.4); it left one running beside a new one for an hour. Either it
+   should escalate to `kill -9`, or the runbook should say to check
+   `ps -axo pid,command | grep MacOS/isle` after every stop.
