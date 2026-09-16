@@ -6142,3 +6142,40 @@ into the m444 investigation and the card fix.
    (§22.4); it left one running beside a new one for an hour. Either it
    should escalate to `kill -9`, or the runbook should say to check
    `ps -axo pid,command | grep MacOS/isle` after every stop.
+
+### 22.11 Postscript: m444 dealt by the roulette plays fine
+
+Written after §22.4, from the overnight soak's own first hours, and it
+corrects the reading there.
+
+The soak reproduces the 2026-09-15 run frame for frame — `m444dll` dealt at
+frame **42180**, turn 4 of 20, coins 43/23/19/26, the same numbers in the same
+place, which is a free re-check of the determinism contract across the AI-DMA
+and `OSGetTick` changes. And this time the module **completed**:
+
+```
+port> soak: enter minigame m444dll   at frame 42180 (mg 444)
+port> soak: left  minigame m444dll   at frame 45970
+```
+
+against the old soak's 42180 → 46020. Fifty frames shorter, which is what a
+sound layer that now actually retires its effects would do to a sequence that
+waits on them. No STUCK, no fault.
+
+So the stall in §22.4 is **not** reproduced by a roulette-dealt entry — only
+by `--minigame m444`, which parks the roulette rather than letting the board
+deal it. That makes the harness a suspect alongside the module: the parked
+path may be entering m444 with state the opening sequence does not expect
+(m444 is a Battle minigame, and `--minigame` does not set up a Battle space).
+M9c should therefore ask the question in this order:
+
+1. does `--minigame m444` stall *without* the sound fix (`--noaicb`)? If it
+   does, the parking is the variable and the module is innocent;
+2. if the parked entry is the bug, §17.4's "park the state, do not press the
+   button" needs a Battle case;
+3. the original failure — the **third** roulette-dealt visit, after two good
+   ones — is still open, and the soak is the only thing that reaches it.
+
+The twenty-five-minute reproduction in §22.4 is still the cheapest way in, but
+it should not be assumed to be the same bug as the overnight one until (1) is
+answered.
