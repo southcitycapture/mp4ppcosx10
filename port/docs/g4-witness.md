@@ -94,6 +94,79 @@ The loop: `port/build-ppc.sh -j8 && port/tools/g4_debug_sync.sh && g4 push-bin`.
 A binary and its `.o` tree must come from the same build, or gdb reads the
 wrong lines.
 
+## 0c. Teleport to the bug *(M10, 2026-09-16)*
+
+Two flags that turn "reproduce it" from an overnight job into a coffee break.
+Both are witnessed against the §21.1 reference frames; PLAN.md §24 has the
+numbers.
+
+### Fast-forward: be at frame N without waiting for it
+
+```sh
+g4 run --ffto 7000 --dumpframe 7000 --shotdir ~/m10shots \
+       --turbo --com4 --rtc dolphin --freshcard --play board-start-com4.play \
+       --frames 9000
+g4 ssh md5 '~/m10shots/frame-07000.ppm'
+```
+
+**Expect:** `port> ffto: reached frame 7000 in 41.4 s (6997 frames, 168.9 fps
+...)` and `3488c83d092ed08a078e26ec7319d749`. The renderer is off until frame
+N − 1, and the game cannot tell: GX is a write-only command stream here. The
+mix keeps running, so the run is the *same run*, 6–20× faster.
+
+`--nodraw` on its own is the same thing without an end — the right flag for a
+soak that only has to reach a state, and the reason a 6,100-frame walk takes
+51 s instead of 436. `--dumpframe` inside a `--nodraw` stretch refuses rather
+than writing the stale framebuffer.
+
+### Snapshots: start minutes before the crash, with gdb already attached
+
+```sh
+# leave a run soaking with a ring of three
+g4 run --soak --com4 --rtc dolphin --freshcard --snap-every 5000 --snap-keep 3
+
+# when it dies, the fault report lists what survived; take the newest
+g4 run --restore ~/MarioParty4/snaps/f235000.snap --turbo --com4 \
+       --rtc dolphin --play board-start-com4.play
+# ...and on the G4, once it is past the restore line:
+mp4bt $(pgrep -f MacOS/isle)
+```
+
+**Expect:** `port> --restore: ... frame 235000, N modules, 71 registry
+entries, 0.35 s` then `port> --restore: resuming the game`, and the run
+continues **byte-identically** — proved by restoring a frame-6000 snapshot and
+dumping frame 7000 to §21.1's md5.
+
+Rules of the road:
+
+* **Same binary.** A snapshot carries the game's globals by address; the build
+  id (the snapmap plus the executable's size and mtime) refuses anything else
+  with a clear message. Do not rebuild between taking and restoring.
+* **`isle.snapmap` must sit next to `isle`** in the bundle; `make_bundle.sh`
+  puts it there. Without it snapshots are unavailable and the port says so.
+* Every other flag on the restore line still applies, so a restore can be
+  `--dumpframe`d, `--wav`ed, run under `--minigame`, or driven by a different
+  `--play` script. `--freshcard` is pointless on a restore: the card comes back
+  with the snapshot.
+* 40.7 MB and ~3 s per snapshot, 0.35 s to restore, `~/MarioParty4/snaps` by
+  default (`--snap-dir` elsewhere). `--snap-keep N` is a ring over the
+  snapshots *this run* wrote, so a restore's source is never swept away.
+* **When a restored run misbehaves**, take a snapshot at the same frame in both
+  runs (`--snap-at F --snap-dir ~/snapA` / `~/snapB`) and byte-diff them on the
+  G4:
+
+  ```sh
+  g4 ssh python '~/snapdiff.py ~/snapA/f006050.snap ~/snapB/f006050.snap'
+  ```
+
+  (`port/tools/snapdiff.py`, Python 2.5-safe on purpose.) `--snapdiff` in both
+  runs is the cheaper first pass: a digest table every 50 frames, per 64 KB of
+  MEM1, per global range, and per registry entry *by name*. The first line that
+  differs names what was not carried — that is how all four of §24.4's bugs
+  were found.
+
+---
+
 ## 1. m425 to its result screen — the M8 crash, witnessed
 
 §18.2 proved the `unk_3C[6]` correction at the level of the instructions. This

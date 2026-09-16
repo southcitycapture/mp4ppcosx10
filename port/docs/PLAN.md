@@ -6511,3 +6511,257 @@ this session; nothing in M9c touches `gx_draw.c`.
 6. `g4 stop` still does not kill a process spinning in game code (§22.10 item 6),
    and now there is a second way to lose one: any gdb batch script that errors,
    or whose output is piped, takes the inferior with it.
+
+## 24. M10 log — teleport to the bug: the renderer switched off, and the run written to disk *(2026-09-16)*
+
+Two ways of not waiting. `--ffto N` reaches frame N of a deterministic run
+between six and twenty times faster by switching the renderer off, which the
+game cannot tell has happened. `--snap-every K` / `--restore FILE` write the
+run to disk every K frames and start it again from there, so a fault twelve
+hours in becomes a five-minute reproduction with a debugger already attached.
+
+Both were witnessed on the G4 against §21.1's reference frames. The
+fast-forward was right first time; the snapshot took four attempts and each
+failure was the same shape, which is the interesting part of this log (§24.4).
+
+### 24.0 The soak that was running when the session started: the results screen is reached, and nobody presses A
+
+The §23 leave-behind soak — `--soak --com4 --rtc dolphin --freshcard` on the
+m444-watchdog build — ran from 07:48 to 18:02 and **did not crash**. It is the
+first run of this port to play a whole 20-turn board to the end:
+
+* the third roulette-dealt `m444` visit, the one that overran for 7,000+ frames
+  in §23.1, **played through** on the fixed build (the ball-drop watchdog fired
+  on drop 1 only);
+* the board finished 20 turns, `resultDll` ran **and unlinked cleanly** — no
+  `HuSprCall` crash, no `0x88888888`, no `0xfeb6feb6`, and **no crash report at
+  all today**. The end-of-game results crash of §20.4/§22.10 item 4 did not
+  happen. Either §18's `HuSprBegin` guard and §20's `HuSprAnimLock` fixed it or
+  this run did not take the same path; it has not recurred since M8c;
+* `mstory3dll` (overlay 78) then put up the **RESULTS screen** — Mario 1st with
+  3 stars and 114 coins, Peach 3/62, Luigi 1/120, Yoshi 0/59 — with the prompt
+  `A: Detailed Results / B: Skip`, and **sat there**. Four CPU players; nobody
+  presses anything; the watchdog reported `STUCK` from frame 270014 on.
+
+That is a harness gap, not a game bug: the self-play navigator drives the menus
+and the board but has nothing to say at the results prompt. Screenshot:
+`port/docs/screenshots/mp4-results-screen.png`; log:
+`port/docs/soak/m10-soak5-results-screen.log.gz` (and `~/soak5-fixed-build.log`
+on the G4). It is the first item in §24.6.
+
+Also learned while trying to press the button from outside: **the port has no
+keyboard-to-pad mapping**, so `osascript` keystrokes do nothing. `--play` is
+the only way in.
+
+### 24.1 `--ffto N`: the renderer is 85% of the frame and the game never looks at it
+
+GX on this console is a *write-only* command stream. The game builds display
+lists in its own memory, hands them to `GXCallDisplayList`, sets state through
+`GXSet*`, and the only things it ever reads back are the draw-sync token and
+the fifo status — both pure bookkeeping in `gx_state.c`. So a run with the
+renderer switched off is **the same run**: same input, same clock, same mix,
+same RNG.
+
+The implementation is three lines of policy and two early returns:
+
+* `gl13_live()` already gates every GL-touching path in the backend, because
+  `--headless` needed it. `--nodraw` is that function returning 0.
+* Two places would otherwise *decode* something before finding out nobody wants
+  it: the display-list vertex decode in `gx_draw.c` (92% of the board's
+  primitives arrive there) and the texture decode in `gx_tex.c`. Both ask
+  `gl13_draw_off()` directly and return.
+* `--ffto N` is `--nodraw` with an end. At frame N − warm-up the texture cache
+  is flushed — entries taken while the renderer was off never got a GL name, so
+  a later bind would hit them and draw untextured — drawing comes back on, and
+  the pacing the run asked for is restored.
+
+Deliberately **not** switched off: the audio mix (the game reads voice, stream
+and channel state back, and §22.5's contract covers it), the pad, the DVD and
+ARAM services, the reset watcher, and display-list *recording*
+(`GXBeginDisplayList` writes into the game's memory and returns a size it
+keeps).
+
+**The witness** (`--turbo --com4 --rtc dolphin --freshcard --play
+board-start-com4.play`, the §21.1 walk):
+
+| run | frames | wall | fps under ffto | §21.1 md5 at N | verdict |
+|---|---:|---:|---:|---|---|
+| `--ffto 3000 --dumpframe 3000` | 2,997 | 10.1 s | **296.2** | `d77db3b6784149bf2ed2b07085852ccd` | identical |
+| `--ffto 7000 --dumpframe 7000` | 6,997 | 41.4 s | **168.9** | `3488c83d092ed08a078e26ec7319d749` | identical |
+
+against 10.24 fps on the character select and 16.21 on the board (§22.1), and
+14.5–19.0 fps for the walk as a whole. The same 6,100-frame stretch takes
+**51.06 s** with `--nodraw` (snapshot writes included) and **435.77 s** rendered:
+8.4 ms a frame against 54.5. The fast-forward is **6.5× on the whole walk and
+20× on the menus**, and under `--nodraw` the port runs the game *faster than
+real time* — 6,100 retraces, 101.77 s of game clock, 51 s of wall clock.
+
+One frame of warm-up is enough: `--ffto-warm` defaults to 1, so N−1 and N are
+both rendered and the md5 of N is byte-identical. `--dumpframe` inside a
+`--nodraw` stretch refuses and says so, rather than writing the stale EFB under
+the right filename.
+
+### 24.2 Snapshots: what is in one, and what is deliberately not
+
+The port is in an unusually good position for this. The game is
+single-threaded (§1.7 — HUPROCESS coroutines over `gcsetjmp`/`gclongjmp`), and
+all of its memory is in two arenas the port mapped itself. A snapshot is:
+
+| part | size | why |
+|---|---:|---|
+| MEM1 | 24 MB | heaps, every HUPROCESS stack, models, framebuffers |
+| ARAM | 16 MB | sample and stream data |
+| the used host game stack | 64 KB | the *main* context's frames; the coroutines' stacks are inside MEM1 |
+| the game's writable globals in the main binary | 644 KB, 51 ranges | on the console these were the DOL's .data/.bss |
+| each loaded REL bundle's `__data`/`__bss`/`__common` | 4–40 KB each | the module's entire state |
+| the port's registered state | 71 entries | counters, clocks, GX state, the audio SAL, the card image, the harness |
+| the coroutine context | 256 B | one `gcsetjmp` at the top of the retrace |
+
+**Telling the game's globals from the port's** is the only new build step. The
+port's own globals are in the same segment and must emphatically *not* be
+restored — they hold this process's SDL window, its GL texture names, its open
+`FILE*`s, its `argv` strings — and the port's `__bss` is 11.8 MB of them
+against the game's 642 KB. The link map already knows which object file every
+symbol came from, so `tools/gen_snapmap.py` turns `-map` output into
+`<exe>.snapmap` next to the binary: 51 merged ranges, 644 KB. A sidecar rather
+than a generated object, because a table compiled *into* the binary would move
+the addresses it describes.
+
+Re-derived rather than carried: GL textures and the texture cache (flushed on
+restore; it rebuilds lazily from the game's own memory), the GL state shadow,
+the disc (`dvd_fs` seeks per read and keeps no position of its own; the game's
+`DVDFileInfo`s are in MEM1), and the pad replay (`pad_play_step` is a pure
+function of the frame number).
+
+Refused rather than guessed: a different build (the snapmap and the
+executable's size and mtime are hashed into a build id), arenas at different
+addresses, a REL bundle that came back somewhere else.
+
+**Cost, measured on the G4:** 40.7 MB per snapshot, **3.1–3.5 s** to write
+(atomically: `.tmp` then `rename`, so a snapshot only ever appears complete),
+and **0.35 s** to restore. At `--snap-every 5000` that is one 3-second pause
+every 5,000 frames — about 1% of a `--nodraw` run and 0.1% of a rendered one.
+`--snap-keep 3` holds 122 MB. A fault prints the ring's contents on its way
+out, which is the whole point:
+
+```
+port> snapshots on disk, newest last:
+port>   /Users/zach/MarioParty4/snaps/f235000.snap
+...
+port> restore one with --restore FILE (add --dumpframe or run it under gdb)
+```
+
+### 24.3 The module addresses, and why the game may not hold a `dlopen` handle
+
+The first restore refused itself: `bootdll` came back 340 KB lower than in the
+run that took the snapshot. dyld places a bundle wherever it likes, and
+"wherever it likes" depends on everything else the process has mapped — and a
+restoring process maps things in a different order, because it never runs the
+game's boot. The game keeps pointers into module text, so this is fatal rather
+than cosmetic.
+
+So every module is now linked at **its own fixed address** —
+`-Wl,-seg1addr`, a megabyte apart from `0x30000000` (`gen_rels.py` emits the
+table; the largest bundle is 160 KB). Two runs of the same build now agree
+exactly. It has a second benefit the debugger will like: a backtrace address in
+a REL means the same thing in every run.
+
+That fixed the image addresses and exposed the next layer: the *token* the game
+holds in `omDllData.bss` was dyld's `dlopen` handle, which is a malloc'd object
+inside dyld and moves anyway. The token is the module's **mach_header** now
+(`dll_load.c`: `by_token`), which `-seg1addr` has just made stable; the real
+handle stays in the loader's table.
+
+### 24.4 The four things a restored run was missing, and the diff that found them
+
+Every one of them was the same shape: **state the port owns that only a
+game-triggered call ever created**. A restored process runs the port's boot and
+then jumps into the middle of a game that is long past its own init, so
+anything the port allocated or computed *inside a game call* is missing.
+
+1. **`ai_buffers`** — the audio DMA buffers, allocated in `salInitAi`.
+   `salAiGetDest` returned `NULL + index * 0x280` and the first restore died on
+   `SIGBUS at 0x780` one retrace in. The port allocates them at registration
+   now, with `malloc` rather than `salMalloc` (`salHooks.malloc` is the game's
+   allocator and is itself NULL until MusyX is up — that mistake cost one
+   run, a null call in `port_snap_init`).
+2. **The CPU mixer's voice array** — `port_musyx_mix_init`'s `voices`, which is
+   the console's *DSP state*: every voice's sample cursor, ADPCM history,
+   resampler window and loop bookkeeping. It was NULL, the mixer was down, and
+   MusyX's own globals diverged within fifty frames because no voice ever
+   reported itself finished. It is a fixed 64 entries now, so the registry
+   entry is the same size in the run that takes a snapshot and the run that
+   restores it, and it is never freed.
+3. **`byte_scale[]`** — the port's 0..255 → 0..1 float table, filled by
+   `gx_draw_reset`, which only the game's `GXInit` calls. Zero in a restored
+   run, so `byte_scale[255]` was 0.0 and every lit vertex came out black. The
+   restored board was *perfect* — same camera, same models, same "Yoshi is
+   fourth!" — with the characters as silhouettes. `port_gx_init` fills the
+   tables now, and so does the mixer's resampler table.
+4. **The module token** (§24.3).
+
+The tools that found them, both new and both worth keeping:
+
+* **`--snapdiff`** prints a digest table every 50 frames: MEM1 in 64 KB
+  chunks, ARAM in 4 MB, each of the 51 global ranges, and **every registry
+  entry by name**. Two runs that are meant to be the same run print the same
+  table, and the first line that differs names the thing that was not carried.
+  It is how the mixer was found: at frame 6050 the only registry entry that
+  differed was `musyx.ai_buffers`.
+* **`port/tools/snapdiff.py`** byte-diffs two snapshot files taken at the same
+  frame and reports the differing spans with the addresses they had in the
+  process. Python 2.5-compatible so it runs on the G4 next to the 40 MB files.
+  After the four fixes it reports:
+
+  ```
+  A frame 6050 build 3b6b3282   B frame 6050 build 3b6b3282
+  MEM1                              159 bytes differ, first at +0026424c (addr 0238424c)
+  stack                              81 bytes differ, first at +0000ebdf
+  ```
+
+  159 bytes of MEM1 and 81 of a stack frame, against 40 MB — and the rendered
+  frame is byte-identical, so whatever they are, they are not state the game
+  reads. Naming them is §24.6 item 4.
+
+### 24.5 The witnesses
+
+**(a) Deterministic continuation — the test the milestone stands on.**
+`--nodraw --snap-every 1000 --snap-keep 3` through the menu walk, then
+
+```sh
+g4 run --turbo --com4 --rtc dolphin --play board-start-com4.play \
+       --restore ~/MarioParty4/snaps/f006000.snap \
+       --dumpframe 7000 --shotdir ~/m10shots/restore --frames 7200
+```
+
+→ `3488c83d092ed08a078e26ec7319d749`, **the §21.1 board reference md5**, from a
+snapshot taken in a `--nodraw` run and continued with the renderer on. A
+thousand frames of board, four CPU players, two minigame modules loaded, and
+the frame comes out byte for byte.
+
+**(b) The fast-forward at scale.** `--ffto 237000 --soak --com4 --rtc dolphin
+--freshcard` — the whole 20-turn board that took the overnight soak ten hours,
+replayed to the turn-19 `m444` visit. Numbers in §24.7.
+
+**(c) A crash reproduced from a snapshot with gdb attached.** Not available
+this session, for the best possible reason: **the soak did not crash** (§24.0).
+The ring is armed for the next one — the leave-behind run takes a snapshot
+every 5,000 frames and the fault handler prints them.
+
+### 24.6 What M11 needs
+
+1. **The soak navigator must press B at the results prompt** (§24.0) and drive
+   whatever follows back to the title, so a soak can chain boards instead of
+   stopping at the first results screen. While there: the port has no
+   keyboard-to-pad mapping at all, which is worth having for exactly this kind
+   of "just press the button" moment.
+2. **`--restore` under gdb, as the standard crash workflow.** The pieces are
+   all here; what is missing is the runbook entry with a real crash in it.
+3. **Snapshot cost.** 40 MB and 3 s is fine at `--snap-every 5000` and clumsy at
+   500. The arenas are mostly zeroes and mostly unchanged between snapshots; a
+   dirty-page or run-length pass would probably take it under 5 MB.
+4. **The 159 bytes** (§24.4). `snapdiff.py` names the address; naming the
+   *variable* wants the heap dump or gdb.
+5. **The end-of-game results crash is unreproduced since M8c** and may be fixed
+   (§24.0). It should be closed or re-opened on evidence, not left ambiguous.
+6. The vertex path's phase 2 (§22.10 item 1) is still untouched.
