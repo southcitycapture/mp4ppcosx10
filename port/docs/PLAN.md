@@ -42,6 +42,30 @@ on the DSP (so we need a DSP-command-list interpreter or a CPU synth), and
 
 ---
 
+## 0. Working method *(standing, 2026-09-16)*
+
+The port runs at a fraction of console speed, so time on the G4 is the
+scarcest thing in the project. These rules apply to every session from M10 on.
+
+1. **No debugging at game speed.** Every bug gets a reproduction under five
+   minutes before anyone investigates it: a snapshot from the ring
+   (`--snap-every`), or `--ffto N` to the frame. If it cannot be reproduced
+   that way, making it reproducible is the first task, not chasing it.
+2. **A library of teleport points.** Named snapshots at the title, character
+   select, the board, and the entry of every minigame, kept on the G4 under
+   `~/MarioParty4/snaps/lib/`. Any screen in seconds. Build it as soon as
+   restore is byte-exact; the audit and the speed work both depend on it.
+3. **Speed is measured, never felt.** Every speed change is an A/B on the
+   three fixed scenes (§21.1: frames 800/3000/7000, md5s
+   45da1034… / d77db3b6… / 3488c83d…), same binary, old path behind a flag.
+   Order comes from the profile: phase 2 (transform, lighting, texgen) first,
+   per-draw overhead second.
+4. **The G4's day is budgeted.** Soaks overnight only. Daytime is short
+   reproductions and A/B runs. One job at a time; `g4 stop` then `ps`.
+5. **Every finding gets a snapshot.** A bug an agent is not fixing gets its
+   snapshot saved and named in the plan, so the next agent starts at the
+   moment, not at the title.
+
 ## 1. Inventory of the game
 
 ### 1.1 Shape and size
