@@ -5753,3 +5753,281 @@ deal.
 
 M9b item 7: make `--soak` imply the menu walk when no `--play` is given, and
 refuse to start a soak that is still on the title after 60 s.
+
+## 22. M9b log — the decode became a plan, and the sound callback was never wired up *(2026-09-15)*
+
+Two things were true at the start of M9b and neither was obvious from the
+outside. The vertex path had been attacked three times without moving, and a
+twelve-hour soak had stalled on a minigame's intro screen. They turned out to
+have the same shape as answers: in both cases the port was doing the right
+work in the wrong *structure*, and in both cases the fix is smaller than the
+investigation.
+
+### 22.1 The per-primitive decode plan
+
+M9 ruled out arithmetic, bandwidth and the decode's input, and left a
+diagnosis with a name (§21.4): the call-per-attribute cursor. Every attribute
+of every vertex reached `indexed()` through `attr_written()`, which re-read
+`cur_attr()`, walked a chain of compares on the attribute id, and then called
+`read_component()` two or three times — and *that* switched on the component
+type and indexed a scale table on every call. Three of the top four symbols on
+all three scenes were that structure, and `saveGPR`/`restGPRx` were another
+4–8% purely as the prologue traffic it dragged in.
+
+None of it depends on the vertex. Which attribute is next, where its array is,
+how wide its index is, what type its components are, what the fractional scale
+is, and which field of the packed source vertex it lands in are settled by the
+vertex descriptor, the VAT and `GXSetArray` — once per primitive.
+`begin_attr_order()` now settles them into a `DecStep[]` and the inner loop
+walks that: no call, no cursor, no attribute-id chain, one dense switch that
+GCC turns into a jump table, and the decode writes straight into the packed
+vertex instead of staging a whole `Pending` and copying it out.
+
+**The A/B, on the same binary, same walk, same G4** — `--turbo --com4 --rtc
+dolphin --freshcard --play board-start-com4.play --frames 9000`, with
+`--olddecode` putting the cursor back:
+
+| scene | `--olddecode` | plan | change | gx ms/frame |
+|---|---:|---:|---:|---|
+| title (700–870) | 7.64 fps | **10.00** | **+31%** | 127.11 → 95.85 |
+| character select (2600–3600) | 10.28 fps | **14.31** | **+39%** | 86.93 → 59.45 |
+| board (6000–8900) | 12.84 fps | **16.21** | **+26%** | 64.50 → 48.25 |
+| whole run (8,999 frames) | 14.4 fps | **19.0** | **+32%** | — |
+
+The `--olddecode` column reproduces §21.1's baseline to within a tenth of a
+frame per second (7.62 / 10.24 / 12.89 there), which is the check that says the
+two runs are the same experiment.
+
+**And the three reference frames are byte-identical** to §21.1:
+
+| frame | md5 | verdict |
+|---:|---|---|
+| 800 (title) | `45da1034bf9692bb6dc04a74ac665dd6` | identical |
+| 3000 (character select) | `d77db3b6784149bf2ed2b07085852ccd` | identical |
+| 7000 (board) | `3488c83d092ed08a078e26ec7319d749` | identical |
+
+That is the part worth dwelling on, because three behaviours of the old path
+had to be reproduced deliberately to get it, and each of them was a place the
+rewrite could have been *nearly* right:
+
+* An attribute the descriptor carries but the layout does not store — a
+  texcoord past the last one a texgen reads, `CLR1`, or `CLR0` when the
+  register material wins — was still decoded into `pending` by the old code.
+  Those steps keep a destination; it is in `pending` rather than in the vertex.
+* A texcoord slot the layout *stores* but the descriptor does not carry read
+  whatever `pending` held from some earlier primitive. Nothing writes it during
+  this primitive, so it is a per-primitive constant, and the plan fills it as
+  one.
+* `pending` is refreshed from the last decoded vertex at the end of each
+  primitive, so the next primitive's constant is the one it used to be.
+
+A null `GXSetArray` base is `DEC_NONE`, which decodes nothing and still steps
+the list pointer over the index, exactly as the old `indexed()` did.
+
+Immediate-mode `GXBegin`/`GXEnd` still uses the cursor: it arrives one
+attribute at a time from the game's own calls, which is what the cursor is for.
+
+### 22.2 `--dlcache`: exact, and now pointless
+
+§21.7 item 2 asked for one run against §21.1's md5s, and for the cache to be
+deleted if it did not come back clean. It came back clean — `--dlcache
+--dumpframe 800,3000,7000` produces all three reference md5s byte for byte, so
+the `GXSetArray`-epoch memo fix is right and the cache is exact.
+
+It is also, now, slower than not having it, on every scene rather than one:
+
+| scene | plan, no cache | plan + `--dlcache` |
+|---|---:|---:|
+| title | 10.00 fps | 9.02 |
+| character select | 14.31 fps | 9.52 |
+| board | 16.21 fps | 13.89 |
+
+The report says why in one line: **55,074 MB of array hashing** over the run to
+decide whether 68.7% of calls could skip a decode. That trade was worth
+considering when a vertex cost 1,280 cycles to decode; against the plan it is
+not close. The cache stays in the tree, verified and off, because the
+instruction for deleting it was "if it is not byte-identical" and it is — but
+nothing should turn it on again without a reason that is not speed.
+
+### 22.3 `--soak` now walks itself, and refuses to soak the title
+
+Two overnight runs, two different failures, and the second one is the reason
+this is a code change rather than a note in the runbook. The 2026-09-14 run was
+launched as `--soak --com4 --rtc dolphin --freshcard` and spent seven hours in
+the attract loop, because nothing in that command presses Start (§21.8). Every
+other soak flag is self-contained; `--play` was the one that was not, and it
+was the one that mattered.
+
+So `--soak` with no `--play` now names `board-start-com4.play`, which
+`make_bundle.sh` already ships as `Contents/Resources/movies` next to the disc
+image. An explicit `--play` still wins, and there is no case where a soak wants
+the attract loop instead.
+
+The guard is separate, because "a script was named" and "the script is pressing
+anything" are different facts and only the second one gets a soak off the
+title. If the run is still in `bootdll` after 60 s and the script has driven no
+button at all, the soak says so and exits; if something *is* pressing and the
+title is eating it, it gets four minutes — past the slowest boot this port has
+ever taken to the file select — and then says the same thing. Either way the
+night is not spent on it.
+
+### 22.4 The m444 stall: a callback that was never wired up, and a clock that stops
+
+The plan was to attach gdb to the stalled process. There is no gdb on the G4 —
+no Developer tools are installed — and no `gcore` either, so the two things in
+the box were `sample`, which shows the render thread and nothing about the
+game's coroutines, and `vmmap`, which shows no contents at all.
+`port/tools/mp4peek.c` now exists for the next one (`task_for_pid` +
+`vm_read_overwrite`, decoding the `HUPROCESS` list and `msmse.c`'s SE player
+table against the mirrored headers so `offsetof` agrees with the running
+binary), but it could not be used on this one: `task_for_pid` on 10.5 needs
+root or the `procmod` group and the G4's `sudo` is NOPASSWD only for
+reboot/shutdown/bless.
+
+It did not matter, because the log already had the answer and §21.8 had walked
+past it. The burst of `SE Entry Error<SE n:ErrorNo -110>` at the stall was not
+a local event: **there were 65,180 of them in the run, and the first was at
+line 363** — during the boot, twelve hours earlier.
+
+`-110` is `MSM_ERR_CHANLIMIT`, and `msmSePlay` returns it in exactly one place:
+it walked all `se.sfx` player slots and none had `status == 0`
+(`src/msm/msmse.c:519-527`). A slot returns to zero in exactly one other place:
+`msmSePeriodicProc`, which asks the synth whether the voice is still alive and
+frees the slot when it is not (`msmse.c:160-171`). And `msmSePeriodicProc` is
+reached from exactly one place:
+
+```c
+static void msmSysServer(void) {                 /* src/msm/msmsys.c:10 */
+    if (sndIsInstalled() == 1) {
+        if (--sys.timer == 0) {
+            sys.timer = 3;
+            msmMusPeriodicProc();
+            msmSePeriodicProc();
+            msmStreamPeriodicProc();
+        }
+    }
+    sys.oldAIDCallback();
+}
+...
+sys.oldAIDCallback = AIRegisterDMACallback(msmSysServer);   /* msmsys.c:887 */
+```
+
+**`AIRegisterDMACallback` was a generated stub.** The game installed its sound
+server into nothing, and all three periodic services — sequence fades, SE slot
+recycling, stream state — have been dead since MusyX went in at M6. The one
+that shows is the middle one: after the first `se.sfx` sound effects of the
+boot, every `msmSePlay` in the run fails, and a screen that waits for a sound
+it started waits for ever. That is the m444 intro.
+
+The fix is the console's own arrangement. On hardware the AI raises an
+interrupt every time it finishes a DMA buffer — 0x280 bytes, which is exactly
+one 160-sample DSP frame — and MusyX puts its `salCallback` there; the game
+chains itself in front of it. So the port now implements
+`AIRegisterDMACallback` for real and calls the registered function once per
+DSP frame from `salCtrlDsp`, before the mix, on the game thread (which is where
+this port runs MusyX, for determinism). The returned "previous callback" is
+never NULL, because the game calls it without checking. `--noaicb` puts the
+stub's behaviour back for an A/B.
+
+**And then the boot hung, which is the more interesting half.**
+
+With the services running, `msmSeGetNumPlay()` started returning a non-zero
+answer for the first time — and that unblocked a condition that had been
+accidentally false since M6:
+
+```c
+#define SNDGRP_WAIT(tickStart) \
+    while((msmMusGetNumPlay(TRUE) != 0 || msmSeGetNumPlay(TRUE) != 0) && \
+          OSTicksToMilliseconds(OSGetTick()-(tickStart)) < SNDGRP_TIMEOUT)
+```
+
+`HuAudSndCharGrpSet` spins there while the character voice banks are swapped.
+On the console the decrementer runs whether or not the game is doing anything,
+so the loop ends after half a second at worst. **The port's deterministic clock
+advances one 60 Hz frame per retrace, and a spin loop never reaches a
+retrace** — so neither half of that condition could ever change, and the boot
+sat at 102% of a CPU in `HuAudSndCharGrpSet` with the frame counter frozen at
+840. It had simply never been reached before, because `numPlay` was always zero.
+
+So `OSGetTick` — and only `OSGetTick` — gets a virtual advance of its own under
+`--rtc`/`--deterministic`: a fixed amount per call, which is a pure function of
+how many times the game has asked and therefore still deterministic, and which
+is only visible to code that asks repeatedly without letting a frame go by.
+`SNDGRP_WAIT` now gives up after about 30,000 iterations and a few milliseconds
+of real time, taking the game's own documented timeout path
+(`Timed Out! Mus 0:SE 1`), and the boot continues. `OSGetTime` deliberately
+does not get it: it is the clock both of the game's RNGs seed from and the one
+`--rtc` pins, and it has to stay a function of the retrace count alone.
+
+**What the fix does and does not settle.** It settles the sound layer: a walk
+to a four-CPU board that used to have hundreds of `-110` lines by the
+character select now has **zero**, and m444dll is entered and its rules card
+drawn (`screenshots/mp4-m444-intro-fixed.png`) — the screen the stalled run
+never reached.
+
+It does **not** settle the m444 stall itself, and the honest reading is that
+§21.8's lead theory was wrong: the SE refusals were a twelve-hour-old
+background fact that happened to be loud at the stall, not its cause. The two
+visits that completed had the same refusals. With the sound layer fixed,
+m444dll still stalls — `STUCK: frame 32104, 360 s with no progress, live
+screen m444dll (overlay 52, event 0, previous instdll)` — and it now does so
+on the **first** entry under `--minigame m444`, which is the useful part: the
+reproduction has gone from a twelve-hour soak to about twenty-five minutes,
+and `event 0` puts it in the module's opening sequence. That sequence is a
+chain of waits on *animation*, not sound (`src/REL/m444dll/main.c:285`
+`while (Hu3DMotionEndCheck(...) == 0)`, then :292, :390, :478 on
+`Hu3DMotionTimeGet`), so the next session's question is which model's motion
+never ends, and `--minigame m444` is now the one-command way to ask it.
+
+**A G4 housekeeping note that cost an hour**: `g4 stop` did not kill the
+process hung in `HuAudSndCharGrpSet`, so a second run started beside it and
+the two shared `~/isle-log.txt` and the CPU. Both halves of that are worth
+knowing — the log interleaves, and a run measured next to a spinning
+process is measured at half speed. `ps -axo pid,command | grep MacOS/isle`
+before believing a number.
+
+### 22.5 The determinism contract, re-checked after the sound fix
+
+Wiring up a callback that had never run and changing what a clock does are
+exactly the two kinds of change that quietly move a frame, so the three
+reference frames were taken again on the shipped M9b build — decode plan, AI
+DMA callback and `OSGetTick` advance all in — and they are **still
+byte-identical** to §21.1:
+
+| frame | md5 | |
+|---:|---|---|
+| 800 | `45da1034bf9692bb6dc04a74ac665dd6` | identical |
+| 3000 | `d77db3b6784149bf2ed2b07085852ccd` | identical |
+| 7000 | `3488c83d092ed08a078e26ec7319d749` | identical |
+
+so nothing in M9b needs a re-base. The same run's windows confirm the decode
+result is not an artefact of the measurement order — title 9.97, character
+select 14.27, board 16.29, 19.0 fps effective — and it has **zero**
+`SE Entry Error` lines over the whole 9,000-frame walk, against the hundreds
+the same walk used to produce before the character select.
+
+### 22.6 Yoshi's eyes: there is no bug
+
+§21.5 handed M9b "Yoshi's portrait in the grid has no eyes and no nostrils,
+while the other seven are correct", with `--drawlog-at 3000` and `--dumptex`
+as the way in. Both were run. The answer is that the portrait is fine and the
+reading was wrong.
+
+`--dumptex` writes every texture the decoder produces, and the character
+portrait sheets are `tex-218` through `tex-225` — 128x64 CI textures, two
+expression frames each. All eight decode correctly **including Yoshi**
+(`tex-221`: green head, white sclera, black pupils, nostrils, the lot). So
+there was nothing wrong upstream of the draw.
+
+And there is nothing wrong at the draw either. Frame 3000 of the shipped M9b
+build is pixel-identical to §21.5's own `mp4-charselect-eyes.png` — the md5 has
+not moved since M9 — and magnified three times
+(`screenshots/mp4-charselect-yoshi-3x.png`, Yoshi beside Mario) Yoshi has both
+eyes and both nostrils. They are small, dark-lined and sit high on a large
+green head, and at 1:1 on a 640x480 screenshot they read as absent. The
+character select is also the one screen where that mistake is easy to make,
+because the five hosts on the stage below are drawn at twice the size.
+
+Nothing was changed. The cost was one `--dumptex` run and a magnifier, and the
+saving is that the two-konst work in §22.8 is not competing with a texture bug
+that was never there.
