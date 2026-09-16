@@ -271,7 +271,27 @@ static void card_load(int chan) {
          * rather than paper over. */
         return;
     }
-    if (port_opt.card && *port_opt.card) {
+    /* **--freshcard with no --card used to format the player's own card.**
+     *
+     * `--freshcard` formats the image *and flushes it to disk*, and with no
+     * `--card` the path it flushes to is the real save file.  Every soak and
+     * every reproducibility run in this project passes `--freshcard`, so the
+     * default was one forgotten flag away from deleting somebody's game -- and
+     * on 2026-09-15 it did exactly that on the G4, twice, before anyone read
+     * this function (PLAN.md 22.7).
+     *
+     * A scratch card is what --freshcard means, so it now gets a scratch path
+     * of its own unless --card names one.  The player's file is never the
+     * thing a formatted card is written over. */
+    if (port_opt.freshcard && (!port_opt.card || !*port_opt.card)) {
+        card_dir_make(dir, sizeof(dir));
+        snprintf(s->path, sizeof(s->path), "%s/scratch-slot-%c.raw", dir,
+                 'a' + chan);
+        port_log("port> CARD: --freshcard with no --card: using the scratch "
+                 "image %s\n"
+                 "            rather than formatting the save file next to it\n",
+                 s->path);
+    } else if (port_opt.card && *port_opt.card) {
         /* --card names a scratch image, so a reproducibility run can start
          * from a known card without disturbing the one the player's saves are
          * in.  The roulette reads the save file's played-minigame set
