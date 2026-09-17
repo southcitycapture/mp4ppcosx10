@@ -16,10 +16,16 @@ Budget: about two hours, of which the soak is unattended.
 ## 0. Is there a lab at all
 
 ```sh
-tailscale status | grep littlejelly
+tailscale status | grep littlejelly && tailscale ping -c 1 littlejelly-macbookpro
 ```
 
-**Expect:** a line with an IP and no `offline`. `littlejelly` is the ProxyJump
+**Expect:** a line with an IP and no `offline`, **and a `pong`**. The ping is
+not belt-and-braces: on 2026-09-17 (M12) `tailscale status` listed
+`littlejelly-macbookpro` as online all afternoon while every ssh to it timed
+out during banner exchange, and the ping was the only thing that said why —
+*peer's node key has expired*. An expired key needs the user to re-authenticate
+that machine; nothing on this end fixes it, and until it is fixed there is no
+route to the G4 from anywhere but the house. `littlejelly` is the ProxyJump
 host; with it down there is no route to the G4 from anywhere but the house, and
 `192.168.0.200` on the office LAN is somebody else's machine (§18.8). If this
 line is missing, stop — every command below will either hang or, worse, reach a
