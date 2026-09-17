@@ -8379,3 +8379,32 @@ reached through `GXCallDisplayList` → `draw_run` → `gleDrawArraysOrElements`
 i.e. the per-draw submit, and the next lever is there (VBO / `vertex_array_range`
 for the decoded arrays, or batching the immediate-mode quads) rather than in
 any more state caching.
+
+### 28.7 What M14 starts with
+
+1. **Read the soak's log first**, exactly as §26.4 item 1 said and for the same
+   reason. Left running at the end of M13:
+
+   ```sh
+   g4 run --soak --com4 --rtc dolphin --freshcard \
+          --snap-every 5000 --snap-keep 3 --status --ovllog --stuckwatch 200
+   ```
+
+   It is the ten-turn default board, so the first results screen is a long way
+   in. The question it answers is whether §28.1 + §28.3 chain a second board
+   without a hand on it: look for a second `Start New OVL 89` (or `78 EVT:0`)
+   after the first `omOvlReturnEx` out of `mstory3dll`, and for
+   `soak: modeseldll … walking it with the A metronome`.
+2. `results-entry.snap` is on the G4 at
+   `~/MarioParty4/snaps/lib/results-entry.snap` — frame 48,290 of the
+   three-turn `--com4 --rtc dolphin --freshcard` run, seven frames before
+   `mstory3dll` event 1 starts. Any further work on that screen restores it
+   rather than spending forty minutes reaching it.
+3. **The next speed lever is the per-draw submit, not more state caching**
+   (§28.5's closing paragraph): `GXCallDisplayList` at 1,723 samples and the
+   `gld*` dispatch at 1,186, both reached through `draw_run` →
+   `gleDrawArraysOrElements`. VBO / `APPLE_vertex_array_range` for the decoded
+   arrays, or batching the immediate-mode quads, with the same `--oldtev`-shaped
+   A/B.
+4. §28.6's "not done" list, unchanged: the `m453` cast, the board eyes, and
+   §26.2's `MegaPlayerPassFunc` / `CharNpcDustSet`.
