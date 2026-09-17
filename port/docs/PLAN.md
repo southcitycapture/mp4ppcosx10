@@ -7976,9 +7976,20 @@ witnessed is now known and is not ours.
   `CharNpcDustSet` are game-behaviour changes, so they go through
   `port/patches.txt` and get a G4 witness first. No upstream issue or PR was
   opened, as instructed.
-* **The roulette control run had not finished when this was written.** It is the
-  clean counter-experiment for §27.3 — four CPU players, no `mg_next` poke at
-  all, `port/ref/movies/mg-roulette.txt` — and at frame 38,759 it had played
-  m456, m421, m427 and m431 with `HEAP_DVD` at 3.1 MB free and no panic. If it
-  ever panics, §27.3's reading is wrong and the leak is not the windowed poke.
+* **The roulette control run is a partial result, and it ended in a second
+  mystery.** `port/ref/movies/mg-roulette.txt` — four CPU players, **no `mg_next`
+  poke at all**, the roulette deals — played **m456, m421, m427 and m431** with
+  `HEAP_DVD` still at `Rest Memory 307280` (3.1 MB free) and **no allocation
+  error anywhere**. Four dealt minigames, four preloads freed: that is the
+  evidence §27.3 rests on, and it is one-sided (it shows the unforced path does
+  not leak; it does not prove the windowed path is the only one that does).
+  Then, at `GlobalCounter` 38,759, `omcurovl` became `0x27` (`m431dll`) and
+  **never changed again.** Dolphin kept running for seventeen more minutes, went
+  from 56% CPU to 0.6%, wrote nothing to the log after a run of
+  `#########SE Entry Error<SE 1674:ErrorNo -33>` and `<SE 1673>`, and was killed.
+  That is not a heap panic and it is not the §27.3 leak; it is an unexplained
+  stop inside `m431dll` on the **retail disc**, with a sound-effect entry error
+  as its last word. It is worth one rerun before it is called anything, and if
+  it reproduces it is a Dolphin reference-side twin of the soak stalls and
+  belongs in its own investigation.
 
