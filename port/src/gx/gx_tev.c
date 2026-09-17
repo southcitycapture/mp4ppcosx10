@@ -333,13 +333,85 @@ static void emit_channel(int unit, int rgb, Arg a, Arg b, Arg c, Arg d, u8 op, u
     }
 }
 
+/* ---- the state cache (M13, PLAN.md 28.5) ---------------------------------
+ *
+ * The profile of a board frame puts `gx_tev_apply` and the four helpers it
+ * calls -- `emit_channel`, `color_arg`, `alpha_arg`, `glc_texenvi` -- at 689
+ * of the game thread's samples, third behind the display-list decode and
+ * Apple's own GL dispatch; and the dispatch is partly the same work, because
+ * every `glTexEnv` the shadow lets through makes the driver rebuild its
+ * immediate-mode dispatch (`gldInitDispatch`, 555 samples).  The combiner is
+ * recomputed from `gx.tev[]` on every one of ~930 draws a frame, and the game
+ * changes it a few dozen times.
+ *
+ * So hash what the combiner is a function of and skip the emission when it has
+ * not moved.  The *texture binds* are deliberately outside the cache: a bound
+ * `GXTexObj` can have had its pixels rewritten under the same pointer, and
+ * `gx_tex_bind_swapped`'s own content hash is what notices.  Only the
+ * `glTexEnv*` side is cached, which is where the samples are.
+ *
+ * `--oldtev` restores the unconditional path for the A/B; `--tevstats` counts.
+ */
+static u32 tev_sig_hash(int stages, u32 have_tex_bits) {
+    u32 h = 2166136261u;
+    const u8* p;
+    size_t n;
+    int i;
+#define TEV_MIX(ptr, len)                                                      \
+    do {                                                                       \
+        p = (const u8*)(ptr);                                                   \
+        n = (size_t)(len);                                                      \
+        while (n--) {                                                           \
+            h = (h ^ *p++) * 16777619u;                                         \
+        }                                                                       \
+    } while (0)
+    TEV_MIX(&gx.num_tev, sizeof(gx.num_tev));
+    TEV_MIX(&have_tex_bits, sizeof(have_tex_bits));
+    TEV_MIX(&gx.num_ind, sizeof(gx.num_ind));
+    TEV_MIX(gx.swap_tbl, sizeof(gx.swap_tbl));
+    TEV_MIX(gx.kcolor, sizeof(gx.kcolor));
+    TEV_MIX(gx.tev_reg, sizeof(gx.tev_reg));
+    for (i = 0; i < stages; i++) {
+        TEV_MIX(&gx.tev[i], sizeof(gx.tev[i]));
+        TEV_MIX(&gx.ind_tile[i], sizeof(gx.ind_tile[i]));
+    }
+#undef TEV_MIX
+    return h;
+}
+
+static u32 tev_cache_sig;
+static int tev_cache_live;
+static unsigned long tev_hits, tev_misses;
+
+void gx_tev_cache_invalidate(void) { tev_cache_live = 0; }
+
 void gx_tev_apply(void) {
     int stages = gx.num_tev ? gx.num_tev : 1;
     int i;
+    int emit = 1;
+    u32 have_tex_bits = 0;
+    u32 sig;
     if (stages > gl13_max_tex_units) {
         gx_warn("TEV: the stage chain needs more units than the card has; the "
                 "extra stages are dropped (PLAN.md 3.4 fallback 1)");
         stages = gl13_max_tex_units;
+    }
+    if (!port_opt.oldtev) {
+        for (i = 0; i < stages && i < 32; i++) {
+            const GXTevStage* s = &gx.tev[i];
+            if (gx_bound_tex(s->map) != NULL && s->coord < GX_TEXCOORDS) {
+                have_tex_bits |= 1u << i;
+            }
+        }
+        sig = tev_sig_hash(stages, have_tex_bits);
+        if (tev_cache_live && sig == tev_cache_sig) {
+            emit = 0;
+            tev_hits++;
+        } else {
+            tev_cache_sig = sig;
+            tev_cache_live = 1;
+            tev_misses++;
+        }
     }
     for (i = 0; i < gl13_max_tex_units; i++) {
         if (!gl13_live()) {
@@ -383,16 +455,25 @@ void gx_tev_apply(void) {
                  * Keep the unit enabled against a 1x1 white texture instead. */
                 glc_unit_enable_tex2d(i, 0);
             }
-            glc_texenvi(i, GL_TEXTURE_ENV_MODE, GL_COMBINE);
-            emit_channel(i, 1, color_arg(s, s->cin[0]), color_arg(s, s->cin[1]),
-                         color_arg(s, s->cin[2]), color_arg(s, s->cin[3]), s->cop,
-                         s->cbias, s->cscale, konst, &konst_set);
-            emit_channel(i, 0, alpha_arg(s, s->ain[0]), alpha_arg(s, s->ain[1]),
-                         alpha_arg(s, s->ain[2]), alpha_arg(s, s->ain[3]), s->aop,
-                         s->abias, s->ascale, konst, &konst_set);
-            glc_texenv_color(i, konst);
+            if (emit) {
+                glc_texenvi(i, GL_TEXTURE_ENV_MODE, GL_COMBINE);
+                emit_channel(i, 1, color_arg(s, s->cin[0]), color_arg(s, s->cin[1]),
+                             color_arg(s, s->cin[2]), color_arg(s, s->cin[3]), s->cop,
+                             s->cbias, s->cscale, konst, &konst_set);
+                emit_channel(i, 0, alpha_arg(s, s->ain[0]), alpha_arg(s, s->ain[1]),
+                             alpha_arg(s, s->ain[2]), alpha_arg(s, s->ain[3]), s->aop,
+                             s->abias, s->ascale, konst, &konst_set);
+                glc_texenv_color(i, konst);
+            }
         }
     }
 }
 
-void gx_tev_report(void) {}
+void gx_tev_report(void) {
+    if (port_opt.tevstats) {
+        unsigned long tot = tev_hits + tev_misses;
+        port_log("port> tev cache: %lu applies, %lu skipped (%.1f%%), %lu emitted\n",
+                 tot, tev_hits, tot ? 100.0 * (double)tev_hits / (double)tot : 0.0,
+                 tev_misses);
+    }
+}

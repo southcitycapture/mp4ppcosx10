@@ -182,6 +182,7 @@ void gx_draw_report(void);
 /* gx_tev.c */
 void gx_tev_apply(void);          /* GXState -> GL texture environment */
 void gx_tev_report(void);
+void gx_tev_cache_invalidate(void); /* M13: drop the TEV state cache (GL reset) */
 
 /* gx_tex.c */
 void gx_tex_init(void);

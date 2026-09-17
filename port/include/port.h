@@ -148,6 +148,12 @@ typedef struct PortOptions {
                              *   against the CPU fallback, and why each dead
                              *   variant died                                 */
     int vproglog;           /* --vproglog  print every generated program once  */
+
+    /* ---- M13: the TEV state cache ---- */
+    int oldtev;             /* --oldtev  re-apply the whole texture environment
+                             *   on every draw, the way every build before M13
+                             *   did.  The A/B lever (PLAN.md 28.5)           */
+    int tevstats;           /* --tevstats  hits and misses of the TEV cache   */
 } PortOptions;
 
 extern PortOptions port_opt;

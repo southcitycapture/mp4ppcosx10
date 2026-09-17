@@ -8250,3 +8250,132 @@ it has read `mg_next`, before instDll preloads from the new one. The parked
 value is therefore the minigame that played, for the whole of its own result
 screen. The flag is registered with the snapshot system like the rest of the
 harness state.
+
+### 28.5 The profile, and the lever it chose
+
+§0 rule 3 says the profile picks the lever, and M12 left it unrun. `g4_sampler.sh`
+against the M13 build, `sample isle 10`, tagged by the overlay that was live:
+`~/prof-m13/s1` on `mentdll` (the mode/board-settings menus) and `~/prof-board/s1`
+on `w01dll` (Toad's Midway Madness, reached with `--ffto 5200`). One lesson
+about the tool first: **`sample` costs the game about 90% of its frame rate**
+while it runs, so a sampled run does not reach a scene it was not already in —
+teleport first, then sample, never sample a run on its way somewhere.
+
+Top of stack, game thread, board frame (the three `mach_msg_trap` /
+`__semwait_signal` / `semaphore_timedwait_signal_trap` entries at the head of
+the raw list are the CoreAudio and HAL threads parked, not game time):
+
+| block | samples | what it is |
+|---|---:|---|
+| `GXCallDisplayList` | **1,723** | the port's own GX command-stream decode, `gx_draw.c` |
+| Apple's GL dispatch: `gldInitDispatch` 555, `gldGetString` 407, `gldCreateQuery` 135, `gldDestroyPipelineProgram` 47, `gldUpdateDispatch` 42 | **1,186** | the driver rebuilding its immediate-mode dispatch |
+| the TEV chain: `glc_texenvi` 148, `gx_tev_apply` 107, `color_arg` 98, `gl13_apply_raster_state` 97, `alpha_arg` 87, `emit_channel` 84, `gx_tex_bind_swapped` 35, `gl13_live` 33 | **689** | `GXState` → `GL_COMBINE`, every draw |
+| the vertex program: `begin_attr_order` 130, `gx_vprog_draw` 111, `gx_vprog_bind` 98 | 339 | M11's phase-2 path |
+| the texture cache: `tex_bind_content_hash` 137 | 137 | the bind's own content hash |
+| the rest (`FaceDraw` 107, `__memcpy` 92, `C_MTXConcat` 60, `PSMTXROMultVecArray` 55, `Hu3DMotionExec` 53 …) | | game code |
+
+The menu profile agrees in shape (`GXCallDisplayList` 2,110, the TEV chain 478,
+the `gld*` block 689) and says the same thing about which of the port's own
+blocks is worth attacking.
+
+**The top three are the display-list decode, the driver's dispatch, and the TEV
+apply — and the second and third are partly the same cost.** Every `glTexEnv*`
+call the shadow lets through makes Apple's GL driver rebuild the immediate-mode
+dispatch table, which is what `gldInitDispatch` is. `gx_tev_apply` runs on every
+one of the ~930 draws in a frame and recomputes the whole combiner from
+`gx.tev[]`; the game changes it a few dozen times a frame. M12's offline guess
+("*a hundred cheap shadowed compares per draw — the question the profile answers
+is whether a hundred cheap things beat one hash*") is answered: they do not, and
+the compares are not even the expensive part — `color_arg`/`alpha_arg`/
+`emit_channel` are 269 samples before a single `glc_*` call is made.
+
+So the lever is **a state cache in front of `gx_tev_apply`**: an FNV hash over
+`num_tev`, `tev[0..stages-1]`, `kcolor`, `tev_reg`, `swap_tbl`, `num_ind`,
+`ind_tile[]` and the per-stage "has a bound texture" bit; equal to the last one
+means the combiner is already in the GL state and the emission is skipped. The
+**texture binds stay outside the cache** deliberately: a bound `GXTexObj` can
+have had its pixels rewritten under the same pointer, and
+`gx_tex_bind_swapped`'s own content hash is what notices — only the `glTexEnv*`
+side is elided. `glc_invalidate()` drops the cache, for the same reason it
+drops the vertex program's binding: a shadow that has forgotten the state
+cannot be the thing that justifies not re-sending it.
+
+`--oldtev` is the A/B lever (the pre-M13 path, unconditional apply) and
+`--tevstats` reports hits and misses, in the shape `--cpuxf` / `--olddecode`
+established.
+
+### 28.6 What M13 shipped, and what it did not
+
+**Shipped, with a witness on the G4:**
+
+| | |
+|---|---|
+| `fn_1_373C`'s overrun (§28.1) | the board-results screen leaves by itself at frame 49,387, **rendering on**, and hands control back to `modeseldll` |
+| `fn_1_B1E8`'s doubled gravity (§28.2) | three m444 drops, no `wedged` line, gravity +0.300 a frame, module reaches its result screen |
+| the `--minigame` list ordering (§28.4) | code and reasoning; the `m453,m443,m449` re-witness is **not** run |
+| the `modeseldll` metronome (§28.3) | code; the two-board chain is **not** yet witnessed end to end |
+| the TEV state cache (§28.5) | A/B below |
+
+**Not done, and why:**
+
+* **The two-board chain, end to end.** §28.1's screen is fixed and witnessed;
+  §28.3's menu is the next gate and its fix went in after the witness run. The
+  soak left running at the end of this session is the witness, and its log is
+  the first thing M14 reads — exactly as §26.4 item 1 was for this one.
+* **`m453` with a lighter cast** (§27.5). The harness fix it depends on is in;
+  the run is not. It is one command once the chain is proven.
+* **The board eyes** (§26.3 item 3). Not started. The screenshot is still lost
+  and the offline reading in §26.3 (`EyeBmpUpdate`, `chrman.c:1145`, a UV
+  animation on the eye atlas) is unchanged and still the right first ten
+  minutes.
+* **`results-entry.snap`.** The snapshot ring dropped `f048000.snap` four
+  snapshots after it was written and the entry frame is 48,297; the run is
+  deterministic (`--rtc dolphin --freshcard` reproduces the same board, the
+  same coins `3/1c 13/1c 13/0c 76/4c` and the same frame numbers across two
+  runs), so it is `--ffto 48290 --snap-at 48290` away rather than a lost
+  observation.
+* **§26.2's two real missing-return bugs** (`MegaPlayerPassFunc`,
+  `CharNpcDustSet`). Untouched.
+
+**Two operational notes, both paid for this session:**
+
+* **`g4 stop` does not always stop it.** The runner's `killall isle` left two
+  earlier processes alive through three `g4 run`s; three copies of the game
+  were sharing the G4 and every measurement taken in that window is worthless.
+  `ps` after every stop, `kill -9` the survivors — §0 rule 4 already says this
+  and this session learned why.
+* **Polling the G4 over ssh costs it real time.** `sshd` was at 45% of a CPU
+  during a measured run. A run being timed gets one check every two minutes,
+  or none.
+
+**The A/B.** Same binary, same command, `--oldtev` the only difference;
+`--soak --turns 3 --com4 --rtc dolphin --freshcard --frames 7100
+--dumpframe 7000`, nothing polling the G4 while either ran:
+
+| | `--oldtev` (pre-M13) | the cache | |
+|---|---:|---:|---|
+| wall clock, 7,100 frames | **272.92 s** | **261.75 s** | −4.1% |
+| average frame rate | 26.0 fps | **27.1 fps** | **+4.3%** |
+| `glc_*` calls *made* | 370,001,530 | 259,977,436 | **−110,024,094 (−29.7%)** |
+| `glc_*` calls *emitted to GL* | **5,327,083** | **5,327,083** | **identical** |
+| `gx_tev_apply` calls | 7,155,062 | 7,155,062 | — |
+| skipped | — | 6,684,386 (**93.4%**) | |
+| frame 7000 md5 | `0184870dc607f2aed89b95dc7e71add5` | `0184870dc607f2aed89b95dc7e71add5` | |
+
+**The md5 verdict: identical, and identical to §25's reference `0184870d…`.**
+No `ppmdiff.py` justification is needed and nothing is re-based — the cache
+elides recomputation, never a GL call, and the two runs emit the *same
+5,327,083 GL calls* in the same order.
+
+**+4.3% for 29.7% fewer shadowed calls is the honest number, and it is smaller
+than the profile's 689 samples suggested.** The reason is in the two "emitted"
+rows: the shadow was *already* suppressing every redundant `glTexEnv`, so the
+cache never reached `gldInitDispatch` at all. What it removes is the CPU work
+in front of the shadow — `color_arg`, `alpha_arg`, `emit_channel` and the
+`glc_*` call overhead — which the board profile puts at 269 of ~4,000 game-thread
+samples, and 4.3% of a frame is the right order for that. The `gld*` block
+remains the second-largest cost and is **not** addressed by this lever; it is
+reached through `GXCallDisplayList` → `draw_run` → `gleDrawArraysOrElements`,
+i.e. the per-draw submit, and the next lever is there (VBO / `vertex_array_range`
+for the decoded arrays, or batching the immediate-mode quads) rather than in
+any more state caching.

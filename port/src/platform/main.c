@@ -147,6 +147,8 @@ static void usage(const char* argv0) {
             "                    not moved.  Off: it is faster on the title and\n"
             "                    slower on the character select (PLAN.md 21.3)\n"
             "  teleport to the bug (M10):\n"
+            "  --oldtev          re-apply the texture environment on every draw\n"
+            "  --tevstats        TEV state-cache hits and misses\n"
             "  --m444trace       log m444dll's ball, per frame, for the console diff\n"
             "  --nodraw          consume the game's GX command streams and emit\n"
             "                    no GL: no vertex decode, no texture decode, no\n"
@@ -356,6 +358,10 @@ int port_parse_args(int argc, char** argv) {
         } else if (!strcmp(a, "--perfwin") && i + 1 < argc) {
             port_opt.perfwin = argv[++i];
             port_opt.perf = 1;
+        } else if (!strcmp(a, "--oldtev")) {
+            port_opt.oldtev = 1;
+        } else if (!strcmp(a, "--tevstats")) {
+            port_opt.tevstats = 1;
         } else if (!strcmp(a, "--m444trace")) {
             /* The m444 ball trace lives inside the REL (port/patches.txt), so
              * it cannot see port_opt; it reads the environment instead, and
@@ -515,6 +521,8 @@ void GXInit_demo_bootstrap(void);
  * through the end of main() all report the same things in the same order. */
 void port_shutdown(int code) {
     port_audio_shutdown(); /* first: it closes the WAV, which must be complete */
+    void gx_tev_report(void);
+    gx_tev_report();
     port_perf_report();
     port_audio_report();
     port_clock_report();

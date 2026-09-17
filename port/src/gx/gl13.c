@@ -187,8 +187,12 @@ static unsigned glc_emitted, glc_elided;
 
 void glc_invalidate(void) {
     /* The vertex program's binding, enable and parameter block are GL state
-     * this shadow does not hold, and they are forgotten for the same reason. */
+     * this shadow does not hold, and they are forgotten for the same reason.
+     * So is the TEV state cache (PLAN.md 28.5): it skips the `glTexEnv` calls
+     * on the strength of the shadow already holding the right values, and a
+     * shadow that has forgotten them is a cache that must forget too. */
     gx_vprog_invalidate();
+    gx_tev_cache_invalidate();
     memset(&glc, 0, sizeof(glc));
     /* -1 is "unknown": no GL enum or boolean is -1, so the first write of
      * every field is guaranteed to miss. */
