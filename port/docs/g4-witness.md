@@ -90,6 +90,15 @@ reproduction each** (PLAN.md §23.1):
   `port/tools/gdb/mot.gdb` is the safe `Hu3DData` motion walk. The coroutines are all parked in `HuPrcVSleep`, so
 the interesting frame is the *caller*, at `*(*(jump.sp) + 8)`.
 
+**`procs.gdb` is not safe either** (M11, 2026-09-17): a saved-stack pointer
+that passes the range check can still be unmapped (guard pages, freed
+stacks), and gdb-768 has no try/catch, so the "Cannot access memory" error
+aborts the script before `detach` and the game dies (EXITCODE=132). Walk
+the coroutine list with `sudo ~/bin/mp4peek PID procs <processtop>` instead
+(task_for_pid reads cannot hurt the process); keep gdb for `mp4bt` and
+breakpoints. Anything in a batch file that *can* error goes last, after a
+`detach` that has already run.
+
 The loop: `port/build-ppc.sh -j8 && port/tools/g4_debug_sync.sh && g4 push-bin`.
 A binary and its `.o` tree must come from the same build, or gdb reads the
 wrong lines.
