@@ -1458,7 +1458,32 @@ static void draw_log(void) {
 /* The draw itself, once the source run is in hand.  `s` is where phase 2
  * reads from: src_buf for a primitive the writers just assembled, and the
  * cached copy for a display list that hit. */
+/* What the vertex program needs to know about this primitive, which is the
+ * subset of `pi` and `sl` its text and its parameters depend on.  Filled per
+ * draw rather than per vertex, so it is a dozen stores against 54 vertices. */
+static void fill_xf_desc(GxXfDesc* d, const u8* s) {
+    int t;
+    d->pos_mtx = pi.pos_mtx;
+    d->nrm_mtx = pi.nrm_mtx;
+    d->have_nrm = sl.off_nrm >= 0;
+    d->chan_mode = pi.chan_mode;
+    d->ntexgen = pi.ntexgen;
+    d->base = s;
+    d->stride = sl.stride;
+    d->off_nrm = sl.off_nrm >= 0 ? sl.off_nrm : 0;
+    d->off_clr = sl.off_clr;
+    d->off_tex = sl.off_tex;
+    d->ntex = sl.ntex;
+    for (t = 0; t < GX_TEXCOORDS; t++) {
+        d->tg[t].src_kind = pi.tg[t].src_kind;
+        d->tg[t].src_k = pi.tg[t].src_k;
+        d->tg[t].divide = pi.tg[t].divide;
+        d->tg[t].mtx = pi.tg[t].mtx;
+    }
+}
+
 static void draw_run(const u8* s, int n) {
+    int on_gpu = 0;
     if (!n) {
         return;
     }
@@ -1468,7 +1493,21 @@ static void draw_run(const u8* s, int n) {
         return;
     }
     nverts = n; /* draw_log reads it */
-    finish_vertices(s, n);
+    /* M11: phase 2 on the GPU.  The decision has to be made *before* phase 2
+     * runs, because the whole point is not to run it; `gx_vprog_draw` compiles
+     * or finds the variant, uploads the parameters and binds the source
+     * layout as the vertex arrays, and returns 0 for anything it cannot cover
+     * -- having counted it.  `--cpuxf` makes it always return 0, which is the
+     * A/B (PLAN.md 25). */
+    if (!port_opt.cpuxf) {
+        GxXfDesc d;
+        fill_xf_desc(&d, s);
+        on_gpu = gx_vprog_draw(&d, n);
+    }
+    if (!on_gpu) {
+        gx_vprog_disable();
+        finish_vertices(s, n);
+    }
     gl13_apply_transform();
     gl13_apply_raster_state();
     gx_tev_apply();
@@ -1477,22 +1516,28 @@ static void draw_run(const u8* s, int n) {
      * sends you hunting for a texture upload that already happened. */
     draw_log();
 
-    /* `out_buf` is a static buffer and every draw reads it from index zero, so
-     * the base pointer never moves; the offsets and the stride do, because the
-     * layout is now packed to the primitive.  glc_* compares both. */
-    glc_vertex_array(out_buf, out_stride);
-    glc_color_array(out_buf + out_off_clr, out_stride);
-    {
-        int i;
-        for (i = 0; i < gl13_max_tex_units; i++) {
-            int stage = i < gx.num_tev ? i : -1;
-            if (stage >= 0 && gx.tev[stage].coord < out_ntex &&
-                gx_bound_tex(gx.tev[stage].map) != NULL) {
-                glc_coord_array(i,
-                                out_buf + out_off_tex + 8 * gx.tev[stage].coord,
-                                out_stride);
-            } else {
-                glc_coord_array(i, NULL, 0);
+    /* On the GPU path the arrays are the *source* layout and gx_vprog_draw has
+     * already bound them; there is no `out_buf` to point at, because phase 2
+     * never ran.  On the CPU path: `out_buf` is a static buffer and every draw
+     * reads it from index zero, so the base pointer never moves; the offsets
+     * and the stride do, because the layout is packed to the primitive.
+     * glc_* compares both. */
+    if (!on_gpu) {
+        glc_vertex_array(out_buf, out_stride);
+        glc_color_array(out_buf + out_off_clr, out_stride);
+        glc_normal_array(NULL, 0);
+        {
+            int i;
+            for (i = 0; i < gl13_max_tex_units; i++) {
+                int stage = i < gx.num_tev ? i : -1;
+                if (stage >= 0 && gx.tev[stage].coord < out_ntex &&
+                    gx_bound_tex(gx.tev[stage].map) != NULL) {
+                    glc_coord_array(i,
+                                    out_buf + out_off_tex + 8 * gx.tev[stage].coord,
+                                    out_stride);
+                } else {
+                    glc_coord_array(i, NULL, 0);
+                }
             }
         }
     }
@@ -2387,6 +2432,9 @@ void gl13_state_report(void);
 
 void port_gx_shutdown(void) {
     gx_draw_report();
+    if (port_opt.vprogstats) {
+        gx_vprog_report();
+    }
     gl13_state_report();
     gx_tex_report();
     gx_tex_tile_report();

@@ -85,6 +85,9 @@ static void usage(const char* argv0) {
             "  --headless        decode and log GX, but open no window\n"
             "  --glcheck         assert that no GL call leaves the GL 1.3 subset\n"
             "  --glinfo          dump the driver's GL strings, limits and extensions\n"
+            "  --vprobe          dump the ARB_vertex_program limits and a trivial load\n"
+            "  --cpuxf           phase 2 on the CPU (the pre-M11 path), for the A/B\n"
+            "  --vprogstats      GPU-path vs CPU-fallback draws, and why a variant died\n"
             "  --perf            per-frame game/gx/present timing, both clocks\n"
             "  --drawlog N       explain the first N draws: geometry, texture, state\n"
             "  --drawlog-at F    ...but only on presented frame F, which is how you\n"
@@ -396,6 +399,14 @@ int port_parse_args(int argc, char** argv) {
             port_opt.glcheck = 1;
         } else if (!strcmp(a, "--glinfo")) {
             port_opt.glinfo = 1;
+        } else if (!strcmp(a, "--vprobe")) {
+            port_opt.vprobe = 1;
+        } else if (!strcmp(a, "--cpuxf")) {
+            port_opt.cpuxf = 1;
+        } else if (!strcmp(a, "--vprogstats")) {
+            port_opt.vprogstats = 1;
+        } else if (!strcmp(a, "--vproglog")) {
+            port_opt.vproglog = 1;
         } else if (!strcmp(a, "--gxwarn")) {
             port_opt.gxwarn = 1;
         } else if (!strcmp(a, "--perf")) {

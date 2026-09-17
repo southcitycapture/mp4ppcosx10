@@ -69,6 +69,7 @@
 #include "port.h"
 
 #include "game/gamework_data.h"
+#include "game/pad.h"
 #include "game/object.h"
 #include "game/objsub.h"
 
@@ -383,6 +384,120 @@ static void stuck_watch(u32 frame) {
              (int)GWSystem.max_turn, mg);
 }
 
+
+/* ---- the prompt navigator (M11; PLAN.md 24.6 item 1, 25) --------------------
+ *
+ * A `--com4` soak has nobody at any controller, and the game has screens that
+ * wait for one.  The M10 soak played a whole 20-turn board, ran `resultDll`
+ * cleanly, and then stopped dead on `mstory3dll`'s end-of-game prompt --
+ * `A: Detailed Results / B: Skip` -- for eleven hours, because four CPU
+ * players press nothing (PLAN.md §24.0).
+ *
+ * This is the one case the file's own rule -- *park the state, do not press
+ * the button* -- cannot serve.  `fn_1_16924` (src/REL/mstory3dll/result.c:327)
+ * is a `while (TRUE)` around `fn_1_938()` whose only two exits are
+ * `HuPadBtnDown & PAD_BUTTON_A` and `HuPadBtnDown & PAD_BUTTON_MENU`; there is
+ * no flag to park, and its third exit -- a 300-frame timeout -- is guarded by
+ * `unk14 == -1`, which is not the soak's case.  The state that would end it is
+ * a local variable in a loop this process is currently inside.
+ *
+ * So the harness presses.  What keeps that from being a licence to mash
+ * buttons at the game is the *signal*: the only thing it presses on is the
+ * watchdog's own `progress_stamp` standing still.  In a `--com4` run nothing
+ * reads the pad legitimately -- that is the entire premise of `--com4` -- so a
+ * screen that has made no progress for `SOAK_NUDGE_S` seconds is by
+ * construction a screen waiting for input that is never coming, and a button
+ * is the only thing that can help it.  A board mid-turn, a minigame mid-play
+ * and a wipe all move the stamp, so none of them is ever nudged.
+ *
+ * Minigame overlays are excluded outright, for the same reason `stuck_limit`
+ * gives them four times the patience: from out here nothing can be said about
+ * a minigame's pacing, and a minigame that has genuinely hung is a bug to
+ * report rather than a prompt to answer.
+ *
+ * The press is written into `HuPadBtnDown` and `HuPadBtn` for **all four pad
+ * indices** rather than into `PADStatus`, for two reasons.  The prompt reads
+ * `HuPadBtnDown[...unk38[unk04].unk14]` -- the pad index of whichever player
+ * the results screen is addressing, which is not necessarily channel 0 -- and
+ * `PADRead` only ever fills channel 0, because a soak that reported four
+ * connected controllers would be telling the game something untrue about the
+ * console.  Writing the derived globals says exactly "these buttons went down
+ * this frame" and nothing else.  `port_selfplay_tick` runs after the game's
+ * own `PadReadVSync`, so a one-frame write is a clean one-frame press.
+ *
+ * Three buttons are tried in rotation, a second apart, because the screens
+ * between the results and the title do not all want the same one: `B` is the
+ * prompt's advertised skip, `A` is every "continue" in the results sequence
+ * and the save prompt, and `MENU` (START) is `fn_1_16924`'s other exit and the
+ * mode-select menus' accept.  Whichever one lands, the stamp moves and the
+ * navigator disarms itself until the next screen that needs it.
+ */
+#define SOAK_NUDGE_S 8u   /* seconds of no progress before the first press */
+#define SOAK_NUDGE_GAP 60u /* frames between presses */
+
+static unsigned soak_nudges;
+static unsigned soak_nudge_screens;
+
+static void prompt_nav(u32 frame) {
+    static u32 last_stamp;
+    static int primed;
+    static u32 last_change;
+    static u32 last_press;
+    static int rotation;
+    static int armed_here;
+    static const struct {
+        u16 bit;
+        const char* name;
+    } BTN[3] = {
+        { PAD_BUTTON_B, "B" },
+        { PAD_BUTTON_A, "A" },
+        { PAD_BUTTON_MENU, "START" },
+    };
+    u32 stamp = progress_stamp();
+    int i;
+
+    if (!primed || stamp != last_stamp) {
+        primed = 1;
+        last_stamp = stamp;
+        last_change = frame;
+        if (armed_here) {
+            port_log("port> soak: %s answered after %u press(es); the run "
+                     "continues\n",
+                     screen_name((int)omcurovl), soak_nudges - armed_here + 1);
+            armed_here = 0;
+            rotation = 0;
+        }
+        return;
+    }
+    /* a minigame's pacing is not this file's business */
+    if ((int)omcurovl >= 0 && omMgIndexGet((s16)omcurovl) >= 0) {
+        return;
+    }
+    if (frame - last_change < SOAK_NUDGE_S * 60u) {
+        return;
+    }
+    if (last_press && frame - last_press < SOAK_NUDGE_GAP) {
+        return;
+    }
+    last_press = frame;
+    if (!armed_here) {
+        armed_here = (int)soak_nudges + 1;
+        soak_nudge_screens++;
+        port_log("port> soak: %s (overlay %d, event %d) has waited %u s for a "
+                 "button nobody is going to press; answering it\n",
+                 screen_name((int)omcurovl), (int)omcurovl, (int)omovlevtno,
+                 (frame - last_change) / 60u);
+    }
+    soak_nudges++;
+    for (i = 0; i < 4; i++) {
+        HuPadBtnDown[i] |= BTN[rotation].bit;
+        HuPadBtn[i] |= BTN[rotation].bit;
+    }
+    port_log("port> soak: press %s on %s at frame %u\n", BTN[rotation].name,
+             screen_name((int)omcurovl), frame);
+    rotation = (rotation + 1) % 3;
+}
+
 /* ---- the module trace ---------------------------------------------------------
  *
  * `--soak`'s log of record: every minigame module entered and left, with the
@@ -539,6 +654,7 @@ void port_selfplay_tick(u32 frame) {
     if (port_opt.soak) {
         module_trace(frame);
         title_guard(frame);
+        prompt_nav(frame);
     }
     if (port_opt.stuckwatch) {
         stuck_watch(frame);

@@ -166,10 +166,11 @@ typedef struct Glc {
     signed char proj_valid;
     signed char modelview_identity;
 
-    signed char vertex_array_on, color_array_on;
+    signed char vertex_array_on, color_array_on, normal_array_on;
     const void* vertex_ptr;
     const void* color_ptr;
-    int vertex_stride, color_stride;
+    const void* normal_ptr;
+    int vertex_stride, color_stride, normal_stride;
 } Glc;
 
 static Glc glc;
@@ -185,6 +186,9 @@ static unsigned glc_emitted, glc_elided;
     } while (0)
 
 void glc_invalidate(void) {
+    /* The vertex program's binding, enable and parameter block are GL state
+     * this shadow does not hold, and they are forgotten for the same reason. */
+    gx_vprog_invalidate();
     memset(&glc, 0, sizeof(glc));
     /* -1 is "unknown": no GL enum or boolean is -1, so the first write of
      * every field is guaranteed to miss. */
@@ -194,7 +198,7 @@ void glc_invalidate(void) {
         glc.client_active_tex = -1;
         glc.cull_on = glc.depth_on = glc.blend_on = glc.alpha_on = glc.fog_on = -1;
         glc.depth_mask = -1;
-        glc.vertex_array_on = glc.color_array_on = -1;
+        glc.vertex_array_on = glc.color_array_on = glc.normal_array_on = -1;
         glc.proj_valid = 0;
         glc.modelview_identity = 0;
         for (i = 0; i < 4; i++) {
@@ -221,8 +225,8 @@ void glc_invalidate(void) {
                 u->env_color[j] = -1.0f;
             }
         }
-        glc.vertex_ptr = glc.color_ptr = (const void*)-1;
-        glc.vertex_stride = glc.color_stride = -1;
+        glc.vertex_ptr = glc.color_ptr = glc.normal_ptr = (const void*)-1;
+        glc.vertex_stride = glc.color_stride = glc.normal_stride = -1;
     }
     glc.valid = 1;
 }
@@ -395,6 +399,35 @@ void glc_color_array(const void* p, int stride) {
     GL(glColorPointer)(4, GL_UNSIGNED_BYTE, (GLsizei)stride, p);
 }
 
+/* The normal array exists only for the vertex-program path: the CPU path does
+ * its own lighting and never hands GL a normal (gx_draw.c's file header says
+ * why), so before M11 there was nothing to shadow. */
+void glc_normal_array(const void* p, int stride) {
+    HIT(glc.normal_array_on == (signed char)(p != NULL) && glc.normal_ptr == p &&
+        glc.normal_stride == stride);
+    if (glc.normal_array_on != (signed char)(p != NULL)) {
+        glc.normal_array_on = (signed char)(p != NULL);
+        if (p) {
+            GL(glEnableClientState)(GL_NORMAL_ARRAY);
+        } else {
+            GL(glDisableClientState)(GL_NORMAL_ARRAY);
+        }
+    }
+    glc.normal_ptr = p;
+    glc.normal_stride = stride;
+    if (p) {
+        GL(glNormalPointer)(GL_FLOAT, (GLsizei)stride, p);
+    }
+}
+
+/* The NPOT fold this unit is carrying, so a vertex program can apply it: the
+ * fixed-function GL_TEXTURE matrix is not consulted while a program is bound,
+ * and the program has to reproduce it (gx_vprog.c). */
+void glc_get_tex_scale(int unit, float* su, float* sv) {
+    *su = glc.unit[unit].su;
+    *sv = glc.unit[unit].sv;
+}
+
 void glc_coord_array(int unit, const void* p, int stride) {
     GlcUnit* u = &glc.unit[unit];
     HIT(u->coord_array_on == (signed char)(p != NULL) && u->coord_ptr == p &&
@@ -543,6 +576,11 @@ int gl13_init(void) {
     gl_on = 1;
     glc_invalidate();
     report_caps();
+    /* The vertex-program probe needs a live context, so it runs here and not
+     * in report_caps: it compiles and loads a program. */
+    if (port_opt.vprobe || port_opt.glinfo || !port_opt.cpuxf) {
+        gx_vprog_probe();
+    }
     GL(glPixelStorei)(GL_UNPACK_ALIGNMENT, 1);
     GL(glEnable)(GL_SCISSOR_TEST);
     GL(glShadeModel)(GL_SMOOTH);
@@ -1060,6 +1098,11 @@ static int frame_wanted(unsigned n) {
 
 void gl13_present(void) {
 #ifndef PORT_NO_SDL
+    /* Nothing after the last draw of a frame -- the readback, the swap, the
+     * clear -- wants a vertex program bound, and gxdemo and the PPM reader
+     * both use fixed function. */
+    gx_vprog_disable();
+    gx_vprog_frame_reset();
     frame_no++;
     port_scenelog();
     port_ovllog();

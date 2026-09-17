@@ -231,6 +231,8 @@ void glc_modelview_identity(void);
 void glc_vertex_array(const void* p, int stride);
 void glc_color_array(const void* p, int stride);
 void glc_coord_array(int unit, const void* p, int stride); /* NULL turns it off */
+void glc_normal_array(const void* p, int stride);          /* NULL turns it off */
+void glc_get_tex_scale(int unit, float* su, float* sv);
 int gl13_live(void);
 /* --nodraw / --ffto (PLAN.md 24.1): the renderer is switched off under a live
  * context.  `gl13_live()` is 0 while it is, so every GL path already skips;
@@ -250,6 +252,41 @@ extern int gl13_have_s3tc;
 extern int gl13_have_blend_subtract;
 extern int gl13_have_depth_texture;
 extern int gl13_max_tex_units;
+
+/* gx_vprog.c -- phase 2 as an ARB vertex program (PLAN.md 25).
+ *
+ * What a draw has to tell the generator.  It is exactly the subset of
+ * gx_draw.c's per-primitive invariants (`PrimInv`) and source layout
+ * (`Layout`) that the program text or the program parameters depend on;
+ * `draw_run` fills one of these instead of exporting its own statics. */
+typedef struct GxXfDesc {
+    const f32* pos_mtx;      /* 3x4, row major                               */
+    const f32* nrm_mtx;      /* 3x3, row major                               */
+    int have_nrm;            /* the source layout carries a normal           */
+    int chan_mode;           /* 0/1: the source colour is already final      */
+    int ntexgen;
+    /* the source layout, which becomes the vertex arrays */
+    const u8* base;
+    int stride, off_nrm, off_clr, off_tex, ntex;
+    struct {
+        u8 src_kind;         /* 0 texcoord, 1 position, 2 normal             */
+        u8 src_k;
+        u8 divide;
+        const f32* mtx;      /* NULL for the identity                        */
+    } tg[GX_TEXCOORDS];
+} GxXfDesc;
+
+void gx_vprog_probe(void);            /* needs a live GL context */
+int gx_vprog_available(void);
+int gx_vprog_native_instr_limit(void);
+/* 1 = this draw's vertices are on the GPU; the caller must skip phase 2 and
+ * must NOT bind the CPU output arrays.  0 = fall back, and it has been
+ * counted. */
+int gx_vprog_draw(const GxXfDesc* d, int nverts);
+void gx_vprog_disable(void);          /* back to fixed function for one draw  */
+void gx_vprog_invalidate(void);       /* glc_invalidate's counterpart         */
+void gx_vprog_report(void);           /* --vprogstats                         */
+void gx_vprog_frame_reset(void);      /* per-frame fallback counters          */
 
 /* one place for "the backend could not do this exactly", counted and named
  * once each by --gxwarn */

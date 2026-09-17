@@ -137,6 +137,17 @@ typedef struct PortOptions {
     int snapdiff;           /* --snapdiff  dump arena digests per region, to
                              *   byte-diff a restored run against a straight
                              *   one at the same frame                        */
+    /* ---- M11: the vertex program ---- */
+    int vprobe;             /* --vprobe  print the ARB_vertex_program limits
+                             *   the generator is allowed to spend, compile a
+                             *   trivial program and say whether it is native */
+    int cpuxf;              /* --cpuxf  keep phase 2 (transform, CPU lighting,
+                             *   texgen) on the CPU, the way every build before
+                             *   M11 did.  The A/B lever, like --olddecode     */
+    int vprogstats;         /* --vprogstats  draws and vertices on the GPU path
+                             *   against the CPU fallback, and why each dead
+                             *   variant died                                 */
+    int vproglog;           /* --vproglog  print every generated program once  */
 } PortOptions;
 
 extern PortOptions port_opt;
