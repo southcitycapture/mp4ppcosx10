@@ -6739,11 +6739,33 @@ snapshot taken in a `--nodraw` run and continued with the renderer on. A
 thousand frames of board, four CPU players, two minigame modules loaded, and
 the frame comes out byte for byte.
 
-**(b) The fast-forward at scale.** `--ffto 237000 --soak --com4 --rtc dolphin
---freshcard` — the whole 20-turn board that took the overnight soak ten hours,
-replayed to the turn-19 `m444` visit. Numbers in §24.7.
+**(b) A minigame, restored and played out.** A snapshot taken at frame 22000,
+*inside* `m428dll`, restored and run on: the minigame plays to its end, the
+results screen comes up at frame 30540 and the coins are awarded at frame
+30660 — 20→30 and 13→23 — on exactly the frames a straight run of the same
+build awards them, and the same frames the ten-hour soak awarded them on.
+Screenshot of the restored minigame mid-play:
+`port/docs/screenshots/mp4-m428-restored.png`.
 
-**(c) A crash reproduced from a snapshot with gdb attached.** Not available
+**(c) The fast-forward at scale — the prize.** `--ffto 237000 --soak --com4
+--rtc dolphin --freshcard`:
+
+```
+port> ffto: reached frame 237000 in 2105.5 s (236997 frames, 112.6 fps, ...)
+port> status f240180  m444dll  board 0 turn 19/20  mg 444 (m444dll)
+      coins/stars 114/1c 49/2c 53/1c 104/0c
+```
+
+**35 minutes** to the turn-19 `m444` visit that took the overnight soak from
+07:48 to 17:05 — **9.3 hours, so 16×** — and it arrives at the same game
+state: same turn, same minigame, the same four coin-and-star lines
+(114/1c 49/2c 53/1c 104/0c). It gets there about 2,000 retraces later than the
+old build's soak did (f240180 against f238140, 0.8% over 237,000 frames),
+which is a build-to-build difference this session did not isolate: the
+fast-forward itself does not drift, or `--ffto 3000`/`--ffto 7000` could not
+produce §21.1's md5s byte for byte.
+
+**(d) A crash reproduced from a snapshot with gdb attached.** Not available
 this session, for the best possible reason: **the soak did not crash** (§24.0).
 The ring is armed for the next one — the leave-behind run takes a snapshot
 every 5,000 frames and the fault handler prints them.
@@ -6764,4 +6786,10 @@ every 5,000 frames and the fault handler prints them.
    *variable* wants the heap dump or gdb.
 5. **The end-of-game results crash is unreproduced since M8c** and may be fixed
    (§24.0). It should be closed or re-opened on evidence, not left ambiguous.
-6. The vertex path's phase 2 (§22.10 item 1) is still untouched.
+6. **The 2,000-frame offset** between the M10 build's fast-forward and the
+   pre-M10 soak at the same game state (§24.5 (c)). Two runs of the *same*
+   build agree frame for frame, restored or not, so this is a build-to-build
+   difference; it wants one rendered run against one `--nodraw` run of the same
+   binary, compared on overlay transitions, before anyone trusts a frame number
+   quoted across builds.
+7. The vertex path's phase 2 (§22.10 item 1) is still untouched.
