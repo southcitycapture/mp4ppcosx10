@@ -7993,3 +7993,260 @@ witnessed is now known and is not ours.
   it reproduces it is a Dolphin reference-side twin of the soak stalls and
   belongs in its own investigation.
 
+
+---
+
+## 28. M13 log — the array that was read one element too far *(2026-09-17)*
+
+M13 opened on a failure: the chained-games witness §26 asked for had run for
+sixteen hours on the G4 with the patched build and never left the results
+screen. The patch was right, verified in the disassembly, and irrelevant,
+because §26.1 had inferred one number instead of reading it. The number is in
+§28.1, and it is a one-element overrun whose value the GameCube's `.bss`
+layout supplied and the port's does not.
+
+### 28.1 The results screen, for real: `fn_1_373C` reads `GWPlayerCfg[4]`
+
+**The stalled process, read before it was killed.** pid 6915, sixteen hours
+into `--soak --turns 3 --com4 --rtc dolphin --freshcard --nodraw --turbo
+--status --ovllog`, 646 `STUCK` lines, frame 3,549,063, the same
+`mstory3dll (overlay 78, event 1)` as §24.0, §25.9 and §26.1. The log is on
+the G4 as `~/soak6-chain-witness-failed.log`, and the module trace in it says
+the board itself was healthy: `bootdll → mentdll → w01dll → instdll → m4xx →
+resultdll → w01dll` five times over, the three turns complete, `OvlKill` on
+`mstory3dll` event 0 at frame 48,296, and `Start New OVL 78 (EVT:1)` on the
+next frame. Event 0 ran and *returned*; event 1 never did.
+
+`sudo ~/bin/mp4peek 6915 procs 0x19eae0 0x19eadc` — fourteen coroutines, all
+parked in `HuPrcVSleep`, none of them faulted. `mp4bt` put thread 1 in
+`VIWaitForRetrace` under `mp4_game_main`, i.e. the main loop was turning
+normally. Walking the saved stacks (`*(*(jump.sp)) + 8`) and resolving each
+return address with `info line *ADDR` under `mpgdb`:
+
+| coroutine | prio | caller of `HuPrcVSleep` |
+|---|---:|---|
+| `0235e598` | 8192 | `omMain+228`, `objmain.c:479` |
+| `02370078` | 100 | `HuWinProc+124`, `window.c:551` |
+| `023ef118` … `0240f818` | 100 | `fn_1_1CC5C+172`, `result.c:1446` |
+| `024179d8` | 100 | `fn_1_19214+148`, `result.c:990` |
+| `0241fb98` | **90** | **`fn_1_16924+44`, `result.c:335`** |
+| `02356078` | 0 | `HuPrcCall`, CHILDWATCH |
+
+`result.c:335` is the `fn_1_938()` inside `fn_1_16924`'s `while (TRUE)`. So the
+patched function was still in its own spin loop after sixteen hours, which is
+only possible on the `unk14 != -1` branch — the branch §26.1 had called dead
+code.
+
+**The state says why.** The module's `lbl_1_bss_1A0C` is reached through the
+bundle's non-lazy pointer at `0x34b160e4` (`lwz r30,0x3378(r2)` with
+`r2 = r31 =` the `bcl` PIC base `0x34b12d6c`), which held `0x34b1b800`:
+
+```
+34b1b800: 00000000 00000000 00000003 00000000    unk00 unk04 .     unk0C
+34b1b810: 00000000 00000004 00000004 00000000    unk10 unk14 .     .
+34b1b838: 00000003 00000000 00000001 00000000    unk38[0]
+34b1b848: 00000003 00000003 00000000 00000000            .unk14 = 3
+```
+
+`lbl_1_bss_1A0C.unk14 = 4`. **Not −1.** So `fn_1_16924` was reading
+`HuPadBtnDown[lbl_1_bss_1A0C.unk38[0].unk14]` — pad **3** — and the 300-frame
+timeout at `result.c:344` was the dead branch, not the live one. §26.1 never
+read `unk14`; it read `GWPlayerCfg[0..3].iscom`, found all four set, and
+*inferred* −1 from `fn_1_373C`'s source. The inference is where it went wrong.
+
+**`fn_1_373C` (`mstory3Dll/main.c:794`) walks five pad indices over an array of
+four.**
+
+```c
+    var_r30 = 0;
+    do {
+        for (var_r31 = 0; var_r31 < 4; var_r31++) {
+            if (var_r30 == GWPlayerCfg[var_r31].pad_idx) break;
+        }
+        if (!GWPlayerCfg[var_r31].iscom) break;      /* var_r31 can be 4 */
+        var_r30++;
+    } while (var_r30 != 5);
+```
+
+On the fifth trip (`var_r30 == 4`) no player has `pad_idx == 4`, the inner loop
+falls out with `var_r31 == 4`, and the function reads `GWPlayerCfg[4].iscom` —
+one element past a `0x28`-byte array.
+
+**On the GameCube that read had a value, and here it does not.**
+`config/GMPE01_01/symbols.txt`:
+
+```
+GWPlayerCfg = .bss:0x8018FC10;  // size:0x28     -> [4] would start at 0x8018FC38
+GWPlayer    = .bss:0x8018FC38;  // size:0xC0
+```
+
+`GWPlayerCfg[4]` lands exactly on `GWPlayer[0]`, and `GWPlayerCfg[4].iscom` is
+`*(s16 *)(GWPlayer + 8)` — the board bitfield
+`color/moving/jump/show_next/size/num_dice/rank/bowser_suit/team_backup`
+(`gamework_data.h`). At the end of a board that halfword is never zero, so
+`!iscom` was false, the loop ran on to `var_r30 == 5`, and the function
+returned **−1**: *nobody here is human*. In the port the linker put the two
+objects the other way round — `GWPlayer` at `0x114200`, `GWPlayerCfg` at
+`0x1142c0`, with `0x18` bytes of alignment padding behind it — so
+`GWPlayerCfg[4].iscom` reads a hard zero, `!iscom` is true on the very first
+stray trip, and the function returns **4**. Measured on the live process:
+`0x1142e8` onward is all zeros.
+
+This is the §22 class again — an out-of-bounds read whose answer the original
+memory map supplied — and it is the second time in this project that a
+`.bss` neighbour has been load-bearing.
+
+**The fix** (`port/patches.txt`, `src/REL/mstory3Dll/main.c`) is the loop the
+author meant: four pad indices, `var_r31 < 4` before the `iscom` test, and −1
+when none of them belongs to a human. Every in-range case behaves exactly as
+before, so a game with a human player is untouched. §26.1's missing `return`
+in `fn_1_16924` stays patched — it is a real bug of the 43-function class and
+it is what makes the timeout exit *work* once the timeout is reachable at all
+— it was simply never the thing holding the door.
+
+### 28.2 The pinball: the gravity was doubled, and the ball could not clear its own chute
+
+§27.1 read the port's ball — `(128, −98.59)`, velocity `+0.354` — as *"a ball
+that never got, or immediately lost, the −18.6"*, and named the one measurement
+that would settle it: print `lbl_1_bss_1888` immediately after `pinball.c:357`.
+`port/patches.txt` now does exactly that, plus the whole trajectory, under a new
+`--m444trace` flag (the trace lives inside the REL, which cannot see
+`port_opt`, so the flag sets `MP4_M444TRACE` and the module reads it; a run
+without the flag pays one comparison per drop).
+
+**The launch is fine.** `--rtc dolphin --freshcard --com4 --minigame m444
+--turns 10 --play board-start-com4.play --turbo --nodraw --m444trace`, first
+drop:
+
+```
+port> m444: launch round 0 player 0 pad 0 iscom 1  charge 14849/1000
+      temp_r24 3  frand 7  vy -17300/1000
+```
+
+`pinball.c:357` is reached, the plunger charged (14.849, against the console's
+16–19), `temp_r24` is 3 against the console's 4, and the ball leaves with
+**−17.3**. §27.1's premise is wrong: the ball gets its launch.
+
+**What it does not get is the console's gravity.** The two trajectories, the
+port's from `m444trace` and the console's from `port/ref/m444-ball-console.csv`:
+
+| step | console `vel.y` | port `vel.y` |
+|---:|---:|---:|
+| 0 (launch) | −18.600 | −17.300 |
+| 1 | −18.300 | −16.700 |
+| 2 | −18.000 | −16.100 |
+| 3 | −17.700 | −15.500 |
+| 4 | −17.400 | −14.900 |
+| per frame | **+0.300** | **+0.600** |
+
+Double gravity is half the apex. The port's ball turns round at
+`y = −358.1` on step 29 and comes back down; the console's runs to `−413.8`
+before `x` leaves 128.000 at the chute's mouth and the bowl takes it. The
+port's ball is not stalled and not unlaunched: **it is thrown at the right
+speed into twice the gravity, falls back down its own chute, and wedges on
+segment 10** — which is the ball §23.1 found resting 13.59 above the chute
+floor with "a velocity that is nothing but gravity". The whole trace is 700
+frames of it bouncing.
+
+**Where the second 0.3 comes from.** `pinball.c:922-930`, inside `fn_1_B1E8`,
+is one of the four `VERSION_REV2` anti-hang patches §23.1 catalogued — and it
+is the one §23.1 described as *"a second `+= 0.3` of gravity when the velocity
+is zero"*:
+
+```c
+    arg1->y += 0.3;
+#if VERSION_REV2
+    if (VECMag((Vec *)&arg1) < 0.000001) {    /* the ADDRESS of the pointer */
+        arg1->y += 0.3;
+    }
+#endif
+```
+
+`&arg1` is the address of the **parameter**, not the vector it points at, so
+`VECMag` reads the pointer's own stack home and the two words behind it as
+three floats. A pointer and a small `s16` reinterpreted as floats are both
+denormals that square to zero, and the third word is whatever the frame
+happens to hold — so the test is decided by garbage. On the GameCube it came
+out **false** (the capture's +0.300 says so); under GCC 14 on Darwin PPC it
+comes out **true on every frame**, and the anti-hang nudge becomes a permanent
+second gravity.
+
+This is the §22 class once more: not a wrong translation, a *faithful* one of
+an expression whose value was never defined. The patch is one character-level
+change — `VECMag(arg1)` — which is the vector the line means and restores
+exactly the behaviour §23.1 ascribed to the REV2 patch: the nudge fires only on
+a ball that has genuinely stopped. §23.2's 1,800-frame bound stays as a safety
+net and now logs whenever it fires.
+
+**The witness.** Same command, the fixed build, `--m444trace`:
+
+```
+port> m444: launch round 0 … charge 14849/1000  temp_r24 3  frand 7  vy -17300/1000
+port> m444: launch round 1 … charge 19800/1000  temp_r24 4  frand 8  vy -18200/1000
+port> m444: launch round 2 … charge 19350/1000  temp_r24 4  frand 3  vy -18700/1000
+```
+
+**Three drops, no `wedged` line, and the module reached its result screen**
+(`Start New OVL 84`) — the §23.2 bound never fired on any of them. The
+trajectory, against `port/ref/m444-ball-console.csv`
+(`port/ref/tools/m444diff.py`, new):
+
+| | console | port before | port after |
+|---|---:|---:|---:|
+| gravity per frame | **+0.300** | +0.600 | **+0.300** |
+| frames with `x == 128.000` | 19 | never leaves | 21 |
+| `y` at the chute's mouth | −413.8 | −358.1 (apex, falls back) | −410.5 |
+| flight | 219 frames | never lands | 191 / 233 frames |
+
+The acceleration, the chute, the mouth and the flight time now agree. What does
+**not** agree row-for-row is the launch speed: −17.300 on the port's first drop
+against the console's −18.600, because the COM's plunger charge comes from
+`frandmod` and the two rigs do not share an RNG stream (`temp_r24` 3 against 4).
+The physics is identical once that is accounted for — with `v0 = −17.3` and
+`a = +0.3` the closed form puts the ball at `y = −411.3` on step 22 and the
+trace says `−410.5` — and the port's own second and third drops, which happen to
+draw `temp_r24 = 4` like the console, launch at −18.200 and **−18.700** against
+the console's −18.600. A frame-for-frame identity would need the RNG streams
+aligned, which is §27.2's problem and not this one.
+
+### 28.3 One screen further on: `modeseldll` event 1, and the metronome that walks it
+
+With §28.1 in, the witness run went *past* the results screen and stopped one
+screen later. The chain is:
+
+```
+frame 43232  mstory3dll event 0   the award ceremony        (ran, returned)
+frame 48297  mstory3dll event 1   the results screen        (28.1)
+frame 49387  omOvlReturnEx  ->    modeseldll event 1        <-- new stop
+```
+
+`modeseldll` event 1 is the main menu again, and to chain a second board the run
+has to pick Party on it. `prompt_nav`'s rotation cannot: it is
+B, START, B, START, B, START, A, so every A that moves the menu on is followed
+by a B that backs it out, and the pair ping-pongs — 2,000 frames of
+`soak: press B on modeseldll` / `press START on modeseldll` in the log and no
+progress, which is 26.1's shape in a different module.
+
+`board-start-com4.play` walks this exact menu at the boot without trouble, and
+what it does there is **A for four frames out of every sixty-four**, from frame
+1,160 to 29,960. A second board is long past 29,960, so the script has nothing
+left to give. `port/src/debug/selfplay.c` now runs that same metronome itself on
+`modeseldll` and `mentdll` once the stuck limit is up, instead of the rotation.
+
+### 28.4 The `--minigame a,b,c` ordering, fixed at the right frame
+
+§27.3 found the mechanism and §27.4 named the consequence: `resultDll` decides
+which directory image to free by reading `GWSystem.mg_next` at its own
+`ObjectSetup` (`src/REL/resultDll/main.c:102,109`), and instDll's untagged
+preload of the minigame that *just played* is what it is there to free. The
+harness advanced its list the instant `omcurovl` left the minigame, so by the
+time resultDll looked, `park_minigame()` had already parked the **next** name —
+resultDll closed the next minigame's directory and leaked the one that had just
+played. Two or three of those exhaust `HEAP_DVD`, which is §27.3's panic.
+
+`module_trace` now only *arms* the advance when the minigame ends
+(`forced_mg_pending`), and performs it when `resultDll` itself is left — after
+it has read `mg_next`, before instDll preloads from the new one. The parked
+value is therefore the minigame that played, for the whole of its own result
+screen. The flag is registered with the snapshot system like the rest of the
+harness state.

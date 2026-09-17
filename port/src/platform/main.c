@@ -147,6 +147,7 @@ static void usage(const char* argv0) {
             "                    not moved.  Off: it is faster on the title and\n"
             "                    slower on the character select (PLAN.md 21.3)\n"
             "  teleport to the bug (M10):\n"
+            "  --m444trace       log m444dll's ball, per frame, for the console diff\n"
             "  --nodraw          consume the game's GX command streams and emit\n"
             "                    no GL: no vertex decode, no texture decode, no\n"
             "                    present.  The game logic reads none of it, so\n"
@@ -355,6 +356,11 @@ int port_parse_args(int argc, char** argv) {
         } else if (!strcmp(a, "--perfwin") && i + 1 < argc) {
             port_opt.perfwin = argv[++i];
             port_opt.perf = 1;
+        } else if (!strcmp(a, "--m444trace")) {
+            /* The m444 ball trace lives inside the REL (port/patches.txt), so
+             * it cannot see port_opt; it reads the environment instead, and
+             * this flag is what sets it.  PLAN.md 28.2. */
+            setenv("MP4_M444TRACE", "1", 1);
         } else if (!strcmp(a, "--nodraw")) {
             port_opt.nodraw = 1;
         } else if (!strcmp(a, "--ffto") && i + 1 < argc) {

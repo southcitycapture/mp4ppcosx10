@@ -452,6 +452,35 @@ src/REL/resultDll/main.c	#ifdef NON_MATCHING\n            coinNum[4] = 0;\n#endi
 src/game/sprman.c	            HuSprData[new_sprite] = *old_sprite;	            HuSprData[new_sprite] = *old_sprite;\n            if(HuSprData[new_sprite].bg) {\n                HuSprAnimLock(HuSprData[new_sprite].bg);\n            }
 
 # ------------------------------------------------- REL/m444dll/pinball.c
+# The doubled gravity in the pinball's physics (PLAN.md 28.2).
+#
+# `fn_1_B1E8`'s REV2 anti-hang nudge is meant to read the *velocity*: "if the
+# ball has stopped dead, give it a second 0.3 so it cannot rest for ever".
+# What the decomp writes is `VECMag((Vec *)&arg1)` -- the address of the
+# **parameter**, not the vector it points at -- so `VECMag` reads the pointer's
+# own stack home and the two words behind it as three floats.  A GameCube
+# pointer (0x8xxxxxxx) and a small `s16` reinterpreted as floats are both
+# denormals that square to zero, so the test is a coin toss decided by whatever
+# the third word happens to be, and on this build it comes up **true every
+# frame**.
+#
+# Measured on the G4 (`--minigame m444 --m444trace`, the ball trace against
+# port/ref/m444-ball-console.csv):
+#
+#   console   -18.300  -18.000  -17.700  -17.400  ...   +0.300 a frame
+#   port      -17.300  -16.700  -16.100  -15.500  ...   +0.600 a frame
+#
+# Double gravity is half the apex.  The port's ball tops out at y = -358.1 and
+# falls back; the chute's mouth is at about -413, so it never gets out, comes
+# back down its own chute and wedges on segment 10 -- which is exactly the ball
+# 23.1 found at (128, -98.59) with a velocity that was "nothing but gravity".
+# 27.1 read that as a ball that never got its -18.6; the trace says it got
+# -17.3 (charge 14.849, temp_r24 3, frand 7) and could not climb with it.
+#
+# So the fix is the vector the line means, and nothing else.  With it the
+# nudge fires only on a genuinely dead ball, which is what 23.1 describes the
+# REV2 patch as doing.  23.2's 1,800-frame bound stays as a safety net.
+src/REL/m444dll/pinball.c	    if (temp_r30 == lbl_1_data_3A4[arg2]) {\n        arg1->y += 0.3;\n#if VERSION_REV2\n        if (VECMag((Vec *)&arg1) < 0.000001) {\n            arg1->y += 0.3;\n        }\n#endif\n    }	    if (temp_r30 == lbl_1_data_3A4[arg2]) {\n        arg1->y += 0.3;\n#if VERSION_REV2\n        if (VECMag(arg1) < 0.000001) {\n            arg1->y += 0.3;\n        }\n#endif\n    }
 # The m444 drop watchdog -- the stall that ate two overnight soaks (PLAN.md 23.1).
 #
 # `fn_1_8DD0` spins in `HuPrcVSleep` until `fn_1_B1E8` reports which slot the
@@ -476,8 +505,9 @@ src/game/sprman.c	            HuSprData[new_sprite] = *old_sprite;	            H
 # slot it is nearest -- the outcome the physics was heading for -- and the next
 # `fn_1_B1E8` reports it.  No completing drop can reach this code, so no run that
 # works today changes.
-src/REL/m444dll/pinball.c	s16 fn_1_B1E8(Vec *arg0, Vec *arg1, s16 arg2);\n\ns16 fn_1_8DD0(s16 arg0)\n{	s16 fn_1_B1E8(Vec *arg0, Vec *arg1, s16 arg2);\n\nextern Vec *lbl_1_data_454[];\nextern s16 lbl_1_data_3A4[];\n\ns16 fn_1_8DD0(s16 arg0)\n{\n    s32 port_stuck = 0;
-src/REL/m444dll/pinball.c	    fn_1_8180(1);\n    while (1) {\n        temp_r27 = fn_1_B1E8(&lbl_1_bss_1894, &lbl_1_bss_1888, arg0);	    fn_1_8180(1);\n    while (1) {\n        if (++port_stuck > 1800) {\n            s16 port_round = (arg0 < 0 || arg0 >= 3) ? 0 : arg0;\n            Vec *port_slot = lbl_1_data_454[port_round];\n            s16 port_i;\n            s16 port_best = 0;\n            float port_d;\n            float port_bd = 1e30f;\n            for (port_i = 0; port_i < lbl_1_data_3A4[port_round]; port_i++) {\n                float port_dx = port_slot[port_i].x - lbl_1_bss_1894.x;\n                float port_dy = port_slot[port_i].y - lbl_1_bss_1894.y;\n                port_d = (port_dx * port_dx) + (port_dy * port_dy);\n                if (port_d < port_bd) {\n                    port_bd = port_d;\n                    port_best = port_i;\n                }\n            }\n            OSReport("port> m444: drop %d wedged at (%d, %d); forcing slot %d\\n", (int)port_round, (int)lbl_1_bss_1894.x, (int)lbl_1_bss_1894.y, (int)port_best);\n            lbl_1_bss_1894 = port_slot[port_best];\n            lbl_1_bss_1888.x = lbl_1_bss_1888.y = lbl_1_bss_1888.z = 0.0f;\n            port_stuck = 0;\n        }\n        temp_r27 = fn_1_B1E8(&lbl_1_bss_1894, &lbl_1_bss_1888, arg0);
+src/REL/m444dll/pinball.c	s16 fn_1_B1E8(Vec *arg0, Vec *arg1, s16 arg2);\n\ns16 fn_1_8DD0(s16 arg0)\n{	s16 fn_1_B1E8(Vec *arg0, Vec *arg1, s16 arg2);\n\nextern Vec *lbl_1_data_454[];\nextern s16 lbl_1_data_3A4[];\n\n/* port: the m444 ball trace (PLAN.md 28.2).  Off unless MP4_M444TRACE is set,\n * so a soak pays one comparison per drop and nothing else. */\nextern char *getenv(const char *);\nstatic int port_m444_trace(void)\n{\n    static int port_on = -1;\n    if (port_on < 0) {\n        port_on = getenv("MP4_M444TRACE") ? 1 : 0;\n    }\n    return port_on;\n}\n\ns16 fn_1_8DD0(s16 arg0)\n{\n    s32 port_stuck = 0;\n    s32 port_trace = 0;
+src/REL/m444dll/pinball.c	    fn_1_8180(1);\n    while (1) {\n        temp_r27 = fn_1_B1E8(&lbl_1_bss_1894, &lbl_1_bss_1888, arg0);	    fn_1_8180(1);\n    while (1) {\n        if (port_m444_trace() && port_trace < 700) {\n            OSReport("port> m444trace %d %d vel %d %d pos %d %d\\n", (int)arg0, (int)port_trace,\n                     (int)(lbl_1_bss_1888.x * 1000.0f), (int)(lbl_1_bss_1888.y * 1000.0f),\n                     (int)(lbl_1_bss_1894.x * 1000.0f), (int)(lbl_1_bss_1894.y * 1000.0f));\n        }\n        port_trace++;\n        if (++port_stuck > 1800) {\n            s16 port_round = (arg0 < 0 || arg0 >= 3) ? 0 : arg0;\n            Vec *port_slot = lbl_1_data_454[port_round];\n            s16 port_i;\n            s16 port_best = 0;\n            float port_d;\n            float port_bd = 1e30f;\n            for (port_i = 0; port_i < lbl_1_data_3A4[port_round]; port_i++) {\n                float port_dx = port_slot[port_i].x - lbl_1_bss_1894.x;\n                float port_dy = port_slot[port_i].y - lbl_1_bss_1894.y;\n                port_d = (port_dx * port_dx) + (port_dy * port_dy);\n                if (port_d < port_bd) {\n                    port_bd = port_d;\n                    port_best = port_i;\n                }\n            }\n            OSReport("port> m444: drop %d wedged at (%d, %d); forcing slot %d\\n", (int)port_round, (int)lbl_1_bss_1894.x, (int)lbl_1_bss_1894.y, (int)port_best);\n            lbl_1_bss_1894 = port_slot[port_best];\n            lbl_1_bss_1888.x = lbl_1_bss_1888.y = lbl_1_bss_1888.z = 0.0f;\n            port_stuck = 0;\n        }\n        temp_r27 = fn_1_B1E8(&lbl_1_bss_1894, &lbl_1_bss_1888, arg0);
+src/REL/m444dll/pinball.c	    temp_r24 = lbl_1_bss_788[arg0] / 4;\n    lbl_1_bss_1888.y = (-15 - temp_r24) + (0.1 * (float)frandmod(10));\n    lbl_1_bss_788[arg0] = 0;	    temp_r24 = lbl_1_bss_788[arg0] / 4;\n    {\n        s32 port_fr = frandmod(10);\n        lbl_1_bss_1888.y = (-15 - temp_r24) + (0.1 * (float)port_fr);\n        if (port_m444_trace()) {\n            OSReport("port> m444: launch round %d player %d pad %d iscom %d  charge %d/1000  temp_r24 %d  frand %d  vy %d/1000\\n",\n                     (int)arg0, (int)lbl_1_bss_2DC, (int)lbl_1_bss_2D8,\n                     (int)GWPlayerCfg[lbl_1_bss_2DC].iscom,\n                     (int)(lbl_1_bss_788[arg0] * 1000.0f), (int)temp_r24, (int)port_fr,\n                     (int)(lbl_1_bss_1888.y * 1000.0f));\n        }\n    }\n    lbl_1_bss_788[arg0] = 0;
 
 # ------------------------------------------------------------------ game/dvd.c
 # Who owns the 2.9 MB HEAP_DVD block (PLAN.md 22.7, 23.2).  The heap dump names
@@ -487,6 +517,42 @@ src/REL/m444dll/pinball.c	    fn_1_8180(1);\n    while (1) {\n        temp_r27 =
 # caller and the caller's caller for any HEAP_DVD allocation over a megabyte and
 # the owner names itself; `nm` on the binary turns the addresses into names.
 src/game/dvd.c	    if(mode == 1) {\n        buf = HuMemDirectMallocNum(heap, OSRoundUp32B(len), num);\n    } else {\n        buf = HuMemDirectMalloc(heap, OSRoundUp32B(len));\n    }	    if(heap == HEAP_DVD && len > 0x100000) {\n        OSReport("port> dvdheap: %d bytes mode %d num %x  caller %p  caller2 %p\\n",\n                 (int)len, (int)mode, (unsigned)num,\n                 __builtin_return_address(0), __builtin_return_address(1));\n    }\n    if(mode == 1) {\n        buf = HuMemDirectMallocNum(heap, OSRoundUp32B(len), num);\n    } else {\n        buf = HuMemDirectMalloc(heap, OSRoundUp32B(len));\n    }
+
+# --------------------------------------------- REL/mstory3dll/main.c (M13, 28.1)
+# `fn_1_373C` reads one element past the end of `GWPlayerCfg`, and what is in
+# that element decides whether the board-result screen can ever end.
+#
+# It walks pad indices 0..4 -- five of them, `do { ... } while (var_r30 != 5)`,
+# for an array of four -- looking for the first pad whose player is not a COM.
+# On the fifth trip the inner `for` finds no player with `pad_idx == 4` and
+# falls out with `var_r31 == 4`, and the function then reads
+# `GWPlayerCfg[4].iscom`.  That is off the end of a 0x28-byte array.
+#
+# On the GameCube it happened to work.  `config/GMPE01_01/symbols.txt`:
+# `GWPlayerCfg = .bss:0x8018FC10 size:0x28` and `GWPlayer = .bss:0x8018FC38`
+# -- GWPlayer[0] begins exactly where GWPlayerCfg[4] would, so the stray
+# `iscom` read is `*(s16 *)(GWPlayer + 8)`, the board bitfield holding
+# `color/moving/jump/show_next/size/num_dice/rank/...`.  At the end of a board
+# that halfword is never zero, so `!iscom` was false, the loop ran on to
+# `var_r30 == 5`, and the function returned -1: "nobody here is human".
+#
+# In the port the two objects are the other way round -- `GWPlayer` is at
+# 0x114200 and `GWPlayerCfg` at 0x1142c0, with 0x18 bytes of alignment padding
+# after it -- so `GWPlayerCfg[4].iscom` reads a hard zero, `!iscom` is true on
+# the very first stray trip, and the function returns **4**.
+#
+# Read out of the 16-hour stalled soak (PLAN.md 28.1): `lbl_1_bss_1A0C.unk14`
+# = 4, not -1.  So in `fn_1_16924` (result.c:335) the `unk14 != -1` branch is
+# the *live* one and the 300-frame timeout is the dead one -- the exact
+# opposite of 26.1's reading, which inferred -1 from `.iscom` rather than
+# reading `unk14`.  The screen sits on `HuPadBtnDown[unk38[0].unk14]`, which
+# was pad 3, and no timeout can save it.  26.1's missing `return` was a real
+# bug and is still fixed below; it was simply not the thing holding the door.
+#
+# The fix is the loop the author meant: four pad indices, and -1 when none of
+# them belongs to a human.  Identical for every in-range case, so a game with
+# a human player behaves exactly as before.
+src/REL/mstory3Dll/main.c	    var_r30 = 0;\n    do {\n        for (var_r31 = 0; var_r31 < 4; var_r31++) {\n            if (var_r30 == GWPlayerCfg[var_r31].pad_idx) {\n                break;\n            }\n        }\n        if (!GWPlayerCfg[var_r31].iscom) {\n            break;\n        }\n        var_r30++;\n    } while (var_r30 != 5);\n    if (var_r30 == 5) {\n        return -1;\n    }\n    return var_r31;	    for (var_r30 = 0; var_r30 < 4; var_r30++) {\n        for (var_r31 = 0; var_r31 < 4; var_r31++) {\n            if (var_r30 == GWPlayerCfg[var_r31].pad_idx) {\n                break;\n            }\n        }\n        if (var_r31 < 4 && !GWPlayerCfg[var_r31].iscom) {\n            return var_r31;\n        }\n    }\n    return -1;
 
 # ------------------------------------------------ REL/mstory3dll/result.c
 # The board-result screen that no button could answer (PLAN.md 25.9/25.10, 26.1).
@@ -499,12 +565,11 @@ src/game/dvd.c	    if(mode == 1) {\n        buf = HuMemDirectMallocNum(heap, OSR
 # So `fn_1_17DC0`'s `if (fn_1_16924() != 0) break;` tests a number that has
 # nothing to do with which button was pressed.
 #
-# That is what stalls every soak at the end of a board.  In a `--com4` run
-# `fn_1_373C` (main.c:794) walks the four `GWPlayerCfg` entries looking for one
-# that is not a COM, finds none, and returns -1; `lbl_1_bss_1A0C.unk14` is
-# therefore -1, the whole `HuPadBtnDown` branch of `fn_1_16924` is dead, and the
-# only live exit is the 300-frame timeout -- which sets `var_r31 = 1`, skips the
-# detail-page block, and returns garbage.  The caller reads the garbage as 0,
+# In a `--com4` run `fn_1_373C` (main.c:794, patched above) returns -1, so the
+# whole `HuPadBtnDown` branch of `fn_1_16924` is dead and the only live exit is
+# the 300-frame timeout -- which sets `var_r31 = 1`, skips the detail-page
+# block, and returns garbage.  (Before the main.c patch it returned 4 off the
+# end of the array and the timeout was the dead branch instead; PLAN.md 28.1.)  The caller reads the garbage as 0,
 # calls `fn_1_16AD4` (the detail page, which waits on B with no timeout), and the
 # pair ping-pongs for ever.  Measured on the live process: `GWPlayerCfg[0..3]`
 # `.iscom` all 1, `GWSystem.party` 1.

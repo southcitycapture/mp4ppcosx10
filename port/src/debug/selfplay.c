@@ -117,6 +117,17 @@ static int forced_mg_type;
 static int forced_mg_list[FORCED_MG_MAX];
 static int forced_mg_len;
 static int forced_mg_at;
+/* The list may not move on the frame the minigame ends.  `resultDll` decides
+ * which directory image to free by reading `GWSystem.mg_next` at its own
+ * `ObjectSetup` (src/REL/resultDll/main.c:102,109) -- and instDll's untagged
+ * preload of the minigame that just finished is exactly what it is there to
+ * free (PLAN.md 27.3).  Advance the moment `omcurovl` leaves the minigame and
+ * the parked value has already become the *next* name, so resultDll closes the
+ * next minigame's directory and leaks the one that just played; two or three
+ * of those exhaust HEAP_DVD.  So leaving the minigame only arms the advance,
+ * and the advance happens when `resultDll` itself is left -- after it has read
+ * mg_next, before instDll preloads from it.  PLAN.md 28.4. */
+static int forced_mg_pending;
 
 static int mg_index_from_arg(const char* a) {
     int i;
@@ -497,6 +508,39 @@ static void prompt_nav(u32 frame) {
     if ((int)omcurovl >= 0 && omMgIndexGet((s16)omcurovl) >= 0) {
         return;
     }
+    /* The mode-select menu wants the walk's own metronome, not the rotation.
+     *
+     * A board that ends now *returns* -- 28.1 -- and it returns to
+     * `modeseldll` event 1, the main menu, where the run has to pick Party
+     * again to chain a second board.  The rotation cannot do it: it is
+     * B, START, B, START, B, START, A, so every A that moves the menu on is
+     * followed by a B that backs it out again, and the pair ping-pongs exactly
+     * the way 26.1's screen did.  `board-start-com4.play` walks this same menu
+     * at the boot without trouble, and what it does there is A for four frames
+     * out of every sixty-four -- so do that here.  The script's own metronome
+     * stops at frame 29,960 and the second board is long past it.  PLAN.md
+     * 28.3. */
+    if ((int)omcurovl == DLL_modeseldll || (int)omcurovl == DLL_mentdll) {
+        if (frame - last_change < stuck_limit((int)omcurovl)) {
+            return;
+        }
+        if ((frame & 63u) < 4u) {
+            for (i = 0; i < 4; i++) {
+                HuPadBtnDown[i] |= PAD_BUTTON_A;
+                HuPadBtn[i] |= PAD_BUTTON_A;
+            }
+            if (!armed_here) {
+                armed_here = (int)soak_nudges + 1;
+                soak_nudge_screens++;
+                port_log("port> soak: %s (overlay %d, event %d) has waited %u s; "
+                         "walking it with the A metronome\n",
+                         screen_name((int)omcurovl), (int)omcurovl,
+                         (int)omovlevtno, (frame - last_change) / 60u);
+            }
+            soak_nudges++;
+        }
+        return;
+    }
     if (frame - last_change < stuck_limit((int)omcurovl)) {
         return;
     }
@@ -537,9 +581,16 @@ static void module_trace(u32 frame) {
     if (last >= 0 && omMgIndexGet((s16)last) >= 0) {
         port_log("port> soak: left  minigame %-9s at frame %u\n", screen_name(last),
                  frame);
-        /* The one in force has been played: move the list on, so a run given
-         * several names witnesses them all in one board. */
+        /* The one in force has been played: arm the move, so a run given
+         * several names witnesses them all in one board.  The move itself
+         * waits for resultDll (see `forced_mg_pending`). */
         if (forced_mg >= 0 && omMgIndexGet((s16)last) == forced_mg) {
+            forced_mg_pending = 1;
+        }
+    }
+    if (forced_mg_pending && last == DLL_resultdll && cur != DLL_resultdll) {
+        forced_mg_pending = 0;
+        {
             if (forced_mg_select(forced_mg_at + 1)) {
                 port_log("port> --minigame: next is %s (mg %d, type %d), %d of %d\n",
                          screen_name(mgInfoTbl[forced_mg].ovl), forced_mg + 0x191,
@@ -701,4 +752,6 @@ void port_selfplay_snap_register(void) {
                        sizeof(forced_mg_list));
     port_snap_register("selfplay.forced_mg_len", &forced_mg_len, sizeof(forced_mg_len));
     port_snap_register("selfplay.forced_mg_at", &forced_mg_at, sizeof(forced_mg_at));
+    port_snap_register("selfplay.forced_mg_pending", &forced_mg_pending,
+                       sizeof(forced_mg_pending));
 }
