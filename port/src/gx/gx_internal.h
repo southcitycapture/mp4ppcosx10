@@ -283,6 +283,9 @@ int gx_vprog_native_instr_limit(void);
  * must NOT bind the CPU output arrays.  0 = fall back, and it has been
  * counted. */
 int gx_vprog_draw(const GxXfDesc* d, int nverts);
+/* the second half, after gl13_apply_transform / _raster_state / gx_tev_apply:
+ * the parameters and the arrays, two of which read state those three set */
+void gx_vprog_bind(const GxXfDesc* d);
 void gx_vprog_disable(void);          /* back to fixed function for one draw  */
 void gx_vprog_invalidate(void);       /* glc_invalidate's counterpart         */
 void gx_vprog_report(void);           /* --vprogstats                         */

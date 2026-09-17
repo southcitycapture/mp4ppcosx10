@@ -1483,6 +1483,7 @@ static void fill_xf_desc(GxXfDesc* d, const u8* s) {
 }
 
 static void draw_run(const u8* s, int n) {
+    GxXfDesc xfd;
     int on_gpu = 0;
     if (!n) {
         return;
@@ -1500,9 +1501,8 @@ static void draw_run(const u8* s, int n) {
      * -- having counted it.  `--cpuxf` makes it always return 0, which is the
      * A/B (PLAN.md 25). */
     if (!port_opt.cpuxf) {
-        GxXfDesc d;
-        fill_xf_desc(&d, s);
-        on_gpu = gx_vprog_draw(&d, n);
+        fill_xf_desc(&xfd, s);
+        on_gpu = gx_vprog_draw(&xfd, n);
     }
     if (!on_gpu) {
         gx_vprog_disable();
@@ -1522,7 +1522,11 @@ static void draw_run(const u8* s, int n) {
      * reads it from index zero, so the base pointer never moves; the offsets
      * and the stride do, because the layout is packed to the primitive.
      * glc_* compares both. */
-    if (!on_gpu) {
+    if (on_gpu) {
+        /* the parameters and the arrays, now that the texture binds this draw
+         * needs have happened: gx_vprog.c says why that ordering matters */
+        gx_vprog_bind(&xfd);
+    } else {
         glc_vertex_array(out_buf, out_stride);
         glc_color_array(out_buf + out_off_clr, out_stride);
         glc_normal_array(NULL, 0);

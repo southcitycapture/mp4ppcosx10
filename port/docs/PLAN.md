@@ -6854,3 +6854,403 @@ every 5,000 frames and the fault handler prints them.
    binary, compared on overlay transitions, before anyone trusts a frame number
    quoted across builds.
 7. The vertex path's phase 2 (§22.10 item 1) is still untouched.
+
+## 25. M11 log — phase 2 moved onto the vertex unit, and the one draw it read too early *(2026-09-17)*
+
+Phase 2 of the vertex path — the transform, the CPU lighting and the texgen in
+`gx_draw.c`'s `finish_vertices` — was 70% of every frame (§22.8) and is now a
+generated `GL_ARB_vertex_program`. The CPU still decodes; it no longer
+transforms. On the three §21.1 scenes that is **+74% / +32% / +38%**, and on
+the two minigames the soak had measured at 2–3 fps it is **+72%** and **+42%**.
+Every one of the run's 416 million vertices goes down the GPU path: the
+fallback exists, is counted, and was never taken.
+
+The interesting failure is §25.5 — the first witness had the 3D characters
+correct and every 2D layer flat or missing, from a single line of *ordering*.
+
+### 25.1 The probe, before the design
+
+R200-class hardware is small and the design has to fit it, so the first
+twenty minutes on the G4 were `--vprobe`: query every limit the generator is
+allowed to spend, then compile the smallest possible program and ask whether
+the driver intends to run it in hardware. A driver will accept a program it
+means to emulate, and emulated vertices would be slower than this port's own
+loop, so `GL_PROGRAM_UNDER_NATIVE_LIMITS_ARB` is the question that matters.
+
+| limit | value |
+|---|---:|
+| `MAX_PROGRAM_INSTRUCTIONS` | 262,144 |
+| **`MAX_PROGRAM_NATIVE_INSTRUCTIONS`** | **128** |
+| `MAX_PROGRAM_PARAMETERS` | 1,024 |
+| **`MAX_PROGRAM_NATIVE_PARAMETERS`** | **192** |
+| `MAX_PROGRAM_TEMPORARIES` | 65,535 |
+| **`MAX_PROGRAM_NATIVE_TEMPORARIES`** | **12** |
+| `MAX_PROGRAM_ATTRIBS` | 32 |
+| `MAX_PROGRAM_NATIVE_ATTRIBS` | 16 |
+| `MAX_PROGRAM_ADDRESS_REGISTERS` | 2 |
+| `MAX_PROGRAM_ENV_PARAMETERS` | 256 |
+| `MAX_PROGRAM_LOCAL_PARAMETERS` | 1,024 |
+
+and the trivial program: **6 instructions, 6 native, under native limits YES**.
+
+Exactly the historical R200 numbers, and the *native* column is the real
+specification — the non-native ones are the driver's software path advertising
+itself. Three of them shaped the design:
+
+* **128 native instructions.** Enough for the frame's real shapes and not
+  enough for a "do everything" program with the unused parts predicated off.
+  So: a generator, with a variant per shape, and a written fallback.
+* **12 native temporaries.** The generator uses six (`vp`, `nr`, `ac`, `mt`,
+  `t0`, `t1`), which is the reason the lighting accumulates in place rather
+  than keeping per-light intermediates.
+* **2 address registers.** The per-vertex matrix index — the case that would
+  have needed `ARL` into a constant-indexed matrix array — does not arise:
+  Mario Party 4 uses no `GX_VA_PNMTXIDX` (§3.2, and `PrimInv` already asserts
+  it by warning on the descriptor), so the position matrix is one primitive's
+  invariant and three program parameters.
+
+### 25.2 The design: what the CPU still does, and what it uploads
+
+The split is the one M9 already built, moved one stage later. Phase 1 still
+packs the *source* vertex — model-space position, model-space normal, colour,
+the raw texcoords a texgen reads back — and the decode plan of §22.1 is
+untouched. What changes is that the source layout **is the vertex format now**:
+`glVertexPointer`/`glNormalPointer`/`glColorPointer`/`glTexCoordPointer` are
+pointed straight at it, `out_buf` is never written, and `finish_vertices` never
+runs.
+
+The XF state goes up as **program environment parameters**, 62 of the card's
+192, in a fixed block:
+
+| `program.env[]` | what |
+|---|---|
+| 0–2 | the position matrix, three rows of a 3×4 |
+| 3–5 | the normal matrix, three rows of a 3×3 |
+| 6 | the register material RGBA |
+| 7 | the register ambient RGB |
+| 8 + 3*i* | light *i*: position / colour / (k0,k1,k2) |
+| 32 + 3*t* | texgen *t*'s matrix, three rows of a 3×4 |
+| 56 + *u* | GL unit *u*'s (su, sv) |
+
+Environment rather than local, so one upload serves every variant, and behind a
+shadow that emits only the difference — because consecutive draws share the
+lights and the texgen matrices and usually differ in nothing but the position
+matrix. Over the 9,000-frame walk: **5,644,793 parameters emitted against
+69,631,218 elided**, 92.5%.
+
+Two things the CPU used to get for free and the program has to say out loud:
+
+* **the projection.** `gl13_apply_transform` loads GL_PROJECTION and leaves the
+  modelview identity, because the game's normal matrices are not the inverse
+  transpose of its position matrices (§13.x). The program keeps that shape: it
+  transforms to *view* space with `program.env[0..2]` — the lighting and a
+  `GX_TG_POS` texgen both read the view-space position, exactly as
+  `finish_vertices`'s `op[]` did — and then multiplies by
+  `state.matrix.projection`, which the driver tracks off the same `glc_projection`
+  call. Nothing about the projection changed, and nothing had to be uploaded.
+* **the NPOT fold.** `gx_tex.c` folds a padded texture's size into the unit's
+  fixed-function `GL_TEXTURE` matrix, and a bound vertex program bypasses that
+  matrix entirely. `glc_get_tex_scale` hands the fold to the program, which
+  applies it as one `MUL` per generated coordinate. §25.5 is what happened
+  when that was read one draw too early.
+
+**Fog** is the third: GL's fog coordinate is `|z_eye|`, which the CPU path got
+for free by handing GL an already-view-space position under an identity
+modelview. The program writes `ABS result.fogcoord.x, vp.z;` when
+`gx.fog_type != GX_FOG_NONE`, and the variant key carries the flag.
+
+Dolphin's `VideoCommon/VertexShaderGen.cpp` and `LightingShaderGen.h` were read
+alongside `light_channel` as an independent statement of the same semantics.
+Two of their remarks were deliberately **not** adopted: the 7/12 pixel-centre
+correction and the depth-clamp/clip-depth rewrite are Dolphin emulating the
+console's rasteriser, and this port has never done either — the CPU path fed GL
+an ordinary projection and so does the program. Adopting them here would have
+been a rendering change with nothing to do with M11, and would have made the
+A/B meaningless. Dolphin's per-light `cosatt`/`dir` **angle** attenuation is
+likewise absent, because `light_channel` never implemented it either
+(`GXLight.a[]` and `.dir` are parsed and unused); the program reproduces the
+port's CPU path, gap included. That gap is now written down rather than
+implicit — see §25.8.
+
+### 25.3 The variants, and the fallback that was never taken
+
+The key is everything the *text* depends on and nothing else: whether there is
+a normal, whether channel 0 is genuinely lit, the material/ambient sources, the
+diffuse and attenuation functions, the light **count** (the uploader packs the
+enabled lights densely, and `diff_fn`/`attn_fn` are per-channel on GX, not
+per-light, so the mask is not in the key), each texgen's source kind, source
+slot, divide and whether it has a matrix, the GL-unit → texgen mapping
+`draw_run` itself makes, and the fog flag. Matrices, light positions and
+colours are parameters and are never in the key, which is why a board frame of
+850 draws compiles a handful of programs and then stops compiling.
+
+A variant that the generator's own count puts over 128, or that the driver
+rejects, or that loads but is **not** under the native limits, is marked dead;
+every draw with that key goes down the CPU path and is counted. On the
+9,000-frame walk:
+
+| | |
+|---|---:|
+| variants compiled | **42** |
+| variants dead | **0** |
+| largest variant | **57 instructions (56 native)** of 128 |
+| smallest variant | 9 instructions (unlit, no texgen) |
+| draws on the GPU path | **8,411,126** |
+| draws on the CPU fallback | **0** |
+| vertices on the GPU path | **416,248,764** |
+| vertices on the CPU fallback | **0** |
+| worst frame, CPU draws | **0** |
+
+**Coverage is 100.00%**, and the reason it is comfortable rather than lucky is
+the light count: no variant in the whole walk uses more than **one** light. The
+budget is about 12 instructions per light, so the shapes that would not fit —
+four lights with attenuation and four texgens — are shapes this game does not
+draw. The fallback stays because the *next* game state may, and because a
+number is worth more than an assurance.
+
+### 25.4 The A/B
+
+Same binary, same walk, `--cpuxf` putting phase 2 back on the CPU, exactly the
+discipline of §22.1:
+
+```
+--turbo --com4 --rtc dolphin --freshcard --play board-start-com4.play
+--frames 9000 --status --dumpframe 800,3000,7000 --perfwin ...
+```
+
+| scene | `--cpuxf` | vertex program | change | gx ms/frame |
+|---|---:|---:|---:|---|
+| title (700–870) | 9.92 fps | **17.24** | **+74%** | 96.71 → 53.70 |
+| character select (2600–3600) | 14.12 fps | **18.60** | **+32%** | 60.13 → 42.83 |
+| board (6000–8900) | 16.34 fps | **22.59** | **+38%** | 48.09 → 30.81 |
+| `m432dll` (10900–11800) | 8.15 fps | **14.03** | **+72%** | 110.94 → 59.07 |
+| `m427dll` (10900–11800) | 19.07 fps | **27.10** | **+42%** | 42.40 → 26.29 |
+
+The `--cpuxf` column reproduces §22.1's build (10.00 / 14.31 / 16.21) to within
+about a tenth of a frame per second, **and reproduces §21.1's three reference
+md5s byte for byte** — which is the check that says the two runs are the same
+experiment and that `--cpuxf` really is the old path rather than something
+resembling it.
+
+The two minigames were reached with `--minigame NAME --ffto 10700`, which puts
+the measurement window inside the module 45 seconds after launch instead of
+twenty minutes in; the entry frame (10838 for both) came from one `--nodraw`
+discovery run. Their old soak numbers — 2.4 fps for `m432`, 3.3 for `m427`
+(§24.0's log) — are from the M9b build at a later point on a different board
+and are **not** the A/B; the table above is.
+
+`game` ms is unchanged on every scene (2.86 / 8.21 / 10.74 against 2.78 / 8.10 /
+10.48), which is the check that nothing moved except the renderer.
+
+### 25.5 The bug the first witness found: one draw's worth of texture scale
+
+The first run on the G4 rendered the 3D characters correctly and **every 2D
+layer wrong**: the title's starry background flat blue, the logo's "4" and the
+star sprites gone, `PRESS START` drawn twice a few pixels apart, `HUDSON SOFT`
+cut off at the right. 61.4% of the title's pixels differed, mean 50 levels.
+That is not rounding and §0 rule 3 says so: audit it, do not re-base it.
+
+The cause was one line in the wrong place. `draw_run` calls, in order,
+`gl13_apply_transform`, `gl13_apply_raster_state` and `gx_tev_apply` — and
+`gx_tev_apply` is where the *texture binds* happen, so it is where
+`gx_tex.c` calls `glc_tex_matrix(unit, su, sv)` with this draw's NPOT fold. The
+first version asked `glc_get_tex_scale` for that fold **before** those three
+ran, so every draw multiplied its texture coordinates by the *previous* draw's
+fold — and on a unit that had not been bound yet, by the shadow's initial
+**zero**, which collapses a whole primitive onto one texel of the atlas. Flat
+backgrounds, sprites sampling the wrong neighbour, and 3D models untouched
+because their textures are mostly power-of-two with a fold of exactly one.
+
+Two fixes, both worth keeping:
+
+* `gx_vprog_draw` is now the *decision* only — which has to happen before phase
+  2, because not running phase 2 is the point — and `gx_vprog_bind` does the
+  parameters and the arrays, called after the three state functions. The
+  header of `gx_vprog.c` says why in the place someone will next be tempted to
+  merge them.
+* `glc_get_tex_scale` answers **1.0** for a unit whose shadow is still zero.
+  The fixed-function path never noticed the zero, because GL only applies the
+  texture matrix once `glc_tex_matrix` has loaded it; a program that reads the
+  number and multiplies by it does notice. A cache that is allowed to be
+  "unknown" has to be asked what unknown means.
+
+After the fix the same frame went from 61.374% of pixels differing to
+**0.048%**.
+
+### 25.6 The md5 verdicts, and why they are re-based
+
+The three §21.1 reference frames change, and §0 rule 3 requires the diff to be
+explained rather than the md5 to be swapped. `port/tools/ppmdiff.py` (new) is
+how: it reports how many pixels differ, how many *channel samples* differ by
+more than one level, the worst pixel, and the mean, and will write a magnified
+A | B | 16× side-by-side crop.
+
+| frame | scene | §21.1 md5 | M11 md5 | pixels differing | samples > 1 level | mean |
+|---:|---|---|---|---:|---:|---:|
+| 800 | title | `45da1034…` | **`047e6867e898eeff732822a002950f68`** | 147 (0.048%) | 166 (0.018%) | 0.012 levels |
+| 3000 | character select | `d77db3b6…` | **`6a23ec28a9b8a921e05ac711d6c732c8`** | 3 (0.001%) | **0** | 0.00001 levels |
+| 7000 | board | `3488c83d…` | **`0184870dc607f2aed89b95dc7e71add5`** | 1,204 (0.392%) | 22 (0.0024%) | 0.0023 levels |
+
+**Frame 3000 settles the argument on its own**: three pixels differ, by one
+level each, and not a single channel sample differs by more than one. That is
+quantisation and nothing else.
+
+Frame 7000 is the same story at scale: 1,204 pixels differ, of which 1,182
+differ by exactly one level in one channel, and the mean over the whole frame is
+0.0023 levels. The one-level population is the expected consequence of the
+**one arithmetic difference this milestone deliberately makes**: the CPU
+quantised the lit colour to eight bits inside `light_channel`
+(`(unsigned char)(v * 255.0f + 0.5f)`) *before* the rasteriser ever saw it, and
+the program leaves it float until the rasteriser quantises it at the end. One
+rounding step was removed, so about half the lit pixels land on the other side
+of a level boundary.
+
+The remaining 22-and-166 populations are the **silhouette pixels**: isolated
+single pixels, scattered (bounding box 0–639 × 58–399), where the two builds
+sit on opposite sides of a triangle edge. Frame 800's list has pairs like
+`(279,124)` red→grey and `(288,124)` grey→red on the same scanline, which is an
+edge that moved by one pixel, not a shading error. Three things can move it, all
+of them the card rather than the code: `RSQ` is the R200's reciprocal square
+root and not `gx_math.h`'s refined `frsqrte`; the program's dot products are
+the vertex unit's and not the 7450's; and the CPU's `if (d2 > 0)` / `if (q != 0)`
+guards became clamps against a tiny constant (which give the *same* answer on
+the degenerate input — `RSQ(1e-30)` times a zero vector is still zero, and a
+`RCP` of a clamped non-positive denominator exceeds one and is then clamped to
+one, which is exactly what `den > 0.0f ? … : 1.0f` did).
+
+**Verdict: re-based, deliberately.** The three md5s above are the reference for
+M12 on. A future A/B compares against them with `--cpuxf` available to recover
+the old three at any time.
+
+### 25.7 The witnesses
+
+`port/docs/screenshots/mp4-m11-title.png`, `…-charselect.png`, `…-board.png`
+are frames 800 / 3000 / 7000 off the G4 on the vertex-program build, and
+`…-m427.png` is `m427dll` mid-race at frame 11200. The title is the one worth
+looking at next to §25.5's description: sky, stars, the "4", `PRESS START` once
+and `HUDSON SOFT` whole.
+
+### 25.8 What the vertex program does not do
+
+Named here rather than discovered later:
+
+* **Angle (spot) attenuation.** `GXLight.a[]` and `.dir` are parsed by
+  `gx_state.c` and used by nothing. The CPU path ignored them; the program
+  ignores them identically. Every light the 9,000-frame walk sets is a point
+  light, so nothing visible depends on it yet.
+* **`GXInitSpecularDir`** is still approximated by the diffuse term (44,902
+  draws on the walk), unchanged from §22.
+* **Channels 1–3.** `light_channel` only ever ran channel 0, because GL 1.3 has
+  one primary colour and `gx_tev.c` only ever names `GL_PRIMARY_COLOR`. The
+  program has the same single channel.
+* **Immediate-mode `GXBegin`/`GXEnd`** goes down the same path — it reaches
+  `draw_run` like everything else — but its *decode* still uses the attribute
+  cursor, as §22.1 left it.
+* **`--dlcache`** still works (it caches the source layout, which is what the
+  program reads) and is still off and still slower.
+* **`--glcheck`** does not see the ARB entry points: they are resolved through
+  `SDL_GL_GetProcAddress` and called through this file's own pointers, not
+  through the `GL()` macro, because `GL13_ALLOWED` is by design a list of GL
+  1.3 plus four named extensions and a vertex program is not in it. The probe
+  is the check that replaces it, and it is per-machine rather than per-build.
+
+### 25.9 Part 2: the soak's prompt navigator
+
+§24.6 item 1: the M10 soak played a whole 20-turn board and then sat on
+`mstory3dll`'s results screen for eleven hours because four CPU players press
+nothing.
+
+`port/src/debug/selfplay.c` now presses. This is the one case the file's own
+rule — *park the state, do not press the button* — cannot serve:
+`fn_1_16924` (`src/REL/mstory3dll/result.c:327`) is a `while (TRUE)` whose only
+exits are `HuPadBtnDown & PAD_BUTTON_A` and `& PAD_BUTTON_MENU`, there is no
+flag to park, and its third exit (a 300-frame timeout) is guarded by
+`unk14 == -1`, which is not the soak's case.
+
+What keeps that from being a licence to mash buttons at the game is the
+*signal*. In a `--com4` run nothing reads the pad legitimately — that is the
+entire premise of `--com4` — so a screen the **watchdog's own `stuck_limit`**
+calls stuck is, by construction, a screen waiting for input that is never
+coming. The press is written into `HuPadBtnDown` and `HuPadBtn` for all four
+pad indices (the results screen addresses whichever player's index it is
+holding, and `PADRead` only ever fills channel 0, because a soak that reported
+four connected controllers would be telling the game something untrue about the
+console). `port_selfplay_tick` already runs after the game's own
+`PadReadVSync`, so a one-frame write is a clean one-frame press. Minigame
+overlays are excluded outright: from out here nothing can be said about a
+minigame's pacing, and one that has genuinely hung is a bug to report, not a
+prompt to answer.
+
+**Both of its constants were set by the first witness run rather than guessed,
+and both were wrong first:**
+
+* it waited **8 seconds**, and pressed on `w01dll` — a board window that was
+  going to resolve on its own, because the M10 soak played a whole board with
+  nothing pressing anything. A press there is the harness making a *choice* on
+  the game's behalf and quietly changing the run. The trigger is now
+  `stuck_limit()`, the number this project already calibrated for exactly this
+  question (§17.10): 90 s.
+* it rotated **B, A, START**, and *oscillated*: `A` opens the detailed results
+  and `B` leaves them again (`fn_1_16AD4`), so the two alternating is a loop —
+  and one `progress_stamp` cannot see, because entering and leaving a results
+  page moves no turn, no coin and no star. The run pressed 24 times, reported
+  "answered", and stalled at the same screen. The rotation is now
+  **advance-only first**: B and START three times each, and only then A. Two
+  buttons that never *enter* anything cannot ping-pong.
+
+**What the witness shows, and what it does not.** A
+`--soak --turns 3 --com4 --rtc dolphin --freshcard --nodraw --turbo` run:
+
+* gets off the mode-select menu on its own (`press START on modeseldll at frame
+  1485` — the first thing the navigator ever did that mattered);
+* plays three turns and three minigames (`m403` 15495, `m409` 23018, `m427`
+  38058) and reaches `resultDll` and then `mstory3dll`;
+* and then — **with no press at all** — `mstory3dll` overlay 78 event 0 runs to
+  its end, is killed, and the module **re-enters as event 1**. §24.0 read the
+  stall as being at the event-0 prompt; it is not. Event 0 completes by itself.
+
+**`mstory3dll` event 1 is the real stall, and it is not answered by B, START or
+A.** That is a new finding, not the old one. `fn_1_40C` (`main.c:141`) sends
+event 1 to `fn_1_157F0` in `result.c`, which is the results presentation the
+`A / B` prompt lives inside. Twenty-four presses over four minutes of game time
+moved nothing. A coroutine walk (`port/tools/gdb/procs.gdb`, on the live
+process, safely) found procs 0 and 1 already exiting (`stat=12`, correctly
+skipped) and proc 2 parked in `fn_1_1CC5C` (`result.c:1445`) — which is a
+per-player *display* service loop, `while (TRUE) { fn_1_938(); … }`, parked by
+design and not the blocker. The walk did not reach the coroutine that is — it hit
+`Cannot access memory at address 0x805e0004` on the second frame of the first
+process, and §23.1's rule then applied exactly as written: an error in a
+`-batch` script aborts it before `detach`, and the game dies with it
+(`EXITCODE=132`). The walk needs a range check on the second saved frame
+pointer before anyone runs it again, and that cost this session the live
+process it was standing on.
+
+So Part 2 ships **half solved, and the half is named**: the mechanism works and
+is safe, the soak now gets further than it ever has, and the thing that stops it
+is one overlay event with a five-minute reproduction attached. See §25.10.
+
+### 25.10 What M12 needs
+
+1. **`mstory3dll` event 1** (§25.9). Reproduction: `--soak --turns 3 --com4
+   --rtc dolphin --freshcard --nodraw --turbo` reaches it at frame ≈47,000 in
+   about seven minutes; add `--snap-every 5000 --snap-keep 3` and the next
+   agent starts *at* it with `--restore`. The question is which coroutine is
+   parked and on what — the `procs.gdb` walk stopped after one process and
+   wants extending before it is run again. Until it is answered a soak still
+   cannot chain boards.
+2. **The port has no keyboard-to-pad mapping** (§24.6 item 1, still true). The
+   navigator writes `HuPadBtnDown` directly, which is the right thing for a
+   soak and the wrong thing for a human looking at a stuck screen over VNC.
+3. **More than one light.** Coverage is 100% because nothing in this walk uses
+   two. A scene that does will compile a bigger variant; the fallback will
+   catch it and `--vprogstats` will say so, but the budget (≈12 instructions a
+   light) says four lights with attenuation and four texgens does not fit and
+   should be *measured* rather than waited for.
+4. **The decode is the frame again.** Phase 2 is gone, so `gx` is now the
+   decode plus the GL dispatch: 53.70 ms on the title, 30.81 on the board.
+   §22.8's immediate-mode batch and the per-draw state cost are what is left,
+   and the profile should be re-taken before anything is chosen — the old one
+   describes a program that no longer exists.
+5. §24.6 items 3 (snapshot compression), 4 (the 159 bytes), 5 (the end-of-game
+   crash, still unreproduced) and 6 (the 0.8% retrace drift) were **not**
+   touched by M11.

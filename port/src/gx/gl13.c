@@ -424,8 +424,14 @@ void glc_normal_array(const void* p, int stride) {
  * fixed-function GL_TEXTURE matrix is not consulted while a program is bound,
  * and the program has to reproduce it (gx_vprog.c). */
 void glc_get_tex_scale(int unit, float* su, float* sv) {
-    *su = glc.unit[unit].su;
-    *sv = glc.unit[unit].sv;
+    /* The shadow starts at zero, and zero here is not "no fold" -- it is a
+     * texture matrix that collapses every coordinate onto one texel.  The
+     * fixed-function path never noticed, because GL only applies the matrix
+     * once glc_tex_matrix has loaded it; a vertex program reads the number
+     * and multiplies by it, so a unit that has not been bound yet has to
+     * answer with the identity. */
+    *su = glc.unit[unit].su != 0.0f ? glc.unit[unit].su : 1.0f;
+    *sv = glc.unit[unit].sv != 0.0f ? glc.unit[unit].sv : 1.0f;
 }
 
 void glc_coord_array(int unit, const void* p, int stride) {

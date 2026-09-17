@@ -432,7 +432,30 @@ static void stuck_watch(u32 frame) {
  * mode-select menus' accept.  Whichever one lands, the stamp moves and the
  * navigator disarms itself until the next screen that needs it.
  */
-#define SOAK_NUDGE_S 8u   /* seconds of no progress before the first press */
+/* How long to wait before pressing, and in what order.  Both numbers were
+ * decided by the first witness run rather than guessed, and both are worth
+ * the paragraph:
+ *
+ * **When.**  The first version used eight seconds and pressed on `w01dll`, a
+ * board window that was going to resolve on its own -- the M10 soak played a
+ * whole 20-turn board with nothing pressing anything.  A press there is not
+ * merely useless, it is the harness making a *choice* on the game's behalf and
+ * quietly changing the run.  So the trigger is the watchdog's own
+ * `stuck_limit`, which is the number this project already calibrated for
+ * exactly this question ("long enough that every legitimate wait has passed",
+ * §17.10): 90 s from `--soak`, and four times that inside a minigame -- which
+ * does not arise, because minigames are excluded outright below.
+ *
+ * **Which button, in what order.**  The first version rotated B, A, START and
+ * *oscillated*: at the results screen `A` opens the detailed results
+ * (result.c `fn_1_16924`) and `B` leaves them again (`fn_1_16AD4`), so the two
+ * alternating is a loop -- and one `progress_stamp` cannot see, because
+ * entering and leaving a results page moves no turn, no coin and no star.  The
+ * witness run pressed 24 times, "answered", and stalled again at the same
+ * screen.  So the rotation is **advance-only first**: B and START, which are
+ * every skip and every dismiss in the game, tried three times each, and only
+ * then A, which is the only one that can open something.  A loop of B/START
+ * cannot ping-pong, because neither of them ever enters anything. */
 #define SOAK_NUDGE_GAP 60u /* frames between presses */
 
 static unsigned soak_nudges;
@@ -448,10 +471,11 @@ static void prompt_nav(u32 frame) {
     static const struct {
         u16 bit;
         const char* name;
-    } BTN[3] = {
-        { PAD_BUTTON_B, "B" },
+    } BTN[7] = {
+        { PAD_BUTTON_B, "B" },         { PAD_BUTTON_MENU, "START" },
+        { PAD_BUTTON_B, "B" },         { PAD_BUTTON_MENU, "START" },
+        { PAD_BUTTON_B, "B" },         { PAD_BUTTON_MENU, "START" },
         { PAD_BUTTON_A, "A" },
-        { PAD_BUTTON_MENU, "START" },
     };
     u32 stamp = progress_stamp();
     int i;
@@ -473,7 +497,7 @@ static void prompt_nav(u32 frame) {
     if ((int)omcurovl >= 0 && omMgIndexGet((s16)omcurovl) >= 0) {
         return;
     }
-    if (frame - last_change < SOAK_NUDGE_S * 60u) {
+    if (frame - last_change < stuck_limit((int)omcurovl)) {
         return;
     }
     if (last_press && frame - last_press < SOAK_NUDGE_GAP) {
@@ -495,7 +519,7 @@ static void prompt_nav(u32 frame) {
     }
     port_log("port> soak: press %s on %s at frame %u\n", BTN[rotation].name,
              screen_name((int)omcurovl), frame);
-    rotation = (rotation + 1) % 3;
+    rotation = (rotation + 1) % 7;
 }
 
 /* ---- the module trace ---------------------------------------------------------

@@ -716,30 +716,72 @@ static void vp_build_key(const GxXfDesc* d, VpKey* k, int* nlights_out,
 }
 #endif
 
+/* The decision, and only the decision.  It has to be made before phase 2 runs
+ * -- not running phase 2 is the entire point -- but everything that *reads GL
+ * state* has to wait, because `draw_run` has not applied the draw's texture
+ * state yet.  `gx_vprog_bind` is the second half. */
+static VpKey pending_key;
+static VpVariant* pending_var;
+static int pending_nl;
+static int pending_lightidx[8];
+
 int gx_vprog_draw(const GxXfDesc* d, int nverts) {
 #ifdef PORT_NO_SDL
     (void)d;
     (void)nverts;
     return 0;
 #else
-    VpKey key;
     VpVariant* v;
-    int nl = 0, lightidx[8];
-    int i, u;
-    const GXChanCtrl* cc = &gx.chan[0];
+    int nl = 0;
 
     if (!gx_vprog_available() || port_opt.cpuxf) {
         return 0;
     }
-    vp_build_key(d, &key, &nl, lightidx);
-    v = vp_lookup(&key);
+    vp_build_key(d, &pending_key, &nl, pending_lightidx);
+    pending_nl = nl;
+    v = vp_lookup(&pending_key);
     if (!v || !v->ok) {
         stat_cpu_draws++;
         stat_cpu_verts += (unsigned)nverts;
         frame_cpu_draws++;
+        pending_var = NULL;
         return 0;
     }
+    pending_var = v;
+    v->draws++;
+    v->verts += (unsigned)nverts;
+    stat_gpu_draws++;
+    stat_gpu_verts += (unsigned)nverts;
+    frame_gpu_draws++;
+    return 1;
+#endif
+}
 
+/* The second half: run from `draw_run` *after* `gl13_apply_transform`,
+ * `gl13_apply_raster_state` and `gx_tev_apply`, because two of the things it
+ * needs are set by them.
+ *
+ * The one that cost a witness run: `glc_get_tex_scale` is the NPOT fold
+ * `gx_tex.c` puts in each unit's fixed-function GL_TEXTURE matrix at *bind*
+ * time, and the bind happens inside `gx_tev_apply`.  Read a draw too early it
+ * is the previous draw's fold -- and before the first bind on a unit it is the
+ * shadow's zero, which multiplies every texture coordinate by nothing and
+ * samples one texel of the atlas for the whole primitive.  That is what the
+ * first G4 witness of this path looked like: the 3D characters correct and
+ * every 2D layer -- the sky, the logo's "4", the sprites -- flat or absent. */
+void gx_vprog_bind(const GxXfDesc* d) {
+#ifdef PORT_NO_SDL
+    (void)d;
+#else
+    VpKey key = pending_key;
+    VpVariant* v = pending_var;
+    int nl = pending_nl;
+    int i, u;
+    const GXChanCtrl* cc = &gx.chan[0];
+
+    if (!v) {
+        return;
+    }
     if (vp_bound != v->id) {
         vp_bound = v->id;
         vp_BindProgramARB(VP_VERTEX_PROGRAM_ARB, v->id);
@@ -774,7 +816,7 @@ int gx_vprog_draw(const GxXfDesc* d, int nverts) {
                  cc->amb.b / 255.0f, 1.0f);
         }
         for (i = 0; i < nl; i++) {
-            const GXLight* l = &gx.light[lightidx[i]];
+            const GXLight* l = &gx.light[pending_lightidx[i]];
             int lp = VPE_LIGHT + 3 * i;
             env4(lp + 0, l->pos[0], l->pos[1], l->pos[2], 1.0f);
             env4(lp + 1, l->color.r / 255.0f, l->color.g / 255.0f,
@@ -782,6 +824,7 @@ int gx_vprog_draw(const GxXfDesc* d, int nverts) {
             env4(lp + 2, l->k[0], l->k[1], l->k[2], 0.0f);
         }
     }
+    (void)nl;
     for (i = 0; i < d->ntexgen && i < GX_TEXCOORDS; i++) {
         const f32* tm = d->tg[i].mtx;
         int tp = VPE_TEXMTX + 3 * i;
@@ -818,12 +861,6 @@ int gx_vprog_draw(const GxXfDesc* d, int nverts) {
         }
     }
 
-    v->draws++;
-    v->verts += (unsigned)nverts;
-    stat_gpu_draws++;
-    stat_gpu_verts += (unsigned)nverts;
-    frame_gpu_draws++;
-    return 1;
 #endif
 }
 
