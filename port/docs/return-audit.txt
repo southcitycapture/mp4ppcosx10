@@ -1,0 +1,66 @@
+# Every function in the decomp that falls off the end of a non-void body.
+#
+# Metrowerks left the last value that happened to be in r3 there, and a
+# decomp that matches its output therefore has functions with no `return`
+# whose callers still read a useful number.  GCC 14 does not: it returns
+# whatever the last call left in r3, or a tail call's result.  The build
+# turns the diagnostic off (`GAME_WARN` is `-w ... -Wno-return-mismatch`),
+# so none of this is visible in a normal build.
+#
+# Produced 2026-09-17 (M12) by compiling every mirrored translation unit with
+# -Wreturn-type.  -fsyntax-only does NOT report this class: the diagnostic is
+# emitted by the CFG pass, so the audit has to be a real compile.
+#
+#   for f in port/build-ppc-darwin/gen/src/**/*.c; do
+#       powerpc-apple-darwin8-gcc <GAME_CFLAGS minus -w> -Wreturn-type -c -o /dev/null $f
+#   done
+#
+# One of these was a real, reproduced hang: mstory3Dll/result.c's fn_1_16924
+# (line 375 here) is the board-result prompt that no button could answer and
+# that stopped every soak from chaining a second board.  See PLAN.md 26.1 and
+# the patch in port/patches.txt.  The other 42 are unaudited: a caller that
+# ignores the value is harmless, a caller that tests it is a bug waiting.
+#
+src/REL/m404Dll/main.c:1433
+src/REL/m408Dll/stage.c:229
+src/REL/m411Dll/main.c:529
+src/REL/m411Dll/main.c:608
+src/REL/m411Dll/main.c:692
+src/REL/m418Dll/main.c:682
+src/REL/m418Dll/main.c:2347
+src/REL/m423Dll/main.c:4654
+src/REL/m424Dll/ball.c:629
+src/REL/m430Dll/player.c:1762
+src/REL/m430Dll/player.c:1930
+src/REL/m430Dll/player.c:2157
+src/REL/m435Dll/main.c:784
+src/REL/m435Dll/main.c:2477
+src/REL/m436Dll/main.c:1566
+src/REL/m436Dll/main.c:2804
+src/REL/m437Dll/main.c:2933
+src/REL/m439Dll/main.c:541
+src/REL/m439Dll/main.c:596
+src/REL/m440Dll/object.c:1077
+src/REL/m442Dll/main.c:1670
+src/REL/m442Dll/score.c:102
+src/REL/m450Dll/main.c:6253
+src/REL/m455Dll/main.c:740
+src/REL/m459dll/main.c:1683
+src/REL/m461Dll/main.c:2080
+src/REL/mgmodedll/mgmode.c:524
+src/REL/mgmodedll/mgmode.c:614
+src/REL/mgmodedll/mgmode.c:712
+src/REL/mgmodedll/mgmode.c:803
+src/REL/mstory3Dll/result.c:375
+src/REL/w02Dll/main.c:210
+src/REL/w02Dll/main.c:464
+src/REL/w02Dll/roulette.c:100
+src/REL/w02Dll/shuffleboard.c:102
+src/REL/w05Dll/main.c:415
+src/game/board/boo.c:306
+src/game/board/bowser.c:130
+src/game/board/char_wheel.c:106
+src/game/board/player.c:2952
+src/game/board/player.c:3063
+src/game/chrman.c:1714
+src/game/hsfman.c:1398

@@ -487,3 +487,31 @@ src/REL/m444dll/pinball.c	    fn_1_8180(1);\n    while (1) {\n        temp_r27 =
 # caller and the caller's caller for any HEAP_DVD allocation over a megabyte and
 # the owner names itself; `nm` on the binary turns the addresses into names.
 src/game/dvd.c	    if(mode == 1) {\n        buf = HuMemDirectMallocNum(heap, OSRoundUp32B(len), num);\n    } else {\n        buf = HuMemDirectMalloc(heap, OSRoundUp32B(len));\n    }	    if(heap == HEAP_DVD && len > 0x100000) {\n        OSReport("port> dvdheap: %d bytes mode %d num %x  caller %p  caller2 %p\\n",\n                 (int)len, (int)mode, (unsigned)num,\n                 __builtin_return_address(0), __builtin_return_address(1));\n    }\n    if(mode == 1) {\n        buf = HuMemDirectMallocNum(heap, OSRoundUp32B(len), num);\n    } else {\n        buf = HuMemDirectMalloc(heap, OSRoundUp32B(len));\n    }
+
+# ------------------------------------------------ REL/mstory3dll/result.c
+# The board-result screen that no button could answer (PLAN.md 25.9/25.10, 26.1).
+#
+# `fn_1_16924` is declared `s32` and has no `return` statement.  Metrowerks kept
+# `var_r31` in r3 and so returned it by accident; GCC 14 does not.  All three of
+# its exits leave something else there -- the START/MENU exit is compiled as a
+# *tail call* to `HuAudFXPlay(1)` (`b _HuAudFXPlay`), the A exit leaves
+# `fn_1_1834`'s window id, and the timeout exit leaves whatever `fn_1_938` left.
+# So `fn_1_17DC0`'s `if (fn_1_16924() != 0) break;` tests a number that has
+# nothing to do with which button was pressed.
+#
+# That is what stalls every soak at the end of a board.  In a `--com4` run
+# `fn_1_373C` (main.c:794) walks the four `GWPlayerCfg` entries looking for one
+# that is not a COM, finds none, and returns -1; `lbl_1_bss_1A0C.unk14` is
+# therefore -1, the whole `HuPadBtnDown` branch of `fn_1_16924` is dead, and the
+# only live exit is the 300-frame timeout -- which sets `var_r31 = 1`, skips the
+# detail-page block, and returns garbage.  The caller reads the garbage as 0,
+# calls `fn_1_16AD4` (the detail page, which waits on B with no timeout), and the
+# pair ping-pongs for ever.  Measured on the live process: `GWPlayerCfg[0..3]`
+# `.iscom` all 1, `GWSystem.party` 1.
+#
+# Returning `var_r31` is what the code plainly means and what the console did:
+# 0 = A, open the detail page; 1 = START or the five-second timeout, leave.  With
+# it the all-COM case advances by itself after five seconds and needs no press at
+# all, which is `port/src/debug/selfplay.c`'s own rule rather than an exception
+# to it.
+src/REL/mstory3Dll/result.c	        lbl_1_bss_1A0C.unk10 = fn_1_1834(-1, 1);\n    }\n}	        lbl_1_bss_1A0C.unk10 = fn_1_1834(-1, 1);\n    }\n    return var_r31;\n}
