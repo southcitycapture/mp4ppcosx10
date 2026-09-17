@@ -7254,3 +7254,173 @@ is one overlay event with a five-minute reproduction attached. See §25.10.
 5. §24.6 items 3 (snapshot compression), 4 (the 159 bytes), 5 (the end-of-game
    crash, still unreproduced) and 6 (the 0.8% retrace drift) were **not**
    touched by M11.
+
+## 26. M12 log — the prompt that was never a prompt, and a lab that went dark *(2026-09-17)*
+
+M12 was handed four items. The first is **done and its root cause is a good
+one**: the board-result screen that has stopped every soak since M10 was never
+waiting for a button at all, and the reason it looked like one is a whole class
+of decomp bug that this build has been carrying silently in 43 places.
+
+The other three did not run. Forty minutes in, `littlejelly` — the Tailscale
+jump host that is the only route from the office to the G4 — expired its node
+key (`tailscale ping littlejelly-macbookpro` → *peer's node key has expired*),
+and with `accept-routes` off since §g4-office-lan-collision the G4 has no other
+path: this Mac sits on the office 192.168.0.0/24, where `192.168.0.200` is a
+stranger's machine that refuses port 22 (g4-witness §0 says to stop there, and
+this session stopped there). Nothing below is a measurement taken on a
+MacBook: §0's rule about that stands, and no number in this section comes from
+anywhere but the G4 before it went dark.
+
+### 26.1 `mstory3dll` event 1: nothing was ever going to press anything
+
+§25.9 read the stall as a prompt whose button the harness had not found yet,
+and spent its rotation looking for the button. There is no button. Two facts,
+and both were read out of the live stalled process rather than reasoned:
+
+* **`fn_1_373C` returns −1 in every `--com4` run.** `mstory3dll/main.c:794`
+  walks `GWPlayerCfg[0..3]` looking for a player that is *not* a COM and
+  returns −1 when there is none. `sudo mp4peek PID words 0x1142c0 10` at the
+  stall: all four `.iscom` are 1. So `lbl_1_bss_1A0C.unk14` is −1, and in
+  `fn_1_16924` (`result.c:327`) the whole
+  `if (lbl_1_bss_1A0C.unk14 != -1) { …HuPadBtnDown… }` branch is **dead code**.
+  The 24 presses §25.9 counted could not have been read by that function under
+  any circumstances. §25.9 explicitly guessed the other way ("*guarded by
+  `unk14 == -1`, which is not the soak's case*"); it is exactly the soak's case.
+* **`fn_1_16924` has no `return` statement.** It is declared `s32`, it sets
+  `var_r31` to 0 or 1 to say which exit it took, and it never returns it.
+  Metrowerks kept `var_r31` in r3 and returned it by accident; GCC 14 does not.
+  `otool -tV` on `result.o` shows all three exits leaving something else there:
+
+  | exit | what GCC leaves in r3 |
+  |---|---|
+  | `PAD_BUTTON_MENU` (START) | a **tail call**: `b _HuAudFXPlay` at 0x4bf8 |
+  | `PAD_BUTTON_A` | `fn_1_1834(-1, 1)`'s window id, at 0x4ccc |
+  | the 300-frame timeout | whatever `fn_1_938` left, via `restGPRx` |
+
+So `fn_1_17DC0`'s `if (fn_1_16924() != 0) break;` tests a number with no
+relationship to which exit was taken. The only *live* exit is the timeout —
+five seconds, `var_r31 = 1`, "leave" — and the caller reads its junk as "stay",
+calls `fn_1_16AD4` (the detail page, which waits on B with no timeout of its
+own), and the two ping-pong for ever. That is the eleven-hour stall of §24.0,
+the four-minute stall of §25.9 and the 1,260-second `STUCK` line reproduced
+this session, all three.
+
+**The fix is one line** (`port/patches.txt`, `src/REL/mstory3Dll/result.c`):
+return `var_r31`. Then the all-COM case leaves the results screen by itself
+after five seconds and **needs no press at all**, which puts the screen back
+under `selfplay.c`'s own rule — park the state, do not press the button —
+instead of being the documented exception to it. `GWSystem.party` is 1 in the
+soak (`mp4peek PID words 0x114300`: byte 0 = 0x80, and `party` is bit 0 of a
+big-endian bitfield), so `fn_1_17570` takes the party branch to `fn_1_1712C`,
+which waits on nothing at all when `SLSaveFlagGet()` is 0 and on no *input*
+when it is 1, and then `omOvlReturnEx(1, 1)` hands the next board back to the
+caller overlay.
+
+**Reproduction, for the next agent**: `--soak --turns 3 --com4 --rtc dolphin
+--freshcard --nodraw --turbo --status --ovllog` reaches it in about seven
+minutes at ~95 fps; the `--nodraw` log of the stalled run is
+`port/docs/logs/m12-event1-stall.log` (`STUCK: frame 123903, 1260 s with no
+progress … mstory3dll (overlay 78, event 1)`).
+
+**Witness status: the fix is built, installed on the G4 and running, and the
+two-board witness was not seen.** The patched build went out at 11:47 and the
+`--soak --turns 3` run was launched; the lab went dark during board 1, at
+frame ≈6,600 of ≈94,000. The run is still going on the G4 unattended. What is
+proven is the diagnosis, which is static and live-state evidence rather than an
+outcome; what is not proven is the outcome. **The first thing the next session
+does is read `~/isle-log.txt` on the G4 and look for a second `board 0 turn
+1/3` after a `mstory3dll` → `omOvlReturnEx`.**
+
+### 26.2 The class: 43 functions that fall off the end
+
+`fn_1_16924` is not special, it is just the one that was standing in the way.
+The game sources build with `GAME_WARN := -w -Wno-return-mismatch …` — every
+Metrowerks-ism the decomp needs, switched off wholesale — so this diagnostic
+has never been seen in this project. Turned back on for one pass:
+
+**43 non-void functions in the decomp have no `return` on at least one path
+out.** The list is `port/docs/return-audit.txt`, with the command that made it.
+One detail worth keeping: **`-fsyntax-only` does not report them.** "control
+reaches end of non-void function" is emitted by the CFG pass, so the audit has
+to be a real compile; the first attempt at it came back with zero hits and was
+wrong.
+
+36 are in minigame and board REL modules, 7 in `src/game`. Of those 7, the
+callers say which ones matter:
+
+| function | callers | verdict |
+|---|---|---|
+| `MegaPlayerPassFunc` (`board/player.c:2842`) | `player.c:934`, **`== 0`** | **a real bug.** Both early-outs `return 0`; the *successful* mega-squish falls off the end, so the caller cannot tell "I squished someone" from "there was nobody to squish". |
+| `CharNpcDustSet` (`chrman.c:1700`) | `m459dll/main.c:635-636`, `present/common.c:61-62`, all **storing the result** | **a real bug.** The stored value is a handle the module keeps; GCC hands it `EffectInit()`'s leftover. What the handle is meant to *be* is not obvious from the body, so this one needs reading before it is patched. |
+| `BoardBooStealTypeSet`, `BoardCharWheelInit`, `BoardBowserExec` | every caller discards the value | harmless today. `BoardBooStealTypeSet`'s `return 0` early-out is meaningful and nobody reads it. |
+| `Hu3DLightCreateV` | `inline`, both callers discard | harmless. |
+| `MegaExecJump` | only `MegaPlayerPassFunc`, which tail-returns it | folded into the first row. |
+
+Neither of the two real ones is patched here. They are game-behaviour changes,
+game-behaviour changes go through `patches.txt`, and `patches.txt` entries get
+witnessed on the G4 before they ship — which is precisely what this session ran
+out of. They are named so the next one starts at the answer.
+
+### 26.3 What M12 did not do, and why
+
+* **Item 2, the re-profile and the next lever.** Not started. §0 rule 3 makes
+  the profile the thing that *chooses* the lever, so there was nothing
+  legitimate to implement without it: picking per-draw state caching or a VBO
+  path by argument would have been the guess §22.8 was careful not to make.
+  The three candidates are unchanged and the runs are one command each once
+  the lab is back (`g4_sampler.sh` on the M11 build at the title, character
+  select, board, `m432dll` and `m427dll` via `--minigame NAME --ffto 10700`).
+  One offline observation to start from, which the profile should confirm or
+  kill: `draw_run` calls `gx_tev_apply` **every draw**, and that walks all
+  `gl13_max_tex_units` units through two `emit_channel`s of up to ten
+  `glc_texenv*` calls each — on the order of a hundred shadowed compares per
+  draw, ~930 draws a frame. The shadow makes each one cheap; the question the
+  profile answers is whether a hundred cheap things beat one hash.
+* **Item 3, the eyes.** Not started, and **the screenshot the item refers to is
+  not in the uploads directory.** `~/.claude/uploads/cc77a0ac-…/` holds four
+  images: a MacBookPro8,1 kernel panic (`AppleIntelCPUPowerManagement`,
+  16 Sep — that is the `mbp` second bench of §0, and it is down), a terminal
+  screenshot of the `/work/mp4` symlink, a usage screen, and a Snowboard Kids
+  frame. None is a Mario Party board. So the symptom on record is the sentence
+  in the work list — Mario's and Luigi's eyes as magenta/black blotches on the
+  board — and nothing was confirmed against it.
+
+  What is known offline and is worth the next session's first ten minutes:
+  **the board eyes are not §21.5's bug.** §21.5 is Yoshi's *portrait* in the
+  2D character-select grid, one texture in one place, and it is still open.
+  The board eyes are 3D, and the mechanism is `EyeBmpUpdate`
+  (`src/game/chrman.c:1145`): it finds the model attributes whose bitmap name
+  matches `charEyeBmpNameTbl[charNo * 8 + i * 2]` — Mario is `s3c000m*_eyes`,
+  Luigi `S3c001m*_eye` — and zeroes their `HU3DATTRANIM` `trans3D`/`rot`, i.e.
+  the eyes are an *attribute animation sliding a UV inside an eye atlas*. A
+  blink that lands off its cell is exactly "blotches", and it is a texgen /
+  attribute-animation question before it is a TEV one. Two things to rule out
+  before reaching for §3.9: that this is not an M11 regression (the vertex
+  program bypasses the fixed-function `GL_TEXTURE` matrix — but a grep says
+  that matrix only ever carries `gx_tex.c`'s NPOT fold, which §25.2 hands to
+  the program, so this route is probably clear), and what `--drawlog-at` on a
+  board frame actually says the eye stage is. The two-konst stage is still
+  2.28M hits a walk and still the last TEV degradation; it is just not yet
+  established that it is *this*.
+* **Item 4** (m444 chute physics, m453's HEAP_DVD) was conditional on budget
+  and there was none.
+
+### 26.4 What M13 needs
+
+1. **Read the G4's log.** The patched build has been running `--soak --turns 3
+   --com4 --rtc dolphin --freshcard --nodraw --turbo --status --ovllog` since
+   11:47 on 2026-09-17. Either it chained a second board or it did not, and
+   the answer is in `~/isle-log.txt` before anything else is launched.
+2. **The lab.** `littlejelly`'s Tailscale node key has expired and only the
+   user can re-authenticate it. Until then there is no route to the G4 from
+   anywhere but the house, and `192.168.0.200` from the office is somebody
+   else's machine. Worth asking whether the G4 should get its own Tailscale
+   node rather than depending on a jump host that can expire.
+3. **Items 2, 3 and 4 of M12's list, unchanged**, plus §26.2's two real
+   missing-return bugs (`MegaPlayerPassFunc`, `CharNpcDustSet`) and a decision
+   about the other 41.
+4. **The `mbp` bench is down** — a kernel panic in
+   `AppleIntelCPUPowerManagement` on a MacBookPro8,1, photographed 16 Sep. §0's
+   second bench is not available until someone restarts it.
+5. Everything §25.10 items 2–5 listed and M12 did not reach.
