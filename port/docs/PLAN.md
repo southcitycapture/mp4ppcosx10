@@ -7317,6 +7317,15 @@ which waits on nothing at all when `SLSaveFlagGet()` is 0 and on no *input*
 when it is 1, and then `omOvlReturnEx(1, 1)` hands the next board back to the
 caller overlay.
 
+**And the patched build is verified at the instruction level**, which is worth
+having when the run that would have shown it was cut off. `otool -tV` on the
+rebuilt `result.o`: the START exit is no longer a tail call (`bl _HuAudFXPlay`
+then `li r3,0x1`), the timeout exit branches into the same `li r3,0x1`, and the
+A exit ends `li r3,0` (otool prints the literal zero as `_fn_1_1DE4C`, the
+file-local symbol that happens to sit at offset 0 — the same cosmetic
+mis-symbolisation it makes of `WipeStatGet() == 0` two lines up). All three
+exits now return `var_r31`.
+
 **Reproduction, for the next agent**: `--soak --turns 3 --com4 --rtc dolphin
 --freshcard --nodraw --turbo --status --ovllog` reaches it in about seven
 minutes at ~95 fps; the `--nodraw` log of the stalled run is
