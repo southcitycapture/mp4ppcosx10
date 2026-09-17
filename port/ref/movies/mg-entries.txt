@@ -1,0 +1,44 @@
+# mg-entries -- boot, all four players CPU, and a different minigame forced in
+# each window of GlobalCounter, so one board harvests several entry frames.
+#
+# Only minigames whose mgInfoTbl `type` takes park_minigame()'s DEFAULT team
+# split (group = player index) are in this run: types 0, 4 and 5.  The 1-vs-3
+# and 2-vs-2 sets need a different group assignment and get their own run --
+# folding all three into one script would triple the Gecko list, and a list
+# that overflows Dolphin's code region is SILENTLY not installed.
+
+at 10 320 START
+at 380 6 START
+at 430 6 START
+at 480 6 START
+every 64 4 560 A
+
+# --com4
+poke 8018FC10 2 0
+poke 8018FC12 2 0
+poke 8018FC16 2 0
+poke 8018FC18 2 1
+poke 8018FC1A 2 1
+poke 8018FC1C 2 1
+poke 8018FC20 2 1
+poke 8018FC22 2 1
+poke 8018FC24 2 2
+poke 8018FC26 2 2
+poke 8018FC2A 2 2
+poke 8018FC2C 2 1
+poke 8018FC2E 2 3
+poke 8018FC30 2 3
+poke 8018FC34 2 3
+poke 8018FC36 2 1
+
+# GWSystem.mg_next, one value per 6,000-frame window.  A window that does not
+# contain a minigame launch is simply skipped; a window that contains two deals
+# the same one twice.
+poke 8018FD2C 2 4   9000  15999   # m405, type 0
+poke 8018FD2C 2 7   16000 21999   # m408, type 0
+poke 8018FD2C 2 9   22000 27999   # m410, type 0
+poke 8018FD2C 2 11  28000 33999   # m412, type 0
+poke 8018FD2C 2 42  34000 39999   # m443, type 0
+poke 8018FD2C 2 3   40000 45999   # m404, type 4
+poke 8018FD2C 2 38  46000 51999   # m439, type 4
+poke 8018FD2C 2 40  52000 57999   # m441, type 4

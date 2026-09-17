@@ -31,6 +31,21 @@ Script syntax -- one directive per line, '#' starts a comment:
                                            #   frames into the period
     mark <frame> <label>                   # emit a comment; also written to .marks
 
+    poke <addr> <size> <value> [from] [until]
+                                           # write <value> (hex or decimal) of
+                                           #   <size> bytes (1/2/4) to absolute
+                                           #   address <addr> every frame, optionally
+                                           #   only while <from> <= GlobalCounter
+                                           #   <= <until>.  This is how the rig
+                                           #   mirrors the port's own self-play
+                                           #   harness (port/src/debug/selfplay.c):
+                                           #   --com4 is four pokes of
+                                           #   GWPlayerCfg[i].iscom, --minigame is
+                                           #   one poke of GWSystem.mg_next.  A
+                                           #   Gecko write runs at the VI hook, i.e.
+                                           #   exactly where port_selfplay_tick()
+                                           #   parks the same value.
+
 `every` exists because the code list has to fit in Dolphin's Gecko region.  The
 handler is injected at 0x80001800 and the codes live behind it in the same
 few-kilobyte window; a list that does not fit is **silently not installed**, and
@@ -116,6 +131,33 @@ def every_block(period, hold, first, writes, phase=0, until=None):
     return out
 
 
+def poke_block(addr, size, value, first=None, until=None):
+    """An unconditional (or GlobalCounter-windowed) write to an absolute address.
+
+    The pad directives above all go through `block()`, which is a *window* by
+    construction.  A poke usually wants to be permanent -- `GWPlayerCfg[i].iscom`
+    has to stay 1 for the whole run, exactly as the port's park_players() rewrites
+    it every retrace -- so the conditionals are optional here."""
+    if size not in (1, 2, 4):
+        raise ValueError('poke: size must be 1, 2 or 4')
+    if value >= (1 << (8 * size)):
+        raise ValueError('poke: value does not fit in %d byte(s)' % size)
+    out = []
+    if first is not None:
+        out.append(f'24{off(GLOBAL_COUNTER):06X} {first - 1:08X}')
+    if until is not None:
+        out.append(f'26{off(GLOBAL_COUNTER):06X} {until + 1:08X}')
+    if size == 1:
+        out.append(f'00{off(addr):06X} 0000{value:02X}')
+    elif size == 2:
+        out.append(f'02{off(addr):06X} 0000{value:04X}')
+    else:
+        out.append(f'04{off(addr):06X} {value:08X}')
+    if first is not None or until is not None:
+        out.append('E0000000 80008000')
+    return out
+
+
 def pad_writes(what):
     writes = []
     if what.lower().startswith('dstk:'):
@@ -144,6 +186,14 @@ def compile_script(path):
                 if p[0].lower() == 'mark':
                     marks.append((int(p[1]), ' '.join(p[2:])))
                     lines.append(f'* frame {int(p[1])}: {" ".join(p[2:])}')
+                    continue
+                if p[0].lower() == 'poke':
+                    addr = int(p[1], 16)
+                    size = int(p[2])
+                    value = int(p[3], 0)
+                    first = int(p[4]) if len(p) > 4 else None
+                    until = int(p[5]) if len(p) > 5 else None
+                    lines += poke_block(addr, size, value, first, until)
                     continue
                 if p[0].lower() == 'every':
                     period, hold, first, what = int(p[1]), int(p[2]), int(p[3]), p[4]

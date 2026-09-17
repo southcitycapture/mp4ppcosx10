@@ -7433,3 +7433,552 @@ out of. They are named so the next one starts at the answer.
    `AppleIntelCPUPowerManagement` on a MacBookPro8,1, photographed 16 Sep. §0's
    second bench is not available until someone restarts it.
 5. Everything §25.10 items 2–5 listed and M12 did not reach.
+
+---
+
+## 27. M12b log (offline) — the console's ball, a reference rig that can read memory, and the m453 arithmetic closed *(2026-09-17)*
+
+M12b is the offline half of M12's list, run entirely on this Mac. The lab was
+still dark — `littlejelly`'s Tailscale node key is expired and only the user can
+re-authenticate it (§26.4 item 2) — so nothing here touched the G4, `g4-jump`
+or `mbp`, and no number below comes from hardware. Everything is either Dolphin
+on this Mac or a static read of the tree and the disc.
+
+Three things changed about what the reference rig can do, and they are worth
+stating before the results that depend on them.
+
+1. **MemoryWatcher is enabled in this Dolphin build.** `reference-dolphin.md` §7
+   listed it as "compiled path present… needs verification". It works. Create
+   `<userdir>/MemoryWatcher/Locations.txt`, bind a `SOCK_DGRAM` listener at
+   `<userdir>/MemoryWatcher/MemoryWatcher` before launch, and Dolphin pushes one
+   datagram per frame containing every watched location that changed, as
+   `"<location>\n<value>\n"` repeated and NUL-terminated. **The rig can now read
+   game memory during a capture**, which is what made §27.1 possible at all.
+   Two things the upstream description does not mention and that cost time here:
+   * the value is hex **with thousands separators** — `ff,fff,fff`, not
+     `ffffffff`. Strip the commas before parsing or every read above 0xFFF
+     silently fails.
+   * because `GlobalCounter` changes every frame and everything that changed
+     that frame arrives in **one** datagram, the frame number travels with the
+     data. No clock, no correlation step, no drift.
+2. **Pointer chains work, so a REL's `.bss` is readable without knowing where it
+   loaded.** A `Locations.txt` line is a whitespace-separated chain of hex
+   offsets, chased with a `Read32` at each step. The game's own module table is
+   `omDLLinfoTbl` at `0x801901E0` (20 × `omDllData *`), and `omDllData` is
+   `{char *name; OSModuleHeader *module; void *bss; s32 ret;}`
+   (`include/game/object.h:65`), so
+   ```
+   801901E0 8 1894        # omDLLinfoTbl[0] -> .bss -> lbl_1_bss_1894
+   ```
+   reads a REL bss object directly. Which of the 20 slots a module lands in is
+   not fixed, so the rig watches all 20 and filters on `omcurovl` afterwards.
+3. **`mkgecko.py` can now write arbitrary memory, not just the pad.** A new
+   `poke <addr> <size> <value> [from] [until]` directive emits a plain Gecko
+   `00`/`02`/`04` write, optionally inside a `GlobalCounter` window. That is
+   what makes a Dolphin run reproduce the port's own self-play harness: `--com4`
+   is four pokes of `GWPlayerCfg[i].iscom`, and `--minigame` is one poke of
+   `GWSystem.mg_next`. A Gecko write lands at the VI hook, which is the same
+   point in the frame where `port_selfplay_tick()` parks the same value
+   (`port/src/debug/selfplay.c:669`), so the two rigs are doing the *same
+   thing*, not an analogue of it.
+
+   **This is the answer to `key-frames.md` §C**, which said a board and a
+   minigame were out of reach because each attempt costs seven blind minutes.
+   They are not: force the players to CPU and force the minigame, and a board
+   deals exactly the module you asked for, over and over, in one run.
+
+### 27.1 The console's ball leaves the chute on the 208th frame of the module, and the numbers are recorded
+
+**Yes.** §23.2 asked whether the console fires the ball up the chute, and it
+does. The whole trajectory is now on record, frame by frame, read out of the
+emulator's RAM rather than inferred from a picture.
+
+**The rig.** `port/ref/movies/m444-drop.txt` — `board-start.txt`'s walk (START
+through the boot, then A four frames out of every sixty-four) plus the two pokes
+that make Dolphin do what the port's harness does:
+
+```
+poke 8018FC18 2 1        # GWPlayerCfg[0].iscom = 1   (--com4, x4)
+poke 8018FD2C 2 43 9000  # GWSystem.mg_next = 43       (--minigame m444)
+```
+
+The START metronome of `board-start.txt` is **dropped**: with four CPU players
+instDll auto-starts (`src/REL/instDll/main.c:294`) and a stray START opens the
+board pause menu instead, which is the trap `board-start-com4.play`'s header
+describes. Exactly the commands:
+
+```sh
+export MP4_USERDIR=/path/to/scratch/dolphin-user
+cp -R port/ref/dolphin-user "$MP4_USERDIR"
+mkdir -p "$MP4_USERDIR/GameSettings" "$MP4_USERDIR/MemoryWatcher" "$MP4_USERDIR/GC"
+rm -f "$MP4_USERDIR/GC"/*.raw                    # a virgin memory card, every run
+
+port/ref/tools/mkgecko.py port/ref/movies/m444-drop.txt \
+    "$MP4_USERDIR/GameSettings/GMPE01.ini" --name RefM444Drop
+
+# every omDLLinfoTbl slot, because which one m444dll lands in is not fixed
+python3 - "$MP4_USERDIR" <<'PY'
+import sys
+L = ["801D3A54", "801D3CE0"]                     # GlobalCounter, omcurovl
+for i in range(20):                              # omDLLinfoTbl[i] -> .bss -> off
+    for off in ("1888","188C","1890","1894","1898","189C"):
+        L.append(f"{0x801901E0 + 4*i:08X} 8 {off}")
+open(sys.argv[1] + "/MemoryWatcher/Locations.txt","w").write("\n".join(L) + "\n")
+PY
+
+# the listener MUST be bound before Dolphin starts
+port/ref/tools/mwball.py "$MP4_USERDIR/MemoryWatcher/MemoryWatcher" ball.csv 1700 &
+LC_ALL=C.UTF-8 /Applications/Dolphin.app/Contents/MacOS/Dolphin -u "$MP4_USERDIR" -b \
+  -e "$MP4_ISO" -v Vulkan -C Dolphin.Core.EnableCheats=True \
+  -C Dolphin.Movie.DumpFrames=False \
+  -C 'Dolphin.DSP.Backend=No Audio Output' -C Dolphin.DSP.Volume=0 -C Dolphin.DSP.Mute=True
+```
+
+`DumpFrames=False` makes the run about **three and a half times faster** (≈70
+emulated fps against ≈19 with the PNG dump on), which is why the numbers and
+the pictures came out of two runs rather than one. The socket path must be
+short: `sun_path` is 104 bytes and a session scratchpad path overflows it.
+
+**The whole first drop.** `port/ref/m444-ball-console.csv` is the committed
+table — change rows only, so a gap means the six words were bit-identical over
+that span. `frame` is the game's own `GlobalCounter`.
+
+| frame | vel (x, y) | pos (x, y) | what |
+|---|---|---|---|
+| 12022–12229 | `0, −30` | `128, −100` | **208 frames of hold.** `fn_1_861C` (`pinball.c:90-94`) has set the start state and the module is still in its intro. Bit-identical throughout. |
+| 12230 | `0, −18.300` | `128, −118.600` | **launch.** The velocity has been *re-set* by `pinball.c:357`, `lbl_1_bss_1888.y = (-15 - temp_r24) + 0.1*frandmod(10)` with `temp_r24 = lbl_1_bss_788[arg0] / 4` — the plunger charge. Here it lands on **−18.6**, and the frame's own integration has already spent it. |
+| 12231–12248 | `0, −18.0 … −12.9` | `128, −136.9 … −402.1` | **straight up the chute.** `x` is exactly `128.000` for nineteen frames; `y` steps by the velocity and the velocity gains exactly `+0.3` a frame, which is `fn_1_B1E8`'s gravity. |
+| 12249–12264 | `−6.556 … −9.567`, `−10.2 … −0.389` | `123.4 … −8.79`, `−413.8 … −480.9` | **the bowl.** `x` picks up its first non-zero component at the chute's mouth and the ball runs round the radius-495 arc; `y` bottoms out at **−480.918**. |
+| 12265–12281 | `−9.1 … −2.3`, `+1.55 … +10.6` | `−18.3 … −130.3`, `−480.3 … −389.4` | up the far side of the bowl. |
+| 12282–12448 | `≈0, +10 … ` | `≈ −130 … −118.75` | down the left-hand side of the board towards the bins. |
+| **12449** | `0, 0` | **`−118.750, −70`** | **landed.** 219 frames of flight. `−70` is the bins' row; the module's bounds are `(−145,−495)`–`(145,−55)` (§23.1). |
+| 12449–12744 | `0, 0` | `−118.750, −70` | 296 frames of result and dialogue, then the next plunger. |
+
+Two more drops follow in the same visit — launch at **12998**, landing at 13253
+on `(−25.050, −70)`; launch at **13830**, landing at 13999 on `(−125, −70)` —
+and the board dealt m444 twice more in the same run, at 21381 and 28761, each
+with its own three drops. All of it is in the CSV.
+
+**What this says about the port, precisely.**
+
+| | console (this capture) | port (§23.1, read at the stall) |
+|---|---|---|
+| position at rest | `128, −100` (the module's own start state) | `128, −98.5933228` |
+| velocity | `0, −18.6` at launch, then `+0.3`/frame | `0, +0.353727371` |
+| x during the chute | `128.000` for 19 frames, then leaves | `128.0` for ever |
+
+The port's ball is **1.41 above where the module put it** and moving *the wrong
+way* at about one frame's worth of gravity. `−98.59` is `−85 − 13.59`, and
+13.6 is the wall-push radius (§23.1), so the port's ball is resting *against*
+segment 10 — the cap at the top of the chute — with a velocity that is nothing
+but gravity. It is not a ball that was launched and stalled; it is a ball that
+never got, or immediately lost, the `−18.6`.
+
+That is a much narrower question than "the physics diverges", and it is one
+line of instrumentation on the G4: **print `lbl_1_bss_1888` immediately after
+`pinball.c:357` and again on the first iteration of `fn_1_8DD0`.** If the −18.6
+is there at :357 and gone one frame later, the loss is in `fn_1_B1E8`'s first
+collision response against segment 10; if it is not there at :357, the plunger
+charge `lbl_1_bss_788[arg0]` never accumulated and the bug is upstream in
+`fn_1_9CAC`/the plunger, not in the physics at all. The console's own
+`temp_r24` here is 4 (`−15 − 4 + 0.4 = −18.6`), so the port has a number to
+compare against.
+
+The §23.2 watchdog stays: it is still the right thing to have, it is still not
+a fix, and nothing above changes what it does.
+
+**The frames.** `port/ref/frames/m444-drop-*.png` — 81 frames, every 2nd, from
+a frame-dumping capture of the same schedule (`framedump_11060` … `11220`,
+320×264), plus `m444-entry.png`. They show the board, the four bins along the
+bottom and the plunger; the ball is small at this scale and the launch frame
+itself is **not** isolated in them, for a reason that took most of the session
+to establish and that matters more than the pictures do — see §27.2.
+
+### 27.2 Reference frames, and the counter that is not a frame counter
+
+The schedules reach a board and a minigame now, so `movies/key-frames.md` §C —
+"*Not captured — board and minigame*", seven blind minutes per attempt — is
+obsolete. `port/ref/movies/mg-entries.txt` forces a different minigame in each
+window of `GlobalCounter`:
+
+```
+poke 8018FD2C 2 4   9000  15999   # m405, type 0
+poke 8018FD2C 2 7   16000 21999   # m408
+...
+```
+
+Only minigames whose `mgInfoTbl.type` takes `park_minigame()`'s default team
+split (types 0, 4, 5 → `group = player index`) are in one script; 1-vs-3 and
+2-vs-2 need a different `GWPlayerCfg[i].group` and get their own run, because
+folding all three into one list would triple it, and **a Gecko list that
+overflows Dolphin's code region is silently not installed** (the run then looks
+exactly like a run with no codes: the attract loop).
+
+**Committed this session** (all 320×264, from the captures named):
+
+| file | capture | framedump index | what |
+|---|---|---|---|
+| `title.png` | m444-drop schedule | 300 | title, "PRESS START" |
+| `fileselect.png` | " | 400 | SELECT A FILE |
+| `charselect.png` | " | 2400 | character select, "Select the character…" |
+| `charselect-chosen.png` | " | 2700 | four `COM` + `EASY` badges — the `--com4` cast |
+| `boardsettings.png` | " | 3600 | Teams / Turns 20 / Mini-Games ALL / Bonus ON / Handicap |
+| `boardmap.png` | " | 4400 | "Toad's Midway Madness" board map |
+| `board.png` | " | 8000 | board, turn 1 |
+| `m444-entry.png` | " | 10990 | Reversal of Fortune, board framed |
+| `m444-drop-11060…11220.png` | " | 11060–11220 step 2 | the drop window |
+| `m405-entry.png` | mg-entries schedule | 10400 | **first playable frame** — the `START!` banner, clock at `0'00"00` |
+| `unattributed-a20600.png` | " | 20600 | a minigame the capture reached and this session did not attribute |
+| `unattributed-a31400.png` | " | 31400 | likewise |
+
+**The reason there are eleven of these and not twenty-three**, and the reason
+two are called "unattributed", is a property of this Dolphin build that the rig
+did not know about and that invalidates the obvious way of doing this:
+
+1. **`framedump_N.png` is not a frame clock.** `reference-dolphin.md` §6 says
+   the three counters "line up 1:1 in the normal case". They do not. Measured
+   in **one** run with the PNG dump and MemoryWatcher both on, stopped at the
+   same instant: **`framedump` 7,177, `GlobalCounter` 7,533, `VCounter` 8,831.**
+   `GlobalCounter` lagging `VCounter` by 1,298 is the game's own documented
+   behaviour (`src/game/main.c:87`, the DVD/soft-reset `continue`). The PNG
+   count lagging *both* is not: with `SkipDuplicateXFBs = False` there should be
+   one file per presented frame. Over a 40,000-frame capture the deficit is
+   several per cent and it is not linear, so a PNG index cannot be converted to
+   a `GlobalCounter` after the fact.
+2. **A dumping run and a non-dumping run of the same schedule diverge.** Two
+   captures of `mg-entries.txt`, identical in every other respect, dealt
+   different minigames: the dumping one played m405, m408, m412, m443; the
+   non-dumping one played m405, m408, m410, m443, m404, m439. The input
+   schedule alone does not determine the run.
+
+Together those mean the numbers (§27.1) and the pictures have to come out of
+**one** run if they are to be compared, and that a reference frame cannot be
+named by a PNG index and expected to mean anything to the port's `--ffto`.
+
+**The fix, for the next session, and it is cheap.** Put the frame number *into
+the picture*: Gecko-poke a HUD field that is drawn every frame from
+`GlobalCounter`'s low bits — `GWPlayer[0].coins` (`0x8018FC38 + 0x1C`) is drawn
+on the board HUD and on most minigame HUDs — and every PNG then carries the
+counter it was taken at. With that, one 40-minute dumping run per team-split
+group harvests an attributed entry frame for every minigame the roulette or the
+windows reach, with a `GlobalCounter` on each, and the `--ffto` comparison is a
+diff. Until that is done, **`omcurovl` + `GlobalCounter` from MemoryWatcher is
+the authoritative key and the PNG index is a filename**, which is how the table
+above should be read.
+
+### 27.3 Dolphin hit `OSPanic in "dvd.c" on line 75` — and the leak has a name
+
+Unplanned, and the most useful thing the session found. One of the reference
+captures stopped on the game's own `HEAP_DVD` exhaustion panic — **the same
+panic, in the same function, as the port's m453 crash of §22.7/§23.3** — on the
+retail disc, in an emulator, with no port code anywhere near it.
+
+**Which run, exactly.** `port/ref/movies/mg-entries.txt` (four CPU players by
+poke, `GWSystem.mg_next` poked to a different value in each 6,000-frame window),
+`Dolphin.Movie.DumpFrames=False`, MemoryWatcher on `GlobalCounter`/`omcurovl`,
+pinned reference user directory, fresh memory card. No savestate, no debugger.
+Module order to that point:
+
+```
+bootdll modeseldll mentdll w01dll instdll m405 resultdll w01dll instdll m408
+resultdll w01dll instdll m410 resultdll w01dll instdll m443 resultdll w01dll
+instdll m404 resultdll w01dll instdll m439 resultdll w01dll   <-- panic
+```
+
+**GlobalCounter at the panic: 54,871**, the frame `omcurovl` became `0x59`
+(`w01dll`). The failing read is `dvd.c: Memory Allocation Error (Length a5822)
+(mode 0)` — 677,922 bytes, which is **`data/bguest.bin` to the byte** (the disc
+FST says 677,922). The board was reloading its own guest directory.
+
+`HuMemHeapDump` at the failure, with every block resolved against the disc FST
+(block size = `OSRoundUp32B(len) + 32`):
+
+| block | size | tag | `Call` | file |
+|---|---:|---|---|---|
+| `81212cc0` | 1,256,384 | `ffffff00` | `0x80006c60` | **`data/m405.bin`** |
+| `81345880` | 2,541,664 | `ffffff00` | `0x80006c60` | **`data/m439.bin`** |
+| `815b20e0` | 1,438,688 | `ffffff00` | `0x80006c60` | `data/w01.bin` — the board's own |
+| `817114c0` | 530,432 | free | | |
+
+`0x80006c60` is `HuDvdDataFastReadAsync + 0x6C` — the untagged
+`HuMemDirectMalloc` on `HuDvdDataReadWait`'s `mode != 1` path, which is exactly
+the caller §23.3 recorded for the port's 2.9 MB block. **Two minigame directory
+images were still resident long after their minigames ended**, one of them five
+minigames earlier. 5,236,736 live of 5,767,168, and a 677,984-byte block would
+not fit by 147,552.
+
+**Why they leaked, and it is one line.** `src/REL/resultDll/main.c:102` and
+`:109`:
+
+```c
+    resultMgNo = GWSystem.mg_next;
+    ...
+    HuDataDirClose(mgInfoTbl[resultMgNo].data_dir);
+```
+
+instDll preloads `mgInfoTbl[instMgNo].data_dir` untagged and deliberately hands
+it over (§23.3); **resultDll is what frees it**, and it decides which directory
+to free by reading `GWSystem.mg_next` *at the moment its `ObjectSetup` runs*.
+`mg-entries.txt` moves `mg_next` on a `GlobalCounter` boundary, so a window that
+turns over between a minigame ending and its result screen starting makes
+resultDll close a directory that was never opened and leave the one that was.
+The two leaked blocks are m405 and m439, and both of their windows ended while
+their result screens were still coming up.
+
+**So this is (b), a different trigger — and it indicts the port's harness, not
+the port.** Three pieces of evidence, all from this session:
+
+* a run with `mg_next` poked to **one constant value** (43, m444) for its whole
+  length played m444 three times over 101,380 frames and **never panicked**;
+* a run with **no `mg_next` poke at all** (`port/ref/movies/mg-roulette.txt`,
+  four CPU players, the roulette deals) reached m456, m421, m427 and m431 with
+  `HEAP_DVD` still 3.1 MB free at frame 38,759;
+* only the **windowed** run panicked, and the two blocks it leaked are exactly
+  the two whose windows turned over at the wrong moment.
+
+**What the port must check.** `port/src/debug/selfplay.c`'s `--minigame a,b,c`
+advances `forced_mg` down the list per minigame (`forced_mg_at`), and
+`park_minigame()` writes `GWSystem.mg_next` **every retrace**. If the advance
+lands before resultDll's `ObjectSetup`, the port leaks a whole directory image
+per minigame by precisely this mechanism — and the soaks use lists. A
+single-minigame `--minigame m453` run does **not** have this problem, so it does
+not retire §23.3; but any list soak that ends in a `HEAP_DVD` panic should be
+suspected of it first. The cheap fix on the port side is to hold the advance
+until `omcurovl` has left `resultdll`, and the cheap check is to log
+`GWSystem.mg_next` at every `resultDll` entry.
+
+**And it is a real bug in the game, not only in the rig.** Any path that changes
+`GWSystem.mg_next` between a minigame's end and its result screen leaks a
+directory of up to 4 MB, untagged, until the console is reset. `resultMgNo`
+should come from the same latch instDll used (`instMgNo`), not from a global
+that anything may write. That belongs in the upstream draft if it can be shown
+to be reachable without a cheat device; this session has not shown that.
+
+### 27.4 m453's `HEAP_DVD`, read statically — and the disc settles three of §23.3's open questions
+
+Item 4 of the list: a static read of what m453dll asks of `HEAP_DVD` and the
+main heap on entry, summed against the 5.5 MB heap, to bound where §23.3's
+"about 400 KB heavier than the console" could come from. It is bounded, and the
+premise turns out to be wrong in three places.
+
+**The module itself allocates almost nothing.** `src/REL/m453Dll/` is three
+files; its only direct allocations are `HuMemDirectMallocNum(HEAP_HEAP, …)` at
+`main.c:538` (0x14C), `main.c:681` (0xA4 × 4 players), `map.c:465` (0x54 × 5)
+and `score.c:51` (0x20) — **under a kilobyte, none of it in `HEAP_DVD`.**
+Everything else is file loads, and the routing is not negotiable:
+`Hu3DModelCreateFile` is `Hu3DModelCreate(HuDataSelHeapReadNum(id,
+HU_MEMNUM_OVL, HEAP_MODEL))` (`include/game/hu3d.h:202`), `esprite.c:68` is the
+same, and `HuDataReadNum` decodes into `HEAP_HEAP` (`data.c:327`).
+**`HEAP_DVD` only ever holds whole `data/*.bin` directory images**, allocated
+inside `HuDvdDataReadWait`, where the heap is **hard-coded at all five call
+sites** (`dvd.c:70, 92, 119, 133, 146`).
+
+**Candidate #2 of §23.3 — "a read the console routes to `HEAP_MODEL` which this
+port routes to `HEAP_DVD`" — does not exist.** Every heap-by-argument site
+(`data.c:333`, `data.c:368`, `data.c:598`, `armem.c:325`, `dvd.c:97`) was
+checked against the port: `grep -rn "Hu3DModelCreateFile" port/` is empty (no
+shadowing macro), and `HEAP_DVD` / `HEAP_MODEL` / `HuMemDirectMalloc` appear in
+`port/src/` exactly once, in a **comment** (`port/src/os/dll_load.c:506`).
+`port/patches.txt`'s allocation-path entries are cosmetic (`malloc.c`'s
+`mflr` → `__builtin_return_address(0)`, `memory.c`'s `(u32)` → `(uintptr_t)`,
+`armem.c`'s one parameter cast, and §23.3's own `OSReport`). `HeapSizeTbl` is
+untouched, and `port/src/dvd/dvd_fs.c:227-236` takes `length` straight from the
+FST with no rounding, header or padding. **There is no port-side inflation on
+this path.**
+
+**The disc closes the identification questions.** The FST of the reference image
+parses cleanly (363 entries, 357 files; `port/ref/tools/` does not ship the
+parser, it was a throwaway — the layout is the standard 12-byte entries at
+`fst_off` from disc header `0x424`):
+
+| file | bytes | |
+|---|---:|---|
+| `data/m450.bin` | **2,983,946** | exactly §23.3's `dvdheap: 2983946` block — identified from the disc, not inferred |
+| `data/m403.bin` | **1,370,450** | exactly the mode-1 block in the same trace |
+| `data/m453.bin` | **310** | a stub |
+| `data/yoshimdl1.bin` | **396,092** | `= 0x60B3C` — **exactly the failing allocation**, `Memory Allocation Error (Length 60b3c)` |
+| `data/mariomdl1.bin` | 382,208 | |
+| `data/peachmdl1.bin` | 492,902 | |
+| `data/luigimdl1.bin` | 362,686 | |
+
+So: `mgInfoTbl` giving `DLL_m453dll` a `data_dir` of `DATADIR_M450` is **not** a
+decomp transcription error — m453 has no directory of its own worth the name
+(310 bytes) and genuinely shares m450's, and the 2.9 MB preload is correct
+console behaviour. And **the block that panics is the Yoshi MDL1 directory**,
+one of the four character model directories `CharModelCreate(charNo, 4)` opens
+through `chrman.c:238-241` (`charDirTbl[charNo][1] | 1`, `HEAP_MODEL` →
+`HEAP_DVD`, held until `CharDataClose`). The four are the `--com4` cast:
+Mario 382,208 / Luigi 362,686 / Peach 492,902 / Yoshi 396,092 — and those are
+§22.7's "decoded files" of 382,240 / 362,720 / 492,960, block-rounded.
+
+**The arithmetic, and the honest number.** Everything m453 needs in `HEAP_DVD`
+at that moment, block-rounded:
+
+```
+  2,984,000   data/m450.bin      instDll's untagged preload
+  1,370,496   data/m403.bin      mode 1, HuDataDirReadNum
+  1,634,048   the four character MDL1 directories (incl. the one that fails)
+  ---------
+  5,988,544   against HEAP_DVD's 0x580000 = 5,767,168
+```
+
+over by **221,376 bytes**, which is the same number as the failing request minus
+the free space (396,128 − 174,752). §23.3's "~400 KB" was the *size of the read*,
+not the deficit; **the deficit is 216 KiB**, and there is exactly one block's
+worth of slack to find, not a diffuse overhead.
+
+**Which means the question changes shape.** Nothing in this path is the port
+allocating more than the console — every length comes off the disc. What the
+port may be doing is holding a directory the console has already let go, and
+there are now two specific candidates rather than a search:
+
+1. **The character MDL1 directories may already be open when m453 runs.**
+   `HuDataDirRead` (`data.c:113`) returns early when `HuDataReadChk(dataNum)`
+   finds the directory resident, and costs nothing. A console board has the four
+   characters on screen; if their MDL1 dirs survive into the minigame, m453's
+   `CharModelCreate` is free and 1.63 MB of the sum above never happens. If the
+   port closes them on the overlay change and the console does not, that is the
+   whole 216 KiB and more. **`HuDataReadChk` before each `CharModelCreate` is the
+   one-line probe.**
+2. **§23.3 is wrong about `score.c:73-74`**, in a way that matters. It says
+   "*that is its results code, long after the load that panics*". Those two lines
+   are the last statements of `fn_1_8F48` (`score.c:44-75`), which is called from
+   **`ObjectSetup`, `main.c:211`** — during setup, *before* the load that panics —
+   and they close `0x530000` and `0x610000` (`m453.bin`, `mgconst.bin`), **not**
+   `0x510000`. The preload is indeed never closed before the panic, but not for
+   the reason given.
+
+**And no new instrumentation is needed to attribute every block.**
+`HuDataDirReadNum` already prints `OSReport("data num %x\n", dataNum)`
+(`src/game/data.c:160`, and `"ARAM data num %x"` at `:147`), and
+`HuDvdDataReadWait` prints `Rest Memory %x` on every read (`dvd.c:48`). Neither
+line is in `port/docs/soak/m9b-m453-dvdheap.log.gz`, which is 775 lines and was
+filtered before it was saved; `port/src/os/os_report.c` filters nothing. **Keep
+the unfiltered log and the `dataNum` of every `HEAP_DVD` directory is already
+in it.**
+
+**One defect found in passing, and it is not this one.**
+`port/src/os/os_arena.c:240-244` declares `typedef struct Block { struct Block*
+next; u32 size; u32 used; }` — 12 bytes on PPC32 — and line 332 returns
+`(void*)(b + 1)`, against the file's own comment at :235-236 claiming "*32-byte
+granularity — the same alignment the console's OSAlloc guarantees and that
+HuMem's 32-byte rounding assumes*". The heap base is 32-aligned but every
+payload comes back at **12 mod 32**, so no HuMem heap, no DVD read destination
+and no ARQ MRAM address is ever 32-aligned. It costs no bytes, so it is not the
+overrun; it is latent for anything that asserts DMA alignment, and the fix is to
+pad `Block` to 32 or round the payload up.
+
+**Last loose end, now closed by the disc.** `mgInfoTbl` has three
+`DLL_m450dll` rows (`objsub.c:895, 931, 967`) and `DATADIR_M453` is used nowhere
+in the tree. With `m453.bin` at 310 bytes that is consistent and deliberate, not
+a bug: m452 and m454 do not exist, the rows are placeholders, and m453 really
+does live in m450's directory.
+
+### 27.5 The m453 panic is the console's, to the byte — §23.3's premise is dead
+
+§27.4 was written as a static bound on where a ~400 KB port-side overhead could
+hide. Then the rig was pointed at m453 directly, and there is no overhead to
+find: **the retail game does exactly the same thing, in the same function, with
+the same heap, at the same moment.**
+
+The probe is one edit of the §27.1 schedule — `port/ref/movies/m453-heap.txt`,
+which is `m444-drop.txt` with `poke 8018FD2C 2 52 9000` (mgInfoTbl index 52 =
+`DLL_m453dll`) instead of 43 — and it panics about twelve minutes from boot:
+
+```
+data num 530000     # m453.bin
+data num 220010     # m403.bin
+Rest Memory 158e40
+data num 5e0001     # mariomdl1.bin
+Rest Memory fb920
+data num 190001     # luigimdl1.bin
+Rest Memory a3040
+data num 6c0001     # peachmdl1.bin
+Rest Memory 2aaa0
+data num 890001     # yoshimdl1.bin
+HuMem>memory alloc error 00060b40(10000000): Call 80006af0
+dvd.c: Memory Allocation Error (Length 60b3c) (mode 1)
+```
+
+Side by side with the port's dump (§22.7, sizes as recorded there):
+
+| | port, on the G4 | Dolphin, retail disc |
+|---|---|---|
+| untagged preload | `002d8840` `ffffff00` | `002d8840` `ffffff00` `Call 80006c60` |
+| `m403.bin` | `0014e980` `10000000` | `0014e980` `10000000` `Call 80006af0` |
+| `mariomdl1` | `0005d520` `10000000` | `0005d520` `10000000` |
+| `peachmdl1` | `000785a0` `10000000` | `000785a0` `10000000` |
+| `luigimdl1` | `000588e0` `10000000` | `000588e0` `10000000` |
+| free | `0002aaa0` | `0002aaa0` |
+| totals | `MEM:00580000(00555560/0002aaa0)` | `MEM:00580000(00555560/0002aaa0)` |
+| failure | `Length 60b3c` **mode 1** | `Length 60b3c` **mode 1** |
+
+Every size, every tag, both totals and the failing length are identical. The
+only difference anywhere in the two dumps is the order of the Luigi and Peach
+blocks in the free list, which is allocation order, not size.
+
+**So:**
+
+* **The port is not 400 KB heavier than the console in `HEAP_DVD`.** It is not
+  one byte heavier. §23.3's closing paragraph — "*The port is about 400 KB
+  heavier in `HEAP_DVD` at this moment than the console can be, and M9c did not
+  find where*" — is **wrong, and the search it opened is closed.** M12's item 4
+  and §26.4's "items 2, 3 and 4 unchanged" can drop the `HEAP_DVD` hunt.
+* **Both of §27.4's candidates are eliminated by the same trace.** The four
+  character MDL1 directories are *re-read* inside m453 (`5e0001`, `190001`,
+  `6c0001`, `890001`, all mode 1) on the console as well as in the port, so they
+  are not inherited from the board; and there is no heap mis-routing to find,
+  because there is nothing to find.
+* **m453 with this cast is not playable on the retail disc.** Mario + Luigi +
+  Peach + Yoshi need 1,634,048 of MDL1 directories on top of a 2,984,000-byte
+  preload that instDll hands over and nothing frees and a 1,370,496-byte
+  `m403.bin`, and `HEAP_DVD` is 5,767,168. The deficit is **221,376 bytes**. A
+  lighter cast would fit; `port/ref/frames/charselect-chosen.png` is the cast
+  that does not.
+
+**Two caveats, stated plainly.** The rig parks `GWSystem.mg_next` at 52 for the
+whole run, so m453 was *forced*, not dealt — but unlike §27.3's leak, the value
+is **constant**, so resultDll's `mg_next` latch is consistent and the §27.3
+mechanism cannot be operating here; and the panic happens during m453's own
+setup, long before any result screen. And nothing here has run on the G4: this
+is Dolphin against the retail disc, which is the point, but it is not hardware.
+
+**What the G4 session does with this.** Nothing, about the heap. The right next
+move is to pick the cast — `--minigame m453` with a lighter four than
+Mario/Luigi/Peach/Yoshi — confirm m453 plays to its result screen, and record it
+as a **game** limit in the inventory rather than a port defect. §23.3's "m453 is
+therefore not witnessed to its result screen" stands, and the reason it is not
+witnessed is now known and is not ours.
+
+### 27.6 What M12b did not do
+
+* **Item 2 is a third done, not done.** Eleven reference frames are committed
+  and the two schedules that produce more are committed with them, but the
+  twenty minigames the soaks have played are not covered, and two frames the
+  captures *did* reach are committed as `unattributed-*.png` because this
+  session could not prove which module they belong to. The blocker is §27.2's
+  counter problem, the fix for it is written down there and is cheap, and doing
+  it properly is one 40-minute dumping run per team-split group. Nobody should
+  harvest more frames before putting the frame number into the picture.
+* **The three fixed scenes are not aligned to §21.1's frames.** `title.png`,
+  `charselect.png` and `board.png` are committed and are the right *scenes*, but
+  §21.1's 800 / 3000 / 7000 are the port's own frame numbers and this session
+  did not establish the Dolphin equivalents — for the same reason.
+* **Nothing was witnessed on hardware.** The lab is still dark (§26.4 item 2):
+  `littlejelly`'s Tailscale node key is expired, only the user can
+  re-authenticate it, and `192.168.0.200` from the office is a stranger's
+  machine. Every "the port does X" in §27 is quoted from §23.1's recorded
+  numbers, not re-measured. In particular §26.1's patched `mstory3dll` build has
+  now been running on the G4 unattended since 11:47 on 2026-09-17 and **the
+  first thing the next session does is still read `~/isle-log.txt`.**
+* **The three real missing-return bugs are still unpatched** (§27 item 3 is a
+  draft, by instruction). `MegaPlayerPassFunc`, `MegaExecJump` and
+  `CharNpcDustSet` are game-behaviour changes, so they go through
+  `port/patches.txt` and get a G4 witness first. No upstream issue or PR was
+  opened, as instructed.
+* **The roulette control run had not finished when this was written.** It is the
+  clean counter-experiment for §27.3 — four CPU players, no `mg_next` poke at
+  all, `port/ref/movies/mg-roulette.txt` — and at frame 38,759 it had played
+  m456, m421, m427 and m431 with `HEAP_DVD` at 3.1 MB free and no panic. If it
+  ever panics, §27.3's reading is wrong and the leak is not the windowed poke.
+

@@ -57,7 +57,24 @@ The board settings screen is where the walk stops: it is reached but not confirm
 Blindly pulsing A leaves the cursor on the Mini-Games row, and pulsing START backs out
 of the whole flow and eventually returns to the attract loop.
 
-## C. Not captured — board and minigame
+## C. Board and minigame — **captured, 2026-09-17 (M12b)**
+
+*The section below is kept as written because its reasoning was right about the
+cost. What it did not know is that Gecko codes can write any memory, not just the
+pad, so the board does not have to be navigated at all: poke
+`GWPlayerCfg[i].iscom = 1` (all four CPU) and `GWSystem.mg_next` (the minigame), and
+a board deals the module you asked for, over and over, with the A metronome doing
+everything else. See `m444-drop.txt`, `mg-entries.txt`, `mg-roulette.txt` and
+`m453-heap.txt` in this directory, `mkgecko.py`'s `poke` directive, and PLAN.md
+§27.*
+
+*Reached and committed as `../frames/`: title, SELECT A FILE, character select
+(four `COM` + `EASY`), board settings, board map, board turn 1, m405's first
+playable frame, and the whole of m444's module including a ball drop. Read PLAN.md
+§27.2 before adding to that set — the `framedump_N` index is not a frame clock in
+this Dolphin build.*
+
+### The original note (obsolete)
 
 `first-minigame.txt` is a **skeleton, not a working sequence.** Getting from the board
 settings screen into a board and then into a minigame needs cursor moves that were not

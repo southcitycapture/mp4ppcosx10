@@ -34,7 +34,7 @@ Where upstream Dolphin differs from this build, that is called out.
 | `dolphin-tool` CLI | **Not shipped.** `Dolphin.app/Contents/MacOS/` contains only `Dolphin`, `platforms/`, `styles/` |
 | `DolphinNoGUI` frontend | **Not shipped** — the macOS `.app` bundles only the Qt frontend |
 | Debugger UI (`-d`) | **Yes** — memory view, watches, breakpoints, "Dump MRAM" |
-| MemoryWatcher UNIX socket | Compiled path present in the binary; **needs verification** (see §7) |
+| MemoryWatcher UNIX socket | **Yes — verified working 2026-09-17** (see §7 and PLAN.md §27) |
 
 Consequences for the rig: **PNG-sequence frame dumping plus Gecko-code input injection
 is the whole automation surface.** `.dtm` playback, the obvious choice, does not work
@@ -380,9 +380,44 @@ frame numbers are to keep matching:
    observed span) makes `GlobalCounter` lag `VCounter`. On real hardware that is a
    dropped frame; the XFB is presented again, so the PNG count still advances.
 
-**Practical rule:** compare on `framedump_N` ↔ the port's presented-frame index, and
-sanity-check with `GlobalCounter`/`VCounter` at the marked frames. If those two globals
-diverge in the reference capture, the segment is not a valid frame-exact baseline.
+### The 1:1 assumption above does not survive a long capture — measured 2026-09-17
+
+The paragraph above is the theory. Measured in **one** run with the PNG dump and
+MemoryWatcher both on, stopped at the same instant:
+
+| counter | value |
+|---|---|
+| `framedump_N` files written | **7,177** |
+| `GlobalCounter` `0x801D3A54` | **7,533** |
+| `VCounter` `0x801D3A58` | **8,831** |
+
+`GlobalCounter` lagging `VCounter` by 1,298 is the game's own documented behaviour
+(`src/game/main.c:87`). The **PNG count lagging both is not**: with
+`SkipDuplicateXFBs = False` there should be one file per presented frame. Over a
+40,000-frame capture the deficit is several per cent and it is not linear, so a PNG
+index cannot be converted back to a `GlobalCounter` after the fact.
+
+Worse, **two captures of the same input schedule that differ only in
+`Dolphin.Movie.DumpFrames` diverge.** Two runs of `port/ref/movies/mg-entries.txt`,
+identical in every other respect, dealt different minigames: the dumping one played
+m405, m408, m412, m443; the non-dumping one played m405, m408, m410, m443, m404,
+m439. The input schedule alone does not determine the run, so numbers read out of a
+non-dumping run do not describe a dumping run's pictures.
+
+**Practical rules, revised:**
+
+1. Anything that has to be compared frame-for-frame must come out of **one** run —
+   the pictures and the memory reads together.
+2. `omcurovl` + `GlobalCounter` from MemoryWatcher is the authoritative key; the PNG
+   index is a filename.
+3. To get a `GlobalCounter` onto a picture, **put it in the picture**: Gecko-poke a
+   HUD field drawn every frame from the counter's low bits (`GWPlayer[0].coins` at
+   `0x8018FC38 + 0x1C` is drawn on the board HUD and most minigame HUDs). Then every
+   PNG carries the frame it was taken at and the `--ffto` comparison is a diff.
+
+The committed `boot-*.png` set predates all of this. It was verified reproducible at
+fixed PNG indices across two runs, so it is self-consistent, but its indices should
+not be read as `GlobalCounter` values.
 
 ## 7. Reading game memory
 
@@ -400,16 +435,36 @@ absolute addresses for the Rev 1 `main.dol`. The useful ones for this rig are li
 This is manual, but it is the only supported read-out in this build and it is enough
 to check a handful of globals at a marked frame.
 
-**c. MemoryWatcher.** Upstream Dolphin has `Source/Core/Core/MemoryWatcher.cpp`, which
-reads `<userdir>/MemoryWatcher/Locations.txt` — one pointer-chain per line, whitespace-
-separated hex offsets, e.g. `801D3A54` for a plain global — and pushes
-`"<line>\n<value_hex>\n"` datagrams to a UNIX `SOCK_DGRAM` socket at
-`<userdir>/MemoryWatcher/MemoryWatcher` whenever a value changes. The strings for those
-paths are present in this binary, but MemoryWatcher is behind the `USE_MEMORYWATCHER`
-CMake option upstream and it could not be confirmed enabled here. **Test before
-relying on it:** create the two files, bind a listener, and see whether datagrams
-arrive. If they do, this is the clean way to log `GlobalCounter`, `omcurovl`, and
-`frand_seed` alongside a capture.
+**c. MemoryWatcher — this is the one to use. Verified working in this build
+(2026-09-17).** Dolphin reads `<userdir>/MemoryWatcher/Locations.txt` and pushes
+datagrams to a UNIX `SOCK_DGRAM` socket at `<userdir>/MemoryWatcher/MemoryWatcher`
+whenever a watched value changes. Four things about it that the upstream description
+does not tell you and that each cost time:
+
+* **Bind the listener before Dolphin starts.** Dolphin connects to the path once, at
+  boot. Unlinking and re-binding the socket afterwards leaves it writing to a dead
+  inode and the stream simply stops.
+* **The socket path must be short.** `sun_path` is 104 bytes; a long scratch
+  directory silently overflows it.
+* **The value is hex with thousands separators** — `ff,fff,fff`, not `ffffffff`.
+  Strip the commas or every read above `0xFFF` fails to parse.
+* **One datagram per frame, containing everything that changed that frame.** Since
+  `GlobalCounter` changes every frame, the frame number travels *with* the data:
+  no clock, no correlation step, no drift. Verified against the full frame range of
+  a 100,000-frame capture with no dropped datagrams.
+
+A line is a **pointer chain**: whitespace-separated hex offsets, chased with a
+`Read32` at each step. `801D3A54` is a plain global; `801901E0 8 1894` is
+`omDLLinfoTbl[0] -> omDllData.bss -> +0x1894`, which is how a relocatable REL's
+`.bss` is read without knowing where it loaded (`omDllData` is
+`{char *name; OSModuleHeader *module; void *bss; s32 ret;}`,
+`include/game/object.h:65`; `omDLLinfoTbl` is 20 slots at `0x801901E0` and which one
+a module lands in is not fixed, so watch all twenty and filter on `omcurovl`).
+
+`port/ref/tools/mwball.py` and `port/ref/tools/mwovl.py` are the two listeners this
+rig uses: the first logs `m444dll`'s ball state per frame, the second logs every
+`omcurovl` change with the `GlobalCounter` it happened at. PLAN.md §27.1 has the
+whole command sequence.
 
 A fourth option, if the port ever needs a large RAM baseline, is a savestate: `-s` can
 load one, and states are written to `<userdir>/StateSaves/GMPE01.s01`…`.s10`. They are
