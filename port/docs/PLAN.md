@@ -6496,12 +6496,68 @@ every live block, so the next step is a table, not a soak.
 
 **m453 is therefore not witnessed to its result screen.** It panics where it did.
 
-### 23.4 The end-of-game results crash
+### 23.4 The end-of-game results: not a crash any more, and probably not a bug in the module
 
-Not reached. The m444 investigation took the session's hardware budget: four
-25-minute reproductions, two of which were lost to the gdb mistakes in §23.1
-before the rules there were written down. The crash is carried by the soak left
-running at the end of the session, which is the run that found it.
+Not reached *during* the session — the m444 investigation took the hardware
+budget: four 25-minute reproductions, two of which were lost to the gdb mistakes
+in §23.1 before the rules there were written down.
+
+It was reached the next morning, by a soak that was already running (not the one
+this session started: its command line carries `--snap-every 5000 --snap-keep 3`,
+so another session owns it). It had played a full twenty-turn board and stopped
+at **turn 20/20, `mstory3dll`, overlay 78, event 1**, repeating
+
+```
+port> STUCK: frame 394214, 2160 s with no progress (limit 90 s here).
+      live screen mstory3dll (overlay 78, event 1, previous mstory3dll), turn 20/20
+```
+
+Three safe reads — `mp4bt`, then `port/tools/gdb/mot.gdb` twice, twenty seconds
+apart — say this is **not** the `0xfeb6feb6` sprite fault of §20.4 and **not** a
+hang:
+
+* the main thread is in `glTexImage2D` <- `tex_bind_decode_and_upload`
+  (`gx_tex.c:745`) <- `gx_tev_apply` <- `draw_run` <- `Hu3DExec` <-
+  `mp4_game_main`. That is the ordinary draw path, mid-frame;
+* `GlobalCounter` moves 395,868 -> 396,709 between the two motion dumps;
+* motions *finish* (`m004` goes from `t=175/360` to `t=360/360`) and motion ids
+  are *swapped* (`m019` goes `motId=9, en=119` -> `motId=10, en=39`). The module
+  is running logic, not spinning.
+
+So the module is inside a wait loop that ticks the frame, and the harness's
+progress hash is flat because the game state behind it never changes. The shape
+of that loop is in `result_seq.c:1335-1360`:
+
+```c
+if (unkC4[0].unk00.unk08 == 1 && unkC4[1].unk00.unk08 == 1) {
+    fn_1_958(30);                    /* both COM: wait 30 frames, move on */
+} else {
+    while (TRUE) {                   /* someone is human: wait for A */
+        fn_1_938();
+        if (unkC4[0].unk00.unk08 == 0 && (HuPadBtnDown[…] & PAD_BUTTON_A)) break;
+        if (unkC4[1].unk00.unk08 == 0 && (HuPadBtnDown[…] & PAD_BUTTON_A)) break;
+    }
+}
+```
+
+`fn_1_938()` is the per-frame tick, which is exactly why the screen keeps
+animating. `unk08` is the module's copy of `GWPlayerCfg[].iscom`
+(`mstory3dll/main.c:774`, `result.c:1020`).
+
+**Hypothesis, not yet a finding:** at the end-of-game results at least one player
+is not flagged COM, so a four-COM soak waits for a button nobody will press.
+That would make this §17.4's "park the state, do not press the button" needing a
+results case, not a bug in `mstory3dll` — and it would mean the crash M8c saw and
+the stall seen here are two different things, the fault having been closed by
+M8c's `HuSprBegin` guard.
+
+It is cheap to settle and it was not settled: two safe reads of
+`GWPlayerCfg[0..3].iscom` and `lbl_1_bss_1580.unkC4[0..3].unk00.unk08` out of a
+stalled process decide it. `GWPlayerCfg` is in the main binary, so the first half
+needs no module symbols at all. Note also `mstory3dll/result.c:725`, which does
+`GWPlayerCfg->iscom = 0` unconditionally on one of its exits — that is the
+story-mode map-select path rather than this one, but it is the right family of
+suspect and worth reading before anything else.
 
 ### 23.5 The vertex path, phase 2
 
@@ -6523,8 +6579,11 @@ this session; nothing in M9c touches `gx_draw.c`.
    three drops under the same `--rtc dolphin` seed is the comparison.
 2. **The 400 KB** (§23.3). `HuMemHeapDump` on the failing read, against a Dolphin
    run of the same minigame.
-3. **The end-of-game results crash** (§22.10 item 4), still not witnessed since
-   M8c.
+3. **The end-of-game results stall** (§23.4). Read `GWPlayerCfg[0..3].iscom` and
+   `lbl_1_bss_1580.unkC4[0..3].unk00.unk08` out of the stalled process; if a
+   player is not flagged COM, the fix is in the harness, not the module. The
+   `0xfeb6feb6` fault of §20.4 did **not** recur — treat it as closed by M8c's
+   `HuSprBegin` guard until something says otherwise.
 4. **Phase 2 of the vertex path** (§22.10 item 1), untouched.
 5. `--minigame NAME` does not imply the menu walk the way `--soak` does; it sits
    on the title and the watchdog reports a `bootdll` stall. Either it should
