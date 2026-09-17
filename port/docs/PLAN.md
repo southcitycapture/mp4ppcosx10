@@ -76,10 +76,31 @@ scarcest thing in the project. These rules apply to every session from M10 on.
   deleted. Same A/B discipline (§0 rule 3); the three md5s may legitimately
   differ by rounding -- if so, audit the diff and re-base with a written
   justification, never silently.
-* **A second bench.** The 2009 MacBook Pro on the wired LAN can run Snow
-  Leopard, and Snow Leopard runs PowerPC binaries under Rosetta. One-hour
-  test: copy the bundle, run it. If it runs, two benches, two agents, soaks
-  that never block daytime work.
+* **A second bench -- measured 2026-09-16, and it is slower.** The
+  "2009" MacBook Pro is an Early 2011 13" (MacBookPro8,1, i5-2415M 2.3 GHz,
+  Intel HD 3000) on Snow Leopard 10.6.6 with Rosetta and Xcode 3.2 (gdb).
+  ssh alias `mbp`; launch with `open -a ~/MarioParty4.app --args ... --log`
+  (a plain ssh exec has no WindowServer, so no GL context). The Tiger-built
+  SDL found no displays on 10.6 (panther-sdl2 698f00c fixes it; rebuilt
+  dylib is in the bundle). It runs the exact PPC bundle and renders the
+  title correctly (md5s differ from the Radeon's, as expected across GPUs:
+  800 `70f820cd…`, 3000 `f4c19e9f…`, 7000 `85a59b7c…`; compare by eye or
+  against Dolphin, not against the G4's md5s).
+
+  | measure | G4 | MacBook (Rosetta) |
+  |---|---:|---:|
+  | menus | 25-31 fps | 45 |
+  | character select | 14.3 fps | 9.4 |
+  | board | 16.2 fps | 10.8 |
+  | `--ffto 3000` (no draw) | 10.1 s | 19.9 s |
+  | `--ffto 7000` (no draw) | 41.4 s | 64.3 s |
+
+  Rosetta runs the game's own code at about half the G4's speed, and its
+  GL calls cross the translator into the Intel driver, so the 3D scenes are
+  slower too. What it is for: a second, independent machine (soaks and
+  reproductions in parallel with G4 work), Xcode's gdb and the Intel driver
+  with real fragment programs as a second opinion. It is not a faster
+  bench and nothing about frame rate may be judged on it.
 * **No-draw soaks.** With `--ffto`/`--nodraw` a soak covers a board in an
   hour or two; run those overnight, several boards, every minigame, for
   logic bugs, stalls, heap panics and crashes. Rendering bugs go to the
