@@ -9508,9 +9508,14 @@ half as black rather than reading whatever the other half left there, and a
 collision is only a collision *within a half*. `--oldkonst` is the pre-M16
 claim, for the A/B.
 
-*(The per-draw count and the md5 effect of the split are measured in §31.6's
-run list — the wired link to the G4 dropped while this section was written;
-see §31.7.)*
+**After the split**, on the final walk: **72,279 of 1,960,001 batches**
+(3.7%, down from 16.3%) still carry a stage that genuinely needs two
+different constants in one half; per primitive (`--oldsubmit`) it is
+969,229 of 8,411,126, 11.5%, in 9,380 distinct configs. The md5 effect of
+the split alone was nil on frame 800 (`--oldkonst` in the bisection gave the
+same md5) and is folded into the 7000 re-base; a real collision is now a
+real degradation, and its count is the one the fragment-shader decision
+should be made on.
 
 **The `GL_ATI_text_fragment_shader` verdict.** After the split, what is left
 in a stage that fixed function cannot say is: a genuine two-constants-in-one-
@@ -9577,11 +9582,8 @@ windows (§31.6).
 
 **Not done, and why:**
 
-* **The konst split's own md5 A/B** (`--oldkonst` against default on the three
-  frames). The split is exact by construction and changed frame 800 not at
-  all (`--oldkonst` gave the same md5 in the bisection), but the count of
-  draws still colliding *after* the split was not re-read; one `--ffto 7000`
-  run.
+* **The konst split's own md5 A/B on 3000 and 7000** (`--oldkonst` against
+  default); on 800 it changed nothing.
 * **The `GL_ATI_text_fragment_shader` backend** — argued in §31.4, not built.
 * **The decode** — 39% of `m432`'s frame after this milestone; the next
   per-vertex lever (§31.1).
