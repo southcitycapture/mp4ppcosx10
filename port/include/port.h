@@ -160,6 +160,17 @@ typedef struct PortOptions {
                              *   on every draw, the way every build before M13
                              *   did.  The A/B lever (PLAN.md 28.5)           */
     int tevstats;           /* --tevstats  hits and misses of the TEV cache   */
+
+    /* ---- M15: the eyes ---- */
+    int oldnulltev;         /* --oldnulltev  drop a TEV stage that names no
+                             *   texture, the way every build before M15 did.
+                             *   The A/B lever for the eyes (PLAN.md 30)      */
+    int tlutlog;            /* --tlutlog  every GXLoadTlut and every CI bind:
+                             *   the palette address, its entry count and
+                             *   format, the TLUT name, the swap table and the
+                             *   cache slot the bind resolved to.  Scoped to
+                             *   --drawlog-at's frame when that is given, or
+                             *   the whole run when it is not (PLAN.md 30)    */
 } PortOptions;
 
 extern PortOptions port_opt;

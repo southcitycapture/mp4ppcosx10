@@ -221,6 +221,7 @@ void glc_stats(unsigned* emitted, unsigned* elided);
 void glc_active_texture(int unit);
 void glc_client_active_texture(int unit);
 void glc_bind_texture(int unit, unsigned name);
+unsigned glc_white_texture(void);
 void glc_note_bind(int unit, unsigned name);
 void glc_unit_enable_tex2d(int unit, int on);
 void glc_texenvi(int unit, unsigned pname, int v);

@@ -174,6 +174,9 @@ typedef struct Glc {
 } Glc;
 
 static Glc glc;
+
+/* The 1x1 white texture's GL name; see glc_white_texture below. */
+static unsigned glc_white_name;
 static unsigned glc_emitted, glc_elided;
 
 #define HIT(cond)                                                                        \
@@ -193,6 +196,7 @@ void glc_invalidate(void) {
      * shadow that has forgotten them is a cache that must forget too. */
     gx_vprog_invalidate();
     gx_tev_cache_invalidate();
+    glc_white_name = 0; /* see glc_white_texture: a new context, a new name */
     memset(&glc, 0, sizeof(glc));
     /* -1 is "unknown": no GL enum or boolean is -1, so the first write of
      * every field is guaranteed to miss. */
@@ -262,6 +266,41 @@ void glc_bind_texture(int unit, unsigned name) {
 /* The binding a texture *upload* leaves behind: gx_tex.c has to bind the name
  * it is about to fill, and the shadow has to be told rather than guess. */
 void glc_note_bind(int unit, unsigned name) { glc.unit[unit].tex_name = name; }
+
+/* A 1x1 opaque white texture, for a TEV stage that has no texture of its own.
+ *
+ * GX lets a stage name GX_TEXMAP_NULL and still run its combiner -- the eye,
+ * face and rim materials do exactly that for their last stage, which blends
+ * the accumulated colour towards a TEV register.  GL 1.3 has no such thing: a
+ * unit with GL_TEXTURE_2D disabled has its whole texture environment skipped,
+ * so the stage does not run and the previous colour passes through untouched.
+ * Binding this instead keeps the unit enabled, makes TEXC (1,1,1) and TEXA 1 --
+ * the identity for every combiner that reads them -- and lets the stage run.
+ * It is deliberately outside `glc`, which glc_invalidate memsets; the name is
+ * dropped there as well, because a forgotten shadow may mean a new context. */
+
+unsigned glc_white_texture(void) {
+    if (!glc_white_name) {
+        static const unsigned char px[4] = { 255, 255, 255, 255 };
+        GLuint n = 0;
+        GL(glGenTextures)(1, &n);
+        if (!n) {
+            return 0;
+        }
+        GL(glBindTexture)(GL_TEXTURE_2D, n);
+        GL(glTexImage2D)(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA,
+                         GL_UNSIGNED_BYTE, px);
+        GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        /* The bind above went to whatever unit was active; tell the shadow so
+         * it does not believe the unit still holds its old texture. */
+        glc.unit[glc.active_tex >= 0 ? glc.active_tex : 0].tex_name = (unsigned)n;
+        glc_white_name = (unsigned)n;
+    }
+    return glc_white_name;
+}
 
 void glc_unit_enable_tex2d(int unit, int on) {
     HIT(glc.unit[unit].tex2d_on == (signed char)on);

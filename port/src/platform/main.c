@@ -91,6 +91,11 @@ static void usage(const char* argv0) {
             "  --perf            per-frame game/gx/present timing, both clocks\n"
             "  --drawlog N       explain the first N draws: geometry, texture, state\n"
             "  --drawlog-at F    ...but only on presented frame F, which is how you\n"
+            "  --oldnulltev      drop a TEV stage that names no texture (the pre-M15\n"
+            "                    path), for the A/B on the character eyes\n"
+            "  --tlutlog         every GXLoadTlut and every CI texture bind: the\n"
+            "                    palette address, count, format, TLUT name, swap and\n"
+            "                    cache slot.  Scoped to --drawlog-at's frame if given\n"
             "  --scenelog F      the cameras and camera-bearing models on frame F\n"
             "  --ovllog          name the scene (omcurovl) every time it changes\n"
             "                    point --drawlog at a screen rather than at the boot\n"
@@ -447,6 +452,10 @@ int port_parse_args(int argc, char** argv) {
             port_opt.drawlog = atoi(argv[++i]);
         } else if (!strcmp(a, "--drawlog-at") && i + 1 < argc) {
             port_opt.drawlog_frame = atoi(argv[++i]);
+        } else if (!strcmp(a, "--tlutlog")) {
+            port_opt.tlutlog = 1;
+        } else if (!strcmp(a, "--oldnulltev")) {
+            port_opt.oldnulltev = 1;
         } else if (!strcmp(a, "--ovllog")) {
             port_opt.ovllog = 1;
         } else if (!strcmp(a, "--nanwatch")) {

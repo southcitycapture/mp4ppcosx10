@@ -452,8 +452,32 @@ void gx_tev_apply(void) {
                 /* A stage with no texture still has to run its combiner, and
                  * a disabled unit in GL passes the previous colour through
                  * untouched -- which is only right when the stage is a pass.
-                 * Keep the unit enabled against a 1x1 white texture instead. */
-                glc_unit_enable_tex2d(i, 0);
+                 * Keep the unit enabled against a 1x1 white texture instead.
+                 *
+                 * M15: that is what the comment said and what the code did NOT
+                 * do -- it disabled the unit, and every GX_TEXMAP_NULL stage in
+                 * the game was silently dropped.  On the §21.1 board frame that
+                 * is 210 draws of 774, among them both of Mario's eyes, three
+                 * of Luigi's face materials and four of Peach's, and none of
+                 * Yoshi's, whose eyes are a single textured stage -- which is
+                 * exactly the per-character symptom §29.4 recorded.  PLAN.md 30.
+                 *
+                 * --oldnulltev is the A/B lever: the pre-M15 drop. */
+                unsigned white = port_opt.oldnulltev ? 0u : glc_white_texture();
+                if (white) {
+                    glc_bind_texture(i, white);
+                    glc_unit_enable_tex2d(i, 1);
+                    if (bound == NULL && s->map != GX_TEXMAP_NULL) {
+                        /* Distinct from the stage that asks for no texture at
+                         * all: this one named a texmap the game never loaded. */
+                        gx_warn("TEV: a stage names a texmap that was never "
+                                "loaded; it samples white");
+                    }
+                } else {
+                    glc_unit_enable_tex2d(i, 0);
+                    gx_warn("TEV: a stage with no texture is dropped, and the "
+                            "previous stage's colour passes through");
+                }
             }
             if (emit) {
                 glc_texenvi(i, GL_TEXTURE_ENV_MODE, GL_COMBINE);

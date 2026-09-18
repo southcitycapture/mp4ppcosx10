@@ -1428,16 +1428,64 @@ static void draw_log(void) {
              gx.proj_type == GX_PERSPECTIVE ? "persp" : "ortho", gx.proj[0],
              gx.proj[1], gx.proj[2], gx.proj[3], gx.proj[4], gx.proj[5], gx.vp[0],
              gx.vp[1], gx.vp[2], gx.vp[3], gx.vp[4], gx.vp[5]);
-    port_log("  stage0 coord %u map %u chan %u  cin %u %u %u %u  ain %u %u %u %u\n",
-             s0->coord, s0->map, s0->chan, s0->cin[0], s0->cin[1], s0->cin[2],
-             s0->cin[3], s0->ain[0], s0->ain[1], s0->ain[2], s0->ain[3]);
-    t = gx_bound_tex(s0->map);
-    if (t) {
-        port_log("  texmap%u %ux%u fmt %u ci %u tlut %u gl %u\n", s0->map, t->width,
-                 t->height, t->format, t->is_ci, t->tlut_name, t->gl_name);
-    } else {
-        port_log("  texmap%u NOT BOUND\n", s0->map);
+    /* Every stage, not only the first.  The TL32 eye material (PLAN.md 29.4)
+     * is two stages over one atlas with two palettes, so a log that stops at
+     * stage 0 cannot see the bug at all: the second stage's texmap and its
+     * TLUT are the whole question. */
+    for (i = 0; i < (int)gx.num_tev && i < GX_TEV_STAGES; i++) {
+        const GXTevStage* s = &gx.tev[i];
+        port_log("  stage%d coord %u map %u chan %u  cin %u %u %u %u  "
+                 "ain %u %u %u %u  swap ras %u tex %u\n",
+                 i, s->coord, s->map, s->chan, s->cin[0], s->cin[1], s->cin[2],
+                 s->cin[3], s->ain[0], s->ain[1], s->ain[2], s->ain[3],
+                 s->ras_swap, s->tex_swap);
+        t = gx_bound_tex(s->map);
+        if (t) {
+            const GXTlutObjPort* tl =
+                (t->is_ci && t->tlut_name < 64) ? &gx.tlut[t->tlut_name] : NULL;
+            port_log("    texmap%u %ux%u fmt %u ci %u tlut %u gl %u  img %p"
+                     "  lut %p n %u lfmt %u\n",
+                     s->map, t->width, t->height, t->format, t->is_ci,
+                     t->tlut_name, t->gl_name, t->image, tl ? tl->lut : NULL,
+                     tl ? (unsigned)tl->n : 0u, tl ? (unsigned)tl->fmt : 0u);
+        } else {
+            port_log("    texmap%u NOT BOUND\n", s->map);
+        }
     }
+    /* The TEV registers and konst colours every stage above can name.  A
+     * GX_TEXMAP_NULL stage reads nothing but these and CPREV, so when such a
+     * stage draws the wrong colour these four numbers are the whole input. */
+    port_log("  tevreg prev %3u %3u %3u %3u  c0 %3u %3u %3u %3u  "
+             "c1 %3u %3u %3u %3u  c2 %3u %3u %3u %3u\n",
+             gx.tev_reg[0].r, gx.tev_reg[0].g, gx.tev_reg[0].b, gx.tev_reg[0].a,
+             gx.tev_reg[1].r, gx.tev_reg[1].g, gx.tev_reg[1].b, gx.tev_reg[1].a,
+             gx.tev_reg[2].r, gx.tev_reg[2].g, gx.tev_reg[2].b, gx.tev_reg[2].a,
+             gx.tev_reg[3].r, gx.tev_reg[3].g, gx.tev_reg[3].b, gx.tev_reg[3].a);
+
+    /* The texgens and the texture matrices they name.  The eye and eyebrow
+     * materials pick one blink frame out of an atlas as a 2x4 texture matrix
+     * (hsfanim.c:255-258), so "which sub-rectangle of the atlas" is a pair of
+     * numbers in this matrix and nowhere else; and the atlas is NPOT, so the
+     * port's own padding fold rides in the same place (PLAN.md 30). */
+    for (i = 0; i < (int)gx.num_texgens && i < GX_TEXCOORDS; i++) {
+        const GXTexGen* g = &gx.texgen[i];
+        port_log("  texgen%d func %u src %u mtx %u norm %u postmtx %u\n", i,
+                 g->func, g->src, g->mtx, g->normalize, g->postmtx);
+        if (g->mtx >= 30 && g->mtx < 30 + 20 * 3) {
+            const f32* m = gx.tex_mtx[(g->mtx - 30) / 3];
+            port_log("    texmtx%u  %8.4f %8.4f %8.4f %8.4f\n", (g->mtx - 30) / 3,
+                     m[0], m[1], m[2], m[3]);
+            port_log("             %8.4f %8.4f %8.4f %8.4f\n", m[4], m[5], m[6], m[7]);
+        } else {
+            port_log("    texmtx identity (mtx id %u)\n", g->mtx);
+        }
+        {
+            float su = 1.0f, sv = 1.0f;
+            glc_get_tex_scale(i, &su, &sv);
+            port_log("    npot fold unit %d  su %.6f sv %.6f\n", i, su, sv);
+        }
+    }
+    (void)s0;
     port_log("  chan0 enable %u matsrc %u mat %u %u %u %u  ambsrc %u\n",
              gx.chan[0].enable, gx.chan[0].mat_src, gx.chan[0].mat.r,
              gx.chan[0].mat.g, gx.chan[0].mat.b, gx.chan[0].mat.a,

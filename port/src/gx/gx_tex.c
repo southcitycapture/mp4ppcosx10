@@ -760,7 +760,41 @@ static void tex_bind_decode_and_upload(int slot, int unit, const GXTexObjPort* o
  * slot: bind the GL name, fold NPOT padding into the texture matrix, and emit
  * glTexParameter only when this texture object's own parameters actually
  * changed since the last time this slot was bound. */
+/* --tlutlog: is this call inside the window the log is scoped to?  With
+ * --drawlog-at F the window is frame F, which is the only way to ask the
+ * question about one screen rather than about a whole boot. */
+static int tlutlog_armed(void) {
+    if (!port_opt.tlutlog) {
+        return 0;
+    }
+    if (port_opt.drawlog_frame &&
+        gl13_frame_number() + 1 != (unsigned)port_opt.drawlog_frame) {
+        return 0;
+    }
+    return 1;
+}
+
 static void tex_bind_finish(int unit, GXTexObjPort* o, int slot) {
+    /* --tlutlog, the CI half.  The TL32 double-TLUT trick (hsfdraw.c:1823)
+     * binds one C8 atlas twice with two palettes; if the two binds report the
+     * same palette address, or the same palette hash, the second read gave
+     * back the first palette and the eye's colour expression collapses
+     * (PLAN.md 29.4).  Print enough to tell those apart: the TLUT name, the
+     * palette pointer, its entry count and format, an FNV over the bytes the
+     * decoder actually reads, the swap table, and the cache slot. */
+    if (o->is_ci && tlutlog_armed()) {
+        const GXTlutObjPort* t =
+            (o->tlut_name < 64 && gx.tlut[o->tlut_name].magic == TLUT_MAGIC)
+                ? &gx.tlut[o->tlut_name]
+                : NULL;
+        port_log("port> tlut bind unit %d map-tlut %u  img %p fmt %u %ux%u  "
+                 "lut %p n %u fmt %u hash %08x  swap %02x  slot %d gl %u\n",
+                 unit, (unsigned)o->tlut_name, o->image, (unsigned)o->format,
+                 (unsigned)o->width, (unsigned)o->height, t ? t->lut : NULL,
+                 t ? (unsigned)t->n : 0u, t ? (unsigned)t->fmt : 0u,
+                 (t && t->lut) ? fnv(t->lut, (size_t)t->n * 2, 2166136261u) : 0u,
+                 (unsigned)cache[slot].swap, slot, cache[slot].gl_name);
+    }
     o->gl_name = cache[slot].gl_name;
     if (!gl13_live() || !o->gl_name) {
         return;
@@ -1043,6 +1077,14 @@ void GXLoadTlut(GXTlutObj* obj, u32 tlut_name) {
     GXTlutObjPort* t = (GXTlutObjPort*)obj;
     if (tlut_name < 64 && t->magic == TLUT_MAGIC) {
         gx.tlut[tlut_name] = *t;
+        /* --tlutlog, the load half: the game's own two calls, as the game
+         * makes them.  The second of a TL32 pair should carry a palette
+         * address (palSize+0xF)&0xFFF0 entries past the first. */
+        if (tlutlog_armed()) {
+            port_log("port> tlut load name %2u  lut %p n %u fmt %u hash %08x\n",
+                     (unsigned)tlut_name, t->lut, (unsigned)t->n, (unsigned)t->fmt,
+                     t->lut ? fnv(t->lut, (size_t)t->n * 2, 2166136261u) : 0u);
+        }
     }
 }
 
