@@ -181,10 +181,22 @@ typedef struct PortOptions {
                              *   ring in ordinary memory (no
                              *   GL_APPLE_vertex_array_range), to price the
                              *   copy separately from the batching           */
+    int batchmax;           /* --batchmax N  at most N segments per batch (the
+                             *   flush is still deferred); 0 = BATCH_MAX     */
+    int segrebase;          /* --segrebase  diagnostic: each segment from its
+                             *   own base with first = 0                     */
+    int gltrace;            /* --gltrace F  log every GL call the shadow lets
+                             *   through during frame F, with arguments      */
+    int nomerge;            /* --nomerge  do not merge contiguous list
+                             *   primitives (triangles/quads) into one call */
     int nomultidraw;        /* --nomultidraw  one glDrawArrays per strip
                              *   instead of glMultiDrawArraysEXT              */
     int submitstats;        /* --submitstats  batches, merges, primitives per
                              *   list, fence waits                            */
+    unsigned cmpmask;       /* --cmpmask N  which compare-first setter groups
+                             *   may keep a batch alive (1 raster, 2 matrix,
+                             *   4 tev, 8 chan; default 15).  0 = every
+                             *   setter ends the batch.  For bisecting     */
     int oldkonst;           /* --oldkonst  claim a unit's GL constant whole
                              *   (RGB and A together) the way every build
                              *   before M16 did.  The A/B lever (PLAN.md 31.4) */

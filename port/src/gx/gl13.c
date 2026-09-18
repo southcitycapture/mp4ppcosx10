@@ -186,6 +186,21 @@ static Glc glc;
 static unsigned glc_white_name;
 static unsigned glc_emitted, glc_elided;
 
+/* --gltrace F: every GL call the shadow lets through during frame F, with
+ * its arguments, so two submit shapes can be diffed call by call (M16). */
+unsigned gl13_frame_number(void);
+int gl13_trace_armed(void) {
+    unsigned f = gl13_frame_number() + 1;
+    return port_opt.gltrace && f <= (unsigned)port_opt.gltrace &&
+           f + 40 > (unsigned)port_opt.gltrace; /* the forty frames up to F */
+}
+#define TR(...)                                                                          \
+    do {                                                                                 \
+        if (gl13_trace_armed()) {                                                        \
+            port_log("gltrace> " __VA_ARGS__);                                           \
+        }                                                                                \
+    } while (0)
+
 #define HIT(cond)                                                                        \
     do {                                                                                 \
         if (cond) {                                                                      \
@@ -203,7 +218,12 @@ void glc_invalidate(void) {
      * shadow that has forgotten them is a cache that must forget too. */
     gx_vprog_invalidate();
     gx_tev_cache_invalidate();
-    glc_white_name = 0; /* see glc_white_texture: a new context, a new name */
+    /* The white texture's *name* survives: it is a texture object, not
+     * shadowed state, and the context is the same one.  M15 zeroed it here,
+     * so every EFB copy-with-clear (which invalidates) re-created it on the
+     * next textureless stage -- one leaked texture a frame, and each creation
+     * re-bound whichever unit was active (PLAN.md 31.3).  gl13_shutdown
+     * forgets it with the context. */
     memset(&glc, 0, sizeof(glc));
     /* -1 is "unknown": no GL enum or boolean is -1, so the first write of
      * every field is guaranteed to miss. */
@@ -254,12 +274,14 @@ void glc_stats(unsigned* emitted, unsigned* elided) {
 void glc_active_texture(int unit) {
     HIT(glc.active_tex == unit);
     glc.active_tex = unit;
+    TR("glActiveTexture %d\n", unit);
     GL(glActiveTexture)((GLenum)(GL_TEXTURE0 + unit));
 }
 
 void glc_client_active_texture(int unit) {
     HIT(glc.client_active_tex == unit);
     glc.client_active_tex = unit;
+    TR("glClientActiveTexture %d\n", unit);
     GL(glClientActiveTexture)((GLenum)(GL_TEXTURE0 + unit));
 }
 
@@ -267,6 +289,7 @@ void glc_bind_texture(int unit, unsigned name) {
     HIT(glc.unit[unit].tex_name == name);
     glc.unit[unit].tex_name = name;
     glc_active_texture(unit);
+    TR("glBindTexture unit %d name %u\n", unit, name);
     GL(glBindTexture)(GL_TEXTURE_2D, (GLuint)name);
 }
 
@@ -294,6 +317,8 @@ unsigned glc_white_texture(void) {
         if (!n) {
             return 0;
         }
+        int au = glc.active_tex >= 0 ? glc.active_tex : 0;
+        unsigned had = glc.unit[au].tex_name;
         GL(glBindTexture)(GL_TEXTURE_2D, n);
         GL(glTexImage2D)(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA,
                          GL_UNSIGNED_BYTE, px);
@@ -301,9 +326,18 @@ unsigned glc_white_texture(void) {
         GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
         GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        /* The bind above went to whatever unit was active; tell the shadow so
-         * it does not believe the unit still holds its old texture. */
-        glc.unit[glc.active_tex >= 0 ? glc.active_tex : 0].tex_name = (unsigned)n;
+        /* The bind above went to whatever unit was active -- in the middle of
+         * gx_tev_apply that is the unit *before* the textureless one, which
+         * has just been bound to its own texture.  M15 recorded the white
+         * name into that unit's shadow, which kept the shadow honest and the
+         * picture wrong: the unit drew white until the next apply re-bound
+         * it, and whether that was before or after the draw depended on the
+         * submit shape (PLAN.md 31.3).  Put the unit's texture back. */
+        if (had != 0xFFFFFFFFu) {
+            GL(glBindTexture)(GL_TEXTURE_2D, (GLuint)had);
+        } else {
+            glc.unit[au].tex_name = (unsigned)n;
+        }
         glc_white_name = (unsigned)n;
     }
     return glc_white_name;
@@ -313,6 +347,7 @@ void glc_unit_enable_tex2d(int unit, int on) {
     HIT(glc.unit[unit].tex2d_on == (signed char)on);
     glc.unit[unit].tex2d_on = (signed char)on;
     glc_active_texture(unit);
+    TR("glEnable/Disable TEXTURE_2D unit %d on %d\n", unit, on);
     if (on) {
         GL(glEnable)(GL_TEXTURE_2D);
     } else {
@@ -352,6 +387,7 @@ void glc_texenvi(int unit, unsigned pname, int v) {
         *slot = v;
     }
     glc_active_texture(unit);
+    TR("glTexEnvi unit %d pname %04x v %04x\n", unit, pname, v);
     GL(glTexEnvi)(GL_TEXTURE_ENV, (GLenum)pname, (GLint)v);
 }
 
@@ -365,6 +401,7 @@ void glc_texenvf(int unit, unsigned pname, float v) {
         *slot = v;
     }
     glc_active_texture(unit);
+    TR("glTexEnvf unit %d pname %04x v %f\n", unit, pname, v);
     GL(glTexEnvf)(GL_TEXTURE_ENV, (GLenum)pname, (GLfloat)v);
 }
 
@@ -373,6 +410,7 @@ void glc_texenv_color(int unit, const float* c) {
     HIT(memcmp(u->env_color, c, sizeof(float) * 4) == 0);
     memcpy(u->env_color, c, sizeof(float) * 4);
     glc_active_texture(unit);
+    TR("glTexEnvColor unit %d %.3f %.3f %.3f %.3f\n", unit, c[0], c[1], c[2], c[3]);
     GL(glTexEnvfv)(GL_TEXTURE_ENV, GL_TEXTURE_ENV_COLOR, (const GLfloat*)c);
 }
 
@@ -390,6 +428,7 @@ void glc_tex_matrix(int unit, float su, float sv) {
     m[5] = sv;
     m[10] = 1.0f;
     m[15] = 1.0f;
+    TR("glTexMatrix unit %d su %f sv %f\n", unit, su, sv);
     GL(glMatrixMode)(GL_TEXTURE);
     GL(glLoadMatrixf)(m);
     GL(glMatrixMode)(GL_MODELVIEW);
@@ -398,6 +437,7 @@ void glc_tex_matrix(int unit, float su, float sv) {
 static void glc_enable(GLenum cap, int on, signed char* shadow) {
     HIT(*shadow == (signed char)on);
     *shadow = (signed char)on;
+    TR("glEnable/Disable cap %04x on %d\n", (unsigned)cap, on);
     if (on) {
         GL(glEnable)(cap);
     } else {
@@ -874,6 +914,7 @@ int gl13_init(void) {
 }
 
 void gl13_shutdown(void) {
+    glc_white_name = 0; /* dies with the context */
 #ifndef PORT_NO_SDL
     if (ctx) {
         SDL_GL_DeleteContext(ctx);

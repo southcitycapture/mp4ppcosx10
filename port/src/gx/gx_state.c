@@ -197,7 +197,7 @@ const void* gx_last_posmtx_arg;
 
 void GXLoadPosMtxImm(const void* mtx, u32 id) {
     u32 slot = id / 3;
-    GX_STATE_TOUCH_IF(slot >= 10 || memcmp(gx.pos_mtx[slot], mtx, 48) != 0);
+    GX_STATE_TOUCH_IF(GX_CMP_MATRIX, slot >= 10 || memcmp(gx.pos_mtx[slot], mtx, 48) != 0);
     if (port_opt.drawlog) {
         gx_last_posmtx_caller = __builtin_return_address(0);
         gx_last_posmtx_arg = mtx;
@@ -215,7 +215,7 @@ void GXLoadNrmMtxImm(const void* mtx, u32 id) {
         int r;
         /* bit-exact, like GXLoadPosMtxImm's memcmp: a state call that
          * changes nothing ends no batch, and "nothing" means the bytes */
-        GX_STATE_TOUCH_IF(memcmp(&gx.nrm_mtx[slot][0], m, 12) != 0 ||
+        GX_STATE_TOUCH_IF(GX_CMP_MATRIX, memcmp(&gx.nrm_mtx[slot][0], m, 12) != 0 ||
                           memcmp(&gx.nrm_mtx[slot][3], m + 4, 12) != 0 ||
                           memcmp(&gx.nrm_mtx[slot][6], m + 8, 12) != 0);
         for (r = 0; r < 3; r++) {
@@ -234,7 +234,7 @@ void GXLoadTexMtxImm(const void* mtx, u32 id, GXTexMtxType type) {
         slot = (id - GX_TEXMTX0) / 3;
     }
     if (slot < 20) {
-        GX_STATE_TOUCH_IF(memcmp(gx.tex_mtx[slot], mtx, type == GX_MTX2x4 ? 32 : 48) != 0);
+        GX_STATE_TOUCH_IF(GX_CMP_MATRIX, memcmp(gx.tex_mtx[slot], mtx, type == GX_MTX2x4 ? 32 : 48) != 0);
         memcpy(gx.tex_mtx[slot], mtx, type == GX_MTX2x4 ? 32 : 48);
         if (type == GX_MTX2x4) {
             gx.tex_mtx[slot][8] = 0.0f;
@@ -245,7 +245,7 @@ void GXLoadTexMtxImm(const void* mtx, u32 id, GXTexMtxType type) {
     }
 }
 
-void GXSetCurrentMtx(u32 id) { GX_STATE_TOUCH_IF(gx.cur_pnmtx != id / 3); gx.cur_pnmtx = id / 3; }
+void GXSetCurrentMtx(u32 id) { GX_STATE_TOUCH_IF(GX_CMP_MATRIX, gx.cur_pnmtx != id / 3); gx.cur_pnmtx = id / 3; }
 
 /* GX does not keep the 4x4 it is handed: it keeps six of its elements, which
  * is exactly what the fixed-function projection has degrees of freedom for.
@@ -264,7 +264,7 @@ void GXSetProjection(const void* mtxp, GXProjectionType type) {
         p[1] = mtx[0][2];
         p[3] = mtx[1][2];
     }
-    GX_STATE_TOUCH_IF(gx.proj_type != (u8)type || memcmp(gx.proj, p, sizeof(p)) != 0);
+    GX_STATE_TOUCH_IF(GX_CMP_MATRIX, gx.proj_type != (u8)type || memcmp(gx.proj, p, sizeof(p)) != 0);
     gx.proj_type = (u8)type;
     memcpy(gx.proj, p, sizeof(p));
 }
@@ -282,7 +282,7 @@ void GXSetViewport(f32 left, f32 top, f32 wd, f32 ht, f32 nearz, f32 farz) {
     v[3] = ht;
     v[4] = nearz;
     v[5] = farz;
-    GX_STATE_TOUCH_IF(memcmp(gx.vp, v, sizeof(v)) != 0);
+    GX_STATE_TOUCH_IF(GX_CMP_MATRIX, memcmp(gx.vp, v, sizeof(v)) != 0);
     gx.vp[0] = left;
     gx.vp[1] = top;
     gx.vp[2] = wd;
@@ -304,7 +304,7 @@ void GXSetViewportJitter(f32 left, f32 top, f32 wd, f32 ht, f32 nearz, f32 farz,
 void GXGetViewportv(f32* v) { memcpy(v, gx.vp, sizeof(gx.vp)); }
 
 void GXSetScissor(u32 left, u32 top, u32 wd, u32 ht) {
-    GX_STATE_TOUCH_IF(gx.scissor[0] != left || gx.scissor[1] != top || gx.scissor[2] != wd ||
+    GX_STATE_TOUCH_IF(GX_CMP_MATRIX, gx.scissor[0] != left || gx.scissor[1] != top || gx.scissor[2] != wd ||
                       gx.scissor[3] != ht);
     gx.scissor[0] = left;
     gx.scissor[1] = top;
@@ -318,11 +318,11 @@ void GXSetScissorBoxOffset(s32 x, s32 y) {
     (void)y;
 }
 
-void GXSetCullMode(GXCullMode mode) { GX_STATE_TOUCH_IF(gx.cull != (u8)mode); gx.cull = (u8)mode; }
+void GXSetCullMode(GXCullMode mode) { GX_STATE_TOUCH_IF(64, gx.cull != (u8)mode); gx.cull = (u8)mode; }
 
 /* ---- channels, lights ----------------------------------------------------- */
 
-void GXSetNumChans(u8 n) { GX_STATE_TOUCH_IF(gx.num_chans != n); gx.num_chans = n; }
+void GXSetNumChans(u8 n) { GX_STATE_TOUCH_IF(GX_CMP_CHAN, gx.num_chans != n); gx.num_chans = n; }
 
 void GXSetChanCtrl(GXChannelID chan, GXBool enable, GXColorSrc amb_src,
                    GXColorSrc mat_src, u32 light_mask, GXDiffuseFn diff_fn,
@@ -347,7 +347,7 @@ void GXSetChanCtrl(GXChannelID chan, GXBool enable, GXColorSrc amb_src,
             changed = 1;
         }
     }
-    GX_STATE_TOUCH_IF(changed);
+    GX_STATE_TOUCH_IF(GX_CMP_CHAN, changed);
     for (i = 0; i < n; i += 2) {
         int c = first + i;
         if (c < 0 || c > 3) {
@@ -405,11 +405,11 @@ static int chan_color_same(GXChannelID chan, GXColor c, int ambient) {
 }
 
 void GXSetChanAmbColor(GXChannelID chan, GXColor c) {
-    GX_STATE_TOUCH_IF(!chan_color_same(chan, c, 1));
+    GX_STATE_TOUCH_IF(GX_CMP_CHAN, !chan_color_same(chan, c, 1));
     chan_color(chan, c, 1);
 }
 void GXSetChanMatColor(GXChannelID chan, GXColor c) {
-    GX_STATE_TOUCH_IF(!chan_color_same(chan, c, 0));
+    GX_STATE_TOUCH_IF(GX_CMP_CHAN, !chan_color_same(chan, c, 0));
     chan_color(chan, c, 0);
 }
 
@@ -504,7 +504,7 @@ void GXLoadLightObjImm(GXLightObj* o, GXLightID id) {
 
 /* ---- texgen --------------------------------------------------------------- */
 
-void GXSetNumTexGens(u8 n) { GX_STATE_TOUCH_IF(gx.num_texgens != n); gx.num_texgens = n; }
+void GXSetNumTexGens(u8 n) { GX_STATE_TOUCH_IF(GX_CMP_CHAN, gx.num_texgens != n); gx.num_texgens = n; }
 
 void GXSetTexCoordGen2(GXTexCoordID dst, GXTexGenType func, GXTexGenSrc src, u32 mtx,
                        GXBool normalize, u32 postmtx) {
@@ -533,12 +533,12 @@ void GXSetTexCoordScaleManually(GXTexCoordID coord, u8 enable, u16 ss, u16 ts) {
 
 /* ---- TEV ------------------------------------------------------------------ */
 
-void GXSetNumTevStages(u8 n) { GX_STATE_TOUCH_IF(gx.num_tev != n); gx.num_tev = n; }
+void GXSetNumTevStages(u8 n) { GX_STATE_TOUCH_IF(GX_CMP_TEV, gx.num_tev != n); gx.num_tev = n; }
 
 void GXSetTevOrder(GXTevStageID stage, GXTexCoordID coord, GXTexMapID map,
                    GXChannelID color) {
     if ((unsigned)stage < GX_TEV_STAGES) {
-        GX_STATE_TOUCH_IF(gx.tev[stage].coord != (u8)coord || gx.tev[stage].map != (u8)map ||
+        GX_STATE_TOUCH_IF(GX_CMP_TEV, gx.tev[stage].coord != (u8)coord || gx.tev[stage].map != (u8)map ||
                           gx.tev[stage].chan != (u8)color);
         gx.tev[stage].coord = (u8)coord;
         gx.tev[stage].map = (u8)map;
@@ -549,7 +549,7 @@ void GXSetTevOrder(GXTevStageID stage, GXTexCoordID coord, GXTexMapID map,
 void GXSetTevColorIn(GXTevStageID s, GXTevColorArg a, GXTevColorArg b, GXTevColorArg c,
                      GXTevColorArg d) {
     if ((unsigned)s < GX_TEV_STAGES) {
-        GX_STATE_TOUCH_IF(gx.tev[s].cin[0] != (u8)a || gx.tev[s].cin[1] != (u8)b ||
+        GX_STATE_TOUCH_IF(GX_CMP_TEV, gx.tev[s].cin[0] != (u8)a || gx.tev[s].cin[1] != (u8)b ||
                           gx.tev[s].cin[2] != (u8)c || gx.tev[s].cin[3] != (u8)d);
         gx.tev[s].cin[0] = (u8)a;
         gx.tev[s].cin[1] = (u8)b;
@@ -561,7 +561,7 @@ void GXSetTevColorIn(GXTevStageID s, GXTevColorArg a, GXTevColorArg b, GXTevColo
 void GXSetTevAlphaIn(GXTevStageID s, GXTevAlphaArg a, GXTevAlphaArg b, GXTevAlphaArg c,
                      GXTevAlphaArg d) {
     if ((unsigned)s < GX_TEV_STAGES) {
-        GX_STATE_TOUCH_IF(gx.tev[s].ain[0] != (u8)a || gx.tev[s].ain[1] != (u8)b ||
+        GX_STATE_TOUCH_IF(GX_CMP_TEV, gx.tev[s].ain[0] != (u8)a || gx.tev[s].ain[1] != (u8)b ||
                           gx.tev[s].ain[2] != (u8)c || gx.tev[s].ain[3] != (u8)d);
         gx.tev[s].ain[0] = (u8)a;
         gx.tev[s].ain[1] = (u8)b;
@@ -573,7 +573,7 @@ void GXSetTevAlphaIn(GXTevStageID s, GXTevAlphaArg a, GXTevAlphaArg b, GXTevAlph
 void GXSetTevColorOp(GXTevStageID s, GXTevOp op, GXTevBias bias, GXTevScale scale,
                      GXBool clamp, GXTevRegID out) {
     if ((unsigned)s < GX_TEV_STAGES) {
-        GX_STATE_TOUCH_IF(gx.tev[s].cop != (u8)op || gx.tev[s].cbias != (u8)bias ||
+        GX_STATE_TOUCH_IF(GX_CMP_TEV, gx.tev[s].cop != (u8)op || gx.tev[s].cbias != (u8)bias ||
                           gx.tev[s].cscale != (u8)scale ||
                           gx.tev[s].cclamp != (u8)(clamp ? 1 : 0) || gx.tev[s].creg != (u8)out);
         gx.tev[s].cop = (u8)op;
@@ -587,7 +587,7 @@ void GXSetTevColorOp(GXTevStageID s, GXTevOp op, GXTevBias bias, GXTevScale scal
 void GXSetTevAlphaOp(GXTevStageID s, GXTevOp op, GXTevBias bias, GXTevScale scale,
                      GXBool clamp, GXTevRegID out) {
     if ((unsigned)s < GX_TEV_STAGES) {
-        GX_STATE_TOUCH_IF(gx.tev[s].aop != (u8)op || gx.tev[s].abias != (u8)bias ||
+        GX_STATE_TOUCH_IF(GX_CMP_TEV, gx.tev[s].aop != (u8)op || gx.tev[s].abias != (u8)bias ||
                           gx.tev[s].ascale != (u8)scale ||
                           gx.tev[s].aclamp != (u8)(clamp ? 1 : 0) || gx.tev[s].areg != (u8)out);
         gx.tev[s].aop = (u8)op;
@@ -636,7 +636,7 @@ void GXSetTevOp(GXTevStageID id, GXTevMode mode) {
 
 void GXSetTevColor(GXTevRegID id, GXColor c) {
     if ((unsigned)id < 4) {
-        GX_STATE_TOUCH_IF(memcmp(&gx.tev_reg[id], &c, sizeof(c)) != 0);
+        GX_STATE_TOUCH_IF(GX_CMP_TEV, memcmp(&gx.tev_reg[id], &c, sizeof(c)) != 0);
         gx.tev_reg[id] = c;
     }
 }
@@ -658,26 +658,26 @@ void GXSetTevColorS10(GXTevRegID id, GXColorS10 c) {
 
 void GXSetTevKColor(GXTevKColorID id, GXColor c) {
     if ((unsigned)id < 4) {
-        GX_STATE_TOUCH_IF(memcmp(&gx.kcolor[id], &c, sizeof(c)) != 0);
+        GX_STATE_TOUCH_IF(GX_CMP_TEV, memcmp(&gx.kcolor[id], &c, sizeof(c)) != 0);
         gx.kcolor[id] = c;
     }
 }
 void GXSetTevKColorSel(GXTevStageID s, GXTevKColorSel sel) {
     if ((unsigned)s < GX_TEV_STAGES) {
-        GX_STATE_TOUCH_IF(gx.tev[s].kcsel != (u8)sel);
+        GX_STATE_TOUCH_IF(GX_CMP_TEV, gx.tev[s].kcsel != (u8)sel);
         gx.tev[s].kcsel = (u8)sel;
     }
 }
 void GXSetTevKAlphaSel(GXTevStageID s, GXTevKAlphaSel sel) {
     if ((unsigned)s < GX_TEV_STAGES) {
-        GX_STATE_TOUCH_IF(gx.tev[s].kasel != (u8)sel);
+        GX_STATE_TOUCH_IF(GX_CMP_TEV, gx.tev[s].kasel != (u8)sel);
         gx.tev[s].kasel = (u8)sel;
     }
 }
 
 void GXSetTevSwapMode(GXTevStageID s, GXTevSwapSel ras, GXTevSwapSel tex) {
     if ((unsigned)s < GX_TEV_STAGES) {
-        GX_STATE_TOUCH_IF(gx.tev[s].ras_swap != (u8)ras || gx.tev[s].tex_swap != (u8)tex);
+        GX_STATE_TOUCH_IF(GX_CMP_TEV, gx.tev[s].ras_swap != (u8)ras || gx.tev[s].tex_swap != (u8)tex);
         gx.tev[s].ras_swap = (u8)ras;
         gx.tev[s].tex_swap = (u8)tex;
     }
@@ -776,18 +776,18 @@ void GXSetTevIndTile(GXTevStageID tev, GXIndTexStageID ind, u16 ts_s, u16 ts_t,
 /* ---- the pixel pipeline --------------------------------------------------- */
 
 void GXSetZMode(GXBool compare, GXCompare func, GXBool update) {
-    GX_STATE_TOUCH_IF(gx.z_enable != (u8)(compare ? 1 : 0) || gx.z_func != (u8)func ||
+    GX_STATE_TOUCH_IF(16, gx.z_enable != (u8)(compare ? 1 : 0) || gx.z_func != (u8)func ||
                       gx.z_update != (u8)(update ? 1 : 0));
     gx.z_enable = (u8)(compare ? 1 : 0);
     gx.z_func = (u8)func;
     gx.z_update = (u8)(update ? 1 : 0);
 }
 
-void GXSetZCompLoc(GXBool before_tex) { GX_STATE_TOUCH_IF(gx.z_comploc != (u8)(before_tex ? 1 : 0)); gx.z_comploc = (u8)(before_tex ? 1 : 0); }
+void GXSetZCompLoc(GXBool before_tex) { GX_STATE_TOUCH_IF(32, gx.z_comploc != (u8)(before_tex ? 1 : 0)); gx.z_comploc = (u8)(before_tex ? 1 : 0); }
 
 void GXSetBlendMode(GXBlendMode type, GXBlendFactor src, GXBlendFactor dst,
                     GXLogicOp op) {
-    GX_STATE_TOUCH_IF(gx.blend_mode != (u8)type || gx.blend_src != (u8)src ||
+    GX_STATE_TOUCH_IF(GX_CMP_RASTER, gx.blend_mode != (u8)type || gx.blend_src != (u8)src ||
                       gx.blend_dst != (u8)dst || gx.blend_logic != (u8)op);
     gx.blend_mode = (u8)type;
     gx.blend_src = (u8)src;
@@ -802,7 +802,7 @@ void GXSetBlendMode(GXBlendMode type, GXBlendFactor src, GXBlendFactor dst,
 }
 
 void GXSetAlphaCompare(GXCompare c0, u8 r0, GXAlphaOp op, GXCompare c1, u8 r1) {
-    GX_STATE_TOUCH_IF(gx.alpha_comp0 != (u8)c0 || gx.alpha_ref0 != r0 || gx.alpha_op != (u8)op ||
+    GX_STATE_TOUCH_IF(128, gx.alpha_comp0 != (u8)c0 || gx.alpha_ref0 != r0 || gx.alpha_op != (u8)op ||
                       gx.alpha_comp1 != (u8)c1 || gx.alpha_ref1 != r1);
     gx.alpha_comp0 = (u8)c0;
     gx.alpha_ref0 = r0;

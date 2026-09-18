@@ -197,12 +197,18 @@ void gx_batch_flush_from(const char* who);
  * holds changes nothing, so it ends no batch.  hsfdraw.c's FaceDraw calls
  * GXSetBlendMode before *every* face, almost always with the value it set
  * for the previous one (55,678 of 68,389 batch ends on the board, M16). */
-#define GX_STATE_TOUCH_IF(changed)                                                       \
+/* `group` is a bit of --cmpmask (default all set): a group whose bit is clear
+ * flushes unconditionally, which is how a wrong compare is bisected. */
+#define GX_STATE_TOUCH_IF(group, changed)                                                \
     do {                                                                                 \
-        if (gx_batch_pending && (changed)) {                                             \
+        if (gx_batch_pending && (!(port_opt.cmpmask & (group)) || (changed))) {          \
             gx_batch_flush_from(__func__);                                               \
         }                                                                                \
     } while (0)
+#define GX_CMP_RASTER 1
+#define GX_CMP_MATRIX 2
+#define GX_CMP_TEV 4
+#define GX_CMP_CHAN 8
 
 /* gx_tev.c */
 void gx_tev_apply(void);          /* GXState -> GL texture environment */
@@ -273,6 +279,7 @@ void gl13_var_flush(const void* p, size_t len);
 void gl13_var_left(size_t from, size_t cursor, int wrapped);
 void gl13_var_stats(unsigned* waits, unsigned* blocked, unsigned* sets, unsigned* flushes);
 void gl13_multi_draw_arrays(unsigned mode, const int* first, const int* count, int n);
+int gl13_trace_armed(void);       /* --gltrace F: this is frame F */
 int gl13_live(void);
 /* --nodraw / --ffto (PLAN.md 24.1): the renderer is switched off under a live
  * context.  `gl13_live()` is 0 while it is, so every GL path already skips;

@@ -301,6 +301,7 @@ int port_parse_args(int argc, char** argv) {
      * The 4-tap was there to buy quality and on this hardware it buys none, so
      * it is the flag now and linear is the default. */
     port_opt.resample4 = 0;
+    port_opt.cmpmask = 15; /* every compare-first group on; see gx_internal.h */
     for (i = 1; i < argc; i++) {
         const char* a = argv[i];
         if (!strcmp(a, "--image") && i + 1 < argc) {
@@ -472,6 +473,14 @@ int port_parse_args(int argc, char** argv) {
             port_opt.oldsubmit = 1;
         } else if (!strcmp(a, "--novar")) {
             port_opt.novar = 1;
+        } else if (!strcmp(a, "--batchmax") && i + 1 < argc) {
+            port_opt.batchmax = atoi(argv[++i]);
+        } else if (!strcmp(a, "--segrebase") && i + 1 < argc) {
+            port_opt.segrebase = atoi(argv[++i]); /* 1 + 2 tev + 4 vprog + 8 raster */
+        } else if (!strcmp(a, "--gltrace") && i + 1 < argc) {
+            port_opt.gltrace = atoi(argv[++i]);
+        } else if (!strcmp(a, "--nomerge")) {
+            port_opt.nomerge = 1;
         } else if (!strcmp(a, "--nomultidraw")) {
             port_opt.nomultidraw = 1;
         } else if (!strcmp(a, "--submitstats")) {
@@ -480,6 +489,8 @@ int port_parse_args(int argc, char** argv) {
             port_opt.noregfix = 1;
         } else if (!strcmp(a, "--oldkonst")) {
             port_opt.oldkonst = 1;
+        } else if (!strcmp(a, "--cmpmask") && i + 1 < argc) {
+            port_opt.cmpmask = (unsigned)strtoul(argv[++i], NULL, 0);
         } else if (!strcmp(a, "--ovllog")) {
             port_opt.ovllog = 1;
         } else if (!strcmp(a, "--nanwatch")) {

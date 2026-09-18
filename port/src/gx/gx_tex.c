@@ -740,6 +740,10 @@ static void tex_bind_decode_and_upload(int slot, int unit, const GXTexObjPort* o
              * rather than let it guess.  `unit` is where this bind is
              * headed anyway, so the bind below usually elides. */
             glc_active_texture(unit);
+            if (gl13_trace_armed()) {
+                port_log("gltrace> upload unit %d name %u %dx%d img %p\n", unit, name, pw, ph,
+                         o->image);
+            }
             GL(glBindTexture)(GL_TEXTURE_2D, name);
             glc_note_bind(unit, name);
             GL(glTexImage2D)(GL_TEXTURE_2D, 0, GL_RGBA8, pw, ph, 0, GL_RGBA,
@@ -824,6 +828,19 @@ static void tex_bind_finish(int unit, GXTexObjPort* o, int slot) {
             e->param_wrap_t = wt;
             e->param_min = mn;
             e->param_mag = mg;
+            /* glTexParameter acts on the texture bound to the *active* unit,
+             * and glc_bind_texture above says nothing to GL -- not even
+             * glActiveTexture -- when the unit already holds this name.  So
+             * the parameters went to whichever unit happened to be active:
+             * one unit's texture got another's wrap and filter, depending
+             * on the order of binds before it.  M16 found it as a 150-pixel
+             * disagreement in one eye between two submit shapes that were
+             * otherwise identical (PLAN.md 31.3), a latent bug since M5b. */
+            glc_active_texture(unit);
+            if (gl13_trace_armed()) {
+                port_log("gltrace> glTexParameteri unit %d name %u wrap %d %d filt %d %d\n", unit,
+                         o->gl_name, ws, wt, mn, mg);
+            }
             GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, (GLint)ws);
             GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, (GLint)wt);
             GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, (GLint)mn);
@@ -912,6 +929,7 @@ void gx_tex_bind_swapped(int unit, GXTexObjPort* o, u8 swap) {
         glc_tex_matrix(unit, cache[slot].su, cache[slot].sv);
         if (cache[slot].param_wrap_s != (int)gl_wrap(o->wrap_s)) {
             cache[slot].param_wrap_s = (int)gl_wrap(o->wrap_s);
+            glc_active_texture(unit); /* same reason as in tex_bind_finish */
             GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S,
                                 (GLint)cache[slot].param_wrap_s);
             GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T,
@@ -1560,6 +1578,19 @@ int gx_tex_bind_tiled(int unit, GXTexObjPort* sheet, GXTexObjPort* map,
             e->param_wrap_t = wt;
             e->param_min = mn;
             e->param_mag = mg;
+            /* glTexParameter acts on the texture bound to the *active* unit,
+             * and glc_bind_texture above says nothing to GL -- not even
+             * glActiveTexture -- when the unit already holds this name.  So
+             * the parameters went to whichever unit happened to be active:
+             * one unit's texture got another's wrap and filter, depending
+             * on the order of binds before it.  M16 found it as a 150-pixel
+             * disagreement in one eye between two submit shapes that were
+             * otherwise identical (PLAN.md 31.3), a latent bug since M5b. */
+            glc_active_texture(unit);
+            if (gl13_trace_armed()) {
+                port_log("gltrace> glTexParameteri unit %d name %u wrap %d %d filt %d %d\n", unit,
+                         tiles[slot].gl_name, ws, wt, mn, mg);
+            }
             GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, (GLint)ws);
             GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, (GLint)wt);
             GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, (GLint)mn);

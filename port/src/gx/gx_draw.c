@@ -1417,9 +1417,11 @@ void GXBegin(GXPrimitive type, GXVtxFmt fmt, u16 n) {
  * state that decides whether any of it survives to the framebuffer.  Written
  * because "the draw happens and the screen stays black" has too many possible
  * causes to reason about from the source, and each of them is one line here. */
-static void draw_log(u32 first) {
+static void draw_log(u32 first, u32 count, u8 dprim) {
     static int shown;
     int i;
+    int nverts = (int)count; /* shadows the global on purpose: see draw_submit */
+    u8 prim = dprim;
     const GXTevStage* s0 = &gx.tev[0];
     GXTexObjPort* t;
     if (!port_opt.drawlog || shown >= port_opt.drawlog) {
@@ -1659,14 +1661,17 @@ static size_t ring_claim(size_t need) {
 /* The run at `run_pos` has `nverts` vertices: advance the cursor and add it
  * to the batch, or flush and start a new one when it cannot join. */
 static void batch_add(void) {
-    size_t bytes = (size_t)nverts * sl.stride;
+    u32 count = (u32)nverts; /* before anything below can flush */
+    u8 p = prim;
+    size_t bytes = (size_t)count * sl.stride;
     ring_cursor = run_pos + bytes;
-    if (!nverts) {
+    if (!count) {
         return;
     }
     if (batch_n &&
         (port_opt.oldsubmit || batch_n >= BATCH_MAX ||
-         batch_verts + (u32)nverts > MAX_VERTS ||
+         (port_opt.batchmax && batch_n >= port_opt.batchmax) ||
+         batch_verts + count > MAX_VERTS ||
          memcmp(&batch_sl, &sl, sizeof(sl)) != 0 ||
          batch_pos + (size_t)batch_verts * batch_sl.stride != run_pos)) {
         /* The layout cannot change inside a list (it is a function of the
@@ -1685,10 +1690,10 @@ static void batch_add(void) {
         batch_verts = 0;
     }
     batch[batch_n].first = batch_verts;
-    batch[batch_n].count = (u32)nverts;
-    batch[batch_n].prim = prim;
+    batch[batch_n].count = count;
+    batch[batch_n].prim = p;
     batch_n++;
-    batch_verts += (u32)nverts;
+    batch_verts += count;
     gx_batch_pending = 1;
 }
 
@@ -1740,15 +1745,22 @@ static void issue_segments(const Seg* segs, int nsegs) {
         GLenum mode = gl_prim(segs[i].prim);
         int j = i + 1;
         if (port_opt.oldsubmit) {
+            if (gl13_trace_armed()) {
+                port_log("gltrace> glDrawArrays mode %04x first %u count %u\n", mode,
+                         segs[i].first, segs[i].count);
+            }
             GL(glDrawArrays)(mode, (GLint)segs[i].first, (GLsizei)segs[i].count);
             stat_draws++;
-        } else if (prim_is_list(mode)) {
+        } else if (prim_is_list(mode) && !port_opt.nomerge) {
             u32 first = segs[i].first, count = segs[i].count;
             int unit = prim_unit(mode);
             while (j < nsegs && gl_prim(segs[j].prim) == mode &&
                    segs[j].first == first + count && (count % (u32)unit) == 0) {
                 count += segs[j].count;
                 j++;
+            }
+            if (gl13_trace_armed()) {
+                port_log("gltrace> glDrawArrays mode %04x first %u count %u\n", mode, first, count);
             }
             GL(glDrawArrays)(mode, (GLint)first, (GLsizei)count);
             stat_draws++;
@@ -1770,6 +1782,10 @@ static void issue_segments(const Seg* segs, int nsegs) {
             } else {
                 int k;
                 for (k = i; k < j; k++) {
+                    if (gl13_trace_armed()) {
+                        port_log("gltrace> glDrawArrays mode %04x first %u count %u\n", mode,
+                                 segs[k].first, segs[k].count);
+                    }
                     GL(glDrawArrays)(mode, (GLint)segs[k].first, (GLsizei)segs[k].count);
                     stat_draws++;
                 }
@@ -1794,7 +1810,6 @@ static void draw_submit(const u8* s, int n, const Seg* segs, int nsegs, int in_r
     if (!gl13_live()) {
         return;
     }
-    nverts = n; /* draw_log reads it */
     /* M11: phase 2 on the GPU.  The decision has to be made *before* phase 2
      * runs, because the whole point is not to run it; `gx_vprog_draw` compiles
      * or finds the variant, uploads the parameters and binds the source
@@ -1815,14 +1830,17 @@ static void draw_submit(const u8* s, int n, const Seg* segs, int nsegs, int in_r
     /* After the state is applied, not before: the texture cache fills in
      * gl_name at bind time, so a log taken earlier reports a stale 0 and
      * sends you hunting for a texture upload that already happened. */
+    /* Through parameters, not the globals: draw_submit runs from inside
+     * batch_add when a batch has to make room, and batch_add still needs
+     * `nverts` and `prim` for the segment it is adding.  The first M16 build
+     * wrote `nverts = n` here and every segment added right after an in-add
+     * flush was recorded with the *previous* batch's vertex count -- one
+     * eye on the title, 136 pixels, PLAN.md 31.3. */
     if (port_opt.drawlog) {
         int i;
         for (i = 0; i < nsegs; i++) {
-            prim = segs[i].prim;
-            nverts = (int)segs[i].count;
-            draw_log(segs[i].first);
+            draw_log(segs[i].first, segs[i].count, segs[i].prim);
         }
-        nverts = n;
     }
 
     /* On the GPU path the arrays are the *source* layout and gx_vprog_draw has
@@ -1857,6 +1875,29 @@ static void draw_submit(const u8* s, int n, const Seg* segs, int nsegs, int in_r
                 }
             }
         }
+    }
+    if (port_opt.segrebase && on_gpu) {
+        /* diagnostic (PLAN.md 31.3): every segment from its own base pointer
+         * with first = 0, i.e. the pre-M16 array shape inside one batch */
+        int i;
+        for (i = 0; i < nsegs; i++) {
+            GxXfDesc x2 = xfd;
+            x2.base = s + (size_t)segs[i].first * sl.stride;
+            if (port_opt.segrebase & 2) {
+                gx_tev_apply();
+            }
+            if (port_opt.segrebase & 4) {
+                gx_vprog_draw(&x2, (int)segs[i].count);
+            }
+            if (port_opt.segrebase & 8) {
+                gl13_apply_transform();
+                gl13_apply_raster_state();
+            }
+            gx_vprog_bind(&x2);
+            GL(glDrawArrays)(gl_prim(segs[i].prim), 0, (GLsizei)segs[i].count);
+            stat_draws++;
+        }
+        return;
     }
     issue_segments(segs, nsegs);
 }

@@ -9270,7 +9270,7 @@ Three parts, each behind a flag on the same binary:
 --freshcard --play board-start-com4.play --frames 9000 --status --dumpframe
 800,3000,7000 --perfwin …`), nothing polling the G4:
 
-| scene | `--oldsubmit` | `--novar` (batches, plain memory) | ring + multi-draw, flush per setter | **+ compare-first setters** | change |
+| scene | `--oldsubmit` | `--novar` (batches, plain memory) | ring + multi-draw, flush per setter | + compare-first setters | change |
 |---|---:|---:|---:|---:|---:|
 | title (700-870) | 14.80 fps | 13.92 | 16.23 | **17.20** | **+16%** |
 | character select (2600-3600) | 14.81 | 15.32 | 15.23 | **17.95** | **+21%** |
@@ -9279,6 +9279,23 @@ Three parts, each behind a flag on the same binary:
 | batches, whole walk | 8,411,126 | 7,514,186 | 7,514,186 | **1,960,066** | |
 | GL draw calls | 8,411,126 | 8,411,126 | 7,619,726 | **2,811,643** | −67% |
 | wall clock, 9,000 frames | 444.3 s | 443.3 s | 437.3 s | **388.4 s** | −13% |
+
+and the same two arms on the **final M16 binary** (§31.3's rewrite and its two
+bind fixes in, both arms), which is the table to quote — the bind fixes
+(§31.3) turn out to have been costing the *old* path too, since M15 was
+creating a texture object every frame:
+
+| scene | `--oldsubmit` | **M16** | change | gx ms/frame |
+|---|---:|---:|---:|---|
+| title (700-870) | 15.03 fps | **20.97** | **+40%** | 61.57 → 41.51 |
+| character select (2600-3600) | 15.41 | **18.95** | **+23%** | 52.60 → 40.97 |
+| board (6000-8900) | 20.31 | **23.42** | **+15%** | 34.80 → 28.44 |
+| `m432dll` (10900-11800) | 12.18 | **14.77** | **+21%** | 68.57 → 54.40 |
+| `m427dll` (10900-11800) | 22.49 | **24.89** | **+11%** | 32.60 → 28.52 |
+| wall clock, 9,000 frames | 413.7 s | **352.3 s** | −15% | |
+
+(the two minigames were measured on the binary before the bind fixes, both
+arms alike; `--minigame NAME --ffto 10700 --frames 11800`, the §25.4 window.)
 
 The columns read left to right as the three parts were added, and each says
 something. Batching without the ring (`--novar`) buys **nothing** — one state
@@ -9382,18 +9399,68 @@ two-texture material, the same lost alpha. Full frames:
 |---:|---|---|---:|---|
 | 800 | `eb6c3189…` | **`05091ad451a79900608af5e12b81707b`** | 607 (0.20%) | the title's 3D characters' eyes: Peach's, Mario's, Wario's, Luigi's |
 | 3000 | `8762d432…` | `8762d432…` unchanged | 0 | no such material on the character select |
-| 7000 | `b2a679b2…` | **`4f9e79f0b57c2885b9eb078347f9bd82`** | 62,674 (20.4%) | the eyes, the walkway, the platform sides |
+| 7000 | `b2a679b2…` | `4f9e79f0…` with the rewrite alone; **`9264207cff650a0932aebe1504ed9e34`** after the two bind fixes below (217 px more: Mario's other eye) | 62,674 (20.4%) | the eyes, the walkway, the platform sides |
 
 `ppmdiff.py` on 7000: mean 12.76 levels, 18.8% of channel samples by more
-than 8 — not rounding, and not meant to be.
+than 8 — not rounding, and not meant to be. The three M16 references are
+therefore **800 `60f8b7a0…`, 3000 `8762d432…` (unchanged), 7000
+`9264207c…`**, and the final binary produces all three identically under the
+batched submit and under `--oldsubmit`.
 
-**One thing this item leaves open, and it is written down rather than
-hidden**: on frame 800 the batched submit and `--oldsubmit` disagree by 136
-pixels (`05091ad4…` against `78c3144b…`), all inside Mario's screen-right eye,
-which in the batched arm is paler with a smaller iris; the two arms agree to
-the byte on 3000 and 7000, and agreed on all three before this rewrite. So
-the register rewrite and the cross-list batch interact on the title, in one
-eye, and the cause is not yet known — §31.6.
+**The 136 pixels that were not the rewrite's.** With the rewrite in, the
+batched submit and `--oldsubmit` disagreed on frame 800 — 136 pixels, all
+inside Mario's screen-right eye on the title, paler with a smaller iris in
+the batched arm — while agreeing to the byte on 3000 and 7000, and having
+agreed on all three before the rewrite. The bisection, one short run each
+(`--frames 830 --dumpframe 800`), went: not the ring (`--novar` same), not
+multi-draw, not the merge, not the konst split, not the TEV cache
+(`--oldtev` same), not the rewrite itself (`--noregfix` differed from
+`--noregfix --oldsubmit` too, `16da4571…` against `eb6c3189…`), not the
+compare-first setters as a group and then not any one of them (`--cmpmask`,
+added for this: only `GXSetBlendMode`'s bit reproduced it — i.e. any
+batching of two faces of one material did), not the deferral (`--batchmax 1`,
+one segment per batch with the flush still deferred, was exact), not `first`
+(`--segrebase 1`, every segment from its own base at `first = 0`, still
+wrong) — and then `--segrebase 3`, which re-ran `gx_tev_apply` per segment,
+produced a *third* picture. `gx_tev_apply` was not idempotent. `--gltrace F`
+(new: every GL call the shadow lets through in the forty frames up to F,
+with arguments) put the two arms side by side: 71,961 lines each, identical
+in every argument except `first`, and different in the *position* of one
+`glBindTexture unit 1 name 378` — the per-list arm re-bound a texture it had
+bound eleven calls earlier, with nothing in between that should have moved
+it. Two M15-era bugs, both in the textureless-stage path:
+
+* `glc_white_texture()` creates the 1×1 white texture with a raw
+  `glBindTexture` on whatever unit is active — which, in the middle of
+  `gx_tev_apply`, is the unit *before* the textureless one, just bound to
+  its own texture — and recorded the white name into that unit's shadow.
+  Honest shadow, wrong picture: that unit drew **white** until the next
+  apply re-bound it, and whether that was before or after the draw was the
+  submit shape. Worse, `glc_invalidate()` zeroed the name, and the title's
+  EFB copy-with-clear invalidates every frame, so the white texture was
+  **re-created every frame** — a leaked texture object per frame and the
+  clobber re-armed each time. It now restores the unit's binding, and the
+  name survives invalidation (it is an object, not shadowed state) until
+  `gl13_shutdown`.
+* `tex_bind_finish`'s `glTexParameteri` block (and its two copies) ran after
+  a `glc_bind_texture` that says nothing to GL — not even `glActiveTexture`
+  — when the unit already holds the name, so a texture's wrap and filter
+  went to whichever unit was active. 29 pixels on the title. It sets the
+  unit first now.
+
+After both, the arms agree to the byte with and without the rewrite
+(`60f8b7a0…` / `ef40512f…`), `--batchmax`, `--segrebase` and `--gltrace`
+stay in as diagnostics, and frame 800 is re-based once more:
+
+| frame | M15 | after the two bind fixes, `--noregfix` | **M16** | |
+|---:|---|---|---|---|
+| 800 | `eb6c3189…` | `ef40512f…` (250 px: the units that drew white) | **`60f8b7a02be457d58a0cf705c647b83f`** | eyes |
+
+![the title at 2x: M15, the bind fixes alone, and with the register rewrite](screenshots/m16-title-f800-crop-m15-whitefix-regfix.png)
+
+The lesson is §0's: "the md5 changed" was not the finding, and neither was
+"the batched arm is wrong" — the per-list arm had been drawing one eye with a
+white texture since M15 and nothing had compared two submit shapes before.
 
 ### 31.4 The konst collision: two instruments, and a constant that was one thing when it is two
 
@@ -9500,49 +9567,44 @@ windows (§31.6).
 
 | | |
 |---|---|
-| the vertex ring, the fences, the cross-list batch, multi-draw (§31.2) | +16% / +21% / +13% on the three scenes, same binary, `--oldsubmit`; md5s to the byte before §31.3 |
+| the vertex ring, the fences, the cross-list batch, multi-draw (§31.2) | title +40%, character select +23%, board +15%, `m432` +21%, `m427` +11%, same binary, `--oldsubmit`; the three md5s identical on both arms |
 | the setters' compare-first (§31.2) | batches 7.5M → 1.96M on the walk, GL calls −67% |
 | the TEV register rewrite (§31.3) | eyes on the board and the title, the walkway and platform sides back; `--noregfix` reproduces §30 |
-| the per-draw konst counter (§31.4) | 319,813 of 1,960,066 draws |
-| `instDll/main.c:518` (§31.5) | five faults of five → `--minigame m432` reaches its window (14.77 fps on the new submit, first run) |
-| `--submitstats`, `--gxwarn`'s register line, the three profiles | |
+| the two texture-bind fixes (§31.3) | the white texture created once, not once a frame; `glTexParameter` on the right unit; the two submit shapes agree to the byte |
+| the per-draw konst counter and the RGB/A split (§31.4) | 319,813 of 1,960,066 draws before the split; `--oldkonst` |
+| `instDll/main.c:518` (§31.5) | five faults of five → both minigames reach their windows |
+| `--submitstats`, `--gxwarn`'s register line, `--gltrace`, `--cmpmask`, `--batchmax`, `--segrebase`, `--nomerge`, `--nomultidraw`, `--novar`, the three profiles | |
 
-**Not done, and why — the wired link between littlejelly and the G4 went
-down at 14:32 (`tg3 enp1s0f0: Link is down`) and stayed down, and the rest
-of the run list is one command each once it is back:**
+**Not done, and why:**
 
-* **`m432` / `m427` on both arms** (`/tmp/mg.sh NAME m4xx [--oldsubmit]`,
-  i.e. `--minigame NAME --ffto 10700 --frames 11800 --perfwin
-  10900-11800:NAME`). `m432` new = 14.77 fps was measured; its `--oldsubmit`
-  arm and both `m427` arms were still on the G4's side of the dead link.
-* **The frame-800 disagreement** between the batched submit and `--oldsubmit`
-  (§31.3's last paragraph): 136 pixels, one eye, title only. The bisection is
-  five short runs (`--frames 830 --dumpframe 800` under default twice,
-  `--nomultidraw`, `--novar`, `--oldsubmit`) and a `--drawlog 3000
-  --drawlog-at 800` pair to diff the eye draws' state between the arms. Until
-  it is run, the reference for 800 is `05091ad4…` *with the note that the
-  per-list arm draws `78c3144b…`*, and the difference is confined to one eye.
-* **The konst split's own A/B** (`--oldkonst` against default on 800/3000/7000
-  via `--ffto`), and its per-draw count after the split.
+* **The konst split's own md5 A/B** (`--oldkonst` against default on the three
+  frames). The split is exact by construction and changed frame 800 not at
+  all (`--oldkonst` gave the same md5 in the bisection), but the count of
+  draws still colliding *after* the split was not re-read; one `--ffto 7000`
+  run.
 * **The `GL_ATI_text_fragment_shader` backend** — argued in §31.4, not built.
 * **The decode** — 39% of `m432`'s frame after this milestone; the next
   per-vertex lever (§31.1).
-* **The strip → indexed conversion**, §31.2's last paragraph; and the reflection
-  / `texCol == 1` register shapes (5,665 stage emissions) §31.3 leaves folded.
+* **The strip → indexed conversion**, §31.2's last paragraph; and the
+  reflection / `texCol == 1` register shapes (5,665 stage emissions) §31.3
+  leaves folded.
 * **The oracle frame with a message window** (§30.8 item 3). Not taken.
+* **Two and a half hours of the afternoon** went to a dead wire: littlejelly's
+  `enp1s0f0` lost carrier at 14:32 and the laptop was suspended by its lid
+  from 14:43; `g4-witness.md` §0d.
 
 ### 31.7 What M17 starts with
 
-1. **Finish §31.6's run list**, in that order: the two minigames, the
-   frame-800 bisection, the konst A/B. Then the leave-behind soak on the M16
+1. **Read the soak's log first.** Left running at the end of M16 on the final
    build: `g4 run --soak --com4 --rtc dolphin --freshcard --snap-every 5000
-   --snap-keep 3 --status --ovllog --stuckwatch 200`.
-2. **Read that soak's log first**, as always: the M16 build has never run a
-   full board unattended, and a batch flushed from inside a GX setter is a new
-   place for the game to be when a fault happens.
-3. **The decode**, with `m432` as the scene (§31.1: 2,600 of 6,653 samples).
+   --snap-keep 3 --status --ovllog --stuckwatch 200`. The M16 build has never
+   run a full board unattended, and a batch flushed from inside a GX setter
+   is a new place for the game to be when a fault happens.
+2. **The decode**, with `m432` as the scene (§31.1: 2,600 of 6,653 samples).
    The M9 cache was exact and slower because it hashed the arrays; the
    question is whether the arrays a *static* model indexes can be proved
    unchanged more cheaply than by reading them.
-4. §31.4's fragment-shader decision, once the per-draw counts after the konst
+3. §31.4's fragment-shader decision, once the per-draw counts after the konst
    split and the register line say how many draws are still degraded.
+4. §31.6's small list: the konst A/B, the message-window oracle, the two
+   register shapes still folded.
