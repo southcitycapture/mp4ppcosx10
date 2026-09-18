@@ -76,6 +76,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h> /* strncasecmp, for --cast's names */
 
 /* Overlay id -> name, built from the same header the game's own `_ovltbl`
  * is built from, so the two cannot drift. */
@@ -176,10 +177,72 @@ static int forced_mg_select(int n) {
 
 /* ---- parking ---------------------------------------------------------------- */
 
+/* --cast: which four characters a --com4 run plays.
+ *
+ * `--com4` on its own parks character `i` on player `i`, which is
+ * Mario/Luigi/Peach/Yoshi -- and that cast is 221,376 bytes too heavy for
+ * `HEAP_DVD` in m453, on the retail disc as much as here (PLAN.md 27.5).
+ * Naming the cast is what lets a run ask whether a lighter four fits.
+ * The eight are `resultCharMdlTbl`'s order, src/REL/resultDll/main.c:1039. */
+static const char* const CAST_NAMES[8] = { "mario", "luigi",  "peach", "yoshi",
+                                           "wario", "donkey", "daisy", "waluigi" };
+static s16 cast_char[4] = { -1, -1, -1, -1 };
+
+static void cast_parse(void) {
+    const char* p = port_opt.cast;
+    int n = 0;
+    if (!p) {
+        return;
+    }
+    while (*p && n < 4) {
+        const char* start = p;
+        size_t len;
+        int j, got = -1;
+        while (*p && *p != ',') {
+            p++;
+        }
+        len = (size_t)(p - start);
+        if (len == 1 && start[0] >= '0' && start[0] <= '7') {
+            got = start[0] - '0';
+        } else {
+            for (j = 0; j < 8; j++) {
+                if (strlen(CAST_NAMES[j]) == len &&
+                    strncasecmp(CAST_NAMES[j], start, len) == 0) {
+                    got = j;
+                    break;
+                }
+            }
+        }
+        if (got < 0) {
+            port_log("\nport> --cast: \"%.*s\" is not a character (0-7, or one of "
+                     "mario luigi peach yoshi wario donkey daisy waluigi)\n",
+                     (int)len, start);
+            exit(2);
+        }
+        cast_char[n++] = (s16)got;
+        if (*p == ',') {
+            p++;
+        }
+    }
+    if (n != 4) {
+        port_log("\nport> --cast: needs four characters, got %d\n", n);
+        exit(2);
+    }
+    port_log("port> --cast: %s / %s / %s / %s\n", CAST_NAMES[cast_char[0]],
+             CAST_NAMES[cast_char[1]], CAST_NAMES[cast_char[2]],
+             CAST_NAMES[cast_char[3]]);
+}
+
 static void park_players(void) {
     int i;
     for (i = 0; i < 4; i++) {
         if (port_opt.com4) {
+            if (cast_char[i] >= 0) {
+                /* A named cast is parked every frame, exactly the way the rest
+                 * of --com4's player state is: character select is walked past
+                 * by the metronome and would otherwise pick its own four. */
+                GWPlayerCfg[i].character = cast_char[i];
+            }
             /* `character` is -1 out of bootDll (src/REL/bootDll/main.c:294)
              * and selmenuDll resets an out-of-range one to the player index
              * (selmenuDll/main.c:160-167).  Do the same rather than force a
@@ -426,15 +489,23 @@ static void stuck_watch(u32 frame) {
  * a minigame's pacing, and a minigame that has genuinely hung is a bug to
  * report rather than a prompt to answer.
  *
- * The press is written into `HuPadBtnDown` and `HuPadBtn` for **all four pad
- * indices** rather than into `PADStatus`, for two reasons.  The prompt reads
- * `HuPadBtnDown[...unk38[unk04].unk14]` -- the pad index of whichever player
- * the results screen is addressing, which is not necessarily channel 0 -- and
- * `PADRead` only ever fills channel 0, because a soak that reported four
- * connected controllers would be telling the game something untrue about the
- * console.  Writing the derived globals says exactly "these buttons went down
- * this frame" and nothing else.  `port_selfplay_tick` runs after the game's
- * own `PadReadVSync`, so a one-frame write is a clean one-frame press.
+ * The press goes in at `PADRead`'s raw `PortPadRaw` -- `port_pad_inject()` --
+ * and nowhere else.  **The first version wrote `HuPadBtnDown[]`/`HuPadBtn[]`
+ * for all four pad indices, and not one of those presses ever reached the
+ * game** (PLAN.md 29.1): `port_selfplay_tick` runs from the VI post-retrace
+ * callback, and the next thing the game does is src/game/main.c:101's
+ * `HuPadRead()`, which overwrites both arrays from `_PadBtn*` and zeroes
+ * `_PadBtnDown` -- all of it before `HuPrcCall(1)` dispatches a single
+ * coroutine.  The derived globals are the game's output, not its input.
+ *
+ * The raw layer is the one a `--play` script has always used, which is the
+ * argument for it: `board-start-com4.play`'s A metronome walks this exact
+ * mode-select menu at every boot.  The cost is that `PADRead` fills channel 0
+ * only -- a soak that reported four connected controllers would be telling
+ * the game something untrue about the console -- so a prompt that reads a pad
+ * index other than 0 is not answered by this.  The one prompt known to do
+ * that is the results screen, and 28.1 fixed it at the source: `fn_1_373C`
+ * now returns -1 in a four-CPU game and `fn_1_16924` takes its timeout.
  *
  * Three buttons are tried in rotation, a second apart, because the screens
  * between the results and the title do not all want the same one: `B` is the
@@ -488,8 +559,18 @@ static void prompt_nav(u32 frame) {
         { PAD_BUTTON_B, "B" },         { PAD_BUTTON_MENU, "START" },
         { PAD_BUTTON_A, "A" },
     };
+    static u32 hold_until;
     u32 stamp = progress_stamp();
-    int i;
+
+    /* A press held for four frames, not one.  Now that the press enters at the
+     * raw layer the game derives its own edge from it, and a one-frame raw
+     * blip is lost whenever two retraces fall between two `HuPadRead()` calls
+     * -- which a 10 fps board does all the time.  Four frames is what the boot
+     * walk holds. */
+    if (hold_until && frame < hold_until) {
+        port_pad_inject(BTN[rotation ? rotation - 1 : 6].bit);
+        return;
+    }
 
     if (!primed || stamp != last_stamp) {
         primed = 1;
@@ -525,10 +606,7 @@ static void prompt_nav(u32 frame) {
             return;
         }
         if ((frame & 63u) < 4u) {
-            for (i = 0; i < 4; i++) {
-                HuPadBtnDown[i] |= PAD_BUTTON_A;
-                HuPadBtn[i] |= PAD_BUTTON_A;
-            }
+            port_pad_inject(PAD_BUTTON_A);
             if (!armed_here) {
                 armed_here = (int)soak_nudges + 1;
                 soak_nudge_screens++;
@@ -557,13 +635,11 @@ static void prompt_nav(u32 frame) {
                  (frame - last_change) / 60u);
     }
     soak_nudges++;
-    for (i = 0; i < 4; i++) {
-        HuPadBtnDown[i] |= BTN[rotation].bit;
-        HuPadBtn[i] |= BTN[rotation].bit;
-    }
+    port_pad_inject(BTN[rotation].bit);
     port_log("port> soak: press %s on %s at frame %u\n", BTN[rotation].name,
              screen_name((int)omcurovl), frame);
     rotation = (rotation + 1) % 7;
+    hold_until = frame + 4u;
 }
 
 /* ---- the module trace ---------------------------------------------------------
@@ -618,6 +694,7 @@ static void module_trace(u32 frame) {
 /* ---- entry points ------------------------------------------------------------ */
 
 void port_selfplay_init(void) {
+    cast_parse();
     if (port_opt.minigame) {
         char buf[256];
         char* save = NULL;

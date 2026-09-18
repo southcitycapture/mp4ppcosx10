@@ -124,6 +124,12 @@ static void usage(const char* argv0) {
             "                    on when the one in force has been played, and\n"
             "                    releasing the roulette when the list is done\n"
             "  --com4            all four players are CPU\n"
+            "  --cast a,b,c,d    the four characters a --com4 run plays: numbers\n"
+            "                    0-7 or names (mario luigi peach yoshi wario\n"
+            "                    donkey daisy waluigi).  PLAN.md 29.2\n"
+            "  --dvdheap KB      resize HEAP_DVD away from the console's 5632 KB.\n"
+            "                    A deliberate divergence, logged at boot; see\n"
+            "                    PLAN.md 29.2 before using it for anything\n"
             "  --turns N         the board's turn count (10/20/30/50)\n"
             "  --status          one state line a second: screen, turn, minigame,\n"
             "                    coins and stars per player, aud ms, fps\n"
@@ -330,6 +336,14 @@ int port_parse_args(int argc, char** argv) {
             port_opt.minigame = argv[++i];
         } else if (!strcmp(a, "--com4")) {
             port_opt.com4 = 1;
+        } else if (!strcmp(a, "--cast") && i + 1 < argc) {
+            port_opt.cast = argv[++i];
+            port_opt.com4 = 1;
+        } else if (!strcmp(a, "--dvdheap") && i + 1 < argc) {
+            port_opt.dvdheap = atoi(argv[++i]);
+            /* malloc.c is game code and cannot see port_opt; the env var is the
+             * same seam --m444trace uses (PLAN.md 28.2). */
+            setenv("MP4_DVDHEAP_KB", argv[i], 1);
         } else if (!strcmp(a, "--turns") && i + 1 < argc) {
             port_opt.turns = atoi(argv[++i]);
         } else if (!strcmp(a, "--status")) {

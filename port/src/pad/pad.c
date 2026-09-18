@@ -99,26 +99,56 @@ BOOL PADInit(void) {
     return TRUE;
 }
 
+/* ---- the harness's own thumb (--soak's prompt navigator) -------------------
+ *
+ * port/src/debug/selfplay.c arms this from the VI post-retrace callback; the
+ * next PADRead consumes it.  It is deliberately the *raw* layer and not
+ * `HuPadBtnDown[]`: src/game/main.c:101 runs `HuPadRead()` at the top of every
+ * frame, so anything written to the derived globals after a retrace is gone
+ * before `HuPrcCall(1)` dispatches a coroutine.  A `--play` script has always
+ * entered here, which is why the boot walk's A metronome works and the
+ * navigator's did not.  PLAN.md 29.1. */
+static u16 inject_buttons;
+
+void port_pad_inject(unsigned short buttons) { inject_buttons |= (u16)buttons; }
+
 u32 PADRead(PADStatus* status) {
     u32 chan_bits = 0;
     int i;
     extern u32 VIGetRetraceCount(void);
     u32 frame = VIGetRetraceCount();
+    u16 inject = inject_buttons;
+
+    inject_buttons = 0;
 
     memset(status, 0, sizeof(PADStatus) * PAD_CHANMAX);
     for (i = 0; i < PAD_CHANMAX; i++) {
         status[i].err = PAD_ERR_NO_CONTROLLER;
     }
 
-    if (!port_opt.nopad) {
+    /* `--nopad` says "controller 1 is unplugged", and it stays unplugged
+     * unless the harness is actually pressing something this frame -- a soak
+     * that has to answer a prompt is the one case where the port is allowed to
+     * contradict it, and it says so in the run's own log the first time. */
+    if (!port_opt.nopad || inject) {
         PortPadRaw raw;
         memset(&raw, 0, sizeof(raw));
-        if (use_xone) {
-            pad_xone_poll(&raw);
-        } else {
-            pad_sdl_poll(&raw); /* keyboard, OR'd under an SDL pad if one is open */
+        if (!port_opt.nopad) {
+            if (use_xone) {
+                pad_xone_poll(&raw);
+            } else {
+                pad_sdl_poll(&raw); /* keyboard, OR'd under an SDL pad if one is open */
+            }
         }
-        pad_play_step(frame, &raw); /* a --play script overwrites raw for its frames */
+        if (!port_opt.nopad) {
+            pad_play_step(frame, &raw); /* a --play script overwrites raw for its frames */
+        }
+        /* The harness's press is OR'd *after* the script, so the two can never
+         * cancel: a script that is still running holds whatever it holds and
+         * the navigator adds a button to it.  In practice they do not overlap
+         * -- the navigator only fires on a screen that has stopped moving, and
+         * board-start-com4.play stops at frame 29,960. */
+        raw.button |= inject;
         if (port_pad_debug && (raw.button || raw.stickX || raw.stickY)) {
             extern u8 HuPadDStk[4];
             extern u8 HuPadDStkRep[4];

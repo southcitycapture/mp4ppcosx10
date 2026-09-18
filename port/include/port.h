@@ -95,6 +95,12 @@ typedef struct PortOptions {
     int freshcard;          /* --freshcard  format the card image at boot       */
     const char* minigame;   /* --minigame NAME|ID  park the roulette here       */
     int com4;               /* --com4  all four players are CPU                 */
+    const char* cast;       /* --cast a,b,c,d  the four characters --com4 parks
+                             *   (0 Mario 1 Luigi 2 Peach 3 Yoshi 4 Wario
+                             *    5 Donkey 6 Daisy 7 Waluigi), or names       */
+    int dvdheap;            /* --dvdheap KB  HEAP_DVD's size, overriding the
+                             *   console's 5,632 KB.  A deliberate, logged
+                             *   divergence; 0 = the console's own number.    */
     int turns;              /* --turns N  the board's turn count                */
     int status;             /* --status  one state line per second              */
     int stuckwatch;         /* seconds of no scene change before the watchdog
@@ -189,6 +195,21 @@ void port_perf_window(double* fps, double* aud_ms); /* --status's rolling second
 void port_scenelog(void);
 void port_nanwatch(void);
 void port_ovllog(void);
+
+/* The self-play harness's own controller, port/src/pad/pad.c.
+ *
+ * A press the harness makes has to enter the game at the same seam a real pad
+ * does -- `PADRead`'s raw `PortPadRaw`, which is where a `--play` script sits.
+ * Writing `HuPadBtnDown[]` from the retrace callback does nothing at all:
+ * src/game/main.c:101 calls `HuPadRead()` at the top of every frame, which
+ * overwrites both `HuPadBtn[]` and `HuPadBtnDown[]` from `_PadBtn*` before
+ * `HuPrcCall(1)` dispatches a single coroutine.  PLAN.md 29.1.
+ *
+ * `port_pad_inject(buttons)` arms one frame's worth of digital buttons; the
+ * next `PADRead` ORs them into port 1's raw state and disarms.  The game's own
+ * edge and repeat logic then derives `BtnDown`/`DStkRep` exactly as it would
+ * from a human thumb. */
+void port_pad_inject(unsigned short buttons);
 
 /* the self-play harness, port/src/debug/selfplay.c */
 void port_selfplay_init(void);

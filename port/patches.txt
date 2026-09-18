@@ -580,3 +580,72 @@ src/REL/mstory3Dll/main.c	    var_r30 = 0;\n    do {\n        for (var_r31 = 0; 
 # all, which is `port/src/debug/selfplay.c`'s own rule rather than an exception
 # to it.
 src/REL/mstory3Dll/result.c	        lbl_1_bss_1A0C.unk10 = fn_1_1834(-1, 1);\n    }\n}	        lbl_1_bss_1A0C.unk10 = fn_1_1834(-1, 1);\n    }\n    return var_r31;\n}
+
+# ---------------------------------------------- game/board/player.c (M14, 29.3)
+# `MegaPlayerPassFunc` and `MegaExecJump` are the two *board* members of the
+# 43-function missing-return class (PLAN.md 26.2, decomp-struct-notes Part Two).
+# Both are declared `s32`, both `return 0` early when nobody is standing on the
+# target space -- and both fall off the end of the success path with no return
+# at all, after `BoardPlayerIdleSet(player); HuPrcSleep(30);`.
+#
+# The caller is `player.c:934`:
+#
+#     if (MegaPlayerPassFunc(arg0, sp8) == 0) {
+#         BoardPlayerMoveTo(arg0, sp8);          /* walk there normally */
+#     }
+#
+# so the contract is plain: zero means "I did nothing, you move the player",
+# non-zero means "I have already jumped him onto the space and squashed whoever
+# was on it".  Metrowerks happened to leave something non-zero in r3 on the
+# success path; GCC 14 leaves whatever the last call returned -- for
+# `MegaPlayerPassFunc` that is `HuPrcSleep(30)`, which is `void`.  A successful
+# Mega squish therefore reads as "nobody there" and the board *also* walks the
+# giant player to the space he has just landed on.
+src/game/board/player.c	    BoardPlayerIdleSet(player);\n    HuPrcSleep(30);\n}\n\nstatic s32 MegaExecJump(s32 player, s32 space)	    BoardPlayerIdleSet(player);\n    HuPrcSleep(30);\n    if(port_mega_trace()) {\n        OSReport("port> mega: MegaPlayerPassFunc(player %d, space %d) squished %d and returns 1\\n", player, space, temp_r26);\n    }\n    return 1;\n}\n\nstatic s32 MegaExecJump(s32 player, s32 space)
+src/game/board/player.c	    BoardPlayerIdleSet(player);\n    HuPrcSleep(30);\n}\n\nvoid BoardPlayerCopyEyeMat(s32 arg0, s32 arg1)	    BoardPlayerIdleSet(player);\n    HuPrcSleep(30);\n    if(port_mega_trace()) {\n        OSReport("port> mega: MegaExecJump(player %d, space %d) squished %d and returns 1\\n", player, space, temp_r26);\n    }\n    return 1;\n}\n\nvoid BoardPlayerCopyEyeMat(s32 arg0, s32 arg1)
+
+# ----------------------------------------------------- game/chrman.c (M14, 29.3)
+# `CharNpcDustSet` is declared `s32`, creates a child process for the dust
+# effect, and returns nothing.  Six call sites store the result and mean it:
+#
+#   src/REL/m447dll/player.c:149,150   `temp_r3->unkB0 = (HUPROCESS *)CharNpcDustSet(...)`
+#   src/REL/m459dll/main.c:635,636     `var_r31->unk_28[...] = CharNpcDustSet(...)`
+#   src/REL/present/common.c:61,62     `work->unk_50 = CharNpcDustSet(...)`
+#   src/REL/option/guide.c:72,73       `work->unk_5C = CharNpcDustSet(...)`
+#   src/REL/m448Dll/main.c:1759,1760   `lbl_1_bss_20 = CharNpcDustSet(...)`
+#
+# and every one of them later passes the stored value to `HuPrcKill`.  The
+# handle is the `HUPROCESS *` the function just created; under Metrowerks it
+# was still in r3 from `HuPrcChildCreate`, under GCC 14 it is `EffectInit`'s
+# leftovers.  Killing that is a wild pointer, and *not* killing the dust is a
+# process leak that outlives its model.
+#
+# `CharNpcDustVoiceOffSet` is the same bug one layer up: the decomp already
+# marks its `s32 ret` as uninitialised, and what it plainly means is to hand
+# back what the call it wraps returned.
+src/game/chrman.c	        EffectInit();\n    }\n}\n\ns32 CharNpcDustVoiceOffSet	        EffectInit();\n    }\n    if(port_dust_trace()) {\n        OSReport("port> dust: CharNpcDustSet(model %d, mot %d, type %d, npc %d) -> process %08x\\n", modelId, motId, type, npcNo, (u32)(uintptr_t)process);\n    }\n    return (s32)(intptr_t)process;\n}\n\ns32 CharNpcDustVoiceOffSet
+src/game/chrman.c	    s32 ret; // ! - uninitialized\n\n    CharNpcDustSet(modelId, motId, type, CHAR_NPC_NONE);\n    return ret;	    return CharNpcDustSet(modelId, motId, type, CHAR_NPC_NONE);
+
+# ------------------------------------------------- game/malloc.c (M14, --dvdheap)
+# `HeapSizeTbl[HEAP_DVD]` is 0x580000 = 5,632 KB, and 27.5 proved that number is
+# the console's own: m453 with Mario/Luigi/Peach/Yoshi overruns it by 221,376
+# bytes on the retail disc exactly as it does here.  29.2 then measured every
+# four-character cast and found that *none* of the 70 fits -- the lightest,
+# Luigi/Mario/Yoshi/Waluigi, is still 143,328 bytes over.
+#
+# `--dvdheap KB` is therefore a **deliberate, documented divergence from the
+# console**, not a fix: it says "this port will play a minigame the GameCube
+# cannot".  It is off by default, it is announced in the log whenever it is on,
+# and what it spends comes out of HEAP_HEAP (index 4, which takes whatever the
+# arena has left) rather than out of thin air, so nothing else's size changes
+# and the console's total is still the total.
+src/game/malloc.c	    s32 i;\n    void *ptr;\n    u32 free_size;\n    for(i=0; i<4; i++) {	    s32 i;\n    void *ptr;\n    u32 free_size;\n    {\n        extern char *getenv(const char *);\n        extern unsigned long strtoul(const char *, char **, int);\n        const char *port_kb = getenv("MP4_DVDHEAP_KB");\n        if(port_kb && *port_kb) {\n            u32 port_want = (u32)strtoul(port_kb, (char **)0, 10)*1024;\n            if(port_want != 0) {\n                OSReport("HuMem> --dvdheap: HEAP_DVD %d KB -> %d KB (a deliberate divergence from the console; PLAN.md 29.2)\\n", HeapSizeTbl[HEAP_DVD]/1024, port_want/1024);\n                HeapSizeTbl[HEAP_DVD] = port_want;\n            }\n        }\n    }\n    for(i=0; i<4; i++) {
+
+# The trace behind the return above.  Off unless MP4_DUSTTRACE is set, so a
+# normal run pays one comparison per dust effect and nothing else -- the same
+# shape as 28.2's --m444trace.
+src/game/chrman.c	s32 CharNpcDustSet(HU3DMODELID modelId, HU3DMOTID motId, s16 type, s16 npcNo)\n{	extern char *getenv(const char *);\nextern void OSReport(const char *, ...);\nstatic int port_dust_trace(void)\n{\n    static int port_on = -1;\n    if(port_on < 0) {\n        port_on = getenv("MP4_DUSTTRACE") ? 1 : 0;\n    }\n    return port_on;\n}\n\ns32 CharNpcDustSet(HU3DMODELID modelId, HU3DMOTID motId, s16 type, s16 npcNo)\n{
+
+# The trace behind the two returns above; same shape and same rule as the
+# dust one.  `temp_r26` is the number of players found standing on the space.
+src/game/board/player.c	static s32 MegaPlayerPassFunc(s32 player, s32 space)\n{	extern char *getenv(const char *);\nextern void OSReport(const char *, ...);\n/* port: the Mega-squish trace behind 29.3's two returns.  Off unless\n * MP4_MEGATRACE is set. */\nstatic int port_mega_trace(void)\n{\n    static int port_on = -1;\n    if(port_on < 0) {\n        port_on = getenv("MP4_MEGATRACE") ? 1 : 0;\n    }\n    return port_on;\n}\n\nstatic s32 MegaPlayerPassFunc(s32 player, s32 space)\n{
