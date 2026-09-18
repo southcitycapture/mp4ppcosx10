@@ -25,7 +25,13 @@ if [ -d "$SDL2_PREFIX/include/SDL2" ]; then
     sdl_mount="-v $SDL2_PREFIX:/work/sdl2:ro"
 fi
 
-exec docker run --rm \
+# On Linux hosts Docker runs as root and leaves root-owned output; map the
+# caller's uid/gid so the tree stays the user's (Docker Desktop on macOS does
+# this by itself).
+user_flag=""
+[ "$(uname -s)" = Linux ] && user_flag="--user $(id -u):$(id -g)"
+
+exec docker run --rm $user_flag \
     -v "$repo":/work/mp4 \
     $sdl_mount \
     -w /work/mp4/port \
