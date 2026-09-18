@@ -549,3 +549,50 @@ get a G4 witness before they ship:
   bogus `HuPrcKill` would land.
 
 Until then this is a reading, not a result.
+
+---
+---
+
+# Part Three — an index that is the wrong loop variable
+
+*Added 2026-09-18 (M16). Same status as Parts One and Two: a working paper,
+nothing filed upstream.*
+
+## `src/REL/instDll/main.c:518` — `charNo[i]` where the two neighbouring lines say `charNo[j]`
+
+The instruction screen's "players jump into the box" sequence:
+
+```c
+    for (i = 0; i <= 45; i++) {
+        for (j = 0; j < playerNum; j++) {
+            time = i - playerDelayTbl[j];
+            if (time < 0) {
+                continue;
+            }
+            if (time == 0) {
+                Hu3DModelAttrReset(playerMdlId[j], HU3D_MOTATTR_LOOP);
+                CharMotionVoiceOnSet(charNo[i], motId[i][1], 1);   /* <-- i */
+                CharMotionSet(charNo[j], motId[j][1]);
+            }
+```
+
+`charNo` is `s16[4]` and `motId` is `s16[4][3]` (lines 417, 420); `i` is the
+frame counter and reaches 45. For every player whose delay is not zero the
+call reads past both arrays into the rest of the frame and the stack beneath
+it, and `CharMotionVoiceOnSet` indexes `charWork[]` with what it finds. This
+is not a decomp transcription error in the usual sense — the matching build
+generates the over-read too, so the retail game does this — but it is
+undefined behaviour whose outcome depends on stack residue:
+
+* on the console the residue is small and the write it leads to
+  (`workP->voiceFlag[k] |= …` in some other character's work) is a bit
+  nobody reads;
+* in the port it read `0x7cc8` and faulted at `0x7cc833` (`charWork[0x7cc8]`),
+  deterministically, on every `--minigame` run of the M16 build — the M16
+  draw path leaves different bytes on the coroutine stack than the M15 one
+  did, which is the only reason the same code had survived twelve milestones.
+
+The intended line is plainly `CharMotionVoiceOnSet(charNo[j], motId[j][1], 1);`
+— it is the voice-on counterpart of line 467's voice-off, which uses the
+player index. Patched in `port/patches.txt`; the effect on the console is a
+no-op for the first player and the removal of a stray write for the others.

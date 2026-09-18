@@ -185,6 +185,9 @@ typedef struct PortOptions {
                              *   instead of glMultiDrawArraysEXT              */
     int submitstats;        /* --submitstats  batches, merges, primitives per
                              *   list, fence waits                            */
+    int oldkonst;           /* --oldkonst  claim a unit's GL constant whole
+                             *   (RGB and A together) the way every build
+                             *   before M16 did.  The A/B lever (PLAN.md 31.4) */
     int noregfix;           /* --noregfix  fold a stage's GX_TEVREG write to
                              *   PREV the way every build before M16 did (the
                              *   board eyes).  The A/B lever (PLAN.md 31.3)  */

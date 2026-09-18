@@ -649,3 +649,23 @@ src/game/chrman.c	s32 CharNpcDustSet(HU3DMODELID modelId, HU3DMOTID motId, s16 t
 # The trace behind the two returns above; same shape and same rule as the
 # dust one.  `temp_r26` is the number of players found standing on the space.
 src/game/board/player.c	static s32 MegaPlayerPassFunc(s32 player, s32 space)\n{	extern char *getenv(const char *);\nextern void OSReport(const char *, ...);\n/* port: the Mega-squish trace behind 29.3's two returns.  Off unless\n * MP4_MEGATRACE is set. */\nstatic int port_mega_trace(void)\n{\n    static int port_on = -1;\n    if(port_on < 0) {\n        port_on = getenv("MP4_MEGATRACE") ? 1 : 0;\n    }\n    return port_on;\n}\n\nstatic s32 MegaPlayerPassFunc(s32 player, s32 space)\n{
+
+# -------------------------------------------------- REL/instDll/main.c
+# The minigame instruction screen's "players jump into the box" loop
+# (instDll/main.c:511-518) runs `i` over 46 frames and `j` over the players,
+# and on the frame a player's delay expires it calls
+#
+#     CharMotionVoiceOnSet(charNo[i], motId[i][1], 1);
+#
+# with **i**, the frame counter, where the two lines around it use j.
+# `charNo` is `s16[4]` and `motId` is `s16[4][3]`, so for every player but
+# the first this reads past both arrays into whatever the frame and the stack
+# below it hold, and indexes `charWork[]` with it.  On the console the
+# over-read lands on a small number and the write it leads to is a harmless
+# bit in someone's `voiceFlag`; in the port it read 0x7cc8 out of the stack
+# residue the M16 draw path leaves (every GX setter can now submit a batch,
+# so the coroutine stack below the game's frame holds different bytes than
+# before) and faulted at 0x7cc833, five runs of five, the moment the
+# instruction screen's players jumped (PLAN.md 31.5).  The fix is the index
+# the author meant.  Fourth upstream note for decomp-struct-notes.md.
+src/REL/instDll/main.c	                CharMotionVoiceOnSet(charNo[i], motId[i][1], 1);	                CharMotionVoiceOnSet(charNo[j], motId[j][1], 1);

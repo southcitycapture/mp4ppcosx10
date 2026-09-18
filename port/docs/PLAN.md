@@ -9145,3 +9145,351 @@ dolphin --freshcard --play board-start-com4.play --frames 7010`.
    never on a live soak.
 2. **The board eyes**, from §30.6's four questions — it is one material now.
 3. **The oracle frame with a message window**, which closes §30.4.
+
+## 31. M16 log — the draw that was a copy, and the register that was a constant *(2026-09-18)*
+
+M16 opened on §30.8 item 1, the per-draw submit, which two milestones had
+walked past. This time the profile came first (§31.1), the lever was built
+behind `--oldsubmit` (§31.2), and the A/B is honest about what it bought:
+**+16% / +21% / +13%** on the three scenes, from two things the profile did
+not predict — every display list in this game holds exactly *one* primitive,
+and the game's own face loop re-sends the blend mode before every face.
+
+Item 2, the board eyes, turned out not to be a texture, a TLUT or a texture
+matrix at all: **the port had never implemented a TEV stage writing to a
+register other than PREV** (§31.3). Fixing it gives Mario, Luigi, Peach and
+Wario their eyes on the board and the title — and, unasked, gives the board
+back its **walkway and platform sides**, which had been failing the alpha test
+since M3 and which nobody had noticed were missing. Item 3, the konst
+collision count, was two different instruments disagreeing (§31.4), and the
+count itself was half wrong. And a fault the new build exposed turned out to
+be the retail game's own out-of-bounds index (§31.5).
+
+This session ran on **littlejelly** (the always-on Linux lab host) rather than
+on the Mac, which is why the `g4` helper, the install script and the git
+identity each needed a small correction on the way.
+
+### 31.1 The profile, on teleported frames
+
+`g4_sampler.sh` against the M15 build, `sample isle 10`, three scenes reached
+with `--ffto` (board: `--ffto 6500` on the 9,000-frame walk; the two minigames
+with `--minigame NAME --ffto 10700`), nothing polling the G4 while it sampled.
+Full profiles in `port/docs/soak/m16-{board,m432,m427}-profile.txt.gz`.
+Inclusive samples on the game thread (outermost occurrence of each symbol;
+the `mach_msg_trap` / `__semwait_signal` / `semaphore_timedwait_signal_trap`
+entries at the head of every flat list are the parked audio threads):
+
+| game thread, inclusive | board (`w01dll`) | `m432dll` | `m427dll` |
+|---|---:|---:|---:|
+| `mp4_game_main` (= 100%) | 6,821 | 6,653 | 6,166 |
+| `GXCallDisplayList` | 4,548 (67%) | 5,535 (83%) | 4,390 (71%) |
+| of which the decode (self) | 1,490 (22%) | 2,600 (39%) | 1,334 (22%) |
+| of which `draw_run` — **the submit** | **3,057 (45%)** | **2,899 (44%)** | **3,069 (50%)** |
+| — Apple's `gleDrawArraysOrElements_IMM_Exec` | **1,943 (28%)** | 2,016 (30%) | 2,172 (35%) |
+| —— of which `io_connect_map_memory` (kernel) | 495 (7%) | 414 (6%) | 540 (9%) |
+| — `gx_tev_apply` | 490 | 351 | 455 |
+| — `gx_vprog_bind` + `gx_vprog_draw` | 400 | 330 | 251 |
+| — `gl13_apply_raster_state` + `_transform` | 95 | 99 | 122 |
+| `port_musyx_mix_frame` (audio, on this thread) | 299 | 182 | 281 |
+
+Two things the M13 profile (§28.5) had mis-filed. First, `gldInitDispatch`
+and `gldGetString` are not "the driver rebuilding its dispatch": the ATI
+plugin's symbols are stripped and `sample` names the nearest export, so that
+block is simply *the driver's per-draw work*, and its call tree says what the
+work is — `gleDrawArraysOrElements_IMM_Exec` → `gleBeginPrimitiveTCLFunc` →
+`gldPageoffBuffer` → `io_connect_map_memory` → `mach_msg_trap`. The **IMM**
+path is the immediate client-array path: every `glDrawArrays` copies its
+vertices into the command buffer through a generated "vertex submit
+function" (`gleSetVertexArrayFunc`, 180 samples), and when the copies fill
+the buffer the driver pages it off to the kernel, a Mach round trip that is
+7-9% of the frame on its own. Second, the decode is not small — 22% on the
+board and **39% on `m432`**, which is the next lever after this one — but it
+is per *vertex*, and this milestone is about per *draw*.
+
+So the submit is 44-50% of every scene, the driver's share of it 28-35%, and
+none of the driver's share is geometry: it is the copy and the calls.
+
+### 31.2 The lever: a ring the card reads, and batches the game had already drawn
+
+Three parts, each behind a flag on the same binary:
+
+* **The ring** (`gl13_var_setup`, `gx_draw.c`'s `ring_claim`). The decoded
+  source vertices go into an 8 MB page-aligned ring handed to
+  `GL_APPLE_vertex_array_range` with `GL_STORAGE_SHARED_APPLE`, so an array
+  pointer into it is a DMA reference in the command stream rather than a
+  copy. The ring is four chunks with a `GL_APPLE_fence` each: a fence is set
+  on a chunk when the writer leaves it (after the draws that read it were
+  issued), and finished before the writer enters it a lap later. With ~2 MB
+  of vertices a frame the wait is on a fence three frames old, and the
+  counter says it never blocked (`6,754 fence waits (0 blocked)` over the
+  walk). One `glFlushVertexArrayRangeAPPLE` per batch pushes the CPU cache
+  out ahead of the DMA. `--novar` keeps the same ring in ordinary memory.
+* **The batch.** A display list's primitives accumulate as *segments* over
+  one contiguous span of the ring and are submitted once: one state walk
+  (transform, raster, TEV, vertex program), one set of array pointers, then
+  contiguous list primitives of one type merged into one `glDrawArrays` and
+  strips of one type into one `glMultiDrawArraysEXT`. Nothing about any
+  triangle changes — the same vertices in the same order under the same
+  state — so the md5s were expected to hold, and did (below).
+* **Across lists.** The first walk said every display list in this game holds
+  **exactly one primitive**: `7,669,131 display lists drawn; primitives per
+  list: 1: 7,669,131  2-4: 0 …`. Batching *within* a list is therefore
+  nothing. But hsfdraw.c's `FaceDraw` draws one face per list and skips the
+  material setup when `faceMaterial == materialBak`, so consecutive faces of
+  a material reach `GXCallDisplayList` with no GX call in between. The batch
+  now outlives the list and is flushed by the next GX state setter:
+  `GX_STATE_TOUCH()` is the first statement of every setter in
+  `gx_state.c` / `gx_tex.c` (69 of them; one load and a branch when nothing
+  is pending), so the pending batch is submitted under the state it was
+  decoded under, *before* the setter changes anything. `--submitstats` counts
+  which setters end batches, and the first count answered the next question:
+
+  | batches ended by, first 7,001-frame run | |
+  |---|---:|
+  | `GXSetBlendMode` | **55,678** |
+  | `GXLoadPosMtxImm` | 11,640 |
+  | `GXSetNumTevStages` | 974 |
+  | `GXSetProjection` | 97 |
+
+  `FaceDraw` calls `SetBlendMode(flags)` **before every face, before the
+  `materialBak` test**, almost always with the value it set for the previous
+  face. A setter handed the value the state already holds changes nothing,
+  so it now ends no batch: `GX_STATE_TOUCH_IF(changed)` compares first in the
+  setters the face loop and the material setup re-send (blend, Z, alpha
+  compare, cull, the three matrix loads bit-exact, the channel colours, the
+  TEV in/op/order/konst/swap per stage, viewport, scissor, projection). After
+  that the batch-enders are the honest ones: `GXLoadPosMtxImm` 693,302 (a new
+  object), `GXSetChanAmbColor` 254,124 and `GXSetTevSwapMode` 67,901 (a new
+  material), over the whole walk.
+
+* `--oldsubmit` is the pre-M16 shape on the same binary: one `glDrawArrays`
+  per primitive from the ring in plain memory, flushed at the end of every
+  list.
+
+**The A/B.** Same binary, same walk (`--turbo --com4 --rtc dolphin
+--freshcard --play board-start-com4.play --frames 9000 --status --dumpframe
+800,3000,7000 --perfwin …`), nothing polling the G4:
+
+| scene | `--oldsubmit` | `--novar` (batches, plain memory) | ring + multi-draw, flush per setter | **+ compare-first setters** | change |
+|---|---:|---:|---:|---:|---:|
+| title (700-870) | 14.80 fps | 13.92 | 16.23 | **17.20** | **+16%** |
+| character select (2600-3600) | 14.81 | 15.32 | 15.23 | **17.95** | **+21%** |
+| board (6000-8900) | 18.46 | 18.38 | 19.12 | **20.85** | **+13%** |
+| gx ms/frame, board | 39.19 | 39.17 | 37.28 | **33.07** | −16% |
+| batches, whole walk | 8,411,126 | 7,514,186 | 7,514,186 | **1,960,066** | |
+| GL draw calls | 8,411,126 | 8,411,126 | 7,619,726 | **2,811,643** | −67% |
+| wall clock, 9,000 frames | 444.3 s | 443.3 s | 437.3 s | **388.4 s** | −13% |
+
+The columns read left to right as the three parts were added, and each says
+something. Batching without the ring (`--novar`) buys **nothing** — one state
+walk per batch instead of per list is not where the time was, because the
+shadow was already eliding the calls (§28.5). The ring with the driver's
+multi-draw buys 4-10% while 89% of lists still stand alone. And letting the
+game's own redundant `GXSetBlendMode` through — 4.3 primitives per batch
+instead of 1.1, a third of the GL calls — is what makes the lever a lever.
+`--oldsubmit` reproduces the pre-M16 numbers of this binary (M15 itself was
+never timed; the `GX_TEXMAP_NULL` fix enables a texture unit on 210 of 774
+board draws, and the board is 18.5 fps on this binary against §25.4's 22.6 on
+M11's), so the baseline column is the honest one.
+
+**The md5 verdicts.** On the binary *before* §31.3, all four arms produce the
+three §30 references to the byte — `eb6c3189…`, `8762d432…`, `b2a679b2…` — so
+the ring, the fences, the multi-draw and the cross-list batches are exact and
+nothing is re-based for speed. (§31.3 re-bases two of them for a different
+reason.)
+
+*Not done in this item:* the strip → indexed-triangle conversion (one
+`glDrawElements` per batch instead of the driver's loop inside multi-draw),
+because the driver's loop is not where the profile put the time; and the
+decode itself, which on `m432` is now the largest block.
+
+### 31.3 The board eyes: a stage that wrote a register, drawn as if it wrote PREV
+
+§30.6 left one material and four questions; the answer was to the second one
+("whether the game ever sets `GX_TEVREG2` for this material and the port is
+losing it"), and it is larger than the eyes.
+
+`hsfdraw.c`'s `SetTevStageTex`, for a material with two textures whose second
+attribute has `kColor != 1` (lines 1226-1237), builds:
+
+```
+stage A:  colour  T_A * RAS            -> PREV     alpha  T_Aa * K_A       -> PREV
+stage B:  colour  T_B * RAS            -> REG2     alpha  T_Ba * K_B       -> REG2
+stage C:  colour  lerp(PREV, C2, A2)   -> PREV     alpha  APREV            -> PREV
+```
+
+i.e. stage B's result goes to **register 2**, not PREV, and stage C blends
+the first texture's result towards the second by the second's alpha. That
+`GXSetTevColorOp(…, GX_TEVREG2)` is `gx.tev[s].creg`, which `gx_tev.c` stored
+and **never read**: every stage was emitted as if it wrote PREV, and `C2` /
+`A2` were resolved by `color_arg` as the register's *constant* (whatever
+`GXSetTevColor(GX_TEVREG2, …)` last put there — `0 0 0 0` in §30.6's log). So
+the port drew stage B *over* PREV, then `lerp(PREV, black, 0) = PREV`: the
+second texture's colour, times the lighting, with the second texture's alpha
+(`T_Ba * K_B`, close to 0 over most of the overlay) as the **material's
+alpha**. For the eye atlas that is the magenta ring §29.4 photographed —
+the overlay's colour where its alpha is zero, which nothing was ever meant to
+show. For any *opaque* two-texture material it is worse: the alpha test
+(`GXSetAlphaCompare(GX_GEQUAL, 1, …)`, `SetupGX`) throws the surface away.
+
+GL 1.3 has one carrier between units, but this shape is expressible exactly,
+because `RAS` factors out of both terms:
+
+```
+out.rgb = RAS * (T_A * (1 - q) + T_B * q),     q = T_Ba * K_B
+out.a   = T_Aa * K_A
+```
+
+which with `GL_ARB_texture_env_crossbar` (the Radeon 9000 has it) is three
+units in the three stages' places:
+
+| unit | RGB | alpha |
+|---|---|---|
+| A | `REPLACE(TEXTURE)` = T_A | `MODULATE(TEXTURE1.a, CONSTANT.a)` = q — unit B's texel, read across |
+| B | `INTERPOLATE(TEXTURE, PREVIOUS, PREVIOUS.a)` = T_B·q + T_A·(1−q) | `MODULATE(TEXTURE0.a, CONSTANT.a)` = T_Aa·K_A — unit A's texel, read across |
+| C (white texture) | `MODULATE(PREVIOUS, PRIMARY_COLOR)` = ·RAS | `REPLACE(PREVIOUS)` |
+
+`regfix_match` recognises exactly that triple (plain add/scale-1/no-bias
+stages, identity swaps, both textures bound, same colour channel, stage A's
+alpha a modulate of two of {TEXA, KONST, RASA}, stage C's `q` either the
+register's alpha or — the `kColor == 1` variant at hsfdraw.c:1239 — stage B's
+texture alpha, and `APREV` through) and `regfix_emit` writes the three units;
+everything else goes down the old path. Every *other* register write is now
+counted by `--gxwarn` (`TEV: a stage writes a TEV register other than PREV; GL
+has only PREV, so it is treated as PREV`) instead of passing silently — 5,665
+stage emissions over the walk, the reflection and `texCol == 1` shapes of the
+same function, still open. `--noregfix` is the A/B lever and reproduces the
+§30 md5s to the byte.
+
+**The witness**, frame 7000, `--noregfix` over the fix, 6× (the crop §30.6 used):
+
+![Mario and Luigi at 6x, before over after](screenshots/m16-eyes-f7000-crop-before-after.png)
+
+and the part nobody asked for — the left of the same frame, 2×:
+
+![the walkway and the platform side, before | after](screenshots/m16-walkway-f7000-crop-before-after.png)
+
+The board's grey walkway with its rounded studs, the green platform side and
+its pale rim were **absent** in every build before this one — the background
+showed through — and `port/ref/frames/board.png` (the Dolphin reference, a
+different moment on the same board) shows exactly those surfaces. The same
+two-texture material, the same lost alpha. Full frames:
+`m16-board-f07000-{before,after}.png`.
+
+**The md5 verdicts, re-based with that justification:**
+
+| frame | §30 md5 (= `--noregfix`, to the byte) | M16 md5 | pixels differing | what |
+|---:|---|---|---:|---|
+| 800 | `eb6c3189…` | **`05091ad451a79900608af5e12b81707b`** | 607 (0.20%) | the title's 3D characters' eyes: Peach's, Mario's, Wario's, Luigi's |
+| 3000 | `8762d432…` | `8762d432…` unchanged | 0 | no such material on the character select |
+| 7000 | `b2a679b2…` | **`4f9e79f0b57c2885b9eb078347f9bd82`** | 62,674 (20.4%) | the eyes, the walkway, the platform sides |
+
+`ppmdiff.py` on 7000: mean 12.76 levels, 18.8% of channel samples by more
+than 8 — not rounding, and not meant to be.
+
+**One thing this item leaves open, and it is written down rather than
+hidden**: on frame 800 the batched submit and `--oldsubmit` disagree by 136
+pixels (`05091ad4…` against `78c3144b…`), all inside Mario's screen-right eye,
+which in the batched arm is paler with a smaller iris; the two arms agree to
+the byte on 3000 and 7000, and agreed on all three before this rewrite. So
+the register rewrite and the cross-list batch interact on the title, in one
+eye, and the cause is not yet known — §31.6.
+
+### 31.4 The konst collision: two instruments, and a constant that was one thing when it is two
+
+§30.5 asked which count was right, §29.3's **1,824** or §30.5's **105,250**.
+Neither is a count of anything a frame would recognise, and the reason is
+where the number came from: `gx_warn(…two different constants…)` fires inside
+`emit_channel`, which since M13 runs only on a **TEV cache miss** (93% of
+applies skip it, §28.5). So the figure is "collisions among the configs the
+cache happened to re-emit in the frames that were drawn", and it moves with
+both:
+
+| run | frames drawn | `--gxwarn` collision count |
+|---|---:|---:|
+| §29.3, `--ffto 7000 … --frames 7100` | ~100 | 1,824 |
+| this session, the same window | ~100 | 1,843 |
+| the 9,000-frame walk, `--oldsubmit` | 9,000 | 140,832 |
+| the same walk, batched (fewer applies, different miss pattern) | 9,000 | 146,804 |
+| `--ffto 6500 … --frames 9000` (M15 build) | 2,500 | 46,906 |
+
+§30.5's 105,250 is a run with a different drawn-frame count, and both of the
+earlier figures were honest readings of an instrument that does not measure
+the degradation. The instrument now does: `cfg_konst_collisions` is set when
+a config is emitted and **charged to every draw that uses it**, hit or miss
+(`gx_tev_report`):
+
+```
+port> tev: konst collision (two constants in one stage): 319813 of 1960066 draws carry one, in 136101 distinct configs
+```
+
+**One draw in six** on the walk carried a stage in which the port had dropped
+a constant. That was worth reading closely, and the reading changed the
+question. `emit_channel` claimed the unit's single `GL_TEXTURE_ENV_COLOR` as
+*one four-float value* shared by the colour combiner and the alpha combiner.
+But GL never couples them: a colour operand reads the constant's RGB and an
+alpha operand reads its A. hsfdraw.c sets every stage's colour konst and alpha
+konst separately (`SetKColorRGB`: `GXSetTevKColorSel(stage, K_n)` and
+`GXSetTevKAlphaSel(stage, K_n_A)`, and `GXSetTevKAlphaSel(all, KASEL_1)` at
+the top of `FaceDraw`), so a stage whose colour used `K0.rgb` and whose alpha
+used `K0.a` "collided" with itself — harmlessly, since the alpha it fell back
+to was K0's — and a stage whose colour used `K0` and whose alpha wanted the
+literal `1.0` got **K0's alpha instead**, which is a real error every time
+`K0.a` is not 255. The constant is now claimed in halves (`konst_set` is a
+bitmask, RGB and A), a zero argument that survives the shape table claims its
+half as black rather than reading whatever the other half left there, and a
+collision is only a collision *within a half*. `--oldkonst` is the pre-M16
+claim, for the A/B.
+
+*(The per-draw count and the md5 effect of the split are measured in §31.6's
+run list — the wired link to the G4 dropped while this section was written;
+see §31.7.)*
+
+**The `GL_ATI_text_fragment_shader` verdict.** After the split, what is left
+in a stage that fixed function cannot say is: a genuine two-constants-in-one-
+half stage; the register writes §31.3 does not rewrite (5,665 stage emissions
+on the walk: the reflection and `texCol == 1` shapes); four-input stages
+(`a`, `b`, `c`, `d` all live — 0 on the walk); `GX_TEV_COMP_*`, biases and
+`DIVIDE_2`; and specular (`GXInitSpecularDir`, 44,902 — a lighting-model
+degradation the fragment shader would not touch, since it is the vertex
+program's). A text fragment shader per TEV config would close every one of
+those except specular in one mechanism — and it would also replace the
+crossbar rewrite with a straight transcription. It is the right *next*
+rendering lever. It is not done in M16, for the reason §3.9 gave: the
+extension's syntax is thinly documented, the R200 budget (two passes of 8
+ALU + 6 texture instructions, 6 temporaries, 8 constants) has to hold a
+register allocator for PREV/REG0-2 plus the textures, and the A/B discipline
+would re-base all three frames at once for a change whose *speed* effect is
+unknown. The honest precondition is a measured list of the stages it would
+change, which §31.4's per-draw counter now produces for the konst case and
+`--gxwarn`'s new register line produces for the register case.
+
+### 31.5 The fault the new build exposed was the retail game's
+
+Every `--minigame` run on the M16 build died the moment the instruction
+screen's players jumped into the minigame box — `signal 10 at address
+0x7cc833`, `pc` in `CharMotionVoiceOnSet`, called from `instDll`, five runs of
+five, with the ring, the batches, the register rewrite and the konst split
+all switched off. The M15 build had run the same command that morning.
+
+`instDll/main.c:518`:
+
+```c
+            if (time == 0) {
+                Hu3DModelAttrReset(playerMdlId[j], HU3D_MOTATTR_LOOP);
+                CharMotionVoiceOnSet(charNo[i], motId[i][1], 1);
+                CharMotionSet(charNo[j], motId[j][1]);
+```
+
+`i` is the 46-frame counter, `j` the player; `charNo` is `s16[4]`. For every
+player whose delay is not zero the call reads past the array into the frame
+and the stack below it and indexes `charWork[]` with the result. The retail
+game does this too — the matching build has the same over-read — and gets
+away with it because the residue on the console's stack is small. What the
+M16 build changed is *the residue*: a GX setter can now submit a batch, so the
+draw path and the GL driver run below the game's frame from call sites they
+never ran from before, and the bytes `charNo[5]` reads are theirs. Patched in
+`port/patches.txt` to the index the author meant (`charNo[j]`, as on lines
+467, 489 and 492), written up as Part Three of `decomp-struct-notes.md`, and
+the first M16 `--minigame` runs after the patch reached their measurement
+windows (§31.6).

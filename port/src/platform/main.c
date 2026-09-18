@@ -103,6 +103,8 @@ static void usage(const char* argv0) {
             "                    ring fence waits\n"
             "  --noregfix        fold a TEV stage's GX_TEVREG write to PREV (the\n"
             "                    pre-M16 path; the board eyes), for the A/B\n"
+            "  --oldkonst        claim a unit's GL constant whole instead of RGB\n"
+            "                    and A separately (the pre-M16 path), for the A/B\n"
             "  --tlutlog         every GXLoadTlut and every CI texture bind: the\n"
             "                    palette address, count, format, TLUT name, swap and\n"
             "                    cache slot.  Scoped to --drawlog-at's frame if given\n"
@@ -476,6 +478,8 @@ int port_parse_args(int argc, char** argv) {
             port_opt.submitstats = 1;
         } else if (!strcmp(a, "--noregfix")) {
             port_opt.noregfix = 1;
+        } else if (!strcmp(a, "--oldkonst")) {
+            port_opt.oldkonst = 1;
         } else if (!strcmp(a, "--ovllog")) {
             port_opt.ovllog = 1;
         } else if (!strcmp(a, "--nanwatch")) {

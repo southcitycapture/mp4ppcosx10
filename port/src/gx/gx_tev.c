@@ -297,21 +297,54 @@ static void emit_channel(int unit, int rgb, Arg a, Arg b, Arg c, Arg d, u8 op, u
     }
 
     for (i = 0; i < n; i++) {
-        if (args[i].is_const && !args[i].is_zero) {
-            if (!*konst_set) {
-                memcpy(konst_out, args[i].konst, sizeof(float) * 4);
-                *konst_set = 1;
-            } else if (memcmp(konst_out, args[i].konst, sizeof(float) * 4) != 0) {
-                gx_warn("TEV: a stage needs two different constants; the first wins");
-                cfg_konst_collisions++;
-            }
-        }
         if (args[i].is_zero) {
             /* Zero as a live argument only survives here in shapes the table
              * above did not fold away; a black constant is the honest value,
-             * but it competes for the unit's single constant. */
+             * and it claims its half of the unit's constant like any other. */
             args[i].src = GL_CONSTANT;
             args[i].operand = rgb ? GL_SRC_COLOR : GL_SRC_ALPHA;
+            args[i].is_const = 1;
+            memset(args[i].konst, 0, sizeof(args[i].konst));
+        }
+        if (args[i].is_const) {
+            /* The unit's one GL_TEXTURE_ENV_COLOR is two constants, not one:
+             * a colour operand reads its RGB and an alpha operand reads its A,
+             * and GL never couples them.  Before M16 the four floats were
+             * claimed whole, so a stage whose colour used K0 and whose alpha
+             * used K0's alpha "collided" with itself (PLAN.md 31.4), and a
+             * stage whose alpha wanted KASEL_1 got K0's alpha instead.
+             * `konst_set` is a bitmask now: 1 = RGB claimed, 2 = A claimed. */
+            int wants_alpha = args[i].operand == GL_SRC_ALPHA ||
+                              args[i].operand == GL_ONE_MINUS_SRC_ALPHA;
+            if (port_opt.oldkonst) {
+                /* the pre-M16 claim, whole, for the A/B */
+                if (args[i].is_zero) {
+                    continue;
+                }
+                if (!*konst_set) {
+                    memcpy(konst_out, args[i].konst, sizeof(float) * 4);
+                    *konst_set = 3;
+                } else if (memcmp(konst_out, args[i].konst, sizeof(float) * 4) != 0) {
+                    gx_warn("TEV: a stage needs two different constants; the first wins");
+                    cfg_konst_collisions++;
+                }
+            } else if (wants_alpha) {
+                if (!(*konst_set & 2)) {
+                    konst_out[3] = args[i].konst[3];
+                    *konst_set |= 2;
+                } else if (konst_out[3] != args[i].konst[3]) {
+                    gx_warn("TEV: a stage needs two different constants; the first wins");
+                    cfg_konst_collisions++;
+                }
+            } else {
+                if (!(*konst_set & 1)) {
+                    memcpy(konst_out, args[i].konst, sizeof(float) * 3);
+                    *konst_set |= 1;
+                } else if (memcmp(konst_out, args[i].konst, sizeof(float) * 3) != 0) {
+                    gx_warn("TEV: a stage needs two different constants; the first wins");
+                    cfg_konst_collisions++;
+                }
+            }
         }
     }
 
