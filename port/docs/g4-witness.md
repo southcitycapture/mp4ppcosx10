@@ -105,6 +105,14 @@ the coroutine list with `sudo ~/bin/mp4peek PID procs <processtop>` instead
 breakpoints. Anything in a batch file that *can* error goes last, after a
 `detach` that has already run.
 
+**Watchers die with their run** (2026-09-18): a background watcher that greps
+`~/isle-log.txt` outlives the run it was armed for, and `g4 run` rotates that
+file, so a late watcher reports on someone else's run — and if it has a write
+side effect (`cp`, `tail >`) it clobbers files (M13's overwrote `~/ab-old.log`).
+Stop every watcher when its run ends; never give a watcher a side effect.
+Also: `--stuckwatch` below ~200 s is a hazard now that the navigator's presses
+land (M14): it mashes buttons on a healthy board and walks into the pause menu.
+
 The loop: `port/build-ppc.sh -j8 && port/tools/g4_debug_sync.sh && g4 push-bin`.
 A binary and its `.o` tree must come from the same build, or gdb reads the
 wrong lines.
