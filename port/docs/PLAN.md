@@ -8876,3 +8876,272 @@ dump set on the G4 in `~/m14shots/`.
 2. **The eyes**, from §29.4's last paragraph. It is the oldest open rendering
    bug in the project and it is now one question rather than five.
 3. The per-draw submit lever (§28.5), with §25's A/B discipline.
+
+## 30. M15 log — the stage that never ran, and the eyes that are still wrong *(2026-09-18)*
+
+M15 opened on §29.6: read the soak, then the eyes, from §29.4's one remaining
+lead. The soak answered (§30.1). The lead was **wrong** — the board eyes are
+not the TL32 double-TLUT material and never were (§30.2) — and chasing it to
+the bottom of the draw log found a different bug, older and much larger:
+**every GX TEV stage that names `GX_TEXMAP_NULL` has been silently dropped in
+every build of this port** (§30.3). Fixing it closes §21.5, which has been open
+since M9, and is witnessed against the Dolphin oracle (§30.4). It does **not**
+fix §29.4's board eyes, which are still open and now better bounded (§30.6).
+
+### 30.1 What the soak said
+
+The run left going at the end of M14 —
+`--soak --com4 --rtc dolphin --freshcard --snap-every 5000 --snap-keep 3
+--status --ovllog --stuckwatch 200` — was still up eleven hours later, pid
+80786, frame 471,060, on its **second board, turn 15 of 20**, at 12.7 fps.
+Three `STUCK` lines in 30,293 log lines, all answered by the metronome.
+
+And the question §29.3 could not answer:
+
+```
+port> mega: MegaPlayerPassFunc(player 1, space 71) squished 1 and returns 1
+port> mega: MegaPlayerPassFunc(player 0, space 49) squished 1 and returns 1
+port> mega: MegaPlayerPassFunc(player 2, space 100) squished 1 and returns 1
+port> mega: MegaPlayerPassFunc(player 1, space 48) squished 1 and returns 1
+port> mega: MegaPlayerPassFunc(player 3, space 126) squished 1 and returns 1
+```
+
+**Five Mega squishes, every one of them returning 1.** §29.3's two `return 1`s
+were argued from the caller's `== 0` test and the disassembly and had no
+hardware witness; they have five now. That closes §29.5's first "not
+witnessed".
+
+### 30.2 The TL32 lead is dead: there is no IA8 TLUT on frame 7000
+
+§29.4's next-ten-minutes was `--drawlog-at 7000` on the character draws, to
+read the two TLUT addresses the eye stages bind. `--tlutlog` (new: every
+`GXLoadTlut` and every CI bind, with the palette address, its entry count and
+format, the TLUT name, the swap table, the cache slot, and an FNV over the
+palette bytes) says there is nothing there to read:
+
+* **639 TLUT lines on frame 7000, and not one of them is `GX_TL_IA8`.** The
+  TL32 trick is the `HSF_BMPFMT_CI_IA8` branch of `LoadTexture`
+  (hsfdraw.c:1823) and it is the only producer of an IA8 TLUT. That branch
+  does not run on this frame at all, so the material §29.4 spent its evening
+  on is not the material that draws these eyes.
+* The eight "pairs" of 16×176 `GX_TF_C8` atlases that M14 found decoding
+  byte-identical are **sixteen separate bitmaps with sixteen separate
+  palettes**, every palette 83 entries of `GX_TL_RGB5A3` and every one hashing
+  to `8971410e`. They are one cache slot each, on `map-tlut 0` or `1`, with the
+  identity swap `e4`. Identical decodes because the palettes are genuinely
+  identical, not because the cache handed back the first one.
+* And they are not the eyes either: every draw that binds one comes from
+  `HuSprDisp+844` under an **orthographic** projection, four verts, at screen
+  positions like (178, 98). They are the board's HUD player panels.
+
+So: the cache key is not missing the TLUT address (it holds `tlut->lut`), the
+palette is not mis-addressed, and `palSize` is not the problem. **§29.4's prime
+suspect is eliminated.** The `--tlutlog` output is the evidence and the flag
+stays in the build.
+
+**What actually draws Mario's eyes**, from the same log with `--drawlog` now
+printing *every* stage rather than stage 0 (which is why five sessions of draw
+logs could not see this):
+
+```
+---- draw 39: prim 80, 32 verts, 3 tev stage(s), 2 texgen(s), 1 chan(s) ----
+           drawobj model 0 object "mario_m1"
+  stage0 coord 0 map 0   chan 4  cin 15 8 10 15  ain 7 4 6 7
+    texmap0 64x64 fmt 14 ci 0                      (CMPR, the eye atlas)
+  stage1 coord 1 map 1   chan 4  cin 15 8 10 15  ain 7 4 6 7
+    texmap1 32x32 fmt 5  ci 0                      (RGB5A3)
+  stage2 coord 255 map 255 chan 4  cin 0 6 7 15  ain 7 7 7 0
+    texmap255 NOT BOUND                            <-- no texture at all
+  texgen0 func 1 src 4 mtx 30
+    texmtx0    1.0000 0.0000 0.0000 -0.1500        (the blink sub-rect)
+               0.0000 1.0000 0.0000  0.0594
+  tevreg prev 0 0 0 0  c0 0 18 0 255  c1 0 0 0 204  c2 0 0 0 0
+```
+
+Three stages over a CMPR atlas and an RGB5A3 map, the blink frame chosen by
+`texmtx0`'s translation exactly as `hsfanim.c:255-258` builds it — and a third
+stage with **no texture**, whose combiner is
+`lerp(CPREV, C2, A2)`. Yoshi's eyes, which are correct, are `eye_L`/`eye_R`
+objects with **one** stage and a plain 256×256 CMPR texture. That asymmetry is
+what §30.3 is about.
+
+### 30.3 `GX_TEXMAP_NULL`: the comment was right and the code was not
+
+`port/src/gx/gx_tev.c` has carried this since M3:
+
+```c
+} else {
+    /* A stage with no texture still has to run its combiner, and a disabled
+     * unit in GL passes the previous colour through untouched -- which is only
+     * right when the stage is a pass.  Keep the unit enabled against a 1x1
+     * white texture instead. */
+    glc_unit_enable_tex2d(i, 0);
+}
+```
+
+The comment states the requirement. The line under it **disables the unit**,
+and there is no 1×1 white texture anywhere in the port. GL 1.3 bypasses a
+disabled unit's entire texture environment, so the `glTexEnv*` calls the port
+faithfully emitted for that stage were never applied to anything.
+
+**GX lets a stage name `GX_TEXMAP_NULL` and still run its combiner.** That is
+how this game tints, fades and toon-shades: `sprput.c:76-80` is the sprite
+path's colour/alpha modulation, `hsfdraw.c` uses it for the rim and eye
+materials. All of it was dropped.
+
+The size of it, counted by a new `--gxwarn` line on the §25 walk
+(`--ffto 7000 … --frames 7100`):
+
+| build | `TEV: a stage with no texture is dropped…` |
+|---|---:|
+| `--oldnulltev` (every build before M15) | **1,741,167** |
+| M15 default | **0** |
+
+210 of the 774 draws on frame 7000 have such a stage — among them both of
+Mario's eyes, three of Luigi's face materials, four of Peach's, and **none of
+Yoshi's**.
+
+**The fix.** `glc_white_texture()` (gl13.c) makes a 1×1 opaque white texture
+once and hands back its name; the textureless branch binds it and *enables*
+`GL_TEXTURE_2D`, so `TEXC` is (1,1,1) and `TEXA` is 1 — the identity for every
+combiner that reads them — and the stage runs. The name lives outside `glc`
+and is dropped by `glc_invalidate`, because a shadow that has forgotten
+everything may mean a new context.
+
+`--oldnulltev` is the A/B lever, and it is the strongest evidence that nothing
+else in M15 touches rendering: on the M15 binary it reproduces **all three §25
+reference md5s to the byte** — `047e6867…`, `6a23ec28…`, `0184870d…`.
+
+### 30.4 The witness: the Dolphin oracle on the character select
+
+The change re-bases all three reference frames and the diffs are large, so §0
+rule 3 needs more than `ppmdiff`. The oracle is `port/ref/frames/charselect.png`.
+
+![character select, before over after](screenshots/m15-charselect-f3000-crop-before-after.png)
+
+Top is `--oldnulltev`, bottom is M15. The corrected build matches the oracle in
+**three independent ways the old build got wrong**:
+
+1. **Yoshi's portrait has eyes, and so does Donkey Kong's.** In every build
+   before this one they are a blank green face and a blank muzzle. This is
+   §21.5 — "Yoshi's *portrait* has no eyes" — open since M9 and closed here.
+2. **The selection panel is translucent.** The oracle shows the curtain and the
+   chain decoration through it; the old build draws it opaque.
+3. **The `PARTY MODE` banner shows through the panel**, as it does in the
+   oracle, and is absent in the old build.
+
+All three are the same mechanism: a `GX_TEXMAP_NULL` stage modulating colour
+and alpha, which was being dropped.
+
+**The md5 verdicts, re-based with that justification:**
+
+| frame | scene | §25 md5 (= `--oldnulltev`, to the byte) | M15 md5 | pixels differing | mean |
+|---:|---|---|---|---:|---:|
+| 800 | title | `047e6867…` | **`eb6c318980998030acc7965dabb7bd49`** | 28,676 (9.34%) | 7.08 levels |
+| 3000 | character select | `6a23ec28…` | **`8762d432d5c8ae98af3ba3d0cf5086d6`** | 93,741 (30.52%) | 4.63 levels |
+| 7000 | board | `0184870d…` | **`b2a679b28fdf1ecbff483802a66c5bbc`** | 52,263 (17.01%) | 7.76 levels |
+
+These are not rounding diffs and they are not meant to be: ~17,400 stages a
+frame that never ran now run. Frame 3000 is the one with an oracle and it is
+unambiguously closer to it.
+
+**What is re-based without an oracle at that exact frame, and is therefore
+argued rather than witnessed:**
+
+* **Frame 800 loses `PRESS START`.** It blinks, the port had been drawing every
+  faded sprite at full opacity, and the fade now applies; frame 800 lands on a
+  low-alpha phase. `port/ref/frames/title.png` shows the text present at *its*
+  phase, which neither confirms nor denies this frame.
+* **Frame 7000's HUD plates dim.** `--drawlog` shows the game setting
+  `c0 = 128 128 128 177` for them (`sprput.c:130`, `GXSetTevColor`), i.e. it is
+  *asking* for half brightness and 69% alpha while the "Yoshi is fourth!"
+  message window is up. The port was ignoring the request.
+  `port/ref/frames/board.png` has no message window, so it is not a matching
+  oracle. **An oracle frame with a message window open is the one measurement
+  that would settle this, and it is not taken.**
+
+A dropped GX stage can never be right, and the one screen with a matching
+oracle moves toward it, so the fix is on by default. `--oldnulltev` is there
+for anyone who wants the argument back.
+
+### 30.5 The two `--gxwarn` degradations, checked
+
+| degradation | `--oldnulltev` | M15 |
+|---|---:|---:|
+| `GXInitSpecularDir: specular is approximated by the diffuse term` | 34,662 | **34,662** |
+| `TEV: a stage needs two different constants; the first wins` | 105,250 | **105,250** |
+
+Specular is **exactly §29.3's 34,662** and unchanged by the fix. The konst
+collision is unchanged *between the two arms of this A/B*, which is the check
+that matters here — but it is **not** §29.3's 1,824, and it is 105,250 on both
+arms of an M15 binary whose `--oldnulltev` frames are byte-identical to M14's.
+So the discrepancy is in how §29.3's figure was obtained, not in anything M15
+changed. Flagged, not chased.
+
+### 30.6 The board eyes: still wrong, and now much better bounded
+
+This is the part to be honest about. §29.4's symptom is **not fixed**.
+
+![Mario and Luigi at 8x, before over after](screenshots/m15-eyes-f7000-crop-before-after.png)
+
+Top `--oldnulltev`, bottom M15, frame 7000 at 8×. Across the whole character
+band (y = 235…300) the only columns that changed are **x = 160…169** — 36
+pixels, Mario's left eye, which went from a magenta ring to a flat grey blob.
+Mario's right eye is still a magenta ring around black and cyan. **Luigi's
+eyes are pixel-for-pixel unchanged**: the same empty pale rectangles.
+
+So the third stage running is not what those eyes were missing. What M15 does
+leave for M16 is a much smaller question than M14 left:
+
+* the material is **draw 39/40 of frame 7000**, `mario_m1`, three stages, and
+  §30.2 prints all of it — the two texture formats, the blink sub-rect matrix,
+  the TEV registers;
+* it is **not** TL32, **not** a TLUT, **not** the texture cache, and **not** the
+  NPOT fold (both units report `su 1.0 sv 1.0`);
+* stage 2's `c2` reads **0 0 0 0** while `c0` is `0 18 0 255` — a TEV register
+  the material lerps towards that is pure transparent black. That is the next
+  thing to read: whether the game ever sets `GX_TEVREG2` for this material and
+  the port is losing it, or whether stage 2 is meant to be a no-op and the
+  wrongness is entirely in stages 0 and 1;
+* and Yoshi's correct eyes are a **one-stage** material on separate `eye_L` /
+  `eye_R` objects, which is the control to diff against.
+
+**Snapshot.** No new named snapshot: the reproduction is a five-minute command
+on any build and does not need one —
+`--ffto 7000 --drawlog 1500 --drawlog-at 7000 --tlutlog --turbo --com4 --rtc
+dolphin --freshcard --play board-start-com4.play --frames 7010`.
+
+### 30.7 What M15 shipped, and what it did not
+
+**Shipped, with a witness:**
+
+| | |
+|---|---|
+| the `GX_TEXMAP_NULL` stage drop (§30.3) | 1,741,167 dropped stages a walk → 0; §21.5 closed against the Dolphin oracle |
+| `--oldnulltev` (§30.3) | reproduces all three §25 md5s to the byte |
+| `--tlutlog` (§30.2) | 639 TLUT lines on frame 7000, no IA8 among them |
+| `--drawlog`: all stages, texgens, texture matrices, NPOT fold, TEV registers | without it none of the above was visible |
+| §29.3's two `return 1`s (§30.1) | five Mega squishes on the soak, all returning 1 |
+
+**Not done, and why:**
+
+* **The board eyes** (§30.6). The lead M14 left was wrong; the bug found in its
+  place is real and large but is not this one. Bounded to one material and four
+  named questions.
+* **The per-draw submit lever** (§28.5). **Not started.** The session went on
+  §30.3, which was worth more than a percentage — but this is now the second
+  milestone running that has not touched it, and it is still the profile's
+  answer.
+* **Snapshot compression** (§24.6) and the 0.8% retrace drift. Not started.
+* **An oracle frame with a message window** (§30.4). The one measurement that
+  would finish the justification for frames 800 and 7000.
+
+### 30.8 What M16 starts with
+
+1. **The per-draw submit lever, first this time**, before anything else claims
+   the night: §28.5's (a) batch consecutive primitives sharing all GL state,
+   (b) a VBO / `APPLE_vertex_array_range` for the decoded arrays, (c) the
+   remaining per-draw `glc_*` calls. Profile first, on a teleported frame,
+   never on a live soak.
+2. **The board eyes**, from §30.6's four questions — it is one material now.
+3. **The oracle frame with a message window**, which closes §30.4.
