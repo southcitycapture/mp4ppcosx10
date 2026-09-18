@@ -93,6 +93,16 @@ static void usage(const char* argv0) {
             "  --drawlog-at F    ...but only on presented frame F, which is how you\n"
             "  --oldnulltev      drop a TEV stage that names no texture (the pre-M15\n"
             "                    path), for the A/B on the character eyes\n"
+            "  --oldsubmit       one glDrawArrays per GX primitive from a plain\n"
+            "                    client-memory buffer (the pre-M16 submit), for\n"
+            "                    the A/B (PLAN.md 31)\n"
+            "  --novar           batch and merge draws but keep the vertex ring\n"
+            "                    out of GL_APPLE_vertex_array_range\n"
+            "  --nomultidraw     one glDrawArrays per strip, no glMultiDrawArraysEXT\n"
+            "  --submitstats     batches, merged draws, primitives per list,\n"
+            "                    ring fence waits\n"
+            "  --noregfix        fold a TEV stage's GX_TEVREG write to PREV (the\n"
+            "                    pre-M16 path; the board eyes), for the A/B\n"
             "  --tlutlog         every GXLoadTlut and every CI texture bind: the\n"
             "                    palette address, count, format, TLUT name, swap and\n"
             "                    cache slot.  Scoped to --drawlog-at's frame if given\n"
@@ -456,6 +466,16 @@ int port_parse_args(int argc, char** argv) {
             port_opt.tlutlog = 1;
         } else if (!strcmp(a, "--oldnulltev")) {
             port_opt.oldnulltev = 1;
+        } else if (!strcmp(a, "--oldsubmit")) {
+            port_opt.oldsubmit = 1;
+        } else if (!strcmp(a, "--novar")) {
+            port_opt.novar = 1;
+        } else if (!strcmp(a, "--nomultidraw")) {
+            port_opt.nomultidraw = 1;
+        } else if (!strcmp(a, "--submitstats")) {
+            port_opt.submitstats = 1;
+        } else if (!strcmp(a, "--noregfix")) {
+            port_opt.noregfix = 1;
         } else if (!strcmp(a, "--ovllog")) {
             port_opt.ovllog = 1;
         } else if (!strcmp(a, "--nanwatch")) {

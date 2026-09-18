@@ -104,18 +104,32 @@ typedef struct Layout {
 #define SRC_MAX_STRIDE (12 + 12 + 4 + 8 * GX_TEXCOORDS)
 #define OUT_MAX_STRIDE (16 + 8 * GX_TEXCOORDS)
 
-/* One primitive's worth of output, and -- for the display-list path -- a whole
- * list's worth of source, because the cache stores the list in one piece. */
-static u8 src_buf[MAX_VERTS * SRC_MAX_STRIDE] __attribute__((aligned(16)));
+/* The source vertices go into a ring (M16, PLAN.md 31).  Before M16 `src_buf`
+ * was a static buffer every primitive and every list wrote from index zero,
+ * which was fine while `glDrawArrays` copied the data out synchronously.  Now
+ * the ring is a `GL_APPLE_vertex_array_range` the card reads by DMA *after*
+ * the call returns, so a run is never overwritten until its chunk's fence
+ * says the card is done with it -- gl13.c owns the fences, this file owns
+ * the cursor.  Without the extension (or with --novar / --oldsubmit) it is
+ * the same ring in ordinary memory and the driver copies as before.
+ *
+ * `out_buf` is only the CPU path's (--cpuxf) output and is not in the ring. */
+#define VRING_BYTES ((size_t)8 << 20)
+static u8* src_buf;            /* the ring, from gl13_var_setup              */
+static size_t src_cap;         /* its size in bytes                          */
+static size_t ring_cursor;     /* the next free byte                         */
+static size_t fence_from;      /* where the writer stood at the last flush   */
+static int ring_wrapped;       /* the writer wrapped since the last flush    */
 static u8 out_buf[MAX_VERTS * OUT_MAX_STRIDE] __attribute__((aligned(16)));
-/* Where a vertex goes when the primitive has already filled src_buf: it is
+/* Where a vertex goes when the run has already filled the ring: it is
  * decoded and thrown away, so the list still steps by the right number of
  * bytes.  The old path dropped it out of transform_and_store(). */
 static u8 sink_vtx[SRC_MAX_STRIDE] __attribute__((aligned(16)));
 static Layout sl;              /* the source layout of the primitive in hand  */
 static int out_stride, out_off_clr, out_off_tex, out_ntex;
 static int nverts;             /* vertices in the primitive being assembled   */
-static u32 sv_first;           /* where in src_buf this primitive starts      */
+static u32 sv_first;           /* the primitive's first vertex, list-relative */
+static size_t run_pos;         /* byte offset in the ring of the run in hand  */
 
 /* The writers still assemble into one uncompressed staging vertex: they arrive
  * one attribute at a time and in descriptor order, so there is nothing to pack
@@ -192,6 +206,15 @@ static u16 want_verts;
 static float byte_scale[256];
 
 static unsigned stat_prims, stat_verts, stat_draws, stat_dls;
+/* --submitstats (M16): what the batching actually found in the lists */
+static unsigned stat_batches, stat_merged, stat_multi_calls, stat_multi_prims,
+    stat_wraps, stat_lists_drawn;
+static unsigned stat_list_hist[5]; /* primitives per drawn list: 1, 2-4, 5-16, 17-64, 65+ */
+#define FLUSHER_SLOTS 32
+static struct {
+    const char* who;
+    unsigned n;
+} flushers[FLUSHER_SLOTS];         /* which state setters ended batches      */
 /* Draws whose position matrix puts the object sideways off the world.
  *
  * M4 had to bolt a throwaway instrument on to count these (1,264 of 1,756 on
@@ -231,6 +254,29 @@ void gx_draw_report(void) {
     port_log("port> GX draw: %u primitive(s) off-world (|position matrix "
              "translation| over %.0f)\n",
              stat_offworld, (double)GX_OFFWORLD_LIMIT);
+    if (port_opt.submitstats) {
+        unsigned w, b, f, fl;
+        gl13_var_stats(&w, &b, &f, &fl);
+        port_log("port> submit: %u batches for %u primitives -> %u GL draws "
+                 "(%u list primitives merged, %u strips in %u multi-draws), "
+                 "%u ring wraps\n",
+                 stat_batches, stat_prims, stat_draws, stat_merged, stat_multi_prims,
+                 stat_multi_calls, stat_wraps);
+        port_log("port> submit: %u display lists drawn; primitives per list: "
+                 "1: %u  2-4: %u  5-16: %u  17-64: %u  65+: %u\n",
+                 stat_lists_drawn, stat_list_hist[0], stat_list_hist[1],
+                 stat_list_hist[2], stat_list_hist[3], stat_list_hist[4]);
+        port_log("port> submit: vertex ring %s: %u fence waits (%u blocked), "
+                 "%u fences set, %u range flushes\n",
+                 gl13_var_active() ? "on" : "off", w, b, f, fl);
+        {
+            int i;
+            for (i = 0; i < FLUSHER_SLOTS && flushers[i].who; i++) {
+                port_log("port> submit: batches ended by %-24s %u\n", flushers[i].who,
+                         flushers[i].n);
+            }
+        }
+    }
     dlc_report();
 }
 
@@ -403,6 +449,7 @@ static int color_bytes(u8 type) {
 /* ---- assembling a vertex --------------------------------------------------- */
 
 static void build_decode_plan(void);
+static size_t ring_claim(size_t need);
 
 static void begin_attr_order(void) {
     static const int order[] = { GX_VA_POS,  GX_VA_NRM,  GX_VA_CLR0, GX_VA_CLR1,
@@ -1097,11 +1144,11 @@ static void finish_vertices(const u8* s, int n) {
 static void transform_and_store(void) {
     u8* v;
     int k;
-    if (nverts >= MAX_VERTS || sv_first + (u32)nverts >= MAX_VERTS) {
+    if (nverts >= MAX_VERTS || run_pos + (size_t)(nverts + 1) * sl.stride > src_cap) {
         gx_warn("GXBegin: more than 65536 vertices in one primitive; truncated");
         return;
     }
-    v = src_buf + (size_t)(sv_first + (u32)nverts) * sl.stride;
+    v = src_buf + run_pos + (size_t)nverts * sl.stride;
     nverts++;
     {
         f32* p = (f32*)v;
@@ -1361,6 +1408,7 @@ void GXBegin(GXPrimitive type, GXVtxFmt fmt, u16 n) {
     sv_first = 0;
     in_prim = 1;
     begin_attr_order();
+    run_pos = ring_claim((size_t)n * (size_t)sl.stride);
     GXLOG("GXBegin", "prim %02x fmt %d n %u, %d attrs", type, fmt, n, nactive);
 }
 
@@ -1369,7 +1417,7 @@ void GXBegin(GXPrimitive type, GXVtxFmt fmt, u16 n) {
  * state that decides whether any of it survives to the framebuffer.  Written
  * because "the draw happens and the screen stays black" has too many possible
  * causes to reason about from the source, and each of them is one line here. */
-static void draw_log(void) {
+static void draw_log(u32 first) {
     static int shown;
     int i;
     const GXTevStage* s0 = &gx.tev[0];
@@ -1391,7 +1439,7 @@ static void draw_log(void) {
              "%d chan(s) ----\n",
              shown, prim, nverts, gx.num_tev, gx.num_texgens, gx.num_chans);
     for (i = 0; i < nverts && i < 4; i++) {
-        const u8* o = out_buf + (size_t)i * out_stride;
+        const u8* o = out_buf + (size_t)(first + (u32)i) * out_stride;
         const f32* op = (const f32*)o;
         const u8* oc = o + out_off_clr;
         const f32* ot = (const f32*)(o + out_off_tex);
@@ -1530,13 +1578,218 @@ static void fill_xf_desc(GxXfDesc* d, const u8* s) {
     }
 }
 
-static void draw_run(const u8* s, int n) {
-    GxXfDesc xfd;
-    int on_gpu = 0;
-    if (!n) {
+/* ---- the batch (M16, PLAN.md 31) ------------------------------------------
+ *
+ * Before M16 every GX primitive was its own `glDrawArrays`, preceded by the
+ * whole per-draw state walk -- the vertex-program key, the transform, the
+ * raster state, the TEV chain, the six units' array pointers -- even though a
+ * display list cannot change any GX state between its primitives.  A list's
+ * primitives now accumulate as *segments* over one contiguous span of the
+ * ring, and the span is submitted once: one state walk, one set of array
+ * pointers, one range flush, and then the segments are issued with as few GL
+ * calls as their shapes allow.  Contiguous list primitives of one type
+ * (triangles, quads, lines, points) merge into one call; strips and fans of
+ * one type go down `glMultiDrawArraysEXT`.  Nothing about any triangle
+ * changes: the same vertices in the same order with the same state, which is
+ * why the frame md5s are expected to hold and are checked (PLAN.md 31).
+ *
+ * The batch is flushed at the end of the list, when the layout changes
+ * inside one, when the ring wraps, and when it is full.  `--oldsubmit` flushes
+ * after every primitive and issues one call per segment, which is the pre-M16
+ * shape on the same ring. */
+typedef struct Seg {
+    u32 first;   /* vertex index from the batch's base */
+    u32 count;
+    u8 prim;
+} Seg;
+#define BATCH_MAX 1024
+static Seg batch[BATCH_MAX];
+static int batch_n;
+int gx_batch_pending; /* == batch_n != 0, for GX_STATE_TOUCH's one-load test */
+static size_t batch_pos;   /* ring offset of the batch's first vertex */
+static u32 batch_verts;
+static Layout batch_sl;
+
+static void draw_submit(const u8* s, int n, const Seg* segs, int nsegs, int in_ring);
+
+static void ring_ensure(void) {
+    if (!src_buf) {
+        src_buf = gl13_var_setup(VRING_BYTES);
+        src_cap = VRING_BYTES;
+    }
+}
+
+static void batch_flush(void) {
+    if (batch_n) {
+        /* cleared before the submit, so a GX_STATE_TOUCH reached from inside
+         * it (there is none today) cannot submit the same batch twice */
+        int n = batch_n;
+        u32 nv = batch_verts;
+        batch_n = 0;
+        batch_verts = 0;
+        gx_batch_pending = 0;
+        draw_submit(src_buf + batch_pos, (int)nv, batch, n, 1);
+        stat_batches++;
+    }
+    /* the chunks the writer has finished with get their fences, after the
+     * draws that read them */
+    gl13_var_left(fence_from, ring_cursor, ring_wrapped);
+    fence_from = ring_cursor;
+    ring_wrapped = 0;
+}
+
+/* Claim `need` bytes of the ring for the run about to be decoded and return
+ * its offset.  A run that does not fit before the end wraps to the start,
+ * which breaks the batch (its vertices would no longer be contiguous). */
+static size_t ring_claim(size_t need) {
+    ring_ensure();
+    if (need > src_cap) {
+        need = src_cap; /* the decoder truncates to the sink past the end */
+    }
+    if (ring_cursor + need > src_cap) {
+        batch_flush();
+        ring_cursor = 0;
+        ring_wrapped = 1;
+        stat_wraps++;
+    }
+    gl13_var_enter(ring_cursor, need);
+    return ring_cursor;
+}
+
+/* The run at `run_pos` has `nverts` vertices: advance the cursor and add it
+ * to the batch, or flush and start a new one when it cannot join. */
+static void batch_add(void) {
+    size_t bytes = (size_t)nverts * sl.stride;
+    ring_cursor = run_pos + bytes;
+    if (!nverts) {
         return;
     }
-    stat_prims++;
+    if (batch_n &&
+        (port_opt.oldsubmit || batch_n >= BATCH_MAX ||
+         batch_verts + (u32)nverts > MAX_VERTS ||
+         memcmp(&batch_sl, &sl, sizeof(sl)) != 0 ||
+         batch_pos + (size_t)batch_verts * batch_sl.stride != run_pos)) {
+        /* The layout cannot change inside a list (it is a function of the
+         * descriptor, the texgens and the TEV chain, none of which a list can
+         * touch), so the pending batch was assembled under `sl` as it is now
+         * -- except in the one case this guards, where it is restored for
+         * the flush. */
+        Layout cur = sl;
+        sl = batch_sl;
+        batch_flush();
+        sl = cur;
+    }
+    if (!batch_n) {
+        batch_pos = run_pos;
+        batch_sl = sl;
+        batch_verts = 0;
+    }
+    batch[batch_n].first = batch_verts;
+    batch[batch_n].count = (u32)nverts;
+    batch[batch_n].prim = prim;
+    batch_n++;
+    batch_verts += (u32)nverts;
+    gx_batch_pending = 1;
+}
+
+/* GX_STATE_TOUCH's target: a state setter is about to change something the
+ * pending batch was decoded under.  Timed as GX work, which it is.  With
+ * --submitstats the setters that end batches are counted by name, which is
+ * what says whether a batch ended because the material changed or because
+ * the game re-sent something it already had. */
+
+void gx_batch_flush_from(const char* who) {
+    port_perf_gx_begin();
+    batch_flush();
+    port_perf_gx_end();
+    if (port_opt.submitstats) {
+        int i;
+        for (i = 0; i < FLUSHER_SLOTS; i++) {
+            if (flushers[i].who == who) {
+                flushers[i].n++;
+                return;
+            }
+            if (!flushers[i].who) {
+                flushers[i].who = who;
+                flushers[i].n = 1;
+                return;
+            }
+        }
+    }
+}
+
+static int prim_is_list(GLenum mode) {
+    return mode == GL_TRIANGLES || mode == GL_QUADS || mode == GL_LINES ||
+           mode == GL_POINTS;
+}
+
+static int prim_unit(GLenum mode) {
+    return mode == GL_QUADS ? 4 : mode == GL_TRIANGLES ? 3 : mode == GL_LINES ? 2 : 1;
+}
+
+/* Issue the segments with as few calls as their shapes allow.  Merging a list
+ * primitive is only exact when its count is whole -- a stray vertex at the
+ * end of one GX_TRIANGLES run is dropped by GL and must stay dropped rather
+ * than pair with the next run's first. */
+static void issue_segments(const Seg* segs, int nsegs) {
+    static int md_first[BATCH_MAX];
+    static int md_count[BATCH_MAX];
+    int i = 0;
+    int multi = gl13_have_multidraw() && !port_opt.nomultidraw && !port_opt.oldsubmit;
+    while (i < nsegs) {
+        GLenum mode = gl_prim(segs[i].prim);
+        int j = i + 1;
+        if (port_opt.oldsubmit) {
+            GL(glDrawArrays)(mode, (GLint)segs[i].first, (GLsizei)segs[i].count);
+            stat_draws++;
+        } else if (prim_is_list(mode)) {
+            u32 first = segs[i].first, count = segs[i].count;
+            int unit = prim_unit(mode);
+            while (j < nsegs && gl_prim(segs[j].prim) == mode &&
+                   segs[j].first == first + count && (count % (u32)unit) == 0) {
+                count += segs[j].count;
+                j++;
+            }
+            GL(glDrawArrays)(mode, (GLint)first, (GLsizei)count);
+            stat_draws++;
+            stat_merged += (unsigned)(j - i - 1);
+        } else {
+            while (j < nsegs && gl_prim(segs[j].prim) == mode) {
+                j++;
+            }
+            if (multi && j - i >= 2) {
+                int k;
+                for (k = i; k < j; k++) {
+                    md_first[k - i] = (int)segs[k].first;
+                    md_count[k - i] = (int)segs[k].count;
+                }
+                gl13_multi_draw_arrays(mode, md_first, md_count, j - i);
+                stat_draws++;
+                stat_multi_calls++;
+                stat_multi_prims += (unsigned)(j - i);
+            } else {
+                int k;
+                for (k = i; k < j; k++) {
+                    GL(glDrawArrays)(mode, (GLint)segs[k].first, (GLsizei)segs[k].count);
+                    stat_draws++;
+                }
+            }
+        }
+        i = j;
+    }
+}
+
+/* The draw itself, once the span is in hand.  `s` is where phase 2 reads
+ * from: the ring for a batch the decoder just assembled, and the cached copy
+ * for a display list that hit.  `n` is the span's vertex count; the segments
+ * index into it. */
+static void draw_submit(const u8* s, int n, const Seg* segs, int nsegs, int in_ring) {
+    GxXfDesc xfd;
+    int on_gpu = 0;
+    if (!n || !nsegs) {
+        return;
+    }
+    stat_prims += (unsigned)nsegs;
     stat_verts += (unsigned)n;
     if (!gl13_live()) {
         return;
@@ -1562,7 +1815,15 @@ static void draw_run(const u8* s, int n) {
     /* After the state is applied, not before: the texture cache fills in
      * gl_name at bind time, so a log taken earlier reports a stale 0 and
      * sends you hunting for a texture upload that already happened. */
-    draw_log();
+    if (port_opt.drawlog) {
+        int i;
+        for (i = 0; i < nsegs; i++) {
+            prim = segs[i].prim;
+            nverts = (int)segs[i].count;
+            draw_log(segs[i].first);
+        }
+        nverts = n;
+    }
 
     /* On the GPU path the arrays are the *source* layout and gx_vprog_draw has
      * already bound them; there is no `out_buf` to point at, because phase 2
@@ -1574,6 +1835,10 @@ static void draw_run(const u8* s, int n) {
         /* the parameters and the arrays, now that the texture binds this draw
          * needs have happened: gx_vprog.c says why that ordering matters */
         gx_vprog_bind(&xfd);
+        if (in_ring) {
+            /* the CPU cache, out ahead of the DMA (a no-op without VAR) */
+            gl13_var_flush(s, (size_t)n * sl.stride);
+        }
     } else {
         glc_vertex_array(out_buf, out_stride);
         glc_color_array(out_buf + out_off_clr, out_stride);
@@ -1593,12 +1858,13 @@ static void draw_run(const u8* s, int n) {
             }
         }
     }
-    GL(glDrawArrays)(gl_prim(prim), 0, n);
-    stat_draws++;
+    issue_segments(segs, nsegs);
 }
 
+/* An immediate-mode primitive: its own batch, flushed at once. */
 static void draw_now(void) {
-    draw_run(src_buf + (size_t)sv_first * sl.stride, nverts);
+    batch_add();
+    batch_flush();
 }
 
 void GXEnd(void) {
@@ -1914,7 +2180,7 @@ static DlSeg dl_segs[1024];
 static int dl_nsegs;
 
 static void dlc_store(const void* list, u32 nbytes, u32 lh, u32 sh, u32 total,
-                      unsigned frame, int born_dynamic) {
+                      size_t list_pos, unsigned frame, int born_dynamic) {
     DlEntry* e;
     size_t sbytes = (size_t)total * (size_t)sl.stride;
     size_t gbytes = (size_t)dl_nsegs * sizeof(DlSeg);
@@ -1945,7 +2211,7 @@ static void dlc_store(const void* list, u32 nbytes, u32 lh, u32 sh, u32 total,
         free(e);
         return;
     }
-    memcpy(e->src, src_buf, sbytes);
+    memcpy(e->src, src_buf + list_pos, sbytes);
     memcpy(e->segs, dl_segs, gbytes);
     e->list = list;
     e->nbytes = nbytes;
@@ -2105,11 +2371,12 @@ static f32 dec_f32_portable(const u8* q) {
             const DecStep* st = plan;                                                    \
             u8* v;                                                                       \
             int j;                                                                       \
-            if (sv_first + (u32)nverts >= MAX_VERTS) {                                   \
+            if (nverts >= MAX_VERTS ||                                                   \
+                run_pos + (size_t)(nverts + 1) * sl.stride > src_cap) {                  \
                 gx_warn("GXBegin: more than 65536 vertices in one primitive; truncated");\
                 v = sink_vtx; /* decoded and dropped, so the list still steps */         \
             } else {                                                                     \
-                v = src_buf + (size_t)(sv_first + (u32)nverts) * sl.stride;               \
+                v = src_buf + run_pos + (size_t)nverts * sl.stride;                      \
                 nverts++;                                                                \
                 lastv = v;                                                               \
             }                                                                            \
@@ -2181,6 +2448,8 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
     DlEntry* hit = NULL;
     DlEntry* found = NULL;
     int caching;
+    unsigned nops = 0;    /* primitives in this list, for --submitstats */
+    size_t list_pos = 0;  /* ring offset of the list's first run          */
     /* 0 = this (buffer, state) pair has never been seen, 2 = the list's bytes
      * changed, 3 = the arrays the list reads were rewritten under it (an
      * animated model, which is the split the M9 log reports) */
@@ -2242,23 +2511,28 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
         }
         if (hit) {
             /* The replay.  Everything the miss path does *outside* the decode
-             * still happens per segment, including begin_attr_order -- which
-             * is what settles the matrices, the texgens and the layout for
-             * phase 2, and what counts an off-world draw. */
+             * still happens, including begin_attr_order -- which is what
+             * settles the matrices, the texgens and the layout for phase 2,
+             * and what counts an off-world draw.  The cached span is one
+             * batch, submitted from the cache's own memory (M16). */
             int i;
             hit->last_frame = frame;
             stat_dlc_hit++;
-            for (i = 0; i < hit->nsegs; i++) {
+            batch_flush();
+            for (i = 0; i < hit->nsegs && i < BATCH_MAX; i++) {
                 const DlSeg* g = &hit->segs[i];
-                prim = (u8)(g->op & 0xF8);
-                vtxfmt = (u8)(g->op & 0x07);
-                in_prim = 0;
-                nverts = 0;
-                begin_attr_order();
-                if (nactive == 0 || sl.stride != hit->stride) {
-                    break;
-                }
-                draw_run(hit->src + (size_t)g->first * hit->stride, (int)g->count);
+                batch[i].first = g->first;
+                batch[i].count = g->count;
+                batch[i].prim = (u8)(g->op & 0xF8);
+            }
+            prim = (u8)(hit->segs[0].op & 0xF8);
+            vtxfmt = (u8)(hit->segs[0].op & 0x07);
+            in_prim = 0;
+            nverts = 0;
+            begin_attr_order();
+            if (nactive != 0 && sl.stride == hit->stride) {
+                draw_submit(hit->src, (int)hit->nverts, batch, i, 0);
+                stat_batches++;
             }
             nverts = 0;
             port_perf_gx_end();
@@ -2339,6 +2613,13 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
         sv_first = total;
         in_prim = 1;
         begin_attr_order();
+        run_pos = ring_claim((size_t)count * (size_t)sl.stride);
+        if (nops == 0) {
+            list_pos = run_pos;
+        } else if (ring_wrapped) {
+            caching = 0; /* the list's span is no longer one piece to copy */
+        }
+        nops++;
         if (port_opt.drawlog && dl_shown < port_opt.drawlog &&
         (!port_opt.drawlog_frame ||
          gl13_frame_number() + 1 == (unsigned)port_opt.drawlog_frame)) {
@@ -2433,12 +2714,24 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
                 caching = 0;
             }
         }
-        draw_now();
+        batch_add();
         total = sv_first + (u32)nverts;
         nverts = 0;
     }
+    /* The batch outlives the list: the next GX state call flushes it
+     * (GX_STATE_TOUCH), and until then the next list's primitives join it --
+     * which is every face of a material in hsfdraw.c's FaceDraw, since the
+     * game itself skips the material setup when `materialBak` matches.
+     * --oldsubmit keeps the pre-M16 scope, one list at most. */
+    if (nops && gl13_live()) {
+        stat_lists_drawn++;
+        stat_list_hist[nops == 1 ? 0 : nops <= 4 ? 1 : nops <= 16 ? 2 : nops <= 64 ? 3 : 4]++;
+    }
+    if (port_opt.oldsubmit) {
+        batch_flush();
+    }
     if (caching) {
-        dlc_store(list, nbytes, list_h, state_h, total, frame,
+        dlc_store(list, nbytes, list_h, state_h, total, list_pos, frame,
                   miss_reason == 3);
     }
     sv_first = 0;
@@ -2450,6 +2743,7 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
 
 void GXCopyDisp(void* dest, GXBool clear) {
     (void)dest;
+    GX_STATE_TOUCH(); /* the frame's last batch, before the swap */
     /* The XFB does not exist here: the game draws into GL's back buffer and
      * the swap happens at the retrace gate, so the double-buffer discipline
      * the game expects is preserved (PLAN.md §3.7).  The clear it asks for is
@@ -2478,7 +2772,10 @@ void port_gx_init(void) {
     gx_logging = port_opt.gxlog;
 }
 
-void port_gx_present(void) { gl13_present(); }
+void port_gx_present(void) {
+    GX_STATE_TOUCH();
+    gl13_present();
+}
 
 void gl13_state_report(void);
 

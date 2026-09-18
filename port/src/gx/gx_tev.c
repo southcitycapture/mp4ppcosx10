@@ -243,6 +243,8 @@ static Arg alpha_arg(const GXTevStage* s, u8 a) {
     return r;
 }
 
+static unsigned cfg_konst_collisions; /* stages colliding in the config being emitted; see below */
+
 /* Choose the combiner for one channel and write it to the current unit. */
 static void emit_channel(int unit, int rgb, Arg a, Arg b, Arg c, Arg d, u8 op, u8 bias,
                          u8 scale, float* konst_out, int* konst_set) {
@@ -301,6 +303,7 @@ static void emit_channel(int unit, int rgb, Arg a, Arg b, Arg c, Arg d, u8 op, u
                 *konst_set = 1;
             } else if (memcmp(konst_out, args[i].konst, sizeof(float) * 4) != 0) {
                 gx_warn("TEV: a stage needs two different constants; the first wins");
+                cfg_konst_collisions++;
             }
         }
         if (args[i].is_zero) {
@@ -331,6 +334,200 @@ static void emit_channel(int unit, int rgb, Arg a, Arg b, Arg c, Arg d, u8 op, u
     if (scale == GX_CS_DIVIDE_2) {
         gx_warn("TEV: GX_CS_DIVIDE_2 has no GL equivalent; drawn at scale 1");
     }
+}
+
+/* ---- a stage that writes a TEV register (M16, PLAN.md 31.3) ----------------
+ *
+ * A GX stage can write GX_TEVREG0..2 instead of PREV, and a later stage can
+ * read that register back as C0..2 / A0..2.  GL 1.3 has one carrier between
+ * units -- PREVIOUS -- and this port had always treated the destination as
+ * PREV and the read-back as the register's *constant* (whatever
+ * GXSetTevColor last put there), which is what the board eyes were: hsfdraw.c
+ * SetTevStageTex's two-texture blend
+ *
+ *     stage A:  T_A * RAS            -> PREV      alpha T_Aa * K_A
+ *     stage B:  T_B * RAS            -> REG2      alpha T_Ba * K_B
+ *     stage C:  lerp(PREV, C2, A2)   -> PREV      alpha APREV
+ *
+ * drawn as stage B overwriting PREV and stage C lerping it with black by zero
+ * (PLAN.md 30.6: the eye atlas lost, the 32x32 overlay alone).
+ *
+ * That shape *is* expressible, because RAS factors out of both terms:
+ *
+ *     out.rgb = RAS * (T_A * (1 - q) + T_B * q),   q = T_Ba * K_B
+ *     out.a   = T_Aa * K_A
+ *
+ * which is three units with ARB_texture_env_crossbar (the card has it):
+ *
+ *     unit A:  rgb = T_A                     a = T_Ba * K_B        (crossbar: unit B's alpha)
+ *     unit B:  rgb = lerp(PREV, T_B, PREV.a) a = T_Aa * K_A        (crossbar: unit A's alpha)
+ *     unit C:  rgb = PREV * RAS              a = PREV
+ *
+ * Every other register write is still folded to PREV and is now *counted*
+ * by --gxwarn instead of passing silently.  --noregfix keeps the old
+ * rendering for the A/B. */
+static int reg_write_warned;
+
+/* the (ZERO, X, Y, ZERO) modulate shape, either order */
+static int is_modulate(const u8* in, u8 x, u8 y, u8 zero) {
+    return in[0] == zero && in[3] == zero &&
+           ((in[1] == x && in[2] == y) || (in[1] == y && in[2] == x));
+}
+
+static int stage_plain(const GXTevStage* s) {
+    return s->cop == GX_TEV_ADD && s->aop == GX_TEV_ADD && s->cbias == GX_TB_ZERO &&
+           s->abias == GX_TB_ZERO && s->cscale == GX_CS_SCALE_1 &&
+           s->ascale == GX_CS_SCALE_1 && ras_table(s) == NULL &&
+           SWAP_PACK(gx.swap_tbl[s->tex_swap & 3]) == SWAP_IDENTITY;
+}
+
+/* Does the triple starting at stage k have the shape above?  Returns the
+ * register it goes through (0..2) or -1. */
+static int regfix_match(int k, int stages) {
+    const GXTevStage *a, *b, *c;
+    int reg;
+    if (port_opt.noregfix || !gl13_have_crossbar || k + 2 >= stages) {
+        return -1;
+    }
+    a = &gx.tev[k];
+    b = &gx.tev[k + 1];
+    c = &gx.tev[k + 2];
+    if (!stage_plain(a) || !stage_plain(b) || !stage_plain(c)) {
+        return -1;
+    }
+    if (a->creg != GX_TEVPREV || a->areg != GX_TEVPREV || c->creg != GX_TEVPREV ||
+        c->areg != GX_TEVPREV) {
+        return -1;
+    }
+    if (b->creg != b->areg || b->creg == GX_TEVPREV) {
+        return -1;
+    }
+    reg = (int)b->creg - GX_TEVREG0;
+    if (reg < 0 || reg > 2) {
+        return -1;
+    }
+    /* both texture stages sample something, on the same colour channel */
+    if (gx_bound_tex(a->map) == NULL || a->coord >= GX_TEXCOORDS ||
+        gx_bound_tex(b->map) == NULL || b->coord >= GX_TEXCOORDS || a->chan != b->chan ||
+        gx.num_ind) {
+        return -1;
+    }
+    /* A: T*RAS, alpha a modulate of two of {TEXA, KONST, RASA} */
+    if (!is_modulate(a->cin, GX_CC_TEXC, GX_CC_RASC, GX_CC_ZERO)) {
+        return -1;
+    }
+    {
+        int i, ok = 1;
+        for (i = 1; i <= 2; i++) {
+            u8 v = a->ain[i];
+            if (v != GX_CA_TEXA && v != GX_CA_KONST && v != GX_CA_RASA && v != GX_CA_ZERO) {
+                ok = 0;
+            }
+        }
+        /* a real modulate: (ZERO, X, ZERO, ZERO) is lerp(0, X, 0) = 0 on GX */
+        if (!ok || a->ain[0] != GX_CA_ZERO || a->ain[3] != GX_CA_ZERO ||
+            a->ain[1] == GX_CA_ZERO || a->ain[2] == GX_CA_ZERO) {
+            return -1;
+        }
+    }
+    /* B: T*RAS into the register, alpha T_Ba*K_B or nothing */
+    if (!is_modulate(b->cin, GX_CC_TEXC, GX_CC_RASC, GX_CC_ZERO)) {
+        return -1;
+    }
+    /* C: lerp(PREV, Creg, q) with q the register's alpha or B's texture alpha;
+     * alpha passes PREV */
+    if (c->cin[0] != GX_CC_CPREV || c->cin[1] != GX_CC_C0 + 2 * reg || c->cin[3] != GX_CC_ZERO) {
+        return -1;
+    }
+    if (c->cin[2] == GX_CC_A0 + 2 * reg) {
+        if (!is_modulate(b->ain, GX_CA_TEXA, GX_CA_KONST, GX_CA_ZERO)) {
+            return -1;
+        }
+    } else if (c->cin[2] == GX_CC_TEXA) {
+        if (c->map != b->map || gx_bound_tex(c->map) == NULL) {
+            return -1;
+        }
+    } else {
+        return -1;
+    }
+    if (c->ain[0] != GX_CA_ZERO || c->ain[1] != GX_CA_ZERO || c->ain[2] != GX_CA_ZERO ||
+        c->ain[3] != GX_CA_APREV) {
+        return -1;
+    }
+    return reg;
+}
+
+/* One of the three units of a matched triple: `which` is 0 (A), 1 (B), 2 (C)
+ * and `unit` is the GL unit it lands on (== the stage index). */
+static void regfix_emit(int which, int unit, int k) {
+    const GXTevStage* a = &gx.tev[k];
+    const GXTevStage* b = &gx.tev[k + 1];
+    const GXTevStage* c = &gx.tev[k + 2];
+    float konst[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    if (!gl13_live()) {
+        return;
+    }
+    glc_texenvi(unit, GL_TEXTURE_ENV_MODE, GL_COMBINE);
+    glc_texenvf(unit, GL_RGB_SCALE, 1.0f);
+    glc_texenvf(unit, GL_ALPHA_SCALE, 1.0f);
+    if (which == 0) {
+        /* rgb = T_A;  a = q, read across from unit B */
+        glc_texenvi(unit, GL_COMBINE_RGB, GL_REPLACE);
+        glc_texenvi(unit, GL_SOURCE0_RGB, GL_TEXTURE);
+        glc_texenvi(unit, GL_OPERAND0_RGB, GL_SRC_COLOR);
+        if (c->cin[2] == GX_CC_TEXA) {
+            glc_texenvi(unit, GL_COMBINE_ALPHA, GL_REPLACE);
+            glc_texenvi(unit, GL_SOURCE0_ALPHA, (int)(GL_TEXTURE0 + k + 1));
+            glc_texenvi(unit, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
+        } else {
+            konst_color(b, 1, konst);
+            glc_texenvi(unit, GL_COMBINE_ALPHA, GL_MODULATE);
+            glc_texenvi(unit, GL_SOURCE0_ALPHA, (int)(GL_TEXTURE0 + k + 1));
+            glc_texenvi(unit, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
+            glc_texenvi(unit, GL_SOURCE1_ALPHA, GL_CONSTANT);
+            glc_texenvi(unit, GL_OPERAND1_ALPHA, GL_SRC_ALPHA);
+        }
+    } else if (which == 1) {
+        /* rgb = lerp(PREV = T_A, T_B, PREV.a = q): GL_INTERPOLATE is
+         * Arg0*Arg2 + Arg1*(1-Arg2);  a = stage A's own alpha, its texture
+         * read across from unit A */
+        int i, n = 0;
+        glc_texenvi(unit, GL_COMBINE_RGB, GL_INTERPOLATE);
+        glc_texenvi(unit, GL_SOURCE0_RGB, GL_TEXTURE);
+        glc_texenvi(unit, GL_OPERAND0_RGB, GL_SRC_COLOR);
+        glc_texenvi(unit, GL_SOURCE1_RGB, GL_PREVIOUS);
+        glc_texenvi(unit, GL_OPERAND1_RGB, GL_SRC_COLOR);
+        glc_texenvi(unit, GL_SOURCE2_RGB, GL_PREVIOUS);
+        glc_texenvi(unit, GL_OPERAND2_RGB, GL_SRC_ALPHA);
+        for (i = 1; i <= 2; i++) {
+            u8 v = a->ain[i];
+            GLenum src;
+            if (v == GX_CA_ZERO) {
+                continue;
+            }
+            src = v == GX_CA_TEXA    ? (GLenum)(GL_TEXTURE0 + k)
+                  : v == GX_CA_RASA  ? GL_PRIMARY_COLOR
+                                     : GL_CONSTANT;
+            if (v == GX_CA_KONST) {
+                konst_color(a, 1, konst);
+            }
+            glc_texenvi(unit, n == 0 ? GL_SOURCE0_ALPHA : GL_SOURCE1_ALPHA, (int)src);
+            glc_texenvi(unit, n == 0 ? GL_OPERAND0_ALPHA : GL_OPERAND1_ALPHA, GL_SRC_ALPHA);
+            n++;
+        }
+        glc_texenvi(unit, GL_COMBINE_ALPHA, GL_MODULATE); /* n is 2: the matcher says so */
+    } else {
+        /* rgb = PREV * RAS;  a = PREV */
+        glc_texenvi(unit, GL_COMBINE_RGB, GL_MODULATE);
+        glc_texenvi(unit, GL_SOURCE0_RGB, GL_PREVIOUS);
+        glc_texenvi(unit, GL_OPERAND0_RGB, GL_SRC_COLOR);
+        glc_texenvi(unit, GL_SOURCE1_RGB, GL_PRIMARY_COLOR);
+        glc_texenvi(unit, GL_OPERAND1_RGB, GL_SRC_COLOR);
+        glc_texenvi(unit, GL_COMBINE_ALPHA, GL_REPLACE);
+        glc_texenvi(unit, GL_SOURCE0_ALPHA, GL_PREVIOUS);
+        glc_texenvi(unit, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
+    }
+    glc_texenv_color(unit, konst);
 }
 
 /* ---- the state cache (M13, PLAN.md 28.5) ---------------------------------
@@ -381,6 +578,15 @@ static u32 tev_sig_hash(int stages, u32 have_tex_bits) {
 
 static u32 tev_cache_sig;
 static int tev_cache_live;
+static int regfix_k;
+static unsigned stat_regfix;
+/* The konst collision, counted the way a degradation should be: per draw
+ * that carries one, whether or not the TEV cache re-emitted the config.
+ * `gx_warn`'s own count only fires on a cache miss, which is why PLAN.md
+ * 29.3 and 30.5 disagreed by a factor of fifty (PLAN.md 31.4). */
+static unsigned long stat_konst_draws;    /* draws whose config has a collision   */
+static unsigned long stat_konst_configs;  /* distinct configs (cache misses) with one */
+static unsigned long stat_draws_applied;
 static unsigned long tev_hits, tev_misses;
 
 void gx_tev_cache_invalidate(void) { tev_cache_live = 0; }
@@ -411,6 +617,32 @@ void gx_tev_apply(void) {
             tev_cache_sig = sig;
             tev_cache_live = 1;
             tev_misses++;
+        }
+    }
+    if (emit) {
+        cfg_konst_collisions = 0;
+    }
+    stat_draws_applied++;
+    {
+        int rk = -1; /* the first stage of a matched register triple, or -1 */
+        int j;
+        for (j = 0; j + 2 < stages; j++) {
+            if (regfix_match(j, stages) >= 0) {
+                rk = j;
+                break;
+            }
+        }
+        regfix_k = rk;
+        if (emit) {
+            for (j = 0; j < stages; j++) {
+                const GXTevStage* s = &gx.tev[j];
+                if ((s->creg != GX_TEVPREV || s->areg != GX_TEVPREV) &&
+                    !(rk >= 0 && j == rk + 1)) {
+                    gx_warn("TEV: a stage writes a TEV register other than PREV; GL "
+                            "has only PREV, so it is treated as PREV");
+                    reg_write_warned++;
+                }
+            }
         }
     }
     for (i = 0; i < gl13_max_tex_units; i++) {
@@ -479,7 +711,10 @@ void gx_tev_apply(void) {
                             "previous stage's colour passes through");
                 }
             }
-            if (emit) {
+            if (emit && regfix_k >= 0 && i >= regfix_k && i <= regfix_k + 2) {
+                regfix_emit(i - regfix_k, i, regfix_k);
+                stat_regfix++;
+            } else if (emit) {
                 glc_texenvi(i, GL_TEXTURE_ENV_MODE, GL_COMBINE);
                 emit_channel(i, 1, color_arg(s, s->cin[0]), color_arg(s, s->cin[1]),
                              color_arg(s, s->cin[2]), color_arg(s, s->cin[3]), s->cop,
@@ -491,9 +726,26 @@ void gx_tev_apply(void) {
             }
         }
     }
+    if (emit && cfg_konst_collisions) {
+        stat_konst_configs++;
+    }
+    if (cfg_konst_collisions) {
+        stat_konst_draws++;
+    }
 }
 
 void gx_tev_report(void) {
+    if (stat_draws_applied) {
+        port_log("port> tev: konst collision (two constants in one stage): %lu of %lu "
+                 "draws carry one, in %lu distinct configs (PLAN.md 31.4)\n",
+                 stat_konst_draws, stat_draws_applied, stat_konst_configs);
+    }
+    if (stat_regfix || reg_write_warned) {
+        port_log("port> tev: %u unit emissions through the register rewrite "
+                 "(PLAN.md 31.3), %u stage emissions still folding a register "
+                 "write to PREV\n",
+                 stat_regfix, reg_write_warned);
+    }
     if (port_opt.tevstats) {
         unsigned long tot = tev_hits + tev_misses;
         port_log("port> tev cache: %lu applies, %lu skipped (%.1f%%), %lu emitted\n",

@@ -68,6 +68,13 @@ static const char* const GL13_ALLOWED[] = {
     "glVertexPointer", "glViewport", "glActiveTexture", "glClientActiveTexture",
     "glDeleteTextures", "glShadeModel", "glLightModelfv", "glLightModeli",
     "glColorMaterial", "glPolygonMode", "glHint", "glGetError",
+    /* M16, the per-draw submit (PLAN.md 31): GL_APPLE_vertex_array_range,
+     * GL_APPLE_fence and GL_EXT_multi_draw_arrays are all in g4-glinfo.log,
+     * and every one of them is resolved at run time and skipped when absent. */
+    "glVertexArrayRangeAPPLE", "glFlushVertexArrayRangeAPPLE",
+    "glVertexArrayParameteriAPPLE", "glGenFencesAPPLE", "glSetFenceAPPLE",
+    "glFinishFenceAPPLE", "glTestFenceAPPLE", "glMultiDrawArraysEXT",
+    "glDrawElements",
 };
 
 int gl13_check(const char* fn) {
@@ -495,6 +502,232 @@ void glc_coord_array(int unit, const void* p, int stride) {
     u->coord_stride = stride;
 }
 
+
+/* ---- the vertex ring: GL_APPLE_vertex_array_range + GL_APPLE_fence --------
+ *
+ * M16 (PLAN.md 31).  The board profile put 28% of the frame inside Apple's
+ * `gleDrawArraysOrElements_IMM_Exec` -- the *immediate* client-array path,
+ * which copies every draw's vertices into the command buffer, selects a
+ * generated "vertex submit function" for the layout, and pages the buffer off
+ * to the kernel (`gldPageoffBuffer` -> `io_connect_map_memory`, 7% of the
+ * frame on its own) every time the copies fill it.  None of that is geometry.
+ *
+ * `GL_APPLE_vertex_array_range` is this driver's way of not copying: a range of
+ * client memory the card can read by DMA, so an array pointer inside it is a
+ * reference in the command stream rather than a copy.  The decoder writes the
+ * packed source vertex straight into that range (it is `src_buf` in
+ * gx_draw.c), one `glFlushVertexArrayRangeAPPLE` per batch pushes the CPU
+ * cache out ahead of the DMA, and the draw is a pointer.
+ *
+ * The cost of not copying is that the memory is now *read later*, so it must
+ * not be overwritten until the card has finished with it.  The range is a
+ * ring split into VAR_CHUNKS equal chunks; a fence is set on a chunk when the
+ * writer leaves it (after the draws that read it were issued), and finished
+ * before the writer enters it again a lap later.  With a frame at 2 MB and an
+ * 8 MB ring the wait is on a fence three frames old and never blocks, and
+ * `var_waits_blocked` counts the times it did.
+ *
+ * The tokens and entry points are spelled out here for the reason
+ * gx_vprog.c gives: the 10.4u SDK's headers do not have them. */
+#define VAR_VERTEX_ARRAY_RANGE_APPLE        0x851D
+#define VAR_VERTEX_ARRAY_STORAGE_HINT_APPLE 0x851F
+#define VAR_STORAGE_SHARED_APPLE            0x85BF
+#define VAR_STORAGE_CACHED_APPLE            0x85BE
+
+#ifndef PORT_NO_SDL
+typedef void (*var_range_t)(GLsizei, const void*);
+typedef void (*var_param_t)(GLenum, GLint);
+typedef void (*fence_gen_t)(GLsizei, GLuint*);
+typedef void (*fence_set_t)(GLuint);
+typedef void (*fence_finish_t)(GLuint);
+typedef GLboolean (*fence_test_t)(GLuint);
+typedef void (*multidraw_t)(GLenum, const GLint*, const GLsizei*, GLsizei);
+
+static var_range_t   var_VertexArrayRangeAPPLE;
+static var_range_t   var_FlushVertexArrayRangeAPPLE;
+static var_param_t   var_VertexArrayParameteriAPPLE;
+static fence_gen_t   var_GenFencesAPPLE;
+static fence_set_t   var_SetFenceAPPLE;
+static fence_finish_t var_FinishFenceAPPLE;
+static fence_test_t  var_TestFenceAPPLE;
+static multidraw_t   var_MultiDrawArraysEXT;
+#endif
+
+#define VAR_CHUNKS 4
+#ifdef PORT_NO_SDL
+typedef unsigned GLuint;
+#endif
+static u8* var_ring;
+static size_t var_ring_bytes;
+static int var_on;
+static int var_multidraw;
+static GLuint var_fences[VAR_CHUNKS];
+static signed char var_fence_valid[VAR_CHUNKS];
+static unsigned var_waits, var_waits_blocked, var_sets, var_flushes;
+
+int gl13_var_active(void) { return var_on; }
+int gl13_have_multidraw(void) { return var_multidraw; }
+
+void gl13_var_stats(unsigned* waits, unsigned* blocked, unsigned* sets, unsigned* flushes) {
+    *waits = var_waits;
+    *blocked = var_waits_blocked;
+    *sets = var_sets;
+    *flushes = var_flushes;
+}
+
+/* Allocate the ring and, when the extensions are there and --novar is not,
+ * hand it to the driver.  Returns the ring either way: without VAR it is an
+ * ordinary buffer the client-array path copies from, exactly as the static
+ * `src_buf` was, so `--novar` and `--oldsubmit` measure the submit shape and
+ * the copy separately. */
+u8* gl13_var_setup(size_t bytes) {
+    void* mem = NULL;
+    if (var_ring) {
+        return var_ring;
+    }
+    /* page-aligned, which is what the driver wants for a DMA range; valloc
+     * because posix_memalign is 10.6 and the target is 10.4/10.5 */
+    mem = valloc(bytes);
+    if (!mem) {
+        port_fatal("vertex ring: cannot allocate %lu bytes", (unsigned long)bytes);
+        return NULL;
+    }
+    memset(mem, 0, bytes);
+    var_ring = (u8*)mem;
+    var_ring_bytes = bytes;
+#ifndef PORT_NO_SDL
+    if (gl_on && !port_opt.novar && !port_opt.oldsubmit) {
+        const char* ext = (const char*)GL(glGetString)(GL_EXTENSIONS);
+        int have = ext && strstr(ext, "GL_APPLE_vertex_array_range") &&
+                   strstr(ext, "GL_APPLE_fence");
+        if (have) {
+            var_VertexArrayRangeAPPLE = (var_range_t)SDL_GL_GetProcAddress("glVertexArrayRangeAPPLE");
+            var_FlushVertexArrayRangeAPPLE = (var_range_t)SDL_GL_GetProcAddress("glFlushVertexArrayRangeAPPLE");
+            var_VertexArrayParameteriAPPLE = (var_param_t)SDL_GL_GetProcAddress("glVertexArrayParameteriAPPLE");
+            var_GenFencesAPPLE = (fence_gen_t)SDL_GL_GetProcAddress("glGenFencesAPPLE");
+            var_SetFenceAPPLE = (fence_set_t)SDL_GL_GetProcAddress("glSetFenceAPPLE");
+            var_FinishFenceAPPLE = (fence_finish_t)SDL_GL_GetProcAddress("glFinishFenceAPPLE");
+            var_TestFenceAPPLE = (fence_test_t)SDL_GL_GetProcAddress("glTestFenceAPPLE");
+            have = var_VertexArrayRangeAPPLE && var_FlushVertexArrayRangeAPPLE &&
+                   var_VertexArrayParameteriAPPLE && var_GenFencesAPPLE &&
+                   var_SetFenceAPPLE && var_FinishFenceAPPLE && var_TestFenceAPPLE;
+        }
+        if (have) {
+            (port_opt.glcheck ? gl13_check("glGenFencesAPPLE") : 0);
+            var_GenFencesAPPLE(VAR_CHUNKS, var_fences);
+            (port_opt.glcheck ? gl13_check("glVertexArrayParameteriAPPLE") : 0);
+            var_VertexArrayParameteriAPPLE(VAR_VERTEX_ARRAY_STORAGE_HINT_APPLE,
+                                           VAR_STORAGE_SHARED_APPLE);
+            (port_opt.glcheck ? gl13_check("glVertexArrayRangeAPPLE") : 0);
+            var_VertexArrayRangeAPPLE((GLsizei)bytes, var_ring);
+            GL(glEnableClientState)(VAR_VERTEX_ARRAY_RANGE_APPLE);
+            var_on = 1;
+        }
+        var_multidraw = 0;
+        if (ext && strstr(ext, "GL_EXT_multi_draw_arrays")) {
+            var_MultiDrawArraysEXT = (multidraw_t)SDL_GL_GetProcAddress("glMultiDrawArraysEXT");
+            var_multidraw = var_MultiDrawArraysEXT != NULL;
+        }
+        port_log("port> vertex ring: %lu KB in %d chunks, vertex_array_range %s, "
+                 "multi_draw_arrays %s\n",
+                 (unsigned long)(bytes / 1024), VAR_CHUNKS,
+                 var_on ? "on" : (have ? "off (--novar)" : "absent"),
+                 var_multidraw ? "yes" : "no");
+    }
+#endif
+    return var_ring;
+}
+
+static int var_chunk_of(size_t off) {
+    size_t c = off / (var_ring_bytes / VAR_CHUNKS);
+    return c >= VAR_CHUNKS ? VAR_CHUNKS - 1 : (int)c;
+}
+
+/* The writer is about to write [off, off+len): finish the fence of every
+ * chunk that span touches, if one was set when the writer last left it. */
+void gl13_var_enter(size_t off, size_t len) {
+#ifndef PORT_NO_SDL
+    int c0, c1, c;
+    if (!var_on || !len) {
+        return;
+    }
+    c0 = var_chunk_of(off);
+    c1 = var_chunk_of(off + len - 1);
+    for (c = c0; c <= c1; c++) {
+        if (var_fence_valid[c]) {
+            var_waits++;
+            if (!var_TestFenceAPPLE(var_fences[c])) {
+                var_waits_blocked++;
+                var_FinishFenceAPPLE(var_fences[c]);
+            }
+            var_fence_valid[c] = 0;
+        }
+    }
+#else
+    (void)off;
+    (void)len;
+#endif
+}
+
+/* The draws reading [off, off+len) have been issued and the writer now
+ * stands at `cursor`: flush the CPU cache over the range ahead of the DMA
+ * (before the draw, see gl13_var_flush) and fence every chunk the writer has
+ * finished with. */
+void gl13_var_flush(const void* p, size_t len) {
+#ifndef PORT_NO_SDL
+    if (!var_on || !len) {
+        return;
+    }
+    var_flushes++;
+    var_FlushVertexArrayRangeAPPLE((GLsizei)len, p);
+#else
+    (void)p;
+    (void)len;
+#endif
+}
+
+void gl13_var_left(size_t from, size_t cursor, int wrapped) {
+#ifndef PORT_NO_SDL
+    int c0, c1, c;
+    if (!var_on) {
+        return;
+    }
+    c0 = var_chunk_of(from);
+    c1 = var_chunk_of(cursor);
+    if (wrapped) {
+        /* the writer wrapped: every chunk from `from`'s to the end is done,
+         * and so is every chunk before the one the cursor now stands in */
+        for (c = c0; c < VAR_CHUNKS; c++) {
+            var_SetFenceAPPLE(var_fences[c]);
+            var_fence_valid[c] = 1;
+            var_sets++;
+        }
+        c0 = 0;
+    }
+    for (c = c0; c < c1; c++) {
+        var_SetFenceAPPLE(var_fences[c]);
+        var_fence_valid[c] = 1;
+        var_sets++;
+    }
+#else
+    (void)from;
+    (void)cursor;
+    (void)wrapped;
+#endif
+}
+
+void gl13_multi_draw_arrays(unsigned mode, const int* first, const int* count, int n) {
+#ifndef PORT_NO_SDL
+    (port_opt.glcheck ? gl13_check("glMultiDrawArraysEXT") : 0);
+    var_MultiDrawArraysEXT((GLenum)mode, (const GLint*)first, (const GLsizei*)count,
+                           (GLsizei)n);
+#else
+    (void)mode;
+    (void)first;
+    (void)count;
+    (void)n;
+#endif
+}
 
 /* ---- bring-up ------------------------------------------------------------- */
 

@@ -171,6 +171,23 @@ typedef struct PortOptions {
                              *   cache slot the bind resolved to.  Scoped to
                              *   --drawlog-at's frame when that is given, or
                              *   the whole run when it is not (PLAN.md 30)    */
+
+    /* ---- M16: the per-draw submit ---- */
+    int oldsubmit;          /* --oldsubmit  one glDrawArrays per GX primitive
+                             *   from a plain client-memory buffer, the way
+                             *   every build before M16 did.  The A/B lever
+                             *   (PLAN.md 31)                                 */
+    int novar;              /* --novar  batch and merge, but keep the vertex
+                             *   ring in ordinary memory (no
+                             *   GL_APPLE_vertex_array_range), to price the
+                             *   copy separately from the batching           */
+    int nomultidraw;        /* --nomultidraw  one glDrawArrays per strip
+                             *   instead of glMultiDrawArraysEXT              */
+    int submitstats;        /* --submitstats  batches, merges, primitives per
+                             *   list, fence waits                            */
+    int noregfix;           /* --noregfix  fold a stage's GX_TEVREG write to
+                             *   PREV the way every build before M16 did (the
+                             *   board eyes).  The A/B lever (PLAN.md 31.3)  */
 } PortOptions;
 
 extern PortOptions port_opt;

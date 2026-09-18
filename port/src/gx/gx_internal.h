@@ -179,6 +179,31 @@ extern unsigned gx_array_epoch;
 void gx_draw_reset(void);
 void gx_draw_report(void);
 
+/* M16 (PLAN.md 31): a display list's primitives -- and, since the game sends
+ * no GX call at all between two faces of one material (hsfdraw.c FaceDraw,
+ * `materialBak`), consecutive lists' -- stay batched until the state moves.
+ * Every GX state setter starts with GX_STATE_TOUCH(), which submits the
+ * pending batch under the state it was decoded under, *before* the setter
+ * changes anything.  It is one load and a branch when nothing is pending. */
+extern int gx_batch_pending;
+void gx_batch_flush_from(const char* who);
+#define GX_STATE_TOUCH()                                                                 \
+    do {                                                                                 \
+        if (gx_batch_pending) {                                                          \
+            gx_batch_flush_from(__func__);                                               \
+        }                                                                                \
+    } while (0)
+/* The same, for a setter that has compared first: a value the state already
+ * holds changes nothing, so it ends no batch.  hsfdraw.c's FaceDraw calls
+ * GXSetBlendMode before *every* face, almost always with the value it set
+ * for the previous one (55,678 of 68,389 batch ends on the board, M16). */
+#define GX_STATE_TOUCH_IF(changed)                                                       \
+    do {                                                                                 \
+        if (gx_batch_pending && (changed)) {                                             \
+            gx_batch_flush_from(__func__);                                               \
+        }                                                                                \
+    } while (0)
+
 /* gx_tev.c */
 void gx_tev_apply(void);          /* GXState -> GL texture environment */
 void gx_tev_report(void);
@@ -235,6 +260,19 @@ void glc_color_array(const void* p, int stride);
 void glc_coord_array(int unit, const void* p, int stride); /* NULL turns it off */
 void glc_normal_array(const void* p, int stride);          /* NULL turns it off */
 void glc_get_tex_scale(int unit, float* su, float* sv);
+/* M16: the vertex ring (PLAN.md 31).  gl13_var_setup hands back the ring --
+ * DMA-visible when GL_APPLE_vertex_array_range is on, plain memory otherwise
+ * -- and the three calls below are the fence discipline gx_draw.c follows:
+ * enter before writing a span, flush before drawing it, left after the draws
+ * so the chunks the writer has finished with get their fences. */
+u8* gl13_var_setup(size_t bytes);
+int gl13_var_active(void);
+int gl13_have_multidraw(void);
+void gl13_var_enter(size_t off, size_t len);
+void gl13_var_flush(const void* p, size_t len);
+void gl13_var_left(size_t from, size_t cursor, int wrapped);
+void gl13_var_stats(unsigned* waits, unsigned* blocked, unsigned* sets, unsigned* flushes);
+void gl13_multi_draw_arrays(unsigned mode, const int* first, const int* count, int n);
 int gl13_live(void);
 /* --nodraw / --ffto (PLAN.md 24.1): the renderer is switched off under a live
  * context.  `gl13_live()` is 0 while it is, so every GL path already skips;

@@ -62,8 +62,14 @@ if [ "$send_app" = 1 ]; then
     base=$(basename "$bundle"); dir=$(dirname "$bundle")
     case "$base" in *" "*) echo "no spaces in the bundle name, please" >&2; exit 1;; esac
     echo "g4_install: pushing $base -> $G4_HOST:~/$base"
-    # Tiger/Leopard ship GNU tar 1.14: plain ustar, no Apple metadata.
-    COPYFILE_DISABLE=1 tar --format ustar --no-xattrs --no-acls --no-mac-metadata \
+    # Tiger/Leopard ship GNU tar 1.14: plain ustar, no Apple metadata.  The
+    # metadata flags are bsdtar's (the Mac); GNU tar on a Linux host
+    # (littlejelly) has no --no-mac-metadata and no metadata to strip.
+    tarflags="--format ustar"
+    if [ "$(uname -s)" = Darwin ]; then
+        tarflags="$tarflags --no-xattrs --no-acls --no-mac-metadata"
+    fi
+    COPYFILE_DISABLE=1 tar $tarflags \
         -C "$dir" -czf - "$base" \
     | ssh "$G4_HOST" "rm -rf .mp4-new && mkdir .mp4-new && tar -xzf - -C .mp4-new \
         && rm -rf '$base' && mv '.mp4-new/$base' '$base' && rmdir .mp4-new \
