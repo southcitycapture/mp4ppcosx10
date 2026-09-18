@@ -225,7 +225,7 @@ void salCtrlDsp(s16* dest) {
         port_log("audio> %6.2f s mixed at retrace %6lu: peak %5u, ring %5u/%u bytes\n",
                  stat_frames * (double)FRAME_SAMPLES / MIX_FRQ,
                  (unsigned long)VIGetRetraceCount(), peak, port_audio_out_queued(),
-                 65536u);
+                 262144u);
     }
     /* "Does the title music start at the right frame" is the one question a
      * --wav capture cannot answer on its own, because the WAV has no frame

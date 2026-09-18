@@ -42,7 +42,10 @@
  * fps delivers audio in 68 ms bursts of 3-4 DSP frames.  A ring shorter than
  * a few of those bursts underruns on every slow frame.  The latency this
  * costs is bounded by how far ahead the game gets, not by the ring's size. */
-#define RING_BYTES (64 * 1024)
+#define RING_BYTES (256 * 1024)
+/* M17: 256 KB = 2 s.  Under --realtime the gate catches up through a backlog
+ * of up to a second (framemode.c) and the mix for that second arrives in a
+ * burst; 64 KB (512 ms) dropped 414 ms of it to overrun on the first walk. */
 
 static Uint8 ring[RING_BYTES];
 static volatile Uint32 ring_read, ring_write;
@@ -188,6 +191,54 @@ void port_audio_out_queue(const void* samples, unsigned bytes) {
 }
 
 unsigned port_audio_out_queued(void) { return (unsigned)(ring_write - ring_read); }
+
+/* --audiolead (M17): under --realtime the producer is paced to real time, so
+ * the ring's fill level is only ever what the game got ahead by -- and a
+ * drawn frame that overruns by 30 ms drains it.  Queue that much silence
+ * once, before pacing starts; from then on the mix rides `ms` ahead of the
+ * device.  It is latency, not a change to the mix: --wav is written before
+ * the ring and does not see it. */
+void port_audio_out_prime(unsigned ms) {
+#ifndef PORT_NO_SDL
+    static Uint8 zeros[4096];
+    unsigned bytes = ms * 128; /* 32 kHz stereo s16 = 128 B/ms */
+    if (!opened) {
+        return;
+    }
+    if (bytes > RING_BYTES / 2) {
+        bytes = RING_BYTES / 2;
+    }
+    while (bytes > 0) {
+        unsigned n = bytes < sizeof(zeros) ? bytes : (unsigned)sizeof(zeros);
+        Uint32 space;
+        SDL_LockAudioDevice(dev);
+        space = RING_BYTES - (ring_write - ring_read);
+        if (n > space) {
+            n = space;
+        }
+        if (n) {
+            Uint32 head = ring_write % RING_BYTES;
+            Uint32 first = RING_BYTES - head;
+            if (first > n) {
+                first = n;
+            }
+            memcpy(ring + head, zeros, first);
+            if (n > first) {
+                memcpy(ring, zeros, n - first);
+            }
+            ring_write += n;
+        }
+        SDL_UnlockAudioDevice(dev);
+        if (!n) {
+            break;
+        }
+        bytes -= n;
+    }
+    port_log("port> audio: %u ms of lead queued ahead of the mix (--audiolead)\n", ms);
+#else
+    (void)ms;
+#endif
+}
 
 void port_audio_out_shutdown(void) {
 #ifndef PORT_NO_SDL

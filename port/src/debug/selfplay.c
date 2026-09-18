@@ -329,8 +329,9 @@ static void status_line(u32 frame) {
     int mg_ovl = -1;
     char players[128];
     int i, n = 0;
+    double speed = 0.0, pfps = 0.0;
 
-    port_perf_window(&fps, &aud);
+    port_perf_window(&fps, &aud, &speed, &pfps);
     if (mg >= 0 && mg < 64 && mgInfoTbl[mg].ovl != 0xFFFF) {
         mg_ovl = mgInfoTbl[mg].ovl;
     }
@@ -342,6 +343,16 @@ static void status_line(u32 frame) {
         if (n >= (int)sizeof(players)) {
             break;
         }
+    }
+    if (port_framemode_active()) {
+        /* --realtime: the retrace rate is the speed, the frames that reached
+         * the screen are the fps, and they are different numbers now */
+        port_log("port> status f%-7u %-12s board %d turn %d/%d  mg %d (%s)  "
+                 "coins/stars %s  aud %.2f ms  speed %.0f%%  %.1f fps presented\n",
+                 frame, screen_name((int)omcurovl), (int)GWSystem.board,
+                 (int)GWSystem.turn, (int)GWSystem.max_turn, mg + 0x191,
+                 screen_name(mg_ovl), players, aud, speed, pfps);
+        return;
     }
     port_log("port> status f%-7u %-12s board %d turn %d/%d  mg %d (%s)  "
              "coins/stars %s  aud %.2f ms  %.1f fps\n",

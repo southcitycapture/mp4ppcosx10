@@ -24,6 +24,7 @@
  */
 #include "port.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -38,6 +39,8 @@ static int gx_depth;
 #define PERF_MAX 20000
 static float s_frame[PERF_MAX], s_gx[PERF_MAX], s_present[PERF_MAX], s_game[PERF_MAX];
 static float s_audio[PERF_MAX];
+static float s_wall[PERF_MAX];      /* with the sleep: real elapsed time */
+static unsigned char s_drawn[PERF_MAX];
 static int n_samples;
 static double t_first;
 
@@ -98,7 +101,8 @@ void port_perf_audio_end(void) {
  * distributions and prints them once at the end; a soak that runs all night
  * needs the same two numbers *now*, so they are accumulated separately and
  * consumed by the reader rather than by the reporter. */
-void port_perf_window(double* fps, double* aud_ms) {
+void port_perf_window(double* fps, double* aud_ms, double* speed_pct,
+                      double* presented_fps) {
     double now = port_now_seconds();
     double dt;
     if (win_t0 == 0.0) {
@@ -107,6 +111,7 @@ void port_perf_window(double* fps, double* aud_ms) {
     dt = now - win_t0;
     *fps = dt > 0.0 ? (double)win_frames / dt : 0.0;
     *aud_ms = win_frames ? win_audio * 1000.0 / (double)win_frames : 0.0;
+    port_framemode_window(speed_pct, presented_fps, dt);
     win_audio = 0.0;
     win_frames = 0;
     win_t0 = now;
@@ -118,8 +123,10 @@ void port_perf_slept(double seconds) {
     }
 }
 
-/* Called from the retrace gate, once per frame, after the sleep. */
-void port_perf_frame(void) {
+/* Called from the retrace gate, once per frame, after the sleep.  `drawn` is
+ * whether the frame that just ended was drawn or only consumed
+ * (src/platform/framemode.c); in lockstep it is always 1. */
+void port_perf_frame(int drawn) {
     double now, wall, game;
     win_frames++;
     if (!port_opt.perf) {
@@ -137,7 +144,16 @@ void port_perf_frame(void) {
     if (game < 0.0) {
         game = 0.0;
     }
+    if (wall > 0.1 && port_opt.realtime) {
+        /* A stall the frame mode cannot hide: named, so the log says which
+         * frame and which scene (--ovllog) it belongs to. */
+        port_log("port> stall: frame %d took %.0f ms (game %.0f gx %.0f present %.0f aud %.0f)%s\n",
+                 n_samples, wall * 1000.0, game * 1000.0, t_gx * 1000.0, t_present * 1000.0,
+                 t_audio * 1000.0, drawn ? "" : " [consumed]");
+    }
     if (n_samples < PERF_MAX) {
+        s_wall[n_samples] = (float)((now - t_frame_start) * 1000.0);
+        s_drawn[n_samples] = (unsigned char)(drawn ? 1 : 0);
         s_frame[n_samples] = (float)(wall * 1000.0);
         s_gx[n_samples] = (float)(t_gx * 1000.0);
         s_present[n_samples] = (float)(t_present * 1000.0);
@@ -196,6 +212,8 @@ static void perf_windows(void) {
         long a = 0, b = 0;
         int i, n = 0;
         double sum = 0.0, gx = 0.0, pres = 0.0, game = 0.0, aud = 0.0;
+        double wall = 0.0;
+        int drawn = 0;
         char* e;
         a = strtol(p, &e, 10);
         if (e == p) {
@@ -226,6 +244,8 @@ static void perf_windows(void) {
             pres += s_present[i];
             game += s_game[i];
             aud += s_audio[i];
+            wall += s_wall[i];
+            drawn += s_drawn[i];
             n++;
         }
         if (n > 0 && sum > 0.0) {
@@ -233,6 +253,18 @@ static void perf_windows(void) {
                      "[game %5.2f gx %5.2f present %5.2f aud %5.2f]\n",
                      name[0] ? name : "window", a, b, n, sum / n, n * 1000.0 / sum,
                      game / n, gx / n, pres / n, aud / n);
+            /* The real-time reading of the same window (PLAN.md 32): game
+             * seconds against wall seconds including the pacing sleep, the
+             * frames that reached the screen, and the share that did not.
+             * Under --turbo `speed` is simply the fps over 59.94 and every
+             * frame is drawn. */
+            if (wall > 0.0) {
+                port_log("  %-14s   realtime: speed %5.1f%%  presented %5.2f fps  "
+                         "skipped %d of %d (%.0f%%)  wall %.2f s\n",
+                         "", 100.0 * n / (wall / 1000.0) / 59.94,
+                         drawn / (wall / 1000.0), n - drawn, n,
+                         100.0 * (n - drawn) / n, wall / 1000.0);
+            }
         } else {
             port_log("  %-14s frames %ld-%ld: no samples\n", name[0] ? name : "window", a,
                      b);
@@ -245,9 +277,32 @@ static void perf_windows(void) {
     }
 }
 
+/* --perfdump FILE: every per-frame sample as CSV, so a stall can be found by
+ * frame number rather than guessed at from a mean (PLAN.md 32). */
+static void perf_dump(void) {
+    FILE* f;
+    int i;
+    if (!port_opt.perfdump || n_samples == 0) {
+        return;
+    }
+    f = fopen(port_opt.perfdump, "w");
+    if (!f) {
+        port_log("port> --perfdump: cannot write %s\n", port_opt.perfdump);
+        return;
+    }
+    fprintf(f, "frame,wall_ms,work_ms,game_ms,gx_ms,present_ms,aud_ms,drawn\n");
+    for (i = 0; i < n_samples; i++) {
+        fprintf(f, "%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%d\n", i, s_wall[i], s_frame[i],
+                s_game[i], s_gx[i], s_present[i], s_audio[i], s_drawn[i]);
+    }
+    fclose(f);
+    port_log("port> --perfdump: %d frames written to %s\n", n_samples, port_opt.perfdump);
+}
+
 void port_perf_report(void) {
     double wall, gameclock;
     int i, over = 0;
+    perf_dump();
     if (!port_opt.perf || n_samples == 0) {
         return;
     }

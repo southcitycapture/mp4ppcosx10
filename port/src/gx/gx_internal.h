@@ -286,6 +286,8 @@ int gl13_live(void);
  * these two are for the paths that would decode something first. */
 int gl13_draw_off(void);
 void gl13_set_draw_off(int v);
+int gl13_have_context(void); /* a window and a context, drawn into or not */
+int port_framemode_active(void); /* src/platform/framemode.c */
 /* Drop every decoded texture and every composed indirect tile, deleting their
  * GL names if there is a context.  Called when drawing comes back on after a
  * --nodraw stretch (the cache filled with entries that never got a GL name)

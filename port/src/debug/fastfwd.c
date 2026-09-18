@@ -77,6 +77,8 @@ void port_ffto_init(void) {
  * count of frames already presented, the frame about to be presented is that
  * plus one, and the next frame the game will build is that plus two -- which
  * is the one this decision affects. */
+int port_ffto_active(void) { return active && !done; }
+
 void port_ffto_tick(void) {
     unsigned now;
     double dt;

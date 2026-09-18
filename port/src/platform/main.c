@@ -47,6 +47,18 @@ static void usage(const char* argv0) {
             "  --frames N        stop after N retraces and print the stub report\n"
             "  --watchdog SEC    give up after SEC seconds and report where\n"
             "  --turbo           run the host loop flat out instead of at 60 Hz\n"
+            "                    (every frame drawn: the renderer measurement)\n"
+            "  --realtime        the default: the retrace at 60 Hz on the wall\n"
+            "                    clock, the picture at most every 2nd retrace and\n"
+            "                    at least every 6th, frames consumed but not\n"
+            "                    drawn when the renderer is behind (PLAN.md 32)\n"
+            "  --lockstep        every frame drawn and the game as slow as the\n"
+            "                    renderer: the gate every build before M17 had\n"
+            "  --maxskip N       at most N consumed frames between drawn ones (5)\n"
+            "  --perfdump FILE   every per-frame --perf sample as CSV\n"
+            "  --audiolead MS    silence queued ahead of the mix when pacing\n"
+            "                    starts, so an overrunning frame does not starve\n"
+            "                    the device (100 under --realtime)\n"
             "  --gxlog           log every GX call, not just the first of each\n"
             "  --stub-trace      log every stub call, not just the first of each\n"
             "  --deterministic   fixed 60 Hz tick and no wall-clock pacing\n"
@@ -314,6 +326,19 @@ int port_parse_args(int argc, char** argv) {
             port_opt.max_frames = atoi(argv[++i]);
         } else if (!strcmp(a, "--turbo")) {
             port_opt.turbo = 1;
+        } else if (!strcmp(a, "--realtime")) {
+            port_opt.realtime = 1;
+            port_opt.lockstep = 0;
+        } else if (!strcmp(a, "--lockstep")) {
+            port_opt.lockstep = 1;
+        } else if (!strcmp(a, "--perfdump") && i + 1 < argc) {
+            port_opt.perfdump = argv[++i];
+            port_opt.perf = 1;
+        } else if (!strcmp(a, "--maxskip") && i + 1 < argc) {
+            port_opt.maxskip = atoi(argv[++i]);
+        } else if (!strcmp(a, "--audiolead") && i + 1 < argc) {
+            port_opt.audiolead = atoi(argv[++i]);
+            port_opt.audiolead_set = 1;
         } else if (!strcmp(a, "--gxlog")) {
             port_opt.gxlog = 1;
         } else if (!strcmp(a, "--stub-trace")) {
@@ -564,6 +589,14 @@ int port_parse_args(int argc, char** argv) {
     if (port_opt.snap_keep <= 0) {
         port_opt.snap_keep = 3;
     }
+    /* M17: frame mode is the default; --lockstep, --turbo, --nodraw and
+     * --headless are the measurements it would distort (framemode.c). */
+    if (!port_opt.lockstep) {
+        port_opt.realtime = 1;
+    }
+    if (!port_opt.audiolead_set) {
+        port_opt.audiolead = 100;
+    }
 
     /* After the loop, so --rtc and --rtcoffset may be given in either order. */
     if (port_opt.rtc_seen) {
@@ -588,6 +621,7 @@ void port_shutdown(int code) {
     void gx_tev_report(void);
     gx_tev_report();
     port_perf_report();
+    port_framemode_report();
     port_audio_report();
     port_clock_report();
     port_gx_shutdown();
@@ -668,6 +702,10 @@ int main(int argc, char** argv) {
      * renderer off and the snapshot registry has to see the buffers the audio
      * and card layers just allocated. */
     port_ffto_init();
+    port_framemode_init();
+    if (port_framemode_active() && port_opt.audiolead > 0) {
+        port_audio_out_prime((unsigned)port_opt.audiolead);
+    }
     port_snap_init();
     if (port_snap_restore_pending()) {
         /* Does not return: it copies the snapshot over this process's arenas,

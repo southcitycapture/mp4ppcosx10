@@ -949,6 +949,7 @@ void gl13_shutdown(void) {
 static int draw_off;
 
 int gl13_live(void) { return gl_on && !draw_off; }
+int gl13_have_context(void) { return gl_on; }
 int gl13_draw_off(void) { return draw_off; }
 
 void gl13_set_draw_off(int v) {
@@ -1443,7 +1444,9 @@ void gl13_present(void) {
                  port_opt.shotdir ? port_opt.shotdir : ".", frame_no);
         gl13_write_ppm(path);
     }
-    if (pending_shot) {
+    if (pending_shot && !draw_off) {
+        /* a consumed frame's EFB is not this frame; frame mode draws the
+         * next one (gl13_shot_pending) and the shot is taken then */
         gl13_write_ppm(pending_shot);
         pending_shot = NULL;
     }
@@ -1451,10 +1454,10 @@ void gl13_present(void) {
         return; /* nothing was drawn, so there is nothing to show */
     }
     SDL_GL_SwapWindow(window);
-    if (clear_pending) {
-        clear_pending = 0;
-        gl13_clear(clear_color, clear_z);
-    }
+    /* The clear the game asked for is run by gl13_begin_frame(), which the
+     * gate calls once it knows the next frame is drawn -- under --realtime a
+     * consumed frame in between may have asked for a different colour, and
+     * the clear that precedes a drawn frame has to be the *latest* one. */
     {
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
@@ -1482,6 +1485,22 @@ void gl13_present(void) {
 }
 
 unsigned gl13_frame_number(void) { return frame_no; }
+
+/* For the gate's frame-mode decision (src/platform/framemode.c): is frame N
+ * one --dumpframe wants, and is an F12 shot waiting for a drawn frame. */
+int gl13_frame_wanted(unsigned n) { return frame_wanted(n); }
+int gl13_shot_pending(void) { return pending_shot != NULL; }
+
+/* The frame the game is about to build will be drawn: run the clear its last
+ * GXCopyDisp asked for.  In lockstep this follows the swap immediately, which
+ * is where the clear used to be; under --realtime it is the first thing a
+ * drawn frame does after any number of consumed ones. */
+void gl13_begin_frame(void) {
+    if (clear_pending && gl_on && !draw_off) {
+        clear_pending = 0;
+        gl13_clear(clear_color, clear_z);
+    }
+}
 
 /* --restore sets the frame number back to the snapshot's, so --dumpframe,
  * --perfwin, the texture cache's validation epoch and every log line agree

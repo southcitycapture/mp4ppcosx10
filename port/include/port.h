@@ -203,6 +203,23 @@ typedef struct PortOptions {
     int noregfix;           /* --noregfix  fold a stage's GX_TEVREG write to
                              *   PREV the way every build before M16 did (the
                              *   board eyes).  The A/B lever (PLAN.md 31.3)  */
+
+    /* ---- M17: frame mode ---- */
+    int realtime;           /* --realtime (default)  the retrace at 60 Hz on the
+                             *   wall clock, frames drawn when the renderer
+                             *   can (src/platform/framemode.c, PLAN.md 32)  */
+    int lockstep;           /* --lockstep  every frame drawn and the game as
+                             *   slow as the renderer: the pre-M17 gate.
+                             *   --turbo and --nodraw imply it               */
+    int maxskip;            /* --maxskip N  at most N consumed frames between
+                             *   two drawn ones (default 5: a present at
+                             *   least every 6th retrace)                     */
+    const char* perfdump;   /* --perfdump FILE  every --perf sample as CSV  */
+    int audiolead_set;
+    int audiolead;          /* --audiolead MS  silence queued ahead of the mix
+                             *   at the first paced retrace, so a drawn frame
+                             *   that overruns does not starve the device
+                             *   (default 100 under --realtime, else 0)       */
 } PortOptions;
 
 extern PortOptions port_opt;
@@ -230,9 +247,20 @@ void port_perf_present_end(void);
 void port_perf_slept(double seconds);
 void port_perf_audio_begin(void);
 void port_perf_audio_end(void);
-void port_perf_frame(void);
+void port_perf_frame(int drawn);
 void port_perf_report(void);
-void port_perf_window(double* fps, double* aud_ms); /* --status's rolling second */
+void port_perf_window(double* fps, double* aud_ms, double* speed_pct,
+                      double* presented_fps); /* --status's rolling second */
+
+/* --realtime, src/platform/framemode.c */
+void port_framemode_init(void);
+int port_framemode_active(void);
+void port_framemode_decide(double late, double now);
+int port_framemode_next_drawn(void);
+void port_framemode_resync(double behind);
+double port_framemode_resync_limit(void);
+void port_framemode_window(double* speed_pct, double* presented_fps, double dt);
+void port_framemode_report(void);
 
 /* --scenelog, src/debug/scenelog.c */
 void port_scenelog(void);
@@ -338,6 +366,7 @@ extern int port_audio_enabled; /* cleared by --noaudio */
 int port_audio_out_init(void);
 void port_audio_out_queue(const void* samples, unsigned bytes);
 unsigned port_audio_out_queued(void);
+void port_audio_out_prime(unsigned ms); /* --audiolead: silence ahead of the mix */
 void port_audio_out_shutdown(void);
 void port_audio_out_report(void);
 int port_audio_wav_start(const char* path);

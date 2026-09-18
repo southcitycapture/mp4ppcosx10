@@ -51,6 +51,7 @@ static VIRetraceCallback post_cb;
 static const GXRenderModeObj* mode;
 
 void port_time_tick(void);
+void gl13_begin_frame(void);
 
 void port_vi_init(void) {
     retrace_count = 0;
@@ -156,24 +157,45 @@ void VIWaitForRetrace(void) {
 
     {
         double now = now_seconds();
+        double late = 0.0;
+        /* --realtime paces even the deterministic clock: the tick below is
+         * still a function of the retrace count, so nothing the game can see
+         * depends on the sleep (src/platform/framemode.c). */
+        int paced = port_framemode_active() ||
+                    (!port_opt.turbo && !port_opt.deterministic);
         if (first_retrace_at == 0.0) {
             first_retrace_at = now;
             next_retrace_at = now;
         }
         next_retrace_at += 1.0 / 59.94;
-        if (next_retrace_at < now - 0.25) {
-            next_retrace_at = now; /* resync rather than spin through a backlog */
-        } else if (!port_opt.turbo && !port_opt.deterministic && next_retrace_at > now) {
+        if (next_retrace_at < now - port_framemode_resync_limit()) {
+            /* resync rather than spin through a backlog: that much game time
+             * did not happen at real speed, and frame mode counts it */
+            port_framemode_resync(now - next_retrace_at);
+            next_retrace_at = now;
+        } else if (paced && next_retrace_at > now) {
             struct timespec req;
             double d = next_retrace_at - now;
             req.tv_sec = (time_t)d;
             req.tv_nsec = (long)((d - (double)req.tv_sec) * 1e9);
             nanosleep(&req, NULL);
             port_perf_slept(d);
+            now = now_seconds();
+        }
+        late = now - next_retrace_at;
+        if (late < 0.0) {
+            late = 0.0;
+        }
+        port_time_tick();
+        port_perf_frame(port_framemode_next_drawn());
+        /* Decides whether the frame the game builds next is drawn or only
+         * consumed, and runs the pending clear if it is drawn.  In lockstep
+         * it only does the clear. */
+        port_framemode_decide(late, now);
+        if (!port_framemode_active()) {
+            gl13_begin_frame();
         }
     }
-    port_time_tick();
-    port_perf_frame();
 
     retrace_count++;
     field ^= 1;
