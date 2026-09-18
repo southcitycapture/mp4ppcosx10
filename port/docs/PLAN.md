@@ -8408,3 +8408,471 @@ any more state caching.
    A/B.
 4. §28.6's "not done" list, unchanged: the `m453` cast, the board eyes, and
    §26.2's `MegaPlayerPassFunc` / `CharNpcDustSet`.
+
+## 29. M14 log — the harness had never once pressed a button *(2026-09-18)*
+
+M14 opened on §28.7's question — does §28.1 + §28.3 chain a second board without
+a hand on it — and the soak's answer was no, for a reason that turned out to be
+older and larger than the screen it was stuck on: **`--soak`'s prompt navigator
+has never, in any session of this project, delivered a single press to the
+game.** §29.1 is that, and with it fixed the run plays two boards back to back.
+
+The rest: `m453` measured against all seventy four-character casts and none of
+them fits (§29.2); the two real missing-return bugs patched, with the §25
+reference frame unchanged to the byte (§29.3); and the board eyes reproduced,
+dissected and **not** fixed (§29.4).
+
+### 29.1 `HuPadBtnDown` is the game's output, not its input
+
+**The stalled process, read before it was killed.** pid 39547, five hours into
+`--soak --com4 --rtc dolphin --freshcard --snap-every 5000 --snap-keep 3
+--status --ovllog --stuckwatch 200`, frame 324,960, 1,000 s and five `STUCK`
+lines inside `modeseldll` event 1. The module trace above it is exactly what
+§28 asked for: `mstory3dll` event 0 ran and returned, event 1 (§28.1's results
+screen) ran and returned, `omOvlReturnEx` handed control to `modeseldll` event
+1 at frame 268,000 — and there it sat.
+
+`sudo ~/bin/mp4peek 39547 procs 0x19eae0 0x19eadc` — five coroutines, none
+faulted. Walking the saved stacks (`*(*(jump.sp)) + 8`) and resolving against
+the binary's own symbol table:
+
+| coroutine | prio | caller of `HuPrcVSleep` |
+|---|---:|---|
+| `02384218` | 8192 | `omMain+228` |
+| `023760b8` | 200 | `0x34701394`, inside `modeseldll` (`fn_1_AF0`) |
+| `023943d8` | 100 | **`HuWinMesWait+52`**, called from `0x34702a60` = `fn_1_2490+0x3FC` |
+| `0237a338` | 100 | `HuWinProc+124` |
+| `02356078` | 0 | `HuPrcChildWatch+60` |
+
+`fn_1_2490` is the mode-select menu (`src/REL/modeselDll/modesel.c`), and
+`+0x3FC` is `HuWinMesWait(lbl_1_bss_82)` at **modesel.c:89** — *before* the
+`while (1)` that reads `HuPadBtnDown[0] & PAD_BUTTON_A`. So the menu had never
+reached its own button loop. Reading the window it was waiting on
+(`lbl_1_bss_82 = 0`, so `winData[0]` at `0x170000`):
+
+```
+00170000: 02010006 0001000c     stat 02  active_pad 01  color_key 06  group 0001
+00170154: 03000100              push_key 0x0300 (A|B)   key_down 0x0100
+0017004c: 00000004              attr (bit 0x400 clear)
+001a182c: ...0000 0000...       comKeyIdx == comKeyIdxNow  (the real pad, not a replay)
+```
+
+`stat == 2` is `HuWinKeyWait` (window.c:886): a message window holding for a
+button, `push_key` A or B, `active_pad` = channel 0 only. And the screen says
+the same thing in words — the display was woken and shot:
+
+![the stuck menu](screenshots/m14-modesel-stuck-before.png)
+
+**"Pick a card to get this party started!"**, with the advance arrow lit in the
+corner. A window waiting for A on pad 0, and nothing else in the process was
+wrong.
+
+**The soak was pressing A. The game could not see it.** §28.3's metronome
+writes
+
+```c
+for (i = 0; i < 4; i++) {
+    HuPadBtnDown[i] |= PAD_BUTTON_A;
+    HuPadBtn[i]     |= PAD_BUTTON_A;
+}
+```
+
+from `port_selfplay_tick`, which runs in the VI post-retrace callback, after
+the game's own `PadReadVSync`. The file's own comment called that "the last
+word on the frame the game is about to run". It is not. The next thing the
+game does is the top of its main loop:
+
+```c
+    Hu3DPreProc();
+    HuPadRead();          /* src/game/main.c:101 */
+    pfClsScr();
+    HuPrcCall(1);         /* ...and only now does any coroutine run */
+```
+
+and `HuPadRead` (`src/game/pad.c:133`) **overwrites** `HuPadBtn[]` and
+`HuPadBtnDown[]` from `_PadBtn*` and zeroes `_PadBtnDown[]` — all of it before
+a single coroutine is dispatched. The derived globals are what `HuPadRead`
+*produces* from the raw pad each frame; writing them from outside the frame is
+writing to a variable that is assigned before it is next read. **Every press
+this harness has ever logged — §26.1's twenty-four, §24.6's rotation, §28.3's
+metronome — was overwritten a few microseconds later.** The screens that did
+move on after a burst of presses moved on for their own reasons.
+
+**The fix is a layer down, and it is the layer the walk has always used.** A
+`--play` script does not touch the derived globals: `pad_play_step` overwrites
+port 1's *raw* `PortPadRaw` inside `PADRead` (`port/src/pad/pad.c:121`), before
+`PADClamp`, so the game's own edge and repeat logic derives `BtnDown` and
+`DStkRep` from it exactly as it would from a thumb. That is why
+`board-start-com4.play`'s A metronome walks this same mode-select menu at every
+boot and the navigator's did not — they were never doing the same thing.
+
+`port_pad_inject(buttons)` arms one frame of digital buttons; the next
+`PADRead` ORs them into port 1's raw state and disarms. The navigator calls it
+in place of both write loops. Two consequences worth stating:
+
+* **The press is channel 0 only.** `PADRead` fills channel 0 and reports
+  `PAD_ERR_NO_CONTROLLER` on 1–3, because a soak that claimed four connected
+  controllers would be telling the game something untrue about the console
+  (`port/src/pad/pad.c:20`) — and `PlayerConfig.iscom` is derived from exactly
+  that. §28.3's four-index write existed to answer a prompt that reads
+  `HuPadBtnDown[pad_idx]`; §28.1 removed that prompt at the source, and every
+  menu between a board's end and the next board's start reads pad 0
+  (`modesel.c:110-152`, `HuWinActivePadGet` with `active_pad == 1`).
+* **The rotation now holds for four frames, not one.** The game derives its own
+  edge now, and a one-frame raw blip is lost whenever two retraces fall between
+  two `HuPadRead()` calls — which a 10 fps board does constantly. Four frames
+  is what the boot walk holds.
+
+`--nopad` is honoured unless the harness is actually pressing: the one case
+where the port may contradict "controller 1 is unplugged" is a soak answering a
+prompt, and it is a soak that asked for it.
+
+**The witness, rendering on.** `--soak --turns 3 --com4 --rtc dolphin
+--freshcard --ffto 49000 --status --ovllog --stuckwatch 200`, nothing touching
+the pad but the harness (`~/m14-chain-witness.log` on the G4):
+
+```
+frame 42,789  m427dll ends            the third turn's minigame
+frame ~47,000 OVL 78 EVT:0 / EVT:1    the award ceremony and the results screen (28.1)
+frame ~49,400 OVL 74 EVT:1            modeseldll -- the stop
+frame 61,394  STUCK, 200 s            the watchdog's own limit, un-tuned
+frame 61,394  "walking it with the A metronome"
+frame ~62,700 answered after 20 presses
+frame ~62,700 OVL 70 EVT:0            mentdll -- Party mode picked
+frame 73,736  STUCK -> metronome -> answered after 140 presses
+frame 88,004  STUCK -> metronome -> answered after 16 presses
+frame 88,004  OVL 89 EVT:0            w01dll, turn 1/3, coins back to 0
+```
+
+![the second board](screenshots/m14-board2-chained.png)
+
+**A second board, from a cold boot, with no hand on it.** The 140 presses on
+`mentdll` are the board-settings screens — board, turns, characters — which is
+what the boot walk spends 28,800 frames of metronome on for the same reason.
+
+Two smaller things fell out of the same reading:
+
+* **`--stuckwatch 20` is not a debugging convenience, it is a hazard** — now
+  that presses land. A test run at 20 s fired the B/START rotation on a healthy
+  `w01dll` sixteen times, opened the board's pause menu, and walked the A
+  metronome into "choose which character's settings to change", which is the
+  exact trap `board-start-com4.play`'s header describes. §17.10's 90 s (and
+  `--soak`'s 200 s here) is the calibrated number and it is calibrated for this.
+* **`g4 stop` left a survivor again**, twice in this session — once with two
+  copies of the game sharing the machine and the same log file. §28.6's rule
+  stands and this session paid for it a third time.
+
+**Snapshot.** `~/MarioParty4/snaps/lib/modesel-after-results.snap` is frame
+415,000 of the stalled run — the stuck menu itself. It is **build-tied**
+(`--restore` refuses a snapshot from a different build id, which is correct:
+snapshots restore globals by address), so it belongs to build `940dac83` and
+not to anything M14 shipped. The reproducible route on any build is the one
+above: `--turns 3 --com4 --rtc dolphin --freshcard --ffto 49000`, which reaches
+the menu in about six minutes.
+
+### 29.2 `m453`: seventy casts, and not one of them fits
+
+§27.5 closed the question of whose bug the `m453` heap panic is — the retail
+disc panics identically, to the byte — and left one open: *a lighter cast would
+fit*. It would not.
+
+**The budget, read off the disc.** `HEAP_DVD` is `0x580000` = 5,767,168 bytes.
+At the moment m453 asks for the character models it already holds `m450.bin`
+(2,984,000, instDll's preload — m453 shares m450's directory) and `m403.bin`
+(1,370,496), leaving **1,412,672** — which is the `Rest Memory 158e40` the
+console's own trace prints. The eight `<char>mdl1.bin` sizes, parsed out of the
+reference image's FST, and what each costs allocated (`ceil(n/32)*32 + 32`):
+
+| character | `mdl1.bin` | allocated |
+|---|---:|---:|
+| Luigi | 362,686 | 362,720 |
+| Mario | 382,208 | 382,240 |
+| Yoshi | 396,092 | 396,128 |
+| Waluigi | 414,862 | 414,912 |
+| Wario | 429,164 | 429,216 |
+| Donkey Kong | 450,866 | 450,912 |
+| Daisy | 491,926 | 491,968 |
+| Peach | 492,902 | 492,960 |
+
+**The four lightest are Luigi + Mario + Yoshi + Waluigi = 1,556,000 bytes,
+which is 143,328 over.** All 70 four-character combinations are over, by
+between 143,328 and 452,384 bytes:
+
+| cast | allocated | over by |
+|---|---:|---:|
+| Mario/Luigi/Yoshi/Waluigi | 1,556,000 | **+143,328** |
+| Mario/Luigi/Yoshi/Wario | 1,570,304 | +157,632 |
+| Mario/Luigi/Wario/Waluigi | 1,589,088 | +176,416 |
+| Mario/Luigi/Yoshi/Donkey | 1,592,000 | +179,328 |
+| *Mario/Luigi/Peach/Yoshi* (`--com4`'s own, §27.5) | 1,634,048 | +221,376 |
+| … | | |
+| Peach/Wario/Donkey/Daisy | 1,865,056 | +452,384 |
+
+The model reproduces §27.5's measured 221,376 exactly, which is why it is worth
+believing about the other sixty-nine.
+
+**Witnessed on the G4.** `--cast a,b,c,d` (new; numbers 0–7 or names) parks the
+four characters the way the rest of `--com4`'s player state is parked.
+`--minigame m453 --com4 --cast mario,luigi,yoshi,waluigi --turns 10 --rtc
+dolphin --freshcard --play board-start-com4.play --nodraw --turbo`:
+
+```
+port> --cast: mario / luigi / yoshi / waluigi
+data num 5e0001   Rest Memory fb920     mariomdl1
+data num 190001   Rest Memory a3040     luigimdl1
+data num 890001   Rest Memory 424e0     yoshimdl1
+data num 800001                         waluigimdl1
+HuMem>memory alloc error 000654a0(10000000): Call 00010824
+dvd.c: Memory Allocation Error (Length 6548e) (mode 1)
+```
+
+`0x6548e` = 414,862 = `waluigimdl1.bin` to the byte, against `0x424e0` =
+271,072 free: **short by 143,790**, against the table's predicted 143,328
+(the 462 is where `Rest Memory` is printed relative to the block header).
+The control on the same build, the default `--com4` cast and no `--cast` flag,
+reproduces §27.5's console trace to the byte — `Rest Memory 2aaa0`, then
+`memory alloc error 00060b40`, `Memory Allocation Error (Length 60b3c) (mode
+1)` — which is the same failing length Dolphin printed against the retail disc.
+
+The lightest cast in the game fails, so the record is: **m453 is not playable
+by four players on a GameCube, with any cast. It is a limit of the game, not of
+this port**, and it belongs in the inventory as one.
+
+**`--dvdheap KB`, and what it costs.** Since a crash the console also has is
+still a crash for the player, the port can choose to not have it. `--dvdheap`
+sets `HeapSizeTbl[HEAP_DVD]` (`port/patches.txt` → `src/game/malloc.c`) and
+announces itself at boot; what it spends comes out of `HEAP_HEAP`, which is
+index 4 and takes whatever the arena has left, so no other heap changes size
+and the console's total is still the total. The minimum that covers the default
+cast is 5,849 KB; 5,888 KB (`0x5C0000`) is the next round number.
+
+```
+HuMem> --dvdheap: HEAP_DVD 5632 KB -> 5888 KB (a deliberate divergence from the console)
+HuMem> left memory space 2127KB(2178976)          (was 2383 KB)
+```
+
+`--minigame m453 --com4 --dvdheap 5888 --turns 10 --rtc dolphin --freshcard
+--play board-start-com4.play --nodraw --turbo`, Mario/Luigi/Peach/Yoshi, the
+cast that panics on the disc: **`m453dll.rel` linked seven times, was the live
+screen for 242 status lines, and the board reached turn 7 of 10 with no heap
+error at all.** It is `~/m14-m453-dvdheap.log` on the G4.
+
+It is off by default and it should stay off by default: a port that quietly
+plays a minigame the console cannot is not reproducing the game. The flag
+exists so the choice is explicit, logged, and the player's.
+
+### 29.3 The two real missing-return bugs, and a reference frame that did not move
+
+§26.2's audit found 43 functions the decomp declares non-`void` and never
+returns from; §28.6 left the two with real consequences untouched.
+
+**`MegaPlayerPassFunc` / `MegaExecJump`** (`src/game/board/player.c:2842,2954`).
+Both `return 0` early — "nobody is standing on the space you are about to land
+on" — and both fall off the end of the success path after
+`BoardPlayerIdleSet(player); HuPrcSleep(30);`. The caller reads it as a
+contract:
+
+```c
+    if (MegaPlayerPassFunc(arg0, sp8) == 0) {      /* player.c:934 */
+        BoardPauseDisableSet(0);
+        BoardPlayerMoveTo(arg0, sp8);              /* walk him there normally */
+        BoardPauseDisableSet(1);
+    }
+```
+
+The success path has *already* jumped the giant player onto the space and
+squashed whoever was on it, over sixty frames of arc, camera quake and rumble.
+Returning nothing means GCC 14 leaves `HuPrcSleep(30)`'s r3 there — and
+`HuPrcSleep` is `void` — so a successful Mega squish reads as "nobody there"
+and the board walks the player to a space he is already standing on. Both now
+`return 1`.
+
+**`CharNpcDustSet`** (`src/game/chrman.c:1700`) creates a child process for a
+character's dust effect and returns nothing. Six call sites store the result
+and mean it as the handle:
+
+```
+src/REL/m447dll/player.c:149,150    temp_r3->unkB0 = (HUPROCESS *)CharNpcDustSet(...)
+src/REL/m459dll/main.c:635,636      var_r31->unk_28[...] = CharNpcDustSet(...)
+src/REL/present/common.c:61,62      work->unk_50 = CharNpcDustSet(...)
+src/REL/option/guide.c:72,73        work->unk_5C = CharNpcDustSet(...)
+src/REL/m448Dll/main.c:1759,1760    lbl_1_bss_20 = CharNpcDustSet(...)
+```
+
+and every one of them later hands that value to `HuPrcKill`. Under Metrowerks
+it was still `HuPrcChildCreate`'s return in r3; under GCC 14 it is
+`EffectInit`'s leftovers. Killing that is a wild pointer and *not* killing it
+is a coroutine that outlives its model. It now returns the `HUPROCESS *`.
+`CharNpcDustVoiceOffSet` immediately below is the same bug one layer up — the
+decomp already marks its `s32 ret` as uninitialised — and now returns what it
+wraps.
+
+Both patches carry an env-gated trace in the shape §28.2 established
+(`MP4_MEGATRACE`, `MP4_DUSTTRACE`): off by default, one comparison when off.
+`--soak` sets `MP4_MEGATRACE` itself, because a Mega Mushroom is rare enough
+that only an overnight run is ever going to draw one and the flag would
+otherwise never be on when it mattered.
+
+**The A/B, and it is the strongest evidence here.** §21.1 frame 7000, the board
+scene, same command as §25 and §28:
+
+```
+--ffto 7000 --dumpframe 7000 --turbo --com4 --rtc dolphin --freshcard
+--play board-start-com4.play --frames 7100
+```
+
+md5 **`0184870dc607f2aed89b95dc7e71add5`** — byte-identical to §25.6's rebased
+reference and to §28.5's TEV-cache run. Three patches that change what two
+board functions return and what a dust effect hands back, and a 640×480 board
+frame with four characters, a window and a minigame result on it does not move
+one pixel. Nothing is re-based and no `ppmdiff.py` justification is needed.
+
+`--gxwarn` over the same walk, for the record and for §29.4:
+
+| degradation | count |
+|---|---:|
+| `GXInitSpecularDir: specular is approximated by the diffuse term` | 34,662 |
+| `TEV: a stage needs two different constants; the first wins` | 1,824 |
+
+Two, and **only** two. No `four-input stage with no GL 1.3 combiner`, no
+`the stage chain needs more units than the card has`, no `an undecoded GX
+format was bound`.
+
+**What is not witnessed.** A Mega Mushroom is a bought item on a board and no
+run this session drew one, so `MP4_MEGATRACE` has never fired: the two `return
+1`s are argued from the caller's own `== 0` test and the disassembly, not from
+a board. The trace is in the build the overnight soak is running, so the first
+Mega squish it plays will say so in the log. `CharNpcDustSet` is exercised
+constantly (mentDll alone calls it twice per character at `main.c:3318`) and
+the frame-7000 md5 says the corrected return changes nothing visible — which is
+the expected result for a handle nobody was dereferencing yet, not a witness
+that the six kill sites now work.
+
+### 29.4 The board eyes: reproduced exactly, cause narrowed, **not fixed**
+
+§26.3 item 3 has been carried since M9 on the strength of a lost screenshot.
+It is lost no longer — frame 7000 of the reference walk, the same frame whose
+md5 is checked above:
+
+![the eyes](screenshots/m14-eyes-f7000.png)
+
+**Mario's eyes are magenta rings around a black-and-cyan blotch. Luigi's are
+empty white holes with no pupil at all. Yoshi's and Toad's are correct.** The
+second board's opening frame (§29.1's screenshot) shows the same thing with
+Peach's eye a dark blob instead. It is per-character and it is on the 3D model,
+which makes it a different symptom from §21.5's "Yoshi's *portrait* has no
+eyes" and possibly a different bug.
+
+**What draws an eye.** `EyeBmpUpdate` (`src/game/chrman.c:1145`) does not touch
+pixels: it finds the attributes whose bitmap name matches
+`charEyeBmpNameTbl[charNo*8 + i*2]` and zeroes their attribute-animation
+transform (`chrman.c:1161-1168`). The blink frame is chosen a layer down, in
+`hsfanim.c:255-258`, as a **sub-rectangle of the atlas expressed as a 2×4
+texture matrix** — `scale = layer->sizeX / bmp->sizeX`, `trans = layer->startX
+/ bmp->sizeX` — which `hsfdraw.c:967-979` and `hsfdraw.c:1141-1163` hand to
+`GXLoadTexMtxImm` + `GXSetTexCoordGen(GX_TG_MTX2x4, GX_TG_TEX0, ...)`.
+
+The colour is the game's **double-TLUT "TL32" trick**: an `HSF_BMPFMT_CI_IA8`
+bitmap is loaded *twice* over the same index data with two different palettes
+(`hsfdraw.c:649-657`, `hsfdraw.c:1823-1837`), and two TEV stages with swap
+tables (`hsfdraw.c:1008-1023`, konsts `{0xFF,0xFF,0,0}` and `{0,0,0xFF,0xFF}`
+at `hsfdraw.c:116-117`) compose
+
+```
+    final.rgb = ( I0, A0, I1 )      final.a = KONST_a * A1
+```
+
+— red from palette 0's intensity, **green from palette 0's alpha**, blue from
+palette 1's intensity. **Losing the green term of that expression is literally
+red + blue = magenta**, and losing a palette is black. Both observed symptoms
+live on this one expression, which is why it is almost certainly the code path.
+
+**Three candidates eliminated by measurement, one hardened, one new.**
+
+* *Not* a missing GL feature. `--gxwarn` above: no four-input-stage warning, so
+  `ATI_texture_env_combine3` is present and the second stage's
+  `GL_MODULATE_ADD_ATI` is being emitted; no dropped-stage warning, so the
+  chain fits the Radeon's six units; no undecoded-format warning, so `GX_TF_C8`
+  and the TLUT decode ran.
+* *Not* the swap tables. §21.5 settled that and the texture dumps below agree.
+* *Not* the NPOT fold, on inspection: the fold multiplies the **final**
+  coordinate once, in the vertex program (`gx_vprog.c:519-524`, env 56) or in
+  `GL_TEXTURE` (`gx_tex.c:769`), never both, and it composes correctly after
+  the sub-rect matrix.
+* **Still live: the per-unit constant collision.** GL 1.3 gives a texture unit
+  one `GL_TEXTURE_ENV_COLOR`; GX gives a stage an independent `KCSel` and
+  `KASel`. The eye's second stage wants `(0,0,255)` for colour and `1.0` for
+  alpha (`GX_TEV_KASEL_1`, forced for every stage at `hsfdraw.c:498`), and
+  `gx_tev.c:299-304` keeps the first and warns. That warning fires 1,824 times
+  on this walk. Its effect is `stage1.a = TEXA * 0`, i.e. a transparent eye —
+  which is a symptom this frame does not obviously show, so it is a bug but
+  probably not *the* bug.
+* **New, and the most concrete lead: the two TLUT copies are identical.**
+  `--dumptex` over the walk writes the eye atlases as eight pairs of
+  16×176 `GX_TF_C8` textures — `tex-086/087`, `089/090`, `095/096`, `098/099`,
+  `104/105`, `107/108`, `113/114`, `116/117` — one pair per character, which is
+  exactly the TL32 double load. **All eight pairs are byte-identical, RGB and
+  alpha.** They are two cache entries (so the port did see two different TLUT
+  pointers) that decode to the same pixels, which means the second palette the
+  port read was the same data as the first. If `I1 == I0` and `A1 == A0` the
+  composite collapses toward `(I, A, I)` and the eye's colour is wrong
+  everywhere at once, per character, in exactly the way the frame shows. The
+  address in question is `&((s16 *)bmpPtr->palData)[(bmpPtr->palSize + 0xF) &
+  0xFFF0]` (`hsfdraw.c:1825`) — note that the *count* passed to
+  `GXInitTlutObj` is `palSize` as well, so the object also reads past its own
+  palette, and that the port's content hash therefore hashes bytes that are not
+  the palette's.
+
+**This is where M14 stopped.** The next ten minutes are `--drawlog-at 7000`
+filtered to the character draws, to see which two texture slots and which two
+TLUT names the eye stages actually bind, and a read of `bmpPtr->palData` /
+`palSize` for one character's eye bitmap on the live process — enough to say
+whether the second palette is mis-addressed by the game's own expression under
+GCC 14 (a `palSize` that is a count of entries where the expression wants
+bytes, or the reverse) or mis-read by the port.
+
+Evidence kept: `port/docs/screenshots/m14-eyes-f7000.png` (the frame),
+`m14-eyes-before.png` (the second board's opening, Mario and Peach),
+`m14-eye-atlas-copy0.png` (one atlas as the port decodes it), and the full
+dump set on the G4 in `~/m14shots/`.
+
+### 29.5 What M14 shipped, and what it did not
+
+**Shipped, with a witness on the G4:**
+
+| | |
+|---|---|
+| the navigator's press seam (§29.1) | two boards chained back to back, rendering on, from a cold boot |
+| `--cast a,b,c,d` (§29.2) | the lightest cast panics on hardware, 143,790 short |
+| `--dvdheap KB` (§29.2) | m453 linked and played seven times at 5,888 KB with the console's own cast |
+| `MegaPlayerPassFunc` / `MegaExecJump` (§29.3) | code + reasoning; frame 7000 md5 unchanged |
+| `CharNpcDustSet` / `CharNpcDustVoiceOffSet` (§29.3) | code + reasoning; frame 7000 md5 unchanged |
+
+**Not done, and why:**
+
+* **The eyes** (§29.4). Reproduced, dissected, three candidates eliminated and
+  one new and specific lead recorded. Not fixed; the frames and the atlas dumps
+  are committed so M15 starts at the evidence rather than at the title.
+* **A Mega squish on a board** (§29.3). The two `return 1`s have no hardware
+  witness because no run drew a Mega Mushroom. `MP4_MEGATRACE` is in the build
+  the soak is running.
+* **The per-draw submit lever** (§28.5). Not started; the night went on §29.1,
+  which was worth more than a percentage.
+* **Snapshot compression.** Not started.
+* **`m453` rendering on.** The seven plays are a `--nodraw` run; nobody has
+  looked at the screen.
+
+### 29.6 What M15 starts with
+
+1. **Read the soak's log first.** Left running at the end of M14:
+
+   ```sh
+   g4 run --soak --com4 --rtc dolphin --freshcard \
+          --snap-every 5000 --snap-keep 3 --status --ovllog --stuckwatch 200
+   ```
+
+   Two questions for it: does the chain of §29.1 keep going — *three* boards,
+   *four* — and does `port> mega:` ever appear (`--soak` arms the trace).
+2. **The eyes**, from §29.4's last paragraph. It is the oldest open rendering
+   bug in the project and it is now one question rather than five.
+3. The per-draw submit lever (§28.5), with §25's A/B discipline.

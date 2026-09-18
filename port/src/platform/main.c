@@ -352,6 +352,12 @@ int port_parse_args(int argc, char** argv) {
             port_opt.stuckwatch = atoi(argv[++i]);
         } else if (!strcmp(a, "--soak")) {
             port_opt.soak = 1;
+            /* A Mega Mushroom is rare enough that a soak may run for hours
+             * without drawing one, and 29.3's two `return 1`s have no witness
+             * until it does.  Arm the trace for every soak: it costs one
+             * comparison per Mega squish and it is the only way the overnight
+             * run can be the witness. */
+            setenv("MP4_MEGATRACE", "1", 1);
             port_opt.com4 = 1;
             port_opt.status = 1;
             if (!port_opt.stuckwatch) {
