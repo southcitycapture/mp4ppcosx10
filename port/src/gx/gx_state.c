@@ -327,8 +327,8 @@ void GXSetNumChans(u8 n) { GX_STATE_TOUCH_IF(gx.num_chans != n); gx.num_chans = 
 void GXSetChanCtrl(GXChannelID chan, GXBool enable, GXColorSrc amb_src,
                    GXColorSrc mat_src, u32 light_mask, GXDiffuseFn diff_fn,
                    GXAttnFn attn_fn) {
-    GX_STATE_TOUCH();
     int i, n = 1, first = (int)chan;
+    int changed = 0;
     if (chan == GX_COLOR0A0) {
         first = GX_COLOR0;
         n = 3; /* COLOR0 and ALPHA0 */
@@ -336,6 +336,18 @@ void GXSetChanCtrl(GXChannelID chan, GXBool enable, GXColorSrc amb_src,
         first = GX_COLOR1;
         n = 3;
     }
+    for (i = 0; i < n; i += 2) {
+        int c = first + i;
+        if (c < 0 || c > 3) {
+            continue;
+        }
+        if (gx.chan[c].enable != (u8)(enable ? 1 : 0) || gx.chan[c].amb_src != (u8)amb_src ||
+            gx.chan[c].mat_src != (u8)mat_src || gx.chan[c].light_mask != light_mask ||
+            gx.chan[c].diff_fn != (u8)diff_fn || gx.chan[c].attn_fn != (u8)attn_fn) {
+            changed = 1;
+        }
+    }
+    GX_STATE_TOUCH_IF(changed);
     for (i = 0; i < n; i += 2) {
         int c = first + i;
         if (c < 0 || c > 3) {

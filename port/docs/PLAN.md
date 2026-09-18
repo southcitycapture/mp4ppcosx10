@@ -9493,3 +9493,56 @@ never ran from before, and the bytes `charNo[5]` reads are theirs. Patched in
 467, 489 and 492), written up as Part Three of `decomp-struct-notes.md`, and
 the first M16 `--minigame` runs after the patch reached their measurement
 windows (§31.6).
+
+### 31.6 What M16 shipped, and what it did not
+
+**Shipped, with a witness on the G4:**
+
+| | |
+|---|---|
+| the vertex ring, the fences, the cross-list batch, multi-draw (§31.2) | +16% / +21% / +13% on the three scenes, same binary, `--oldsubmit`; md5s to the byte before §31.3 |
+| the setters' compare-first (§31.2) | batches 7.5M → 1.96M on the walk, GL calls −67% |
+| the TEV register rewrite (§31.3) | eyes on the board and the title, the walkway and platform sides back; `--noregfix` reproduces §30 |
+| the per-draw konst counter (§31.4) | 319,813 of 1,960,066 draws |
+| `instDll/main.c:518` (§31.5) | five faults of five → `--minigame m432` reaches its window (14.77 fps on the new submit, first run) |
+| `--submitstats`, `--gxwarn`'s register line, the three profiles | |
+
+**Not done, and why — the wired link between littlejelly and the G4 went
+down at 14:32 (`tg3 enp1s0f0: Link is down`) and stayed down, and the rest
+of the run list is one command each once it is back:**
+
+* **`m432` / `m427` on both arms** (`/tmp/mg.sh NAME m4xx [--oldsubmit]`,
+  i.e. `--minigame NAME --ffto 10700 --frames 11800 --perfwin
+  10900-11800:NAME`). `m432` new = 14.77 fps was measured; its `--oldsubmit`
+  arm and both `m427` arms were still on the G4's side of the dead link.
+* **The frame-800 disagreement** between the batched submit and `--oldsubmit`
+  (§31.3's last paragraph): 136 pixels, one eye, title only. The bisection is
+  five short runs (`--frames 830 --dumpframe 800` under default twice,
+  `--nomultidraw`, `--novar`, `--oldsubmit`) and a `--drawlog 3000
+  --drawlog-at 800` pair to diff the eye draws' state between the arms. Until
+  it is run, the reference for 800 is `05091ad4…` *with the note that the
+  per-list arm draws `78c3144b…`*, and the difference is confined to one eye.
+* **The konst split's own A/B** (`--oldkonst` against default on 800/3000/7000
+  via `--ffto`), and its per-draw count after the split.
+* **The `GL_ATI_text_fragment_shader` backend** — argued in §31.4, not built.
+* **The decode** — 39% of `m432`'s frame after this milestone; the next
+  per-vertex lever (§31.1).
+* **The strip → indexed conversion**, §31.2's last paragraph; and the reflection
+  / `texCol == 1` register shapes (5,665 stage emissions) §31.3 leaves folded.
+* **The oracle frame with a message window** (§30.8 item 3). Not taken.
+
+### 31.7 What M17 starts with
+
+1. **Finish §31.6's run list**, in that order: the two minigames, the
+   frame-800 bisection, the konst A/B. Then the leave-behind soak on the M16
+   build: `g4 run --soak --com4 --rtc dolphin --freshcard --snap-every 5000
+   --snap-keep 3 --status --ovllog --stuckwatch 200`.
+2. **Read that soak's log first**, as always: the M16 build has never run a
+   full board unattended, and a batch flushed from inside a GX setter is a new
+   place for the game to be when a fault happens.
+3. **The decode**, with `m432` as the scene (§31.1: 2,600 of 6,653 samples).
+   The M9 cache was exact and slower because it hashed the arrays; the
+   question is whether the arrays a *static* model indexes can be proved
+   unchanged more cheaply than by reading them.
+4. §31.4's fragment-shader decision, once the per-draw counts after the konst
+   split and the register line say how many draws are still degraded.

@@ -190,6 +190,31 @@ Rules of the road:
 
 ---
 
+## 0d. Running the lab from littlejelly *(M16, 2026-09-18)*
+
+M16 ran on littlejelly (the Linux lab host on the G4's wired LAN) rather than
+on the Mac. What is different there:
+
+* `~/bin` is not on a non-login shell's PATH: `export PATH=$HOME/bin:$PATH`
+  before `g4 …`, or call `~/bin/g4`.
+* The build loop is `port/build-ppc.sh -j4 && port/tools/g4_debug_sync.sh &&
+  sh port/tools/make_bundle.sh && sh port/tools/g4_install.sh
+  port/build-ppc-darwin/MarioParty4.app` — Docker is native, an incremental
+  build is about a minute. The host build (`make -C port`) wants clang, which
+  is not installed; do not use it.
+* `g4_install.sh` streams the bundle with GNU tar, whose flags are not
+  bsdtar's; fixed in M16 (the metadata flags only on Darwin).
+* **littlejelly is a laptop with a lid.** On 2026-09-18 someone closed it at
+  14:43 (deep suspend, 25 minutes) and the wired link (`tg3 enp1s0f0`) had
+  already gone down at 14:32; every background task on the host froze, and
+  the whole 192.168.0.0/24 — the G4, the MacBook bench — was unreachable for
+  the rest of the afternoon. `ip link show enp1s0f0` (want `LOWER_UP`)
+  before blaming the G4; the G4 keeps running whatever the runner was given.
+  Keep long chains on the G4 side and read results afterwards, and do not
+  arm anything on the host that must fire on time.
+* git has no global identity there; the repo carries the fork's
+  (`user.name zachxjack`) as a per-repo setting.
+
 ## 1. m425 to its result screen — the M8 crash, witnessed
 
 §18.2 proved the `unk_3C[6]` correction at the level of the instructions. This
