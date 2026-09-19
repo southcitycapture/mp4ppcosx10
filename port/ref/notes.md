@@ -319,3 +319,16 @@ functions, 616 / 616 complete units, 5,938,052 bytes of code. PAL and JP are not
 Matching is not the same as documented — the README notes that most non-engine code is
 undocumented, and the RELs are still full of `fn_1_*` / `lbl_1_bss_*` names (all of
 `modeseldll/filesel.c`, for instance). There is no PC port yet.
+
+## m406 on the console (2026-09-19, m406-end.txt schedule, capture on the Mac)
+
+m406 is the downhill ski race. Frames `m406-console-*.png`: 12500 the race
+(four skiers on the slope), 13800-14300 the ending: the winner (Peach) stands
+centre celebrating and the THREE LOSERS ARE BURIED IN SNOW MOUNDS WITH ONLY
+THEIR HEADS SHOWING. So a head on a snow mound at the end of m406 is BY
+DESIGN, not a skinning fault. The race itself is ~1,500 frames on the
+console (12,500 -> 14,000); the port's stalled visit sat in the module for
+57,000+ frames. Not captured: a DRAW ending (nobody wins), which is what the
+port's restored run produced; the striped garbage polygon the user
+photographed on the G4 in that DRAW frame has no console counterpart here
+and is still unexplained.
