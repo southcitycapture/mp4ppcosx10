@@ -288,6 +288,31 @@ on the Mac. What is different there:
   Also: the G4's clock runs a few minutes behind littlejelly's; do not
   read file times across the two.
 
+## 0h. Three things M20 paid for *(2026-09-19)*
+
+* **A stall with the loop alive is a state question first.** `m406dll`
+  sat for 80,000 frames at 100% with nothing wrong in any port counter;
+  the answer was one `s32` in the module's `.data` (PLAN.md §35.1). Read
+  the module before suspecting the port: `gdb` on the file-local symbols
+  (`powerpc-apple-darwin8-nm build-ppc-darwin/rels/<mod>.bundle` — the
+  bundles are prelinked at fixed addresses, no slide, so `x/` those
+  addresses directly; the G4's own `nm` cannot read them). Read twice
+  with the module's own frame counter alongside so a rate, not just a
+  value, comes out.
+* **A `--restore` reproducing the stall proves the state is *in* the
+  snapshot.** MEM1 and every module's `__data/__bss/__common` travel with
+  it; the port's own registries and caches do not. The addendum's
+  "restore clears it, so it is port-side" inverted this — the restore
+  had stalled too, and a gdb poke was what played it out. Check the log
+  for the poke before drawing that conclusion.
+* **The old binary's snapshot on a rebuilt tree:** `git stash` the fix,
+  `build-ppc.sh` (12 s), `make_bundle.sh` to a second name, `stash pop`,
+  rebuild — the same-source re-link is `--restore-lax`'s one sound case
+  (`~/MarioParty4-m19src.app` on the G4, the runner slot flipped with
+  `g4 use`, absolute paths for `--restore`: the runner's cwd is not `~`).
+  And a minigame the soaks never dealt (`m415`, 0 of 44 dealt) is a
+  minigame nothing has tested: `--minigame` it on purpose.
+
 ## 1. m425 to its result screen — the M8 crash, witnessed
 
 §18.2 proved the `unk_3C[6]` correction at the level of the instructions. This

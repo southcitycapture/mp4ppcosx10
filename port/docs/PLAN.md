@@ -10488,3 +10488,231 @@ the registry cannot go stale and the mixer reads its own copies.
 4. **Upstream note** (`decomp-struct-notes.md`): the msm/MusyX PC-target
    sample lifetime is a port matter, not a decomp bug; nothing new for
    the list.
+
+## 35. M20 log — the module that remembered its last play *(2026-09-19, littlejelly)*
+
+M20 opened on a process that was alive and going nowhere. The M19
+leave-behind soak (§34.6) had been inside `m406dll` since frame 459,473 —
+board 2, turn 15 — for 80,000 frames at 100% speed, 30 presented fps, the
+game loop healthy, the picture a snow field with nobody on it
+(`STUCK: frame 507473, 800 s with no progress`, `mp4peek`: `omMain`, four
+`UpdateChar`, the watcher; no coroutine of the module's own). The same
+process had played `m406` once before, at 86,431–88,903, in 2,472 frames.
+The first attempt at M20 (interrupted at 11:15) found the mechanism, built
+the fix and left a witness running; this log verifies that attempt's
+claims against the process itself, adds what its witness turned up
+(§35.3), and settles the addendum's two pictures (§35.2).
+
+### 35.1 The stall: an initialised global that a second play began below zero
+
+`m406dll` is *Avalanche!*: four players ski down a slope ahead of an
+avalanche. Its player-side state machine (`player.c`, `fn_1_FA50`) is
+driven by one counter,
+
+```c
+s32 lbl_1_data_11F4 = (REFRESH_RATE*16)/5;        /* player.c:436 -- .data, 192 */
+...
+case 0:  if (--lbl_1_data_11F4 == 0) { fn_1_123C(); lbl_1_bss_D8++; ... }   /* the intro */
+case 2:  ... lbl_1_data_11F4 = (REFRESH_RATE*7)/2;                          /* 210 */
+case 3:  if (--lbl_1_data_11F4 == 0) { fn_1_12BC(); }                        /* the ending */
+```
+
+Case 3 keeps decrementing after it has fired — the minigame's outro runs
+for a few hundred more frames with the counter going further below zero —
+and nothing ever resets it, because nothing has to: on the console the
+counter is in the REL's *initialised data*, and `objdll.c`'s `Link DLL`
+path reads the REL off the disc again (`HuDvdDataReadDirect`) every time a
+minigame is entered, so every play starts at 192. The port keeps every
+bundle mapped after the game unlinks it (`portDLLClose`, the bootDll
+dead-text call of M3) and answers the next Link by zeroing the bss by hand
+— *half* of objdll.c's fifth point. `.data` kept the last play's values.
+So the second play of `m406` in a process began with the counter already
+negative, `--x == 0` could never come true, and the four players sat in
+their intro state with `HU3D_ATTR_DISPOFF` (that is why the field was
+empty: `fn_1_1065C` reveals them at state 1).
+
+**Read in the process itself** (the first attempt, gdb attached to pid
+32079 with `port/tools/gdb/mpgdb`): `lbl_1_data_11F4 = -83707`,
+`lbl_1_bss_D8 = 0` (player state: the intro), `lbl_1_bss_1CC = -1` (no
+winner picked). Writing 192 into it let the minigame play out. **Read
+again in a `--restore` of the stall snapshot** (this log, the M19-source
+binary rebuilt as `~/MarioParty4-m19src.app` — the source differs from the
+stalled build by seven comment lines, so `--restore-lax` is sound — and
+`snaps/lib/m406-stall-f515000.snap`): the restore reproduces the stall
+exactly, because the snapshot carries the module's `.data`
+(§24.2). Two reads 60 status-lines apart: the counter went −58,553 →
+−59,395 while the module's own frame counter (`main.c` `lbl_1_bss_18`,
+state 1) went 58,220 → 59,062 — lockstep, 842 each — so **the second play
+began at −333**: the first play's outro had run the counter 333 frames
+past zero. The same poke (192) in the restore played it out too
+(`docs/soak/m20-m406-restore-poke.log.gz`).
+
+That corrects the addendum's premise: the restore did *not* clear the
+stall — it reproduced it; the play-out the user photographed (pid 43179,
+the "DRAW!" banner) followed the first attempt's poke, not the restore.
+The state that held the stall was inside the snapshot, inside the game's
+own module data, and no port-side registry or cache was involved.
+
+**The fix** (`port/src/os/dll_load.c`, commit 3d30fb6c): a module's
+`__DATA,__data` is captured once, at its first `dlopen` in the process,
+before its prolog runs (`dll_data_capture`); a `Link DLL` of a kept module
+(`portDLLOpen`) copies it back beside the bss zeroing (`dll_data_reset`).
+The "Already Loaded" re-entry (`portDLLReenter`) keeps `.data`, which is
+what the console's `memset(bss)`-only path does. The `--restore` path
+captures the pristine copy before the snapshot's bytes are written over
+it, so a restore still reproduces what it saw. `.data` only — the lazy and
+non-lazy symbol pointers are dyld's and are left alone; the bundles are
+prelinked at fixed addresses and never really unloaded, so the captured
+copy's relocated pointers stay valid. `--nodatareset` keeps the old
+loader for a reproduction.
+
+**The guard.** Every reset that finds the last play's changes logs one
+line, and the shutdown report counts them:
+
+```
+port> m406dll: re-opened: 7 of 4360 .data bytes had been changed by the last play; reset to the REL's contents
+port> REL .data: 13 re-opens of a kept module, 9 of them with .data the last play had changed (reset)
+```
+
+Over the three witness runs the line named `m406dll` (7 bytes), `instdll`
+(1 byte, every play), `resultdll` (2–4 bytes, every play) and `w01dll`
+(1 byte: the board is re-linked after each minigame). None of those had
+a visible symptom; all four were running with the previous play's data
+until now.
+
+**Witness.** `--soak --minigame m406,m406 --turns 10 --com4 --rtc dolphin
+--freshcard --realtime --status --ovllog --stuckwatch 200` on the fixed
+build: the second play at frame 18,336 logged the reset and completed at
+20,854 (2,518 frames; the M19 soak's first play took 2,472), all four
+bodies skiing, Peach's win pose, results, the board
+(`docs/soak/m20-witness1-m415fault.log.gz`). A second run
+(`--minigame m415,m406,m406`) did it again: 29,885 → 32,347. The restore
+experiment is the third witness: the un-fixed loader, the same snapshot,
+the same stall.
+
+![the second play in one process, all four bodies](screenshots/m20-m406-second-play-four-bodies.png)
+![its ending: Peach wins, Mario buried](screenshots/m20-m406-second-play-peach-wins.png)
+
+### 35.2 The two pictures in the DRAW photo
+
+The addendum's photo (`screenshots/m20-m406-draw-photo.jpg`) shows the
+poked play-out of the stalled process ending in a DRAW with two things
+that looked like rendering faults. Reproduced in a real capture from the
+restore + poke (`screenshots/m20-m406-poked-draw-ribbon.png`, 5 s after
+the poke — the race was over at once, because the avalanche had been
+advancing for 60,000 frames and caught all four immediately: a DRAW):
+
+* **"Yoshi's head without his body"** is the game's own art. Avalanche!'s
+  losing pose is a character buried in a snow mound with the head out;
+  a DRAW buries all four (the four mounds in both pictures; Peach's head
+  is the one out in the capture). Not a skinning fault: the same build,
+  the same minigame, fresh, draws all four bodies (§35.1's screenshots).
+* **The rainbow-striped ribbon** across the slope is a textured,
+  vertex-coloured quad-strip effect (`map.c` `fn_1_B474`/`fn_1_BC18`, a
+  hook-drawn ribbon with `GX_SRC_VTX` colours) after 60,000 frames of a
+  state it was never designed to sit in. It is not in any fresh play of
+  the minigame (six captures across two plays), and with the stall gone
+  the state that produced it cannot recur. What this log does *not* have
+  is a fresh-process DRAW to compare against: four COM players cannot be
+  made to lose together on demand. Recorded as a stall artefact on that
+  evidence, not proven to the byte.
+
+Neither picture implicates the M18 skinning deferral or the M19 lifetime
+registry; both runs report `0 guard hits`. The deferral stays as it is.
+
+### 35.3 What the witness found instead: a minigame no soak had dealt
+
+The first witness run faulted at frame 46,532 — the first frame of
+`m415dll` — `signal 11 at address 0x425cc050`, pc in the commpage `bcopy`,
+backtrace `omMain + 492` (an object function). 0x425cc050 − 0x40000000 =
+0x025cc050, inside MEM1: **`OSCachedToUncached` was still adding the
+console's uncached-alias offset.** The M1 inventory (§1, "`OSCachedToUncached`
+| 1 | `src/REL/m415Dll/main.c:429`; make it identity") had named it and
+nothing ever did — and of the 44 minigames the soaks have dealt since
+(m444 32 times, m428 22 …), `m415` was dealt **zero** times, in every log
+kept. The first M20 witness was its first play on the port. `patches.txt`
+makes both macros the identity (commit ebc5ffec).
+
+`m415` is *Stamp Out!*, and behind the fault is a copy the game reads
+back with the CPU: for the two seconds of its intro it does
+`GXDrawDone(); memcpy(canvas->bmp->data, Hu3DShadowData.buf, 192*192)`
+every frame — the shadow map, one byte a texel, into an I8 `ANIMDATA` it
+then textures the paper with — and once more at the canvas's creation.
+On the console MEM1 holds the copy's bytes. The port's `GXCopyTex` never
+writes MEM1 (the copy is a GL texture keyed on the destination, §3/§16),
+so the memcpy would have painted the canvas with whatever the heap held.
+`patches.txt` turns the two memcpys into `port_gx_copy_read` (`gx_tex.c`):
+the copy's GL texture is read back with `glGetTexImage` (added to the
+GL 1.3 allow-list) and encoded as GX would have written it — one byte a
+texel in 8×4 tiles, the copy format's channel (the game copies
+`GX_CTF_R8` and binds it as `GX_TF_I8`; the first cut refused R8 and gave
+zeros — `screenshots/m20-m415-canvas-zeros.png`) or BT.601 intensity for
+I8. A destination nothing was copied to yet is answered with zeros and one
+log line, and the report counts both:
+
+```
+port> copy-read: 120 copies read back by the game (m415's canvas), 1 answered with zeros
+```
+
+(120 = the intro's frames; the 1 = the creation-time read, before the
+first shadow copy of the minigame exists.) Witness: `--minigame m415,m406
+--turns 3` at real time plays Stamp Out! through to its results
+(`docs/soak/m20-witness3-m415-r8.log.gz`; the zero-canvas run before it,
+`m20-witness2-m415-m406x2.log.gz`, also played through — the fault was
+the alias, not the picture).
+
+![Stamp Out!, the canvas read back from the copy](screenshots/m20-m415-canvas-r8.png)
+
+**Open:** which paper is the console's — the lavender one under a zero
+canvas or the near-white one under the read-back copy — needs a Dolphin
+reference frame this host cannot take; the read-back is the console's
+mechanism and is what ships. The blank portrait boxes on the minigame
+results screen are pre-existing (`screenshots/mp4-minigame-result.png`,
+M8) and not M20's.
+
+### 35.4 Item 2: the picture and the counter
+
+Two `g4 shot`s five seconds apart during board play on the fixed build
+(`m20-board-a/b.png`, 11:11–11:12): different, in exactly the game's
+640×480 window (diff bbox 520,285–1160,765 of the 1680×1050 desktop).
+**Verdict: `presented fps` is honest.** It counts `n_drawn / wall` in
+`framemode.c` — drawn frames that went through the swap — and during the
+stall the scene really was static: the module drew the same empty slope
+thirty times a second. Nothing to fix in the present path; no display
+sleep/wake re-attach was needed (the display had been woken by hand for
+the user's captures, and the runner's captures here were live).
+
+### 35.5 What M20 shipped, and what it did not
+
+| shipped, with a witness | |
+|---|---|
+| a re-linked module's `.data` goes back to the REL's contents (§35.1) | the stall reproduced from its snapshot and read (−333 at entry); the second play of m406 in one process completed twice at real time; guard line + report |
+| `OSCachedToUncached`/`OSUncachedToCached` identity (§35.3) | m415 played through twice |
+| `port_gx_copy_read`: the copy the game reads back (§35.3) | 120 readbacks in the intro, the paper textured from the copy |
+| the M19 soak's log, the restore/poke log, three witness logs, seven screenshots | `docs/soak/m20-*`, `docs/screenshots/m20-*` |
+| `--nodatareset`; `~/MarioParty4-m19src.app` on the G4 (the M19-source re-link, for the stall snapshot) | |
+
+**Not done, and why:**
+
+* **Item 3 — the drawn frame** (strips → indexed, `ATI_text_fragment_shader`):
+  not started. The day went to the stall's verification, the DRAW
+  pictures, and the minigame the first witness surfaced.
+* A fresh-process DRAW in Avalanche! to close §35.2's ribbon to the byte.
+* The Stamp Out! paper's reference colour (§35.3).
+* `--texbudget 0` / `--cpuskin` / `--noskinlifetime` arms on m406 were not
+  run: the stall's cause was read out of the module's data before any arm
+  was needed, and the pictures pointed away from the deferral (§35.2).
+
+**M19 soak, read as §34.6 asked:** 8,803 status lines, mean speed
+**100.1%**, one full 20-turn board (results at ~268k, `modeseldll` →
+`mentdll` → board 2 at ~290k, the three designed 200 s waits), 44
+minigames dealt, `tex` at 40.8 MB throughout, 0 faults before the stall
+(`docs/soak/m20-m19soak9-m406-stall.log.gz`).
+
+Left running (12:03): `g4 run --soak --com4 --rtc dolphin --freshcard
+--realtime --snap-every 5000 --snap-keep 3 --status --ovllog --stuckwatch
+200` on the final build (`isle` md5 `2fd60253…`, 1,655,632 bytes) — the
+first soak on which a module's second play starts where its first did.
+
+**What M21 starts with:** the soak's `REL .data:` and `copy-read:` report
+lines and whether m415 or a second m406 came up naturally; then item 3.
