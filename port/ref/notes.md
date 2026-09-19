@@ -353,3 +353,15 @@ portraits in its boxes; the port's boxes are blank (pre-existing since M8,
 Note for `capture-linux.sh`: killing the Flatpak wrapper PID does not
 reach `dolphin-emu` inside the sandbox — two captures on 2026-09-19 ran on
 as orphans (one for 37 min, 8.9 GB of AVI); kill `pgrep -x dolphin-emu`.
+
+## The file select on the console (2026-09-19, capture on littlejelly, PLAN.md §38.4)
+
+`fileselect-console-0650.png`: Dolphin frame 650 of the board-start walk
+(`~/mp4-oracle/capture-linux.sh 200 … -C Dolphin.Core.EnableCheats=True`,
+the m20 user dir), "Slot A: Creating file…" — the same screen as the
+port's frame 1,300 of `board-start-com4.play`. What it settles: the
+unselected file boxes' bevelled frames are dim (mean 99 on the top edge,
+83 on the left), the highlight added at 0.3 (hsfdraw's invAlpha stage,
+A0 = 76); the selected box's at 0.6 with the red frame's specular under
+it. The port drew the unselected frames at 170 until M23 (the stage after
+a lerp-by-konst pair was emitted as the M16 triple's third unit).

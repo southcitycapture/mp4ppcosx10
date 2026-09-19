@@ -11450,3 +11450,320 @@ the final build (`isle` md5 `c0dd5844…`) — the first soak with the
 portraits drawn and the setter fixes in. Read it first (the MEM1-top
 fault is still unreproduced), then Item 3 of M21's brief, then the
 atlas question.
+
+## 38. M23 log — the paper was the padding, and every texture was decoded twice *(2026-09-19, littlejelly)*
+
+M23's brief was §37.7's: read the leave-behind soak (§38.1), Stamp Out!'s
+paper (§38.2), the scene-change audio underruns (§38.3), and, if the day
+allowed, the dropped tint and the atlas question (§38.4). The soak was
+not overnight — M22 ended minutes before M23 began — so it ran 84
+minutes, through a whole 20-turn board and into the second, while the
+paper was worked on the MacBook bench. The paper turned out to be
+**two** faults, neither of them the ones §36.2 listed: the copy of a
+half-scale shadow map took the bottom-left quarter of the pass at 1:1
+(the floor shadows), and the copy's texture was padded to a power of
+two with **memory nobody had written** — the paper's projection sampled
+past the region's edge and drew VRAM garbage, green on one card, orange
+on another, white on the run where that memory was black (§38.2). The
+underruns' cold decode was measured to the frame and turned out to be
+**double**: a miss stored the exhaustive hash and the next frame's
+sampled one never matched, so every texture over a kilobyte was decoded
+and uploaded twice (§38.3). On the way: the stage *after* the M22
+lerp-by-konst pair was being emitted as the M16 triple's third unit, and
+the mode select's file boxes had been drawn at 170 where the console has
+99 (§38.4); and a read-back that was fixed once had to be fixed twice
+(§38.5).
+
+### 38.1 The soak, read
+
+`g4 run --soak --com4 --rtc dolphin --freshcard --realtime --snap-every
+5000 --snap-keep 3 --status --ovllog --stuckwatch 200` on the M22 build
+(`c0dd5844…`), 17:02 to 18:26 G4 time — **84 minutes, 298,500 frames,
+4,975 status lines** (`docs/soak/m23-soak12-m22-leave-84min.log.gz`):
+
+| | |
+|---|---|
+| mean speed | **100.2%** over the run; on the board 99.2% (turn 1, the load) then **99.8–100.4% on every turn 2–20** — it holds past turn 12 |
+| presented fps | 18.4 overall; board turns 15.9–20.2 (mean 17.9); minigames 10.2 (`m414`) to 27.1 (`m421`) |
+| where it got | **board 1 played through all 20 turns** → results (`mstory3dll`, frame ~250k) → `modeseldll` → `mentdll` → **board 2, turn 1** (frame 296,580) |
+| minigames dealt | 28 plays of 25 modules, in order: m412 m428 m420 m444 m423 m438 m429 m444 m430 **m406** m416 m405 m438 m431 m422 m410 m407 m421 m424 m436 m404 m427 m455 m401 m414 m418 m404 m402; `m406` once (86,431–88,903, 2,472 frames, as the M19 soak's first play); **m415 not dealt**, no second m406 (board 2 had a turn) |
+| `REL .data:` re-opens | `instdll` 1 of 800 ×24, `resultdll` 1–4 of 1,760 ×23, `w01dll` 1–4 of 3,528 ×8, `m444dll` 10 of 5,492 ×1 (its second play), `modeseldll` 2 of 2,100, `mstory3dll` 10 of 1,160 — every re-entry reset |
+| `copy-read:` / `EFB copies:` / `hilite:` / `skin:` / `musyx_aram:` | not written: the stop is a `killall`, and m415 was not dealt |
+| STUCK | 3, all the chain's designed 200 s waits (`modeseldll` at 268,478, `mentdll` at 280,776 and 295,044) |
+| resyncs | 7, each ~1.0 s: the two board loads (5,116; 282,651 → 295,324 for board 2), `m438` (58,429), **two inside `m401`** (217,770 / 219,422; it ran at 97.5%) and one in `m414` (226,368; 98.8%, 10.2 fps) |
+| faults / MEM1-top guard fault (§36.5) | **0 / did not recur** (the board load that faulted one walk in twelve passed twice) |
+| `tex` / `rss` | 671 entries / 40.9 MB from turn 1, 798 by turn 14, 830 at the end (M21's budget holding); rss 120–132 MB, peak **174 MB inside `mentdll` before board 2** (the menu's textures resident beside the load) |
+
+Nothing to act on. The M22 bundle is kept on the G4 as
+`~/MarioParty4-m22.app` so its ring (`snaps/f285000..f295000`) restores.
+
+### 38.2 Stamp Out!'s paper: the copy's padding, and the quarter
+
+**The reproduction moved to the MacBook.** The 2.5-minute reproduction
+(§36.2) runs under Rosetta in seven, and the paper is a logic question,
+not a speed one, so the diagnosis ran there while the G4 soaked; the
+witness is the G4's.
+
+**The first cause: the half-scale copy took a quarter.** `GXSetTexCopyDst`'s
+`mipmap` flag is the copy unit's 2×2 box filter — the source rectangle is
+twice the destination in each axis — and every shadow map in the game is
+one (hsfman.c:2001: a 384×384 pass copied to 192×192, `Hu3DShadowData.size
+= 0xC0` by default). `gx_tex_copy` copied `min(src, dst)` at 1:1: the
+bottom-left 192×192 of the pass, magnified twice. The copy now keeps the
+whole source rectangle at full size (`copy_w/h`, su/sv over it), GL's
+bilinear samples it at 2:1 — within a texel of the box filter — and the
+read-back does the 2×2 mean exactly. `--nocopyhalf` is the old corner. On
+the MacBook the paper went from a magnified corner to **a picture of the
+scene** — which said the region was now right and its content was not.
+
+**The reading.** `--dumpcopy` (new) writes the copy's texels and the bytes
+the game gets, and on a `--dumpframe` frame the copy right after it is
+made. Every one was right: at 14,472–14,480 the intro's silhouettes
+(the notepad, the toys, the rings), at 14,600 black, at 14,700 the four
+players' little stamps, 40% grey on black exactly as `FaceDrawShadow`
+draws them (`screenshots/m23-m415-efbcopies-and-bands-mbp.png`). Every
+texture the paper draws was right too (`--dumptex`: the 600×600 paper
+with its clouds, the 192×192 canvas, the floor;
+`m23-m415-paper-textures-mbp.png`), and `--nohilite` kept the bands. What
+was left was *where the paper samples*: `SetShadow` (hsfdraw.c) projects
+the map through `GX_TG_MTX3x4` from position, the paper is larger than
+the shadow camera's view, and the coordinates run past the region's
+edge. GX clamps at the copy's real edge (192); GL clamps at the padded
+texture's (256, now 512), and the padding — sized with
+`glTexImage2D(…, NULL)` — was **whatever the driver's VRAM held**: a
+stretched column of it across the paper, green with dark bands on the
+Radeon in lockstep, deep blue at real time, orange on the Intel driver,
+white on M20's one run where that memory was black. The texture is
+sized with zeroed texels now; zero is the shadow map's own edge (its
+clear colour, hsfman.c:1930, and the two-pixel border its scissor
+leaves), so a clamped sample past the region reads what the console's
+would.
+
+**The witness**, the same reproduction on the G4, M21's frame beside
+M23's and the console's 10,973:
+
+![Stamp Out! frame 15800: M21, M23, the console](screenshots/m23-m415-paper-f15800-before-after-console.png)
+
+The paper is white with the faint blue line art. `--nocopyhalf` with the
+padding defined draws the paper white too — the quarter was never the
+paper, it was the **floor**: the static shadows the intro bakes into the
+canvas and projects onto the table cloth were the bottom-left quarter of
+the pass at twice the size
+(`m23-m415-floor-shadow-quarter-vs-boxfilter-f15000.png`: the ball's
+round shadow and the rings' where the quarter had blurred shapes). At
+real time from boot on the final build, the stamps landing on white
+paper (`m23-m415-paper-realtime-from-boot-f16006-f16200.png`).
+
+**The read-back, fixed twice** (§38.5): keeping the copy at 384×384 made
+`port_gx_copy_read`'s `glGetTexImage` a megabyte over AGP — 120 ms on
+the Radeon, and Stamp Out!'s intro reads 120 times: two resyncs
+(`docs/soak/m23-paper-rt.log.gz`) where M21 had none. The copy now draws
+itself at 192×192 into the shadow region it is about to clear and
+`glReadPixels` that (147 KB; a bilinear quad at exactly 2:1 is the box
+filter, every output pixel's centre on a texel boundary), keeps the
+bytes for the reads on consumed frames, and a read with no copy since
+draws the last one into the back buffer on demand. Final build, from
+boot at real time: **115 reads, 28 through the back buffer in 69 ms, 2
+on demand in 13 ms, 0 resyncs**, 80 underruns / 1.2 s on the whole
+16,300-frame run against 238 / 3.2 s before
+(`m23-paper-rt-final2.log.gz`). The GPU's box filter differs from the
+CPU's at silhouette edges only (386 of 36,864 canvas texels by more than
+one level, the Intel driver's sample position; mean 0.5 levels).
+
+**The md5s hold.** No shadow pass on the title, the character select or
+the board: 800 `1df90661…`, 3000 `8762d432…`, 7000 `f5b52130…` on every
+arm of the day (§38.3).
+
+### 38.3 The scene-change underruns: the decode, measured, and the decode that ran twice
+
+**The instrument.** `gx_tex_frame_decode_take` counts, per frame, the
+textures decoded, the source and RGBA bytes, and the decode, upload and
+hash milliseconds; the `stall:` line carries them, `--texdecodelog`
+prints any frame over 20 ms of it, and the report has a `texture decode
+(M23):` line. On the real-time walk (`--soak --realtime --frames 16000
+--perf`, the board load, `m412`, and the board's return), the first drawn
+frame of each scene, M22 code (`--oldfirsthash --norekey`):
+
+| frame | scene | frame ms (gx) | textures decoded | src → RGBA | decode + upload |
+|---:|---|---:|---:|---|---:|
+| 719 / 725 | title | 310 (287) / 242 (205) | 60 / **55 again** | 2.2 → 6.4 MB / the same | 103 / 116 ms |
+| 1967 / 1973 | mode select | 363 (319) / 282 (244) | 101 / **98 again** | 1.8 → 6.5 MB / the same | 145 / 150 ms |
+| 5106 / 5112 / 5118 | the board (after a 348 ms consumed load frame) | 306 (282) / 386 (365) / 158 (143) | 104 / **202** / 102 | 1.1 → 6.1 / 1.3 → 7.9 / 0.5 → 3.1 MB | 129 / 165 / 54 ms |
+| 10832 / 10838 | `m412` | 484 (177) / 149 (132) | 67 / 51 | 0.95 → 3.3 MB ×2 | 59 / 60 ms |
+| 13802 | the board's return | 118 (105) | 33 | 0.4 → 1.6 MB | 53 ms |
+
+Two things the table says. The decode and upload are 40–45% of a
+first drawn frame's gx time (the rest is the frame's own cost cold:
+display lists into the ring, vertex programs), and **every scene's
+second drawn frame decoded the same textures again**. That was the
+cache: a miss stored the *exhaustive* first-sight hash as the entry's
+`content`, the next epoch's revalidation computed the *sampled* hash
+(anything over `TEX_HASH_SAMPLE`, 1 KB) and compared the two — they
+never match, so the entry was "rewritten in place" and decoded and
+uploaded again, once, on its second frame. M22's walk had said so
+(634 misses, 527 re-uploads, 76 MB decoded for 40 MB held) and nobody
+read it. The miss now stores the hash the revalidation will compute and
+keeps the exhaustive one as `content_full`; `--oldfirsthash` keeps the
+double decode. The board's return was never the cost the brief
+supposed: the board's textures stay at their addresses through a
+minigame (33 decodes, 53 ms on the way back), so the content re-key
+(`cache_find_by_content`: a miss whose exhaustive hash matches an entry
+not bound this frame or the last takes that entry over — no decode, no
+upload; `--norekey`) pays on the instruction screen and the results
+(22 and 13 re-keys) rather than on the board.
+
+**The A/B**, the 16,000-frame real-time walk, same binary, two pairs (the
+first pair from the day's first chain, the second on the final build):
+
+| arm | decodes | decoded | decode + upload | frames > 20 ms of it | re-uploads | re-keyed | underruns | resyncs | 800 / 3000 / 7000 |
+|---|---:|---:|---:|---:|---:|---:|---:|---|---|
+| old (`--oldfirsthash --norekey`) | 1,655 | 106 MB | 1,016 + 1,255 ms | 26 | 737 | 0 | 129 / 1.9 s | 1 (the board load) | held |
+| hash only (`--norekey`) | 935 | 56 MB | 520 + 638 ms | 13 | 16 | 0 | 159 / 2.5 s | 1 (frame 14,203, below) | held |
+| re-key only (`--oldfirsthash`) | 1,615 | 106 MB | 1,014 + 1,266 ms | 26 | 737 | 60 | 225 / 3.4 s | 2 | held |
+| **new** | **785** | **49 MB** | **438 + 535 ms** | **13** | 16 | 183 (12.9 MB) | 155 / 2.4 s | 1 (14,203) | held |
+| old, second pair | 1,648 | 106 MB | 1,026 + 1,261 ms | 26 | 731 | 0 | 251 / 3.8 s | 2 | held |
+| **new, second pair** | 788 | 49 MB | 452 + 543 ms | 13 | 16 | 182 | 227 / 3.6 s | 1 | held |
+
+The decode is halved — 1,655 → 785 textures, 106 → 49 MB, 2.27 → 0.97 s
+of the walk, 26 → 13 frames over 20 ms — and the first-drawn-frame
+stalls shorten by their second half (title 310+242 → 298; mode select
+363+282 → 350; board 306+386+158 → 314+217). The presented fps in the
+title window rises 18.8 → 21.2 (the second cold frame was inside it).
+**The underrun totals do not follow**, and the reason is not texture
+work: three of the four new-code walks and one old-code walk stalled
+**1.7–2.9 s of game time at frame 14,198** — the results screen's last
+second, `resultdll`, no decode, gx 1 ms — and the M22-code walk of the
+first chain did not (its 14,242–14,244 board reload was 118 + 349 ms in
+every arm). It is the frame the results screen saves the game; a 512 KB
+write and `sync` on the G4 takes 175 ms in isolation; the stall grew run
+by run (1.73, 1.75, 1.77, 2.9 s). `card_flush` is timed now (`CARD:
+image flush took N ms`), and the leave-behind soak passes two results
+screens. Without that frame the new arms' underruns are the old arms'
+minus the second cold frame of every scene (rt-old 1.9 s → rt-new 0.7 s
+once the 1.7 s is taken out of its 2.4).
+
+What the measurement says about the rest: a scene's first drawn frame
+is still 250–350 ms, of which the (single) decode is now 100–150; the
+remainder is the frame's own cold cost. A larger `--audiolead` around a
+load would hide 100–200 ms of it at the price of that much latency for
+the scene; not done.
+
+### 38.4 The tint that was 5% and the box that was 70%, and the atlas question
+
+**Where the tinted pairs are.** `--tintlog` (new): every one of the walk's
+tinted lerp-by-konst pairs (2,256 on 16,000 frames; §37.6's 4,578 on
+the 9,000-frame turbo walk) is the mode select's, frames 1,197–1,958,
+`K_rgb = 0.95` on a 128×128 IA8 texture, and every one has **`K_c = 1`**
+— the lerp takes the texture whole and `PREV` drops out, so the pair has
+a one-unit exact form, `T * K_rgb`, which is emitted now (`--notint` is
+M22's drop). The frame is the file select's bevelled boxes
+(`whitecube_hilight`, hsfdraw.c:1243): the tint is 5 levels of the
+frame's highlight.
+
+**What the oracle said instead.** A Dolphin capture of the same screen
+(`~/mp4-oracle/capture-linux.sh 200 … -C Dolphin.Core.EnableCheats=True`
+— without the `-C` the Gecko schedule does not land and the capture sits
+through the movie and the attract loop; frame 650,
+`port/ref/frames/fileselect-console-0650.png`) put the *unselected*
+boxes' frames at **99** where the port drew 170 (tint or no tint). The
+draw is four stages: the box, the pair (B, C), then hsfdraw's
+`invAlpha` stage — colour pass, alpha `APREV * A0` with `A0 = 76` — and
+the port's emit loop, having placed the pair in units 1–2, still matched
+the M16 triple's range (`i <= regfix_k + 2`) for stage 3 and emitted it
+as the triple's third unit: `PREV * RAS`, alpha `PREV`. Every stage after
+a lerp-by-konst pair was drawn that way since M22; the file boxes lost
+their 0.3 and drew at full highlight. With the guard:
+
+| File 2's top bevel (mean RGB) | before | **after** | console |
+|---|---|---|---|
+| top edge | 165 165 167 | **98 97 103** | 99 99 103 |
+| left edge | 164 161 182 | **83 81 102** | 83 80 102 |
+
+![the file select at frame 1300: M22, M23, the console](screenshots/m23-fileselect-f1300-before-after-console.png)
+
+The selected box (`A0 = 153`) is now slightly *under* the console on its
+top bevel (195 159 151 against 205 196 184) where before the missing
+×0.6 had happened to land on it; the remainder is the strength of the
+specular fold on the red frame (`redcube_hilight`, chan 5, §36.2), an
+open witness.
+
+**The atlas question, with numbers.** `--submitstats` now counts the
+batches that differ from the one before in the matrices *and the
+textures' identity* alone (same format, wrap and filter — what an atlas
+page must share). On the 16,000-frame real-time walk (4,769 drawn
+frames, 1,694,333 batches, 1,399,758 GL draws):
+
+| | batches | per drawn frame | vertices |
+|---|---:|---:|---:|
+| all | 1,694,333 | 355 | |
+| differ in the matrices alone (M21's count) | 617,595 (36%) | 130 | 38.6 M |
+| differ in the matrices and the textures alone (**the atlas**) | **399,414 (24%)** | **84** | 26.4 M |
+| — of which 16 vertices or fewer (sprites) | 347,919 (21%) | 73 | |
+
+So a runtime atlas of the sprite cache, with the CPU pre-transform §37.2
+already built to span the matrices, could join at most a quarter of the
+batches — 84 of 355 a drawn frame, nearly all sprites — and the draw
+calls with them. §37.2 merged 13% of the batches (138K objects) and
+measured nothing, because a batch that ends without a GL state change
+was never the expensive kind; these *do* end with one (a texture bind),
+so the honest expectation is the driver's per-call share of those 84
+calls: the M16 profile puts `IMM_Exec` at 28–35% of a drawn frame, per
+call and per vertex, and these are the smallest calls in it. **A few
+percent of the drawn frame at best, against a texture-cache rewrite
+(sub-rect UVs per vertex, no `GX_REPEAT`, CI textures with their own
+palettes, eviction by page)** — not a milestone, and not built.
+
+### 38.5 Three things found on the way
+
+* **A fix can move the cost somewhere the witness does not look.** The
+  half-scale copy fixed the paper on the MacBook and cost the intro two
+  resyncs on the G4 (§38.2): a texture four times larger read back with
+  the same call. The real-time run from boot is part of the witness, not
+  an afterthought.
+* **`--dumpcopy` is not free**: the copy's PPM (442 KB) and the canvas
+  per read-back are written on the game thread, 170–230 ms a frame on
+  the G4's disk; a run with it on is not a speed measurement
+  (`m23-paper-rt-final.log.gz` has it on, `-final2` does not).
+* **The Dolphin capture on littlejelly needs `-C
+  Dolphin.Core.EnableCheats=True`** on the command line and this
+  session's own user dir (`~/mp4-dolphin-m20`); and `capture-linux.sh`'s
+  `kill` does not reach `dolphin-emu` inside the Flatpak (§35.3's note
+  again): 7,000 frames and 2 GB before `pgrep -x dolphin-emu` was killed.
+
+### 38.6 What M23 shipped, and what it did not
+
+| shipped, with a witness | |
+|---|---|
+| the half-scale EFB copy kept at source size, the read-back box-filtered, the copy's padding defined (§38.2) | Stamp Out!'s paper white with the console's line art, lockstep and at real time from boot; the floor's shadows; `--nocopyhalf` |
+| the read-back drawn at 192×192 and read from the back buffer (§38.2, §38.5) | 0 resyncs in the intro on the final build, 115 reads in 82 ms |
+| the double decode on first sight (§38.3) | 1,655 → 785 decodes, 106 → 49 MB, 2.27 → 0.97 s on the walk; every scene's second cold frame gone; `--oldfirsthash` |
+| the content re-key (§38.3) | 183 re-keys / 12.9 MB on the walk, exact; `--norekey` |
+| the per-frame decode instrument, `--texdecodelog`, the `texture decode` report line, the timed card flush | the table in §38.3 |
+| the stage after a lerp-by-konst pair (§38.4) | the file select's boxes at the console's 99; the oracle frame captured |
+| the tint with `K_c = 1` (§38.4); `--tintlog`, `--notint` | 5 levels on the same boxes |
+| the atlas count under `--submitstats` (§38.4) | the table |
+| the soak's read (§38.1), `docs/soak/m23-*`, `docs/screenshots/m23-*` | |
+
+**Not done, and why:**
+
+* **The 1.7–2.9 s stall at the results screen's save** (§38.3): found
+  in four of six real-time walks, timed now, not explained; the
+  leave-behind soak is the watch (it saves twice).
+* **The selected file box's specular** (§38.4): 10 levels under the
+  console on its bevel; an open witness with the oracle frame in hand.
+* **The scene's first drawn frame** is still 250–350 ms with the decode
+  halved; the cold display-list and program cost is the next measurement.
+* The GPU box filter is within a texel of the CPU's, not identical.
+* **A fresh-process DRAW in Avalanche!** (§35.2): not started.
+
+### 38.7 What M24 starts with
+
+Left running: `g4 run --soak --com4 --rtc dolphin --freshcard --realtime
+--snap-every 5000 --snap-keep 3 --status --ovllog --stuckwatch 200` on
+the final build (`isle` md5 `fd48f0df…`) — the first soak with the
+padding defined, the single decode, and the pair guard. Read it first:
+the `CARD: image flush took` lines at the two results screens (§38.3),
+the `texture decode (M23):` and `copy-read:` report lines if it ends
+cleanly, `tex`/`rss` past turn 12, and whether m415 or a second m406 is
+dealt. Then the results-save stall if the soak names it, the first drawn
+frame's remaining cost, and the selected box's specular.

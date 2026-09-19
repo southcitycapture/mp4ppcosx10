@@ -366,6 +366,30 @@ on the Mac. What is different there:
   selects). The lazy flush sees through it and is still not faster,
   because the batch count was never the cost (PLAN.md 37.2).
 
+## 0k. Four things M23 paid for *(2026-09-19)*
+
+* **The MacBook is the place to diagnose a picture.** Stamp Out!'s paper
+  needed six reproductions with `--dumpcopy`/`--dumptex`/`--drawlog`/
+  `--gltrace` before the cause was in hand (PLAN.md 38.2); at seven
+  minutes each on `mbp` they cost the G4 nothing, and the G4 ran the
+  soak meanwhile. The G4 does the witness only. What the MacBook cannot
+  say: anything about time (its read-back cost 2 ms where the Radeon's
+  was 120), so the real-time run from boot on the G4 is part of every
+  witness, not a formality — the first paper fix passed the picture and
+  cost two resyncs.
+* **`glTexImage2D(…, NULL)` is not a clear.** The padding of a
+  power-of-two texture holds whatever VRAM held, per card and per run;
+  anything sampled through a projection reaches it. Size with defined
+  texels.
+* **Read the shutdown report's own numbers.** `634 misses, 527
+  re-uploads` had been in every walk's report since M17 and said "every
+  texture is decoded twice" to anyone who divided (PLAN.md 38.3).
+* **`--dumpcopy` and friends write files on the game thread**; a run with
+  an instrument that writes is not a speed measurement, and its stalls
+  are the instrument's. The Dolphin capture on this host needs `-C
+  Dolphin.Core.EnableCheats=True`, and `kill` `pgrep -x dolphin-emu`
+  afterwards, every time.
+
 ## 1. m425 to its result screen — the M8 crash, witnessed
 
 §18.2 proved the `unk_3C[6]` correction at the level of the instructions. This
