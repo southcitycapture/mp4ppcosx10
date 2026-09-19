@@ -90,9 +90,13 @@ static void usage(const char* argv0) {
             "                    this driver, so opt-in (PLAN.md 33.2)\n"
             "  --palsize N       palette slots per batch (default: what fits, 24)\n"
             "  --skinstats       per-mesh envelope shapes and per-frame skin counts\n"
+            "  --noskinlifetime  the M18 skinning registry: entries not dropped at the\n"
+            "                    game's frees, no guards (reproduces the M18 fault)\n"
             "  --skindeferall    defer the bone walk as well as the vertex skinning\n"
             "                    (not exact: the draw walk's matrix stack reaches game\n"
             "                    logic; PLAN.md 33.3)\n"
+            "  --mixtrace FILE   write every voice's mixer inputs per DSP frame to FILE\n"
+            "                    (diff two runs' files: the first line names the field)\n"
             "  --mixcheck        check the mixer's 32-bit arithmetic against the 64-bit\n"
             "                    form on every sample (M18 item 3)\n"
             "  --nosincos        PSMTXRotRad's sinf/cosf straight to libm instead of\n"
@@ -251,6 +255,10 @@ static void usage(const char* argv0) {
             "  --snap-keep N     keep the newest N snapshots (default 3)\n"
             "  --snap-at N       one snapshot at frame N\n"
             "  --snap-dir DIR    where the ring lives (default ~/MarioParty4/snaps)\n"
+            "  --restore-lax     with --restore: accept a snapshot whose build id differs\n"
+            "                    -- for a re-link of the same source only (MEM1 holds\n"
+            "                    code addresses; a rebuild that moves a function is\n"
+            "                    unsound even when the snapmap matches)\n"
             "  --restore FILE    resume the run in FILE: same binary, same arena\n"
             "                    addresses, same modules.  Every other flag on\n"
             "                    the line still applies, so a restore can be\n"
@@ -403,8 +411,14 @@ int port_parse_args(int argc, char** argv) {
             port_opt.palnoarl = 1;
         } else if (!strcmp(a, "--palnofog")) {
             port_opt.palnofog = 1;
+        } else if (!strcmp(a, "--noskinlifetime")) {
+            port_opt.noskinlifetime = 1;
+        } else if (!strcmp(a, "--restore-lax")) {
+            port_opt.restore_lax = 1;
         } else if (!strcmp(a, "--skindeferall")) {
             port_opt.skindeferall = 1;
+        } else if (!strcmp(a, "--mixtrace") && i + 1 < argc) {
+            port_opt.mixtrace = argv[++i];
         } else if (!strcmp(a, "--mixcheck")) {
             port_opt.mixcheck = 1;
         } else if (!strcmp(a, "--nosincos")) {

@@ -33,6 +33,7 @@
  */
 #include "musyx_mix.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -1312,6 +1313,41 @@ static void mix_studio_inputs(void) {
 /* dspVoice points at the base of the console's voice array; used only to
  * turn a DSPvoice* back into an index into our own `voices[]` shadow array,
  * which salActivateVoice's linked list does not otherwise give us. */
+/* --mixtrace: the mixer's inputs, voice by voice, before each voice is
+ * rendered.  Two builds that mix differently (PLAN.md 33.4: the .wav is not
+ * stable across builds) write two files whose first differing line names the
+ * DSP frame, the voice and the field. */
+static FILE* mixtrace_f;
+static void mixtrace_voice(const DSPvoice* dv, u32 vi, u8 st) {
+    if (!port_opt.mixtrace) {
+        return;
+    }
+    if (!mixtrace_f) {
+        mixtrace_f = fopen(port_opt.mixtrace, "w");
+        if (!mixtrace_f) {
+            port_log("port> musyx_mix: --mixtrace: cannot write %s\n", port_opt.mixtrace);
+            port_opt.mixtrace = NULL;
+            return;
+        }
+    }
+    fprintf(mixtrace_f,
+            "f%lu st%u v%u state %u addr %08x pitch %x %x %x %x %x chg %x %x %x %x %x "
+            "vol %u %u %u a %u %u %u b %u %u %u last %u %u %u smp %u info %x addr %08x "
+            "off %x len %x loop %x/%x ct %u adsr %u/%u/%x src %u/%u itd %u/%u "
+            "so %u play %x/%x/%x lu %u/%u/%u/%u vs %x flags %x prio %u\n",
+            stat_frames_mixed, st, vi, dv->state, dv->currentAddr, dv->pitch[0], dv->pitch[1],
+            dv->pitch[2], dv->pitch[3], dv->pitch[4], dv->changed[0], dv->changed[1],
+            dv->changed[2], dv->changed[3], dv->changed[4], dv->volL, dv->volR, dv->volS,
+            dv->volLa, dv->volRa, dv->volSa, dv->volLb, dv->volRb, dv->volSb, dv->lastVolL,
+            dv->lastVolR, dv->lastVolS, dv->smp_id, dv->smp_info.info,
+            (unsigned)(uintptr_t)dv->smp_info.addr, dv->smp_info.offset, dv->smp_info.length,
+            dv->smp_info.loop, dv->smp_info.loopLength, dv->smp_info.compType, dv->adsr.mode,
+            dv->adsr.state, dv->adsr.currentVolume, dv->srcTypeSelect, dv->srcCoefSelect,
+            dv->itdShiftL, dv->itdShiftR, dv->singleOffset, dv->playInfo.posHi, dv->playInfo.posLo, dv->playInfo.pitch,
+            dv->lastUpdate.pitch, dv->lastUpdate.vol, dv->lastUpdate.volA, dv->lastUpdate.volB,
+            dv->virtualSampleID, dv->flags, dv->prio);
+}
+
 static void mix_studio_voices(void) {
     u8 st;
     for (st = 0; st < salMaxStudioNum; st++) {
@@ -1325,6 +1361,7 @@ static void mix_studio_voices(void) {
             DSPvoice* next = dv->next; /* capture before a possible deactivate */
             u32 vi = (u32)(dv - dspVoice);
             if (vi < num_voices) {
+                mixtrace_voice(dv, vi, st);
                 render_voice(dv, &voices[vi], stp);
             }
             dv = next;
@@ -1548,6 +1585,10 @@ void port_musyx_mix_frame(short* dest) {
 }
 
 void port_musyx_mix_shutdown(void) {
+    if (mixtrace_f) {
+        fclose(mixtrace_f);
+        mixtrace_f = NULL;
+    }
     /* The array is kept -- its address is in the snapshot registry -- and only
      * emptied.  It is 64 voices, not a leak worth the risk. */
     if (voices) {

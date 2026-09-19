@@ -34,6 +34,7 @@ typedef struct SkinMesh {
     int objIdx, meshNo;
     const void* vtxenv;               /* mesh.vertex->data: the lookup key   */
     const void* normenv;
+    const void* cenv;                 /* mesh.cenv, for the lifetime check   */
     int nvtx, nnrm;
     int nent;
     SkinEnt* ent;
@@ -59,6 +60,12 @@ typedef struct SkinMesh {
 typedef struct SkinHsf {
     struct HsfData_s* hsf;
     u32 signature;
+    /* what the HSF pointed at when it was registered (M19): the lifetime
+     * hook matches frees against these, and a draw-time read re-checks them
+     * against the HSF before following anything */
+    struct HsfObject_s* object;
+    struct HsfMatrix_s* matrix;
+    u32 objectNum;
     unsigned serial;                  /* bumped by every EnvelopeProc        */
     int mtx_dirty;                    /* SetEnvelopMtx owed for `serial`     */
     int skin_dirty;                   /* SetEnvelopMain owed (deferred CPU)  */

@@ -255,10 +255,23 @@ typedef struct PortOptions {
     int palnofog;           /* --palnofog  diagnostic: no fog-coordinate array
                              *   bound (every vertex reads slot 0) -- wrong
                              *   picture, times the array                     */
+    int noskinlifetime;     /* --noskinlifetime  the M18 registry: no drop at the
+                             *   game's frees, no guards before a draw-time read
+                             *   (the reproduction of the M18 fault; PLAN.md 34) */
+    int restore_lax;        /* --restore-lax  accept a snapshot whose build id
+                             *   differs (the id hashes the executable's size and
+                             *   mtime): for a re-link of the SAME source only --
+                             *   MEM1 holds code addresses, so a rebuild that
+                             *   moves any function is unsound even with an
+                             *   identical snapmap; PLAN.md 34                 */
     int skindeferall;       /* --skindeferall  defer the bone walk too, not just
                              *   the vertex skinning: +2 fps on the board and a
                              *   rounding-level game-state divergence through
                              *   hsfdraw.c's MTXBuf (PLAN.md 33.3); off      */
+    const char* mixtrace;   /* --mixtrace FILE  every voice's mixer inputs, one
+                             *   line per voice per DSP frame: diff two builds'
+                             *   files and the first line names the field that
+                             *   diverged (PLAN.md 34)                       */
     int mixcheck;           /* --mixcheck  the mixer's 32-bit gain/accumulate
                              *   checked against the 64-bit form per sample */
     int nosincos;           /* --nosincos  PSMTXRotRad straight to libm (M18) */

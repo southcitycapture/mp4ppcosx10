@@ -38,6 +38,13 @@ src/game/process.c	process->base_sp = ((u32)HuMemMemoryAlloc(heap, stack_size, F
 # Pointer arithmetic done through u32.  Fine on the GameCube and on the G4,
 # a truncation on a 64-bit host, so both targets get uintptr_t.
 src/game/memory.c	(struct memory_block *)(((u32)block)+alloc_size)	(struct memory_block *)(((uintptr_t)block)+alloc_size)
+# M19 (PLAN.md 34): every free the game makes goes through HuMemMemoryFree,
+# and the port's skinning registry (gx_skin.c) holds pointers into the
+# blocks it frees.  The hook hands the port the block's body so it can drop
+# what it knows about a model the game has just unloaded -- the M18 soak's
+# fault was a read through such an entry.  Game behaviour is unchanged.
+src/game/memory.c	static void *HuMemMemoryAlloc2(void *heap_ptr, s32 size, u32 num, u32 retaddr);\n	static void *HuMemMemoryAlloc2(void *heap_ptr, s32 size, u32 num, u32 retaddr);\nvoid port_mem_freed(const void *data, unsigned long size);\n
+src/game/memory.c	    if(block->prev < block && !block->prev->flag) {	    port_mem_freed(ptr, (unsigned long)block->size-32);\n    if(block->prev < block && !block->prev->flag) {
 
 # ----------------------------------------------------- include/dolphin/os.h
 # OSRoundUp32B/OSRoundDown32B round a *pointer* at 12 sites in init.c alone,

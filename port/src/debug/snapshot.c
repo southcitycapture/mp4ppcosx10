@@ -683,10 +683,23 @@ void port_snap_restore(void) {
                    "the game's globals");
     }
     if (h.build_id != build_id) {
-        port_fatal("--restore: %s was taken by a different build (%08x, this "
-                   "one is %08x).  A snapshot restores the game's globals by "
-                   "address; a rebuild moves them",
-                   port_opt.restore, h.build_id, build_id);
+        if (!port_opt.restore_lax) {
+            port_fatal("--restore: %s was taken by a different build (%08x, this "
+                       "one is %08x).  A snapshot restores the game's globals by "
+                       "address; a rebuild moves them (--restore-lax only for a "
+                       "re-link of the same source)",
+                       port_opt.restore, h.build_id, build_id);
+        }
+        /* M19: the id also hashes the executable's size and mtime, so a
+         * re-link of the same source (a bundle rebuilt, a file touched)
+         * orphans a whole snapshot library.  The range table below still
+         * checks every global's address and size, and the modules their
+         * addresses -- but MEM1 also holds code addresses (process callbacks,
+         * coroutine LRs), which nothing here can check, so this is for the
+         * same source only, and it says so out loud. */
+        port_log("port> --restore-lax: %s was taken by build %08x, this one is %08x; "
+                 "continuing because the range table is checked below\n",
+                 port_opt.restore, h.build_id, build_id);
     }
     if (h.mem1_addr != (u32)(uintptr_t)port_mem1_lo() ||
         h.aram_addr != (u32)(uintptr_t)port_aram() ||

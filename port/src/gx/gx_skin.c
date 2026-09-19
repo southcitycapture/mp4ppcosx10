@@ -79,6 +79,14 @@ static SkinMesh* mesh_hash[SKIN_HASH]; /* by vtxenv pointer, chained */
 static unsigned stat_proc_calls, stat_proc_deferred, stat_proc_cpu, stat_sync_runs,
     stat_sync_skipped_consumed, stat_pose_builds, stat_registered, stat_rebuilt,
     stat_fallback_hsf, stat_body_runs, stat_body_at_bind;
+/* M19: entries dropped because the game freed their model, and reads the
+ * guards refused (a pointer outside MEM1, or an HSF that no longer describes
+ * what was registered).  The second number must stay 0. */
+static unsigned stat_freed_drops, stat_guard_hits;
+/* --noskinlifetime: what the M18 registry would have done -- entries left
+ * behind by a free (and how many were dirty, i.e. armed to read at the next
+ * bind), and binds that matched such an entry and read through it */
+static unsigned stat_lever_stale_left, stat_lever_stale_dirty, stat_lever_stale_reads;
 /* per frame, from the decode: vertices decoded from rest arrays by path */
 static unsigned long stat_verts_single, stat_verts_dual, stat_verts_multi,
     stat_verts_copy, stat_verts_nrm_mismatch;
@@ -119,6 +127,113 @@ static void hsf_free(SkinHsf* h) {
     }
     free(h->mesh);
     memset(h, 0, sizeof(*h));
+}
+
+/* ---- lifetime (M19, PLAN.md 34) ------------------------------------------
+ *
+ * The registry holds raw pointers into the game's heap: the HSF, its object
+ * array, its bone matrices, each skinned mesh's buffers.  The game frees a
+ * model (Hu3DModelKill -> HuMemDirectFree of the one file image all of that
+ * lives in) without telling anyone, and in frame mode a model can be freed
+ * while its entry is still dirty -- EnvelopeProc ran on a consumed frame, no
+ * drawn frame followed before the kill -- so the next model whose position
+ * array lands on the same address matched the stale entry in
+ * gx_skin_array_bound and the read of `m->obj->mesh.vertex` went through
+ * freed memory (the M18 soak's fault at 0x8200ad0a, 15 minutes in).  Lockstep
+ * never showed it: every frame is drawn there, so an entry is clean by the
+ * time its model can die.
+ *
+ * Two answers, both cheap.  `port_mem_freed`, planted in HuMemMemoryFree by
+ * port/patches.txt, drops every entry that references the block going back
+ * to the heap -- the precise lifetime, from the game's own free.  And every
+ * read the draw side makes through a registry pointer is guarded first:
+ * inside MEM1, and the HSF still holding the object array, matrix table and
+ * object count it was registered with.  A guard that fires drops the entry
+ * and skips the body (the model draws unskinned for a frame) and is counted
+ * in the report, where the count must be zero. */
+static int in_mem1(const void* p, size_t n) {
+    const u8* lo = (const u8*)port_mem1_lo();
+    const u8* hi = (const u8*)port_mem1_hi();
+    return p != NULL && (const u8*)p >= lo && (const u8*)p + n <= hi;
+}
+
+static void guard_hit(SkinHsf* h, const char* what) {
+    stat_guard_hits++;
+    if (stat_guard_hits <= 8) {
+        port_log("port> skin: GUARD: %s (hsf %p, frame %u, registered at frame %u); "
+                 "entry dropped, body skipped\n",
+                 what, (void*)h->hsf, gl13_frame_number(), h->last_frame);
+    }
+    hsf_free(h);
+}
+
+/* The HSF still describes what was registered.  Reads only fields of the
+ * HSFDATA itself, which is inside MEM1 by the first test. */
+static int hsf_live(SkinHsf* h, const char* where) {
+    HSFDATA* hsf = h->hsf;
+    if (port_opt.noskinlifetime) {
+        return 1; /* M18: trust the pointer */
+    }
+    if (!in_mem1(hsf, sizeof(*hsf))) {
+        guard_hit(h, where);
+        return 0;
+    }
+    if (hsf->object != h->object || hsf->matrix != h->matrix ||
+        hsf->objectNum != h->objectNum || !in_mem1(hsf->matrix, sizeof(HSFMATRIX)) ||
+        !in_mem1(hsf->matrix->data, sizeof(Mtx))) {
+        guard_hit(h, where);
+        return 0;
+    }
+    return 1;
+}
+
+static int range_has(const u8* lo, const u8* hi, const void* p) {
+    return p != NULL && (const u8*)p >= lo && (const u8*)p < hi;
+}
+
+/* HuMemMemoryFree: [data, data+size) is going back to the heap (the block's
+ * body; the game keeps the file image of a model in one block, hsfload.c). */
+void port_mem_freed(const void* data, unsigned long size) {
+    const u8* lo = (const u8*)data;
+    const u8* hi = lo + size;
+    int i, j;
+    for (i = 0; i < nhsfs; i++) {
+        SkinHsf* h = &hsfs[i];
+        int hit;
+        if (!h->hsf) {
+            continue;
+        }
+        hit = range_has(lo, hi, h->hsf) || range_has(lo, hi, h->object) ||
+              range_has(lo, hi, h->matrix);
+        for (j = 0; !hit && j < h->nmesh; j++) {
+            const SkinMesh* m = &h->mesh[j];
+            hit = range_has(lo, hi, m->obj) || range_has(lo, hi, m->vtxenv) ||
+                  range_has(lo, hi, m->normenv) || range_has(lo, hi, m->cenv);
+        }
+        if (hit && port_opt.noskinlifetime) {
+            /* the M18 behaviour, counted: the entry stays, pointing at memory
+             * the game is about to reuse */
+            stat_lever_stale_left++;
+            if (h->mtx_dirty || h->skin_dirty) {
+                stat_lever_stale_dirty++;
+                if (stat_lever_stale_dirty <= 8) {
+                    port_log("port> skin: --noskinlifetime: hsf %p freed at frame %u while DIRTY "
+                             "(last EnvelopeProc frame %u); the entry stays\n",
+                             (void*)h->hsf, gl13_frame_number(), h->last_frame);
+                }
+            }
+            continue;
+        }
+        if (hit) {
+            if (port_opt.skinstats) {
+                port_log("port> skin: hsf %p freed by the game at frame %u (block %p+%lu)%s\n",
+                         (void*)h->hsf, gl13_frame_number(), data, size,
+                         (h->mtx_dirty || h->skin_dirty) ? " while dirty" : "");
+            }
+            hsf_free(h);
+            stat_freed_drops++;
+        }
+    }
 }
 
 static u32 fnv(const void* p, size_t n, u32 h) {
@@ -230,6 +345,7 @@ static int mesh_build(SkinHsf* h, SkinMesh* m, HSFOBJECT* o, int objIdx, int mes
     m->meshNo = meshNo;
     m->vtxenv = o->mesh.vertex->data;
     m->normenv = o->mesh.normal ? o->mesh.normal->data : NULL;
+    m->cenv = o->mesh.cenv;
     m->nvtx = (int)o->mesh.vertex->count;
     m->nnrm = o->mesh.normal ? (int)o->mesh.normal->count : 0;
     m->pos_ent = (u16*)malloc((size_t)(m->nvtx > 0 ? m->nvtx : 1) * sizeof(u16));
@@ -366,6 +482,17 @@ static SkinHsf* hsf_register(HSFDATA* hsf, unsigned frame) {
         }
         hsf_free(h);
         stat_rebuilt++;
+    } else {
+        /* a slot emptied by a free (M19) before a new one */
+        for (i = 0; i < nhsfs; i++) {
+            if (!hsfs[i].hsf) {
+                h = &hsfs[i];
+                break;
+            }
+        }
+    }
+    if (h) {
+        /* an emptied slot, taken */
     } else if (nhsfs < SKIN_HSF_MAX) {
         h = &hsfs[nhsfs++];
     } else {
@@ -384,6 +511,9 @@ static SkinHsf* hsf_register(HSFDATA* hsf, unsigned frame) {
     memset(h, 0, sizeof(*h));
     h->hsf = hsf;
     h->signature = sig;
+    h->object = hsf->object;
+    h->matrix = hsf->matrix;
+    h->objectNum = hsf->objectNum;
     h->serial = 1;
     h->mtx_dirty = 1;
     for (i = 0; i < hsf->objectNum; i++) {
@@ -556,6 +686,9 @@ void port_envelope_sync(HSFDATA* hsf) {
     if (h->cpu || !(h->mtx_dirty || h->skin_dirty)) {
         return;
     }
+    if (!hsf_live(h, "objMesh sync: the HSF no longer describes the entry")) {
+        return;
+    }
     if (gl13_draw_off()) {
         /* a consumed frame: what this feeds goes into GX calls the frame
          * mode drops, and the next drawn frame syncs again */
@@ -581,8 +714,58 @@ void gx_skin_array_bound(const void* p) {
     for (m = mesh_hash[hash_ptr(p)]; m; m = m->hnext) {
         if (m->vtxenv == p) {
             SkinHsf* h = m->owner;
-            if ((h->mtx_dirty || h->skin_dirty) && !h->cpu && m->obj->mesh.vertex &&
-                m->obj->mesh.vertex->data == p) {
+            const HSFBUFFER* v;
+            if (!(h->mtx_dirty || h->skin_dirty) || h->cpu) {
+                return;
+            }
+            /* every pointer on the way is the game's; none is followed
+             * before it is known to be inside MEM1 and still what was
+             * registered (the M18 fault read m->obj of a freed model here) */
+            if (port_opt.noskinlifetime) {
+                /* the M18 read, kept for the reproduction: m->obj may be freed.
+                 * Report-only checks first, so the mechanism is on record even
+                 * when the garbage read happens not to fault. */
+                HSFDATA* hsf = h->hsf;
+                int stale = !in_mem1(hsf, sizeof(*hsf)) || hsf->object != h->object ||
+                            hsf->matrix != h->matrix || hsf->objectNum != h->objectNum ||
+                            !in_mem1(m->obj, sizeof(HSFOBJECT)) ||
+                            !in_mem1(m->obj->mesh.vertex, sizeof(HSFBUFFER));
+                if (stale) {
+                    stat_lever_stale_reads++;
+                    if (stat_lever_stale_reads <= 8) {
+                        port_log("port> skin: --noskinlifetime: STALE READ at frame %u: array %p "
+                                 "matched entry of hsf %p (registered/last frame %u), whose "
+                                 "object %p is now %p, matrix %p now %p; obj %p mesh.vertex "
+                                 "reads %p -- the M18 read follows\n",
+                                 gl13_frame_number(), p, (void*)hsf, h->last_frame,
+                                 (void*)h->object,
+                                 in_mem1(hsf, sizeof(*hsf)) ? (void*)hsf->object : NULL,
+                                 (void*)h->matrix,
+                                 in_mem1(hsf, sizeof(*hsf)) ? (void*)hsf->matrix : NULL,
+                                 (void*)m->obj,
+                                 in_mem1(m->obj, sizeof(HSFOBJECT)) ? (void*)m->obj->mesh.vertex
+                                                                    : NULL);
+                    }
+                }
+                if (m->obj->mesh.vertex && m->obj->mesh.vertex->data == p) {
+                    hsf_run_body(h);
+                    stat_body_at_bind++;
+                }
+                return;
+            }
+            if (!hsf_live(h, "array bind: the HSF no longer describes the entry")) {
+                return;
+            }
+            if (m->obj != &h->object[m->objIdx] || !in_mem1(m->obj, sizeof(HSFOBJECT))) {
+                guard_hit(h, "array bind: the mesh's object moved");
+                return;
+            }
+            v = m->obj->mesh.vertex;
+            if (!in_mem1(v, sizeof(*v))) {
+                guard_hit(h, "array bind: the mesh's vertex table is outside MEM1");
+                return;
+            }
+            if (v->data == p) {
                 hsf_run_body(h);
                 stat_body_at_bind++;
             }
@@ -772,6 +955,14 @@ void gx_skin_report(void) {
              stat_proc_calls, stat_proc_deferred, stat_proc_cpu, stat_registered,
              stat_rebuilt, stat_body_runs, stat_body_at_bind, stat_sync_skipped_consumed,
              stat_sync_runs, stat_pose_builds);
+    port_log("port> skin: lifetime: %u entries dropped by the game's frees, %u guard hits "
+             "(must be 0)\n",
+             stat_freed_drops, stat_guard_hits);
+    if (port_opt.noskinlifetime) {
+        port_log("port> skin: --noskinlifetime: %u entries left behind by frees (%u of them "
+                 "dirty), %u binds read through a stale entry\n",
+                 stat_lever_stale_left, stat_lever_stale_dirty, stat_lever_stale_reads);
+    }
     tot = stat_verts_single + stat_verts_dual + stat_verts_multi + stat_verts_copy;
     if (tot) {
         port_log("port> skin: %lu vertices skinned on the GPU over %u drawn frames "

@@ -244,6 +244,18 @@ static void card_flush(Slot* s) {
     if (!s->present || !s->dirty) {
         return;
     }
+    if (!s->path[0]) {
+        /* A card that arrived by --restore (M19): this process never opened a
+         * file for it, and a restore must not rewrite the player's card. */
+        static int said;
+        if (!said) {
+            said = 1;
+            port_log("port> CARD: the restored card has no file in this process; "
+                     "its saves stay in memory\n");
+        }
+        s->dirty = 0;
+        return;
+    }
     f = fopen(s->path, "wb");
     if (!f) {
         port_log("port> CARD: cannot write %s (%s); this session's saves are "
@@ -302,7 +314,9 @@ static void card_load(int chan) {
         card_dir_make(dir, sizeof(dir));
         snprintf(s->path, sizeof(s->path), "%s/memcard-slot-%c.raw", dir, 'a' + chan);
     }
-    s->img = (u8*)malloc(CARD_IMAGE_SIZE);
+    if (!s->img) { /* port_card_snap_register may have made it already */
+        s->img = (u8*)malloc(CARD_IMAGE_SIZE);
+    }
     if (!s->img) {
         port_log("port> CARD: out of memory for a 512 KB card image\n");
         return;
@@ -981,10 +995,24 @@ void port_card_snap_register(void) {
     int i;
     static const char* const names[CARD_SLOTS] = { "card.slot-a", "card.slot-b" };
     for (i = 0; i < CARD_SLOTS; i++) {
+        /* M19: this runs before the game's CARDInit, so until now the image
+         * was never registered (card_load had not allocated it yet) and no
+         * snapshot ever carried the card; a restored process then met the
+         * results screen's save with "No valid Memory Card is inserted".
+         * The buffer is made here, card_load fills it, the snapshot copies
+         * it, and a restore lands in it. */
+        if (!slot[i].img && i == 0 && !port_opt.nocard) {
+            slot[i].img = (u8*)malloc(CARD_IMAGE_SIZE);
+            if (slot[i].img) {
+                memset(slot[i].img, 0xFF, CARD_IMAGE_SIZE);
+            }
+        }
         if (slot[i].img) {
             port_snap_register(names[i], slot[i].img, (unsigned long)CARD_IMAGE_SIZE);
         }
-        port_snap_register(i == 0 ? "card.state-a" : "card.state-b", &slot[i].mounted,
-                           sizeof(slot[i].mounted));
+        /* present and mounted together: a restored process never ran
+         * card_load, so `present` has to come back with the image */
+        port_snap_register(i == 0 ? "card.state-a" : "card.state-b", &slot[i].present,
+                           sizeof(slot[i].present) + sizeof(slot[i].mounted));
     }
 }
