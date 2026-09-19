@@ -215,6 +215,33 @@ on the Mac. What is different there:
 * git has no global identity there; the repo carries the fork's
   (`user.name zachxjack`) as a per-repo setting.
 
+## 0e. A chain the host cannot interrupt, and the real-time witness *(M17, 2026-09-18)*
+
+* **G4-side chains.** `~/MarioParty4-chain.app/Contents/MacOS/isle` on the G4
+  is a *shell script*; `g4 use MarioParty4-chain.app; g4 run` makes the
+  console runner execute it in the Aqua session, so a sequence of A/B walks
+  (each `"$HOME/MarioParty4.app/Contents/MacOS/isle" $ARGS > ~/ab-m17/NAME.log`)
+  runs to completion whatever happens to littlejelly's lid or wire. `g4
+  stop` kills the *game* (`killall isle` matches the binary, not the `sh`),
+  and the script then starts the next one — to stop the chain, `kill` the
+  `sh` by pid first. A profile step is the game in the background, `sleep`,
+  `sample isle 10 -file …`, `kill $pid`; the port answers SIGTERM with a
+  soft reset and keeps running, so `kill -9` afterwards and `ps` as always.
+  `g4 use MarioParty4.app` before the leave-behind soak.
+* **Two bundles for a compiler A/B**: `port/build-ppc.sh -j4 TUNE=
+  BUILD=build-ppc-notune` builds the old flags into a separate tree, and
+  `sh port/tools/make_bundle.sh port/build-ppc-notune/marioparty4
+  /tmp/MarioParty4-notune.app && sh port/tools/g4_install.sh
+  /tmp/MarioParty4-notune.app` ships it next to the default one. Never copy
+  a raw binary into a bundle: make_bundle rewrites the SDL install name
+  (`dyld: Library not loaded: /work/panther-sdl2/...`, EXITCODE=133).
+* **The real-time witness** is the §21.1 walk with `--realtime` instead of
+  `--turbo` plus `--perfdump ~/rt.csv`; the `realtime:` line under each
+  `--perfwin` window is the speed, and `port/docs/PLAN.md` §32.1 shows how
+  to read the CSV (consumed and drawn frame costs, skips between draws).
+  Frame numbers in `--dumpframe` are drawn-frame numbers either way, so the
+  §31 md5s are the check. `--lockstep` is the old gate on the same binary.
+
 ## 1. m425 to its result screen — the M8 crash, witnessed
 
 §18.2 proved the `unk_3C[6]` correction at the level of the instructions. This
