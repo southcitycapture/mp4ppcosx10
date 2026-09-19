@@ -47,6 +47,13 @@
  *
  * `--skinstats` prints each registered mesh's shape (entries per path, distinct
  * bones, vertices) and the per-frame totals.
+ *
+ * M19 (PLAN.md 34): the registry knows when the game frees a model
+ * (`port_mem_freed`, from HuMemMemoryFree) and checks every pointer it
+ * follows at draw time -- see "lifetime" below.  Without that, a model
+ * freed while its entry was dirty (its last EnvelopeProc on a consumed
+ * frame) was read through at the next bind of a reused address: the M18
+ * soak's fault at 0x8200ad0a.
  */
 #include "gx_internal.h"
 #include "gx_skin.h"

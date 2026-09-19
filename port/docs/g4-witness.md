@@ -260,6 +260,34 @@ on the Mac. What is different there:
   `--snap-at F` in both and `python ~/snapdiff.py A B --spans=60` on the G4
   — it names the global (it named `MTXBuf`).
 
+## 0g. Four things M19 paid for *(2026-09-19)*
+
+* **A snapshot is the binary's, full stop.** The build id hashes the
+  executable's size and mtime, and MEM1 holds code addresses (process
+  callbacks, coroutine LRs), so a snapshot cannot be restored into a
+  rebuilt binary even when the snapmap is identical. `--restore-lax`
+  exists for a re-link of the *same* source only. To reproduce a crash
+  from an old build's ring, reproduce it on that build — or, as M19 did,
+  re-take the ring on the new build with a lever that keeps the old
+  behaviour (`--noskinlifetime`) and make it deterministic with `--ffto`
+  to just before the fault frame.
+* **Restores had no memory card until M19.** Every `--restore` since M10
+  ran without a card (the image was allocated by the game's `CARDInit`,
+  which a restore never runs), which only shows at a save — the results
+  screen after a minigame stops on "No valid Memory Card is inserted"
+  and the navigator cannot dismiss it. Fixed in `card_file.c`; a restored
+  card's saves stay in memory (`CARD: the restored card has no file in
+  this process`).
+* **`--ffto N` was lockstep to the end** until M19 (the skip borrowed
+  `--turbo` before frame mode read it). Teleported real-time measurements
+  before commit `8cf90b8a` are lockstep numbers.
+* **Check `g4_install.sh`'s output.** Piping it through `tail -0` hid a
+  failed install for two A/B rounds; the traces that "did not change" were
+  the old binary's. `md5` the installed `isle` against the local bundle
+  before an A/B (`g4 ssh 'md5 ~/MarioParty4.app/Contents/MacOS/isle'`).
+  Also: the G4's clock runs a few minutes behind littlejelly's; do not
+  read file times across the two.
+
 ## 1. m425 to its result screen — the M8 crash, witnessed
 
 §18.2 proved the `unk_3C[6]` correction at the level of the instructions. This
