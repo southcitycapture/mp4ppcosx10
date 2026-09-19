@@ -9610,3 +9610,283 @@ windows (§31.6).
    split and the register line say how many draws are still degraded.
 4. §31.6's small list: the konst A/B, the message-window oracle, the two
    register shapes still folded.
+
+## 32. M17 log — the game at console speed, and the picture when the card can *(2026-09-18)*
+
+Every number the port has reported since M5 carried the same asterisk: an
+idle-gated retrace hides overruns, so "23.4 fps on the board" was also the
+game running at 39% speed — every animation, every COM's think time, the
+music's tempo against the clock, stretched by the same factor. M17's brief
+was the user's: *"a frame mode … run it at real speed, real gameplay, with
+the target being 30 frames per second across the game (maybe hitting more,
+but capping at 30)"*. The definition of done was real-time game speed with
+the display capped at 30, and that is what shipped (§32.1): the game's
+retrace runs at 60 Hz on the wall clock, the renderer draws the frames it
+can, and the reference md5s hold to the byte.
+
+Then the two costs that decide how many frames that leaves for the picture:
+the decode (§32.3: the 7450 converts an integer to a float through memory,
+and every S8 normal paid it three times), and the game side, profiled for
+the first time (§32.4: the CPU skinning, the mixer, the material walk).
+
+Also found on the way: the G4 is a **dual** 1 GHz (PowerMac3,5, `hw.ncpu 2`),
+which nobody had checked; Apple's multithreaded GL engine turns on and is
+twice as slow (§32.3); and AltiVec lost again, exactly (§32.4).
+
+### 32.1 Frame mode: two clocks instead of one
+
+`src/platform/framemode.c`, on by default (`--realtime`; `--lockstep` is the
+pre-M17 gate on the same binary, and `--turbo`, `--nodraw` and `--headless`
+imply it, because each is a measurement a skipped frame would falsify).
+
+* **The retrace is the wall clock.** `VIWaitForRetrace` sleeps to the next
+  1/59.94 s even under `--rtc`; the deterministic clock is still a function
+  of the retrace count, the pad is still sampled once per retrace, the mix
+  is still 3.34 DSP frames per retrace, so a `--play` script or a `--seed`
+  run sees the same inputs at the same retrace numbers as before. Falling
+  behind is caught up through (the game runs flat out until it is on
+  schedule); more than a second behind is a *resync*, logged and counted as
+  lost game time (a quarter second in lockstep, as before).
+* **The renderer draws when it can.** Before the game builds a frame the
+  gate decides whether it is *drawn* or only *consumed* — the GX interpreter
+  in the `--nodraw` shape M10 built: setters run, display lists are read and
+  dropped, nothing decoded, nothing reaches GL. The rules, in order: never
+  two drawn frames in a row (the 30 cap); not drawn if the gate is more than
+  half a period late; but never more than `--maxskip` (5) consumed frames in
+  a row, so the picture cannot freeze; and a `--dumpframe` frame or a
+  pending F12 shot is always drawn.
+* **What had to move for the md5s to hold.** The `GXCopyDisp` clear used to
+  run right after the swap; a consumed frame in between may ask for a
+  different colour, so it now runs at the *start* of the next drawn frame
+  (`gl13_begin_frame`, which in lockstep is the same instant as before). A
+  `GXCopyTex` on a consumed frame has no EFB to copy and reads the **front
+  buffer** instead — the last picture presented, one drawn frame stale. The
+  first witness only did this for whole-screen copies (the wipe's crossfade)
+  and dropped region copies as "redone by the next drawn frame"; the
+  mode-select stage's bubbles copy the region behind each bubble once and
+  draw it for as long as the bubble lives, and every one was a yellow square
+  until region copies read the front buffer too. (The squares that remain
+  are the pre-existing `GXSetTevIndWarp` drop — frame 2100 is byte-identical
+  under `--lockstep` and `--realtime`, `f43445ad…`;
+  `screenshots/m17-modesel-bubbles-indwarp.png`.)
+* **The audio's lead.** Paced to real time, the ring's fill is only ever
+  what the game got ahead by, and a drawn frame that overruns by 30 ms
+  drains it. `--audiolead` (100 ms) queues that much silence once before
+  pacing starts and again after a resync; the ring is 2 s now (256 KB),
+  because catching up a second of backlog delivers a second of mix in a
+  burst and the old 64 KB dropped 414 ms of it to overrun.
+* **The instruments.** `--perfwin` and `--status` report speed % (game
+  seconds over wall seconds), presented fps and the skip ratio next to the
+  numbers they already had; `--perfdump FILE` writes every per-frame sample
+  as CSV; frames over 100 ms and every resync are logged with their frame
+  number; the shutdown report has a `--realtime` block.
+
+**The 9,000-frame walk** (`--realtime --com4 --rtc dolphin --freshcard --play
+board-start-com4.play --frames 9000`, the final build):
+
+| scene | speed | presented fps | skipped | consumed frame | drawn frame |
+|---|---:|---:|---:|---:|---:|
+| title (700–870) | **99.1%** | 15.3 | 74% | 3.6 ms (game 1.4) | 55 ms (gx 43) |
+| character select (2600–3600) | **100.0%** | 11.3 | 81% | 8.1 ms (game 6.0) | 54 ms (gx 42) |
+| board (6000–8900) | **100.0%** | 10.3 | 83% | 11.2 ms (game 9.1, aud 2.0) | 43 ms (gx 29) |
+| whole walk | 99.1% | 15.4 | 74% | | |
+
+(`--perfdump` medians; the walk before the decode work of §32.3.) The three
+reference frames come out **byte-identical** to §31's on every realtime run
+of the milestone — 800 `60f8b7a0…`, 3000 `8762d432…`, 7000 `9264207c…` — as
+they must, since a dumped frame is drawn onto a buffer cleared with the
+right colour by the rule above.
+
+The board reads the budget exactly: a consumed frame costs 11.2 ms and a
+drawn one 43, so every drawn frame needs five consumed ones to pay for
+itself, the skip cap is what is presenting, and the presented rate is 60/6.
+Presented fps = 60/(k+1) with k the smallest integer such that
+k·consumed + drawn ≤ (k+1)·16.7; **the consumed cost is paid sixty times a
+second and is the larger lever** — 11.2 → 8 ms would give 15 fps on the
+same drawn frame, 30 ms drawn on 8 ms consumed would give 20.
+
+**The 21.7-minute chained soak** (`--soak --turns 3 --com4 --rtc dolphin
+--freshcard --realtime --stuckwatch 200`, 77,814 retraces): game 1298.2 s
+against wall 1303.7 s — **99.6% speed**, 17.1 presented fps overall, one
+3-turn board played through results → `modeseldll` → `mentdll` → the second
+board's first turn, no crash. Five resyncs dropped 5.1 s: the board's load
+(a 358 ms `HuDvdDataRead` stall then two 300-400 ms cold-texture-cache
+frames, 1.1 s behind) and three inside `m409dll`, which runs at 85-90% —
+its drawn frame is so heavy that even one in six overruns the budget
+(§32.4; `--maxskip 9` would trade its picture for its speed). Audio: 665
+underruns totalling 6.1 s, all of them the stalls above minus the 100 ms
+lead (45 stalls over 100 ms, 10.4 s in total, 11 of them consumed frames
+= scene loads); steady-state gameplay does not underrun. Two `STUCK` lines
+are the chain's designed 200 s waits at `modeseldll` and `mentdll` (§29),
+each answered by the navigator. Log
+`docs/soak/m17-soak3-realtime.log.gz`, samples
+`m17-soak3-realtime-perfdump.csv.gz`, board `screenshots/m17-realtime-board-turn1.png`.
+
+### 32.2 What the decode is made of, measured before it was cut
+
+`--decodestats` (new) answers §31.7's question per decoded vertex, over the
+walk's 411 million:
+
+* **0.9%** of vertices have all their indexed attributes on one index — the
+  HSF exporter gives positions, normals and texcoords separate index
+  streams — so binding the game's own arrays as they stand is out;
+* **89.5%** are the first occurrence of their (arrays, indices) tuple in
+  their frame, and more in their batch — faces do not share vertex tuples
+  (per-face normals), so a vertex cache handing back GL indices would skip
+  at most a tenth of the decodes. Not built;
+* the plan shapes are eight, all `GX_INDEX16`: POS f32 / NRM f32 / TEX0 f32
+  (49% of vertices), POS / NRM s8 / TEX0 (39%), the same two without a
+  texcoord (7%, 1%), and four with an RGBA8 colour (4% together). No shape
+  stores a colour in `pending`: the register material wins with no CLR0 in
+  the descriptor.
+
+### 32.3 The decode, cut three ways
+
+**The byte tables.** A 32-bit PowerPC has no integer-to-float instruction:
+`(f32)(s8)b` is two `stw`, an `lfd` that hits both of them — a load-hit-store
+stall the 7450 pays in full — `fsub`, `frsp`, `fmuls` (read off
+`build-ppc-darwin/gxcall.s`). The HSF normals are S8 (`hsfdraw.c:511`), so
+every vertex of 47% of the walk paid it three times. `build_decode_plan`
+now hands S8/U8 steps a 256-entry table of the very expression they
+replace, evaluated once, so it is exact by construction.
+
+**The specialised loops.** The plan walker paid a switch per attribute (an
+indirect branch the 7450 predicts badly) and a load of every step field;
+the eight shapes above have a loop each with the sequence fixed at compile
+time (`DECODE_FAST`), and they prefetch the next vertex's array entries
+(`dcbt`) since the indices are right there in the list. 82.6% of the
+walk's vertices go through them.
+
+**The A/B**, same binary, `--turbo` lockstep, the §21.1 walk, each column
+adding one lever to the one before it (`--olddecode2` = the arithmetic in the
+loop, `--olddecode3` = the general walker, `--noprefetch`):
+
+| scene | M16 (§31.2) | byte tables | + specialised loops | + prefetch | change |
+|---|---:|---:|---:|---:|---:|
+| title (700–870) | 20.97 fps | 25.60 | 27.97 | 23.47 † | +12…33% |
+| character select (2600–3600) | 18.95 | 19.59 | 20.39 | **20.57** | **+8.5%** |
+| board (6000–8900) | 23.42 | 25.00 | 25.88 | **26.53** | **+13%** |
+| gx ms/frame, board | 28.44 | 25.70 | 24.27 | **23.47** | −17% |
+| wall clock, 9,000 frames | 352.3 s | 332.9 | 320.9 | **316.6** | −10% |
+| `m432dll` (10900–11800) | 14.77 | | | **19.36** ‡ | **+27%** |
+
+† the title window is 171 frames and swings ±10% run to run (25.6, 26.1,
+25.9, 28.0, 23.5 across five runs of near-identical builds); the two
+long windows are stable to ±1% and are the ones to read. ‡ `--minigame
+m432 --ffto 10700 --frames 11800`, both levers against `--olddecode2
+--olddecode3` on the same binary: 15.26 → 19.36, gx 52.3 → 38.4 ms. The
+three md5s are identical on every arm.
+
+**Measured and not taken:**
+
+* `-mcpu=7450 -mtune=7450 -mno-altivec` on every object (`TUNE=` in the
+  Makefile): the same source built both ways, 25.89/19.68/24.92 against
+  26.13/19.74/24.82 — within noise, md5s identical. Left on; it costs
+  nothing and the scheduling is at least the right core's.
+* `--mpgl`, Apple's multithreaded GL engine: `CGLEnable(kCGLCEMPEngine)`
+  **succeeds** on Leopard's Radeon 9000 driver and the md5s hold — and the
+  walk is **twice as slow** (12.7 / 8.2 / 13.3 fps, 707 s). Every one of the
+  ~30,000 GL calls a frame crosses a thread, and the ring's fences and
+  flushes serialise the two. The second CPU is real, but the driver is not
+  how to reach it from this call shape.
+
+**The drawn frame after the cut** (`docs/soak/m17-board-drawn-profile.txt.gz`,
+`--ffto 6500 --turbo`, 7,135 samples): the decode is 16% (1,140 in the
+specialised loops, 144 in `begin_attr_order`), the submit 46% — of which the
+driver's own `gleDrawArraysOrElements_VAR_Exec` → `gldUpdateDispatch` →
+`gldInitDispatch` chain is 1,250 (17.5%), the immediate-mode sprites' `IMM`
+path 484 (6.8%), `gx_tev_apply` 476, `gx_vprog_bind` 268 — and the game side
+the rest. The driver's per-batch cost is now the largest single block, and
+the batch count is set by `GXLoadPosMtxImm` (693K of the walk's 1.96M
+batches, §31.2): the next lever is a **matrix palette** — the position and
+normal matrices as indexed program parameters (`ARL`; 192 native params,
+6 per object) with a per-vertex matrix index, so a batch spans objects.
+
+### 32.4 The game side, profiled for the first time
+
+A consumed board frame under `--nodraw --turbo` (`m17-board-nodraw-profile`,
+7,200 samples on the game thread; the whole frame is "game"):
+
+| | samples | % | inside |
+|---|---:|---:|---|
+| `EnvelopeProc` — the CPU skinning | 2,192 | **30%** | `SetEnvelopMtx` 747 (the per-bone chain: `PSMTXTrans`, three `PSMTXRotRad` = `sinf`/`cosf` 463, four `PSMTXConcat`), `PSMTXROMultVecArray` 681, `Hu3DMtxScaleGet` 532 (six libm `sqrt`s a bone: 339, `C_VECNormalize` 300) |
+| `port_audio_tick` — the MusyX mixer | 1,584 | **22%** | `port_musyx_mix_frame` 947 self, `voice_decode_advance` 375 |
+| `Hu3DDraw` — the object walk and the material setup with nothing drawn | 1,129 | 16% | `objCall`/`objNull` recursion, `FaceDraw` 449 (`Hu3DLightSet`, `GXSetTevKAlphaSel`, `SetTevStageNoTex`, `LoadTexture`), `ObjCullCheck` 298 |
+| `Hu3DMotionExec` — motion curves | 928 | 13% | 496 self, `GetObjTRXPtr` 151, `GetCurve` 128 |
+| `Hu3DDrawPost` | 498 | 7% | `particleFunc` 205, `DrawSpaces` 168 |
+| `C_MTXConcat` (all callers) | 581 | 8% | |
+
+`m409dll`'s consumed frame is the same shape plus the module's own
+`fn_1_602C` at 6.6% (`m17-m409-nodraw-profile`); its shortfall at real time
+is the drawn frame, not this.
+
+**The top three, for a game-side patch later** (`port/patches.txt`):
+
+1. **`SetEnvelop` / `SetEnvelopMtx`** (EnvelopeExec.c) — per bone per frame:
+   `Hu3DMtxScaleGet` takes three magnitudes and three normalisations (six
+   `sqrt` through libm, no hardware sqrt on a 7450) to decide whether the
+   bone is scaled, and it is almost never scaled; `SetEnvelopMtx` builds
+   T·Rz·Ry·Rx with four general 3×4 concats where each rotation is a sparse
+   matrix. Skipping the zero terms is exact (a fused `a·0 + b` is `b`).
+2. **The mixer** (`musyx_mix.c`) — 2 ms a frame, 12% of the real-time
+   budget on its own; nine bus ramps and a 64-bit clamp per sample for
+   every live voice, whether the bus is live or not.
+3. **`Hu3DMotionExec`** (hsfmotion.c) — 13%, the curve evaluation per
+   object per frame.
+
+**(a) AltiVec, exactly, and slower.** `PSMTXROMultVecArray` in AltiVec
+(`psmtx_c.c`), in GCC's own contraction order so `vmaddfp` gives the same
+bits — `fmuls` of the middle product, `fmadds`, `fmadds`, `fadds`, read off
+`psmtx.s`; the first product is a `vmaddfp` with −0.0 as the addend.
+`tests/mtx_test.c` runs 540,000 random vertices (every alignment a 12-byte
+stride visits, in place and out) through both: **0 differ** on the G4. On
+consumed board frames, three runs: scalar 10.46 ms, AltiVec 10.82 and 10.85.
+The unaligned loads, the permutes and the three element stores per vertex
+cost more than the FPU pipeline GCC already builds for the scalar body —
+§15.6's verdict, again. It ships as `--altivec`, off. `C_MTXConcat` was not
+attempted: its cost is the 24 loads, and a vector form has the same loads
+plus splats.
+
+**(b) The compiler:** measured in §32.3, nothing. `-O3` was not tried; the
+walk is noise-limited at 1% and −O3's changes to the game's float code
+would need the md5s re-argued for a gain that −mcpu did not show.
+
+### 32.5 What M17 shipped, and what it did not
+
+| shipped, with a witness | |
+|---|---|
+| frame mode (§32.1), on by default | 99.1 / 100 / 100% speed on the walk, 99.6% over a 21.7-min chained soak; md5s 800/3000/7000 identical on every realtime run |
+| the byte tables, the eight specialised loops, the prefetch (§32.3) | board 23.42 → 26.53 fps, character select 18.95 → 20.57, `m432` 15.26 → 19.36; md5s identical on every arm |
+| `--decodestats` and its two answers (§32.2) | |
+| the three profiles (§32.3, §32.4) and the top three | |
+| `PSMTXROMultVecArray` in AltiVec, `--altivec` | bit-exact over 540,000 vertices; 3.5% slower |
+| `--perfdump`, the stall and resync lines, `--audiolead`, the 2 s ring, `--maxskip`, `--mpgl`, `--olddecode2/3`, `--noprefetch`, `TUNE=` | |
+
+**Not done, and why:**
+
+* **30 presented fps at real time.** The board presents 10 (the cap), the
+  menus 11-15. Both costs are now measured to the sample: the consumed
+  frame (11.2 ms, §32.4) and the drawn frame's driver share (§32.3). The
+  matrix palette and the three game-side patches are the next two levers.
+* **`m409dll` at 85-90%**: its drawn frame overruns even one in six.
+  `--maxskip 9` recovers the speed at 6 fps; a policy that stretches the cap
+  only while the gate is over a period behind would do that by itself.
+* **The scene-change stalls** (200-400 ms of cold texture decode at every
+  scene's first drawn frame; 257 MB decoded at 26 MB/s over the soak) are
+  what the audio underruns are. A faster texture decode is a milestone of
+  its own.
+* **Strips → indexed** and the `GL_ATI_text_fragment_shader` backend (item
+  4): not started; the profile put the driver's cost in the per-batch
+  validation, not in the strip loop.
+* The AltiVec `C_MTXConcat`, `-O3`, a mixer fast path.
+
+### 32.6 What M18 starts with
+
+1. **Read the soak's log first.** Left running on the final build: `g4 run
+   --soak --com4 --rtc dolphin --freshcard --realtime --snap-every 5000
+   --snap-keep 3 --status --ovllog --stuckwatch 200`. It is the first
+   overnight run at real speed; the `speed %` on the status lines and the
+   `stall:`/`resync` lines say where the game cannot keep up.
+2. **The matrix palette** (§32.3): batches spanning `GXLoadPosMtxImm`.
+3. **The three game-side patches** (§32.4), each an exact rewrite.
+4. `--maxskip` stretching under a persistent overrun; the texture decode.

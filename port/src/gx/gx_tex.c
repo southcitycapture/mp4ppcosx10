@@ -393,7 +393,7 @@ static int cache_used;
 static unsigned stat_hit, stat_miss, stat_evict, stat_bytes, stat_npot;
 static unsigned stat_hash_full, stat_hash_sampled;
 static unsigned stat_efb;
-static unsigned stat_copy_front, stat_copy_dropped;
+static unsigned stat_copy_front, stat_copy_region_front;
 /* How many times an already-cached slot's content hash was actually
  * recomputed to check for an in-place rewrite -- as opposed to a pure
  * epoch-cached hit, which touches none of the texel bytes at all.  This is
@@ -521,9 +521,9 @@ void gx_tex_report(void) {
              port_opt.texhash_full ? " (--texhash-full: epoch+sampling bypassed)" : "",
              validate_every_bind ? " (--texvalidate-every-bind: epoch bypassed)" : "");
     if (stat_efb) {
-        port_log("port> EFB copies: %u colour copies into the cache (%u on consumed "
-                 "frames from the front buffer, %u region copies dropped there)\n",
-                 stat_efb, stat_copy_front, stat_copy_dropped);
+        port_log("port> EFB copies: %u colour copies into the cache (on consumed frames "
+                 "from the front buffer: %u whole-screen, %u region)\n",
+                 stat_efb, stat_copy_front, stat_copy_region_front);
     }
 }
 
@@ -1147,24 +1147,28 @@ void gx_tex_copy(void* dest, int clear) {
     copies++;
     if (!gl13_live()) {
         /* --realtime, a consumed frame (src/platform/framemode.c): nothing was
-         * drawn, so there is no EFB to copy.  A copy of the *whole screen* --
-         * the wipe's crossfade takes one at its first frame and blends it
-         * over the next thirty -- is answered from the front buffer, which is
-         * the last picture presented: the copy is one drawn frame stale and
-         * it is what the player is looking at.  A copy of a region is a
-         * render-to-texture (the shadow map, a water reflection) that the
-         * same frame draws and reads; the next drawn frame redoes it before
-         * reading it, so it is dropped here and counted. */
+         * drawn, so there is no EFB to copy.  The copy is answered from the
+         * front buffer, which is the last picture presented: one drawn frame
+         * stale, and what the player is looking at.  The wipe's crossfade
+         * takes a whole-screen copy at its first frame and blends it over the
+         * next thirty; the mode-select bubbles copy the *region* of screen
+         * behind each bubble once and draw it for as long as the bubble
+         * lives -- M17's first witness dropped region copies as "the next
+         * drawn frame redoes them", and every bubble was a yellow square
+         * (screenshots/m17-modesel-bubbles-dropped.png).  A per-frame
+         * render-to-texture (a shadow map, a water reflection) gets the
+         * wrong region this way, but nothing draws on this frame and the
+         * next drawn frame redoes it before reading it. */
         if (!gl13_have_context() || !gl13_draw_off() || !port_framemode_active()) {
             return;
         }
-        if (!(gx.tex_src[0] == 0 && gx.tex_src[1] == 0 && gx.tex_src[2] >= 640 &&
-              gx.tex_src[3] >= 400)) {
-            stat_copy_dropped++;
-            return;
-        }
         from_front = 1;
-        stat_copy_front++;
+        if (gx.tex_src[0] == 0 && gx.tex_src[1] == 0 && gx.tex_src[2] >= 640 &&
+            gx.tex_src[3] >= 400) {
+            stat_copy_front++;
+        } else {
+            stat_copy_region_front++;
+        }
     }
     if (gx.tex_dst_fmt == GX_TF_Z24X8 || gx.tex_dst_fmt == GX_TF_Z8 ||
         gx.tex_dst_fmt == GX_TF_Z16 || gx.tex_dst_fmt == GX_CTF_Z8M ||
