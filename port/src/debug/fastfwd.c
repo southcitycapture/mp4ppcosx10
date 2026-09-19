@@ -78,6 +78,9 @@ void port_ffto_init(void) {
  * plus one, and the next frame the game will build is that plus two -- which
  * is the one this decision affects. */
 int port_ffto_active(void) { return active && !done; }
+/* The run's own --turbo, before the skip borrowed the flag (M19: frame mode
+ * reads this, so a plain `--ffto N --realtime` is real time after N). */
+int port_ffto_user_turbo(void) { return active ? saved_turbo : port_opt.turbo; }
 
 void port_ffto_tick(void) {
     unsigned now;

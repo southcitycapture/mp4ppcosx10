@@ -193,10 +193,12 @@ static int range_has(const u8* lo, const u8* hi, const void* p) {
 
 /* HuMemMemoryFree: [data, data+size) is going back to the heap (the block's
  * body; the game keeps the file image of a model in one block, hsfload.c). */
+void port_musyx_mix_mem_freed(const void* data, unsigned long size);
 void port_mem_freed(const void* data, unsigned long size) {
     const u8* lo = (const u8*)data;
     const u8* hi = lo + size;
     int i, j;
+    port_musyx_mix_mem_freed(data, size); /* M19 item 2: a voice still reading it? */
     for (i = 0; i < nhsfs; i++) {
         SkinHsf* h = &hsfs[i];
         int hit;

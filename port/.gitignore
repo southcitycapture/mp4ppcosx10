@@ -1,4 +1,5 @@
 build-ppc-darwin/
+build-ppc-*/
 build-host/
 gen/
 *.o

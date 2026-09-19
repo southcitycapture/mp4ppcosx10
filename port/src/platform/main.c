@@ -50,6 +50,14 @@ void gx_tex_set_validate_every_bind(int v);
 void gx_tex_set_budget_mb(int mb);
 void port_sincos_report(void);
 
+#ifdef PORT_DEADCODE
+/* M19 (PLAN.md 34.4): a function nothing calls, so that a second build
+ * differs from the first only in code that never runs -- the control arm of
+ * the cross-build .wav question.  Built with
+ *   port/build-ppc.sh BUILD=build-ppc-dead TUNE="-mcpu=7450 -mtune=7450 -mno-altivec -DPORT_DEADCODE" */
+void port_deadcode_probe(void) { port_log("port> dead code, never printed\n"); }
+#endif
+
 static void usage(const char* argv0) {
     fprintf(stderr,
             "Mario Party 4, native port (milestone M1: it links and it talks)\n"

@@ -61,6 +61,7 @@ int gl13_frame_wanted(unsigned n);
 int gl13_shot_pending(void);
 void gl13_begin_frame(void);
 int port_ffto_active(void);
+int port_ffto_user_turbo(void);
 
 #define PERIOD (1.0 / 59.94)
 
@@ -83,7 +84,11 @@ void port_framemode_init(void) {
      * --nodraw is a game measurement (no frame drawn, no pacing); a skip
      * under either would change what the number means.  --ffto is --nodraw
      * with an end, and frame mode takes over when it ends. */
-    if (port_opt.lockstep || port_opt.turbo || (port_opt.nodraw && !port_opt.ffto) ||
+    /* port_ffto_init has already set port_opt.turbo for the skip; what
+     * decides the mode after N is the turbo the run itself asked for (M19:
+     * until then every --ffto run was lockstep to the end, and the
+     * "frame mode takes over" below never happened). */
+    if (port_opt.lockstep || port_ffto_user_turbo() || (port_opt.nodraw && !port_opt.ffto) ||
         port_opt.headless) {
         port_opt.realtime = 0;
     }
@@ -94,7 +99,7 @@ void port_framemode_init(void) {
     if (!active) {
         port_log("port> frame mode: lockstep (%s)\n",
                  port_opt.lockstep ? "--lockstep"
-                 : port_opt.turbo  ? "--turbo"
+                 : port_ffto_user_turbo() ? "--turbo"
                  : port_opt.nodraw ? "--nodraw"
                                    : "--headless");
         return;

@@ -293,6 +293,17 @@ MUSYX_CFLAGS = -std=gnu11 -O2 $(DEBUG_G) -fno-strict-aliasing -fwrapv -fcommon -
 $(BUILD)/musyx/%.o: $(MUSYX_DIR)/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(MUSYX_CFLAGS) -MMD -MP -c -o $@ $<
+# M19 (PLAN.md 34.4): hardware.c's hwSaveSample is `#if MUSY_TARGET ==
+# MUSY_TARGET_DOLPHIN` -- an empty body here -- so no sample was ever copied
+# out of main memory into the sample heap, and every voice read the scratch
+# buffer msm loads a group through, long after the game had reused it.  The
+# two empty bodies are renamed out of the way in this one translation unit;
+# port/src/audio/musyx_aram.c defines the real ones over aramStoreData /
+# aramRemoveData, as the Dolphin arm does.  extern/ stays untouched.
+$(BUILD)/musyx/hardware.o: $(MUSYX_DIR)/hardware.c
+	@mkdir -p $(dir $@)
+	$(CC) $(MUSYX_CFLAGS) -DhwSaveSample=musyx_pc_hwSaveSample_empty \
+	      -DhwRemoveSample=musyx_pc_hwRemoveSample_empty -MMD -MP -c -o $@ $<
 
 $(BUILD)/port/jmp.o: $(CTX_ASM)
 	@mkdir -p $(dir $@)

@@ -389,10 +389,10 @@ void aramRemoveData(void* aram, unsigned long len) {
          * underflow is still visible in the report. */
         if (!g_removeUnderflowNamed) {
             g_removeUnderflowNamed = 1;
-            port_log("port> musyx_aram: aramRemoveData(%lu) with an empty sample heap.  "
-                     "Expected: hwSaveSample only stores on the Dolphin target, so msm "
-                     "owns sample upload and MusyX only ever frees.  Clamped; further "
-                     "occurrences are counted, not printed.\n",
+            port_log("port> musyx_aram: aramRemoveData(%lu) with an empty sample heap "
+                     "(since M19 hwSaveSample stores every sample here, so this is a "
+                     "genuine underflow).  Clamped; further occurrences are counted, not "
+                     "printed.\n",
                      len);
         }
         g_removeMismatches++;
@@ -590,7 +590,66 @@ void aramFreeStreamBuffer(u8 id) {
  * Declared only here -- add the prototype to port.h to call this from
  * elsewhere (e.g. a debug key or a periodic report alongside the other
  * port_*_report() calls). */
+/* ---- hwSaveSample / hwRemoveSample (M19, PLAN.md 34.4) ---------------------
+ *
+ * The Dolphin arm of hardware.c, verbatim in effect: at sndPushGroup every
+ * sample the directory names is copied from the group's main-memory buffer
+ * into the sample heap and its `addr` becomes the ARAM offset; at
+ * sndPopGroup it is removed in LIFO order.  The PC arm of hardware.c has
+ * both as empty bodies (renamed away by the Makefile for that one file), so
+ * until now `sdir->addr` stayed a pointer into msm's scratch buffer
+ * (msmsys.c msmSysPushGroup: read the samples into `buf`, push, move on) and
+ * the mixer read whatever the game had put there since -- which is why the
+ * .wav of a walk was a function of the binary's layout (33.4): the heap's
+ * block headers carry return addresses.  `sys.aramP` in msm counts the
+ * bytes it expects to have gone to ARAM; the region below HU_AMEM_BASE is
+ * exactly that. */
+static unsigned long g_samplesStored, g_samplesRefused, g_sampleBytesStored, g_samplesRemoved;
+
+static unsigned long sample_bytes(unsigned long len, unsigned type) {
+    switch (type) {
+    case 0:
+    case 1:
+    case 4:
+    case 5:
+        return ((len + 13) / 14) * 8; /* DSP-ADPCM: 14 samples per 8-byte frame */
+    case 2:
+        return len * 2; /* PCM16 */
+    default:
+        return len; /* PCM8 */
+    }
+}
+
+void hwSaveSample(void* header, void* data) {
+    /* header = &sdir->header (a pointer to the sample's header words);
+     * data = &sdir->addr.  Word 1 of the header packs type<<24 | length. */
+    const u32* h = *(const u32**)header;
+    void** ap = (void**)data;
+    unsigned long bytes = sample_bytes(h[1] & 0xFFFFFFu, (unsigned)(h[1] >> 24));
+    void* stored = aramStoreData(*ap, bytes);
+    if (stored) {
+        *ap = stored;
+        g_samplesStored++;
+        g_sampleBytesStored += bytes;
+    } else {
+        /* out of sample heap: the pre-M19 behaviour (read main memory) for
+         * this one sample, counted and reported */
+        g_samplesRefused++;
+    }
+}
+
+void hwRemoveSample(void* header, void* data) {
+    const u32* h = (const u32*)header;
+    unsigned long bytes = sample_bytes(h[1] & 0xFFFFFFu, (unsigned)(h[1] >> 24));
+    if ((uintptr_t)data < (uintptr_t)PORT_ARAM_SIZE) {
+        aramRemoveData(data, bytes);
+        g_samplesRemoved++;
+    } /* else: a sample the heap refused, still a main-memory pointer */
+}
+
 void port_musyx_aram_report(void) {
+    port_log("port> musyx_aram: samples stored %lu (%lu KB), removed %lu, refused %lu\n",
+             g_samplesStored, g_sampleBytesStored / 1024, g_samplesRemoved, g_samplesRefused);
     port_log("port> musyx_aram: region=[0x%06lx,0x%06lx) (%lu bytes) zero_buf=[0x%06lx,0x%06lx) "
              "initialized=%d\n",
              g_aramBase, g_aramTop, g_aramTop - g_aramBase, g_aramBase,

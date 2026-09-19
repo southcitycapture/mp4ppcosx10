@@ -37,6 +37,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "game/memory.h"
+
+static FILE* mixtrace_f; /* --mixtrace, opened by mixtrace_voice */
+
 #include "musyx/adsr.h"
 #include "musyx/dspvoice.h"
 #include "musyx/hardware.h"
@@ -701,6 +705,41 @@ static s32 voice_output_sample(DSPvoice* dv, MixVoice* mv, int use4) {
  * is not usable on this target (see the file header).  Returns 0 and leaves
  * the voice deactivated if it could not be started (mirrors every `continue`
  * in the original after a `salDeactivateVoice`). */
+/* M19 (PLAN.md 34.4): which HuMem block holds a MEM1 sample, and is it
+ * allocated?  The header is src/game/memory.c's `struct memory_block`
+ * (32 bytes: size, magic 0xa5 allocated / 0xcd free, flag, prev, next, num,
+ * retaddr).  Read-only walk of the five heaps; NULL if no heap holds it. */
+typedef struct PortMemBlock {
+    s32 size;
+    u8 magic;
+    u8 flag;
+    struct PortMemBlock* prev;
+    struct PortMemBlock* next;
+    u32 num;
+    u32 retaddr;
+} PortMemBlock;
+void* HuMemHeapPtrGet(HeapID heap);
+static const PortMemBlock* mem_block_of(const void* p, int* heap_out) {
+    int h;
+    for (h = 0; h < HEAP_MAX; h++) {
+        const PortMemBlock* head = (const PortMemBlock*)HuMemHeapPtrGet((HeapID)h);
+        const PortMemBlock* b = head;
+        int guard = 0;
+        if (!head) {
+            continue;
+        }
+        do {
+            if ((const u8*)p >= (const u8*)b && (const u8*)p < (const u8*)b + b->size) {
+                *heap_out = h;
+                return b;
+            }
+            b = b->next;
+        } while (b && b != head && ++guard < 100000);
+    }
+    return NULL;
+}
+static unsigned long stat_voices_in_free_block;
+
 static int start_voice(DSPvoice* dv, MixVoice* mv) {
     SAMPLE_INFO* smp = &dv->smp_info;
 
@@ -826,6 +865,31 @@ static int start_voice(DSPvoice* dv, MixVoice* mv) {
             return 0;
         }
         mv->readKind = (u8)kind;
+        if (kind == SAMPLE_LOC_MEM1) {
+            int heap = -1;
+            const PortMemBlock* b = mem_block_of(mv->readBase, &heap);
+            if (!b || b->magic != 0xa5 || !b->flag) {
+                stat_voices_in_free_block++;
+                if (stat_voices_in_free_block <= 12) {
+                    port_log("port> musyx_mix: SAMPLE IN FREED MEMORY: voice %u sample %u "
+                             "(compType %u, %p, %u samples) starts in %s at DSP frame %lu%s\n",
+                             (unsigned)(dv - dspVoice), (unsigned)dv->smp_id, mv->compType,
+                             (const void*)mv->readBase, mv->length,
+                             b ? "a FREE block" : "no heap block", stat_frames_mixed,
+                             b ? "" : "");
+                    if (b) {
+                        port_log("port> musyx_mix:   block %p size %d magic %02x flag %u num %08x "
+                                 "last call %08x, heap %d\n",
+                                 (const void*)b, b->size, b->magic, b->flag, b->num, b->retaddr,
+                                 heap);
+                    }
+                }
+            } else if (mixtrace_f) {
+                fprintf(mixtrace_f, "START voice %u sample %u in block %p size %d num %08x call %08x heap %d\n",
+                        (unsigned)(dv - dspVoice), (unsigned)dv->smp_id, (const void*)b, b->size,
+                        b->num, b->retaddr, heap);
+            }
+        }
         /* One-shot: what is actually AT the resolved address?  A valid
          * DSPADPCM frame's header byte has predictor 0..7 in its high nibble,
          * so a run of high nibbles above 7 says the pointer is wrong rather
@@ -1317,7 +1381,6 @@ static void mix_studio_inputs(void) {
  * rendered.  Two builds that mix differently (PLAN.md 33.4: the .wav is not
  * stable across builds) write two files whose first differing line names the
  * DSP frame, the voice and the field. */
-static FILE* mixtrace_f;
 static void mixtrace_voice(const DSPvoice* dv, u32 vi, u8 st) {
     if (!port_opt.mixtrace) {
         return;
@@ -1334,7 +1397,8 @@ static void mixtrace_voice(const DSPvoice* dv, u32 vi, u8 st) {
             "f%lu st%u v%u state %u addr %08x pitch %x %x %x %x %x chg %x %x %x %x %x "
             "vol %u %u %u a %u %u %u b %u %u %u last %u %u %u smp %u info %x addr %08x "
             "off %x len %x loop %x/%x ct %u adsr %u/%u/%x src %u/%u itd %u/%u "
-            "so %u play %x/%x/%x lu %u/%u/%u/%u vs %x flags %x prio %u\n",
+            "so %u play %x/%x/%x lu %u/%u/%u/%u vs %x flags %x prio %u adsrx %x/%x/%x "
+            "%08x/%08x/%08x/%08x\n",
             stat_frames_mixed, st, vi, dv->state, dv->currentAddr, dv->pitch[0], dv->pitch[1],
             dv->pitch[2], dv->pitch[3], dv->pitch[4], dv->changed[0], dv->changed[1],
             dv->changed[2], dv->changed[3], dv->changed[4], dv->volL, dv->volR, dv->volS,
@@ -1345,7 +1409,36 @@ static void mixtrace_voice(const DSPvoice* dv, u32 vi, u8 st) {
             dv->adsr.state, dv->adsr.currentVolume, dv->srcTypeSelect, dv->srcCoefSelect,
             dv->itdShiftL, dv->itdShiftR, dv->singleOffset, dv->playInfo.posHi, dv->playInfo.posLo, dv->playInfo.pitch,
             dv->lastUpdate.pitch, dv->lastUpdate.vol, dv->lastUpdate.volA, dv->lastUpdate.volB,
-            dv->virtualSampleID, dv->flags, dv->prio);
+            dv->virtualSampleID, dv->flags, dv->prio, dv->adsr.cnt, dv->adsr.currentIndex,
+            dv->adsr.currentDelta, ((const u32*)&dv->adsr.data)[0], ((const u32*)&dv->adsr.data)[1],
+            ((const u32*)&dv->adsr.data)[2], ((const u32*)&dv->adsr.data)[3]);
+}
+
+static u32 trace_fnv_s32(const s32* b, u32 n) {
+    u32 h = 2166136261u;
+    const u8* p = (const u8*)b;
+    n *= sizeof(s32);
+    while (n--) {
+        h ^= *p++;
+        h *= 16777619u;
+    }
+    return h;
+}
+/* --mixtrace: one line per DSP frame with a digest of studio 0's buses at
+ * each stage, so a divergence names its stage: after the voices (main/auxA/
+ * auxB of this frame), after the depop, the aux returns the effects wrote
+ * (what fold_aux_return is about to add), and the folded main. */
+static void mixtrace_stage(const char* tag) {
+    DSPstudioinfo* stp = &dspStudio[0];
+    if (!mixtrace_f || stp->state != 1) {
+        return;
+    }
+    fprintf(mixtrace_f, "F%lu %s main %08x auxA %08x auxB %08x retA %08x retB %08x\n",
+            stat_frames_mixed, tag, trace_fnv_s32(stp->main[salFrame], BUS_LEN),
+            trace_fnv_s32(stp->auxA[salAuxFrame], BUS_LEN),
+            trace_fnv_s32(stp->auxB[salAuxFrame], BUS_LEN),
+            trace_fnv_s32(stp->auxA[(salAuxFrame + 1) % 3], BUS_LEN),
+            trace_fnv_s32(stp->auxB[(salAuxFrame + 1) % 3], BUS_LEN));
 }
 
 static void mix_studio_voices(void) {
@@ -1362,7 +1455,37 @@ static void mix_studio_voices(void) {
             u32 vi = (u32)(dv - dspVoice);
             if (vi < num_voices) {
                 mixtrace_voice(dv, vi, st);
+                if (mixtrace_f) {
+                    const MixVoice* mv = &voices[vi];
+                    u32 sd = 0;
+                    if (mv->live && mv->readBase) {
+                        /* the sample bytes about to be read: ADPCM is 8 bytes per
+                         * 14 samples, PCM16 2 per sample, PCM8 1 */
+                        u32 off = mv->compType == 2 ? mv->curSample * 2
+                                  : mv->compType == 3 ? mv->curSample
+                                                      : (mv->curSample / 14u) * 8u;
+                        if (off + 256 <= mv->readLen) {
+                            sd = trace_fnv_s32((const s32*)(mv->readBase + off), 64);
+                        }
+                    }
+                    fprintf(mixtrace_f, "  smp256 %08x\n", sd);
+                    fprintf(mixtrace_f,
+                            "  mv live %u ct %u lt %u loop %u base %08x read %p/%x/%u len %x "
+                            "ls %x le %x yn %d/%d ps %x fo %u cur %x src %u pitch %x phase %x "
+                            "hist %d/%d/%d/%d slc %x ended %u pb %u\n",
+                            mv->live, mv->compType, mv->loopType, mv->looping, mv->addrBase,
+                            (const void*)mv->readBase, mv->readLen, mv->readKind, mv->length,
+                            mv->loopStart, mv->loopEnd, mv->yn1, mv->yn2, mv->predScale,
+                            mv->frameOffset, mv->curSample, mv->srcType, mv->pitch, mv->phase,
+                            mv->hist[0], mv->hist[1], mv->hist[2], mv->hist[3],
+                            mv->streamLoopCnt, mv->ended, mv->postBreak);
+                }
                 render_voice(dv, &voices[vi], stp);
+                if (mixtrace_f) {
+                    fprintf(mixtrace_f, "  after v%u main %08x auxA %08x\n", vi,
+                            trace_fnv_s32(stp->main[salFrame], BUS_LEN),
+                            trace_fnv_s32(stp->auxA[salAuxFrame], BUS_LEN));
+                }
             }
             dv = next;
         }
@@ -1541,6 +1664,45 @@ void port_musyx_mix_init(void) {
              num_voices, (unsigned)salMaxStudioNum, MIX_FRQ);
 }
 
+/* M19 (PLAN.md 34.4): HuMemMemoryFree, via gx_skin.c's port_mem_freed.  A
+ * voice whose sample lives in MEM1 and is still being read when the game
+ * frees the block will play whatever the heap puts there next -- including
+ * the block headers' return addresses, which is what makes the .wav a
+ * function of the binary's layout.  Counted, and the first few named. */
+static unsigned long stat_voices_freed_under;
+void port_musyx_mix_mem_freed(const void* data, unsigned long size) {
+    const u8* lo = (const u8*)data;
+    const u8* hi = lo + size;
+    u32 vi;
+    if (!mixer_up || !voices) {
+        return;
+    }
+    for (vi = 0; vi < num_voices; vi++) {
+        MixVoice* mv = &voices[vi];
+        const u8* p;
+        if (!mv->live || mv->readKind != SAMPLE_LOC_MEM1) {
+            continue;
+        }
+        p = mv->readBase;
+        if (p >= lo && p < hi) {
+            DSPvoice* dv = &dspVoice[vi];
+            stat_voices_freed_under++;
+            if (stat_voices_freed_under <= 8) {
+                port_log("port> musyx_mix: FREED UNDER A VOICE: voice %u (sample %u, compType %u, "
+                         "MEM1 %p, at sample %u of %u, state %u, vol %u/%u env %x) -- the game "
+                         "freed block %p+%lu at DSP frame %lu while the voice reads it%s\n",
+                         vi, (unsigned)dv->smp_id, mv->compType, (const void*)p, mv->curSample,
+                         mv->length, dv->state, dv->volL, dv->volR, (unsigned)dv->adsr.currentVolume,
+                         data, size, stat_frames_mixed, mixtrace_f ? " (see the trace)" : "");
+            }
+            if (mixtrace_f) {
+                fprintf(mixtrace_f, "FREED UNDER voice %u sample %u at frame %lu block %p+%lu\n",
+                        vi, (unsigned)dv->smp_id, stat_frames_mixed, data, size);
+            }
+        }
+    }
+}
+
 void port_musyx_mix_frame(short* dest) {
     double t0 = 0.0;
 
@@ -1559,13 +1721,17 @@ void port_musyx_mix_frame(short* dest) {
     stat_voices_active_this_frame = 0;
     zero_buses();
     mix_studio_inputs();
+    mixtrace_stage("in");
     mix_studio_voices();
+    mixtrace_stage("voices");
     /* After the voices, before the aux return: the step a cut voice leaves is
      * in the dry bus, and the console injects the compensating offset into
      * the same bus in the same frame (hw_dspctrl.c:1880, right after
      * UPLOAD_LRS). */
     apply_depop();
+    mixtrace_stage("depop");
     fold_aux_return();
+    mixtrace_stage("folded");
     render_output(dest);
 
     if (stat_voices_active_this_frame > stat_max_concurrent_voices) {
@@ -1608,6 +1774,16 @@ void port_musyx_mix_report(void) {
         port_log("port> musyx_mix: --mixcheck: %lu gains and their accumulates checked against "
                  "the 64-bit form, %lu disagreed\n",
                  stat_mixcheck_samples, stat_mixcheck_bad);
+    }
+    if (stat_voices_in_free_block) {
+        port_log("port> musyx_mix: %lu voice(s) started on a MEM1 sample that no allocated "
+                 "heap block holds (PLAN.md 34.4)\n",
+                 stat_voices_in_free_block);
+    }
+    if (stat_voices_freed_under) {
+        port_log("port> musyx_mix: %lu time(s) the game freed a MEM1 block a live voice was "
+                 "still reading (PLAN.md 34.4)\n",
+                 stat_voices_freed_under);
     }
     port_log("port> musyx_mix: resampler %s, depop %s; %lu voice(s) cut mid-frame\n",
              port_opt.resample4 ? "4-tap Catmull-Rom" : "linear",
