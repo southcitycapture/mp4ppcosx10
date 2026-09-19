@@ -221,6 +221,18 @@ typedef struct PortOptions {
                              *   (the results portraits) drawn from channel
                              *   0 as before, and the mask/reflect register
                              *   triple folded to PREV as before            */
+    int nocopyhalf;         /* --nocopyhalf  M23: a half-scale EFB copy takes
+                             *   the bottom-left quarter at 1:1 as before   */
+    int oldfirsthash;       /* --oldfirsthash  M23: a miss stores the exhaustive
+                             *   hash, so the next epoch decodes it again   */
+    int norekey;            /* --norekey  M23: a texture the cache holds under
+                             *   another address is decoded again as before */
+    int dumpcopy;           /* --dumpcopy  M23: the first eight copy read-backs
+                             *   (m415's canvas) as .ppm/.pgm in --shotdir   */
+    int tintlog;            /* --tintlog  M23: one line per frame that drew a
+                             *   tinted lerp-by-konst pair (the dropped tint) */
+    int texdecodelog;       /* --texdecodelog  M23: a line for every frame that
+                             *   spent over 20 ms decoding textures          */
     int regfix2dbg;         /* --regfix2dbg  M22: unit C of the mask/reflect
                              *   triple shows one input per frame (frame%4)  */
     int lazyflush;          /* --lazyflush  a state setter applies the pending
@@ -352,6 +364,9 @@ enum {
     PERF_SUB_INDEX,      /* M21: building the batch's index list               */
     PERF_SUB_N
 };
+void gx_tex_frame_decode_take(unsigned* n, unsigned* src_kb, unsigned* rgba_kb,
+                              double* decode_ms, double* upload_ms, double* hash_ms,
+                              unsigned* rekeys); /* M23 */
 void port_perf_sub_enter(int which);
 void port_perf_sub_leave(void);
 void port_perf_audio_begin(void);

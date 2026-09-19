@@ -33,6 +33,7 @@
  * wins and the stage is named.
  */
 #include "gx_internal.h"
+#include "game/object.h" /* omcurovl, for --tintlog (M23) */
 
 #include <string.h>
 
@@ -655,6 +656,24 @@ static void regfix3_emit(int which, int unit, int k) {
             stat_regfix3_tinted++;
             gx_warn("TEV: a tinted texture in the lerp-by-konst register shape; "
                     "the tint is dropped (PLAN.md 37)");
+            /* M23 --tintlog: where they are.  One line per frame that has
+             * any, the first pair's tint, konst weight and texture. */
+            if (port_opt.tintlog) {
+                static unsigned last_frame = ~0u, lines;
+                unsigned f = gl13_frame_number();
+                if (f != last_frame && lines < 400) {
+                    const GXTexObjPort* t = gx_bound_tex(b->map);
+                    float kc[4];
+                    konst_color(c, 0, kc);
+                    last_frame = f;
+                    lines++;
+                    port_log("port> tintlog: frame %u ovl %d tint %.2f %.2f %.2f  lerp %.2f  "
+                             "tex %p %ux%u fmt %u (pair %u)\n",
+                             f, (int)omcurovl, tint[0], tint[1], tint[2], kc[0],
+                             t ? t->image : NULL, t ? t->width : 0u, t ? t->height : 0u,
+                             t ? (unsigned)t->format : 0u, stat_regfix3_tinted);
+                }
+            }
         }
     } else {
         /* rgb = lerp(PREV, T, K_c): Arg0*Arg2 + Arg1*(1-Arg2);  a = T.a * PREV.a */

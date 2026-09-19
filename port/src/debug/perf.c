@@ -168,6 +168,9 @@ void port_perf_frame(int drawn) {
     double now, wall, game;
     win_frames++;
     if (!port_opt.perf) {
+        unsigned td_n, td_src, td_rgba, td_rekey;
+        double td_dec, td_up, td_hash;
+        gx_tex_frame_decode_take(&td_n, &td_src, &td_rgba, &td_dec, &td_up, &td_hash, &td_rekey);
         return;
     }
     now = port_now_seconds();
@@ -186,12 +189,27 @@ void port_perf_frame(int drawn) {
     if (game < 0.0) {
         game = 0.0;
     }
-    if (wall > 0.1 && port_opt.realtime) {
-        /* A stall the frame mode cannot hide: named, so the log says which
-         * frame and which scene (--ovllog) it belongs to. */
-        port_log("port> stall: frame %u took %.0f ms (game %.0f gx %.0f present %.0f aud %.0f)%s\n",
-                 gl13_frame_number(), wall * 1000.0, game * 1000.0, t_gx * 1000.0, t_present * 1000.0,
-                 t_audio * 1000.0, drawn ? "" : " [consumed]");
+    {
+        /* M23: what the frame spent on cold texture decodes, taken every
+         * frame so the counters are per frame; printed on a stall or, with
+         * --texdecodelog, on any frame that decoded over 20 ms of it. */
+        unsigned td_n, td_src, td_rgba, td_rekey;
+        double td_dec, td_up, td_hash;
+        gx_tex_frame_decode_take(&td_n, &td_src, &td_rgba, &td_dec, &td_up, &td_hash, &td_rekey);
+        if (wall > 0.1 && port_opt.realtime) {
+            /* A stall the frame mode cannot hide: named, so the log says which
+             * frame and which scene (--ovllog) it belongs to. */
+            port_log("port> stall: frame %u took %.0f ms (game %.0f gx %.0f present %.0f aud %.0f)%s"
+                     " tex: %u decoded (%u KB -> %u KB) dec %.0f up %.0f hash %.0f ms, %u re-keyed\n",
+                     gl13_frame_number(), wall * 1000.0, game * 1000.0, t_gx * 1000.0, t_present * 1000.0,
+                     t_audio * 1000.0, drawn ? "" : " [consumed]",
+                     td_n, td_src, td_rgba, td_dec, td_up, td_hash, td_rekey);
+        } else if (port_opt.texdecodelog && td_dec + td_up > 20.0) {
+            port_log("port> texdecode: frame %u: %u decoded (%u KB -> %u KB) dec %.0f up %.0f hash %.0f ms, "
+                     "%u re-keyed; frame %.0f ms%s\n",
+                     gl13_frame_number(), td_n, td_src, td_rgba, td_dec, td_up, td_hash, td_rekey,
+                     wall * 1000.0, drawn ? "" : " [consumed]");
+        }
     }
     if (n_samples < PERF_MAX) {
         s_wall[n_samples] = (float)((now - t_frame_start) * 1000.0);

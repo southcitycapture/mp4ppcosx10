@@ -924,10 +924,13 @@ void GXSetTexCopySrc(u16 l, u16 t, u16 w, u16 h) {
     gx.tex_src[3] = h;
 }
 void GXSetTexCopyDst(u16 w, u16 h, GXTexFmt fmt, GXBool mipmap) {
-    (void)mipmap;
     gx.tex_dst[0] = w;
     gx.tex_dst[1] = h;
     gx.tex_dst_fmt = (u32)fmt;
+    /* GX's `mipmap` is the copy unit's half-scale box filter: the source
+     * rectangle is twice the destination in each axis and every destination
+     * texel is the mean of a 2x2 block (hsfman.c:2001, the shadow map). */
+    gx.tex_dst_half = mipmap ? 1 : 0;
 }
 u32 GXSetDispCopyYScale(f32 vscale) {
     /* The deflicker/scale path only matters for an interlaced XFB. */

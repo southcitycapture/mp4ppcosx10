@@ -355,6 +355,14 @@ typedef struct CacheEntry {
     u32 format;
     u16 w, h;
     u32 content;
+    /* M23: the exhaustive first-sight hash of the source bytes, the key a
+     * re-key by content matches on (cache_find_by_content); 0 once the
+     * bytes were rewritten in place under the key. `content` itself is the
+     * hash the per-epoch revalidation compares -- sampled for anything
+     * over TEX_HASH_SAMPLE -- which until M23 was the exhaustive one on a
+     * miss, so the next epoch's sampled hash never matched and every
+     * texture over a kilobyte was decoded and uploaded twice. */
+    u32 content_full;
     unsigned gl_name;
     u8 wrap_s, wrap_t, min_filt, mag_filt;
     /* GXSetTevSwapModeTable, packed two bits per output channel (see
@@ -377,6 +385,14 @@ typedef struct CacheEntry {
      * that GXCopyTex refills from the back buffer, and a bind uses it as it
      * stands. */
     int efb;
+    /* M23: an EFB copy with the half-scale box filter (GXSetTexCopyDst's
+     * mipmap flag; every shadow map, hsfman.c:2001) keeps the *source*
+     * rectangle's texels, `copy_w` x `copy_h` of them, in a texture padded
+     * from that size; `w`/`h` stay the destination the game named, so a
+     * bind's 0..1 lands on the whole region through su/sv and a read-back
+     * box-filters 2x2 down to what the copy unit would have written. */
+    u16 copy_w, copy_h;
+    u8 copy_half;
     /* O(1) lookup: every entry (efb or not) chains off a bucket of
      * `hash_head[]` keyed on `image` alone -- see `find_slot()`.  -1 ends a
      * chain. */
@@ -468,11 +484,23 @@ static unsigned stat_efb;
 static unsigned stat_copy_read, stat_copy_read_miss; /* port_gx_copy_read */
 static unsigned stat_copy_front, stat_copy_region_front;
 static unsigned stat_copy_kept; /* M21: clear-after copies on consumed frames, kept */
+static unsigned stat_copy_half; /* M23: half-scale (box-filtered) copies, kept at source size */
 /* How many times an already-cached slot's content hash was actually
  * recomputed to check for an in-place rewrite -- as opposed to a pure
  * epoch-cached hit, which touches none of the texel bytes at all.  This is
  * the number the per-frame epoch is supposed to shrink. */
 static unsigned stat_revalidate;
+/* M23 (PLAN.md 38): what a frame's cold decode costs, per frame and in
+ * total.  The scene-change audio underruns (§32.5) are the first drawn
+ * frame of a scene decoding every texture it binds; these say how many,
+ * how many bytes, and how the time splits between the decode and the
+ * upload.  `frame_*` are reset by gx_tex_frame_decode_take() once a frame. */
+static unsigned frame_decodes, frame_src_bytes, frame_rgba_bytes, frame_rekeys;
+static double frame_decode_s, frame_upload_s, frame_hash_s;
+static unsigned stat_decodes, stat_rekeys;
+static unsigned long stat_rekey_bytes;
+static double stat_decode_s, stat_upload_s, stat_hash_s;
+static unsigned stat_frames_over20;
 
 /* `--texvalidate-every-bind`: keep the validation epoch out of the decision
  * (every bind re-checks content) but leave the sampled-vs-full hash choice
@@ -597,6 +625,12 @@ void gx_tex_report(void) {
     port_log("port> texture budget: %u MB; %u evictions (%u KB) to stay under it\n",
              (unsigned)(tex_budget_bytes >> 20), stat_budget_evict,
              (unsigned)(stat_budget_evict_bytes / 1024));
+    port_log("port> texture decode (M23): %u decodes, %.0f ms decoding, %.0f ms uploading, "
+             "%.0f ms hashing; %u frames over 20 ms of it; %u re-keyed by content "
+             "(%lu KB not decoded again)%s\n",
+             stat_decodes, stat_decode_s * 1000.0, stat_upload_s * 1000.0, stat_hash_s * 1000.0,
+             stat_frames_over20, stat_rekeys, stat_rekey_bytes / 1024,
+             port_opt.norekey ? " (--norekey)" : "");
     port_log("port> texture hash: %u KB hashed in full, %u KB sampled, %u "
              "revalidations (of %u binds)%s%s\n",
              stat_hash_full / 1024, stat_hash_sampled / 1024, stat_revalidate,
@@ -606,8 +640,10 @@ void gx_tex_report(void) {
     if (stat_efb) {
         port_log("port> EFB copies: %u colour copies into the cache (on consumed frames "
                  "from the front buffer: %u whole-screen, %u region; %u clear-after copies "
-                 "kept from the last drawn frame, M21)\n",
-                 stat_efb, stat_copy_front, stat_copy_region_front, stat_copy_kept);
+                 "kept from the last drawn frame, M21; %u half-scale copies kept at "
+                 "source size, M23)\n",
+                 stat_efb, stat_copy_front, stat_copy_region_front, stat_copy_kept,
+                 stat_copy_half);
     }
     if (stat_copy_read || stat_copy_read_miss) {
         port_log("port> copy-read: %u copies read back by the game (m415's canvas), "
@@ -715,8 +751,17 @@ static u8* pad_to_pot(const u8* src, int w, int h, int pw, int ph) {
  * `first_sight` forces the exhaustive hash regardless of size, exactly as
  * `!seen_before(o->image)` used to -- see the note above `TEX_HASH_SAMPLE`.
  * `--texhash-full` still forces it unconditionally, on every call. */
+static u32 tex_bind_content_hash_body(const GXTexObjPort* o, const GXTlutObjPort* tlut,
+                                       int first_sight);
 static u32 tex_bind_content_hash(const GXTexObjPort* o, const GXTlutObjPort* tlut,
                                   int first_sight) {
+    double t0 = port_now_seconds();
+    u32 c = tex_bind_content_hash_body(o, tlut, first_sight);
+    frame_hash_s += port_now_seconds() - t0;
+    return c;
+}
+static u32 tex_bind_content_hash_body(const GXTexObjPort* o, const GXTlutObjPort* tlut,
+                                       int first_sight) {
     u32 content = fnv(&o->format, sizeof(o->format), 2166136261u);
     content = fnv(&o->width, sizeof(o->width), content);
     content = fnv(&o->height, sizeof(o->height), content);
@@ -761,10 +806,19 @@ static void swizzle_rgba(u8* rgba, int w, int h, u8 swap);
 static void tex_bind_decode_and_upload(int slot, int unit, const GXTexObjPort* o,
                                         const GXTlutObjPort* tlut) {
     int w = 0, h = 0;
+    double t0 = port_now_seconds(), t1;
     u8* rgba = decode(o, tlut, &w, &h);
     cache[slot].su = cache[slot].sv = 1.0f;
     if (rgba) {
         swizzle_rgba(rgba, w, h, cache[slot].swap);
+    }
+    t1 = port_now_seconds();
+    frame_decodes++;
+    stat_decodes++;
+    frame_decode_s += t1 - t0;
+    frame_src_bytes += (unsigned)encoded_size(o->format, o->width, o->height);
+    if (rgba) {
+        frame_rgba_bytes += (unsigned)(w * h * 4);
     }
     /* --dumptex: every texture the decoder produces, as it produced it,
      * written out the first time it is decoded.  "The draw is right and
@@ -846,12 +900,72 @@ static void tex_bind_decode_and_upload(int slot, int unit, const GXTexObjPort* o
             cache_gl_bytes -= cache[slot].gl_bytes;
             cache[slot].gl_bytes = (unsigned)(pw * ph * 4);
             cache_gl_bytes += cache[slot].gl_bytes;
+            frame_upload_s += port_now_seconds() - t1;
         }
         if (up != rgba) {
             free(up);
         }
         free(rgba);
     }
+}
+
+/* M23: the frame's decode accounting, taken (and reset) by the perf frame
+ * hook so the stall line can say what the frame spent on textures. */
+void gx_tex_frame_decode_take(unsigned* n, unsigned* src_kb, unsigned* rgba_kb,
+                              double* decode_ms, double* upload_ms, double* hash_ms,
+                              unsigned* rekeys) {
+    *n = frame_decodes;
+    *src_kb = frame_src_bytes / 1024;
+    *rgba_kb = frame_rgba_bytes / 1024;
+    *decode_ms = frame_decode_s * 1000.0;
+    *upload_ms = frame_upload_s * 1000.0;
+    *hash_ms = frame_hash_s * 1000.0;
+    *rekeys = frame_rekeys;
+    stat_decode_s += frame_decode_s;
+    stat_upload_s += frame_upload_s;
+    stat_hash_s += frame_hash_s;
+    if (frame_decode_s + frame_upload_s > 0.020) {
+        stat_frames_over20++;
+    }
+    frame_decodes = frame_src_bytes = frame_rgba_bytes = frame_rekeys = 0;
+    frame_decode_s = frame_upload_s = frame_hash_s = 0.0;
+}
+
+/* M23: a texture the cache already holds under another address.  The game
+ * frees a scene's textures and the next scene's land elsewhere, so the
+ * board's textures come back from every minigame at new addresses and
+ * were decoded and uploaded again each time (the board-load resyncs of
+ * §32.1).  The cache is content-hashed already; on a miss whose exhaustive
+ * first-sight hash matches an entry that is not live (not bound this frame
+ * or the last -- a live duplicate at another address keeps its own copy,
+ * or two addresses would trade one entry back and forth), the entry is
+ * re-keyed to the new address: no decode, no upload.  `--norekey` is the
+ * pre-M23 miss. */
+static int cache_find_by_content(const GXTexObjPort* o, u32 content_full, u8 swap,
+                                 const void* lut, unsigned frame) {
+    int i;
+    if (port_opt.norekey) {
+        return -1;
+    }
+    for (i = 0; i < cache_used; i++) {
+        const CacheEntry* e = &cache[i];
+        if (e->efb || !e->gl_name || e->image == NULL || !e->content_full ||
+            e->content_full != content_full) {
+            continue;
+        }
+        if (e->format != o->format || e->w != o->width || e->h != o->height ||
+            e->swap != swap) {
+            continue;
+        }
+        if (e->image == o->image && e->lut == lut) {
+            continue; /* that is a hit, not a re-key; find_slot would have found it */
+        }
+        if (e->last_used + 1 >= frame) {
+            continue; /* live under its own address */
+        }
+        return i;
+    }
+    return -1;
 }
 
 /* The tail of a bind, shared by every path that lands on a decoded (non-EFB)
@@ -1083,6 +1197,7 @@ static void tex_bind_body(int unit, GXTexObjPort* o, u8 swap) {
                  * place in the hash table, do not change. */
                 stat_evict++;
                 e->content = content;
+                e->content_full = 0; /* M23: no longer what a re-key could trust */
                 tex_bind_decode_and_upload(slot, unit, o, tlut);
             }
         }
@@ -1092,7 +1207,28 @@ static void tex_bind_body(int unit, GXTexObjPort* o, u8 swap) {
 
     /* A genuine miss: no entry for this (image, format, w, h, lut) key. */
     {
-        u32 content = tex_bind_content_hash(o, tlut, 1 /* first sight: exhaustive */);
+        u32 content_full = tex_bind_content_hash(o, tlut, 1 /* first sight: exhaustive */);
+        /* M23: the hash the next epoch's revalidation will compute is the
+         * sampled one for anything over TEX_HASH_SAMPLE; store that, or the
+         * revalidation always misses and decodes the texture again
+         * (--oldfirsthash keeps the pre-M23 double decode). */
+        u32 content = port_opt.oldfirsthash ? content_full : tex_bind_content_hash(o, tlut, 0);
+        int again = cache_find_by_content(o, content_full, swap, tlut ? tlut->lut : NULL, frame);
+        if (again >= 0) {
+            CacheEntry* e = &cache[again];
+            hash_remove(again);
+            e->image = o->image;
+            e->lut = tlut ? tlut->lut : NULL;
+            e->validated_epoch = cache_epoch;
+            e->last_used = frame;
+            hash_insert(again);
+            frame_rekeys++;
+            stat_rekeys++;
+            stat_rekey_bytes += e->gl_bytes;
+            stat_hit++;
+            tex_bind_finish(unit, o, again);
+            return;
+        }
         if (nfree_slots) {
             slot = free_slots[--nfree_slots]; /* a slot the budget freed */
         } else if (cache_used == CACHE_MAX) {
@@ -1115,6 +1251,7 @@ static void tex_bind_body(int unit, GXTexObjPort* o, u8 swap) {
         cache[slot].h = o->height;
         cache[slot].swap = swap;
         cache[slot].content = content;
+        cache[slot].content_full = content_full;
         cache[slot].validated_epoch = cache_epoch;
         cache[slot].last_used = frame;
         hash_insert(slot);
@@ -1264,10 +1401,11 @@ void GXInvalidateTexRegion(GXTexRegion* r) { (void)r; }
  * buffer, which is what fixed-function-era engines did.  The formats the game
  * copies in are GX_CTF_R8, GX_CTF_A8 and the two depth ones. */
 
+int gl13_frame_wanted(unsigned n);
 void gx_tex_copy(void* dest, int clear) {
     static unsigned copies, depth_dropped;
-    int sl, st, sw, sh, dw, dh, pw, ph, i, slot = -1;
-    int from_front = 0;
+    int sl, st, sw, sh, dw, dh, cw, ch, pw, ph, i, slot = -1;
+    int from_front = 0, half;
     copies++;
     if (!gl13_live()) {
         /* --realtime, a consumed frame (src/platform/framemode.c): nothing was
@@ -1335,6 +1473,31 @@ void gx_tex_copy(void* dest, int clear) {
     if (sw <= 0 || sh <= 0) {
         return;
     }
+    /* M23 (PLAN.md 38): the half-scale copy.  GXSetTexCopyDst's mipmap flag
+     * asks the copy unit for a 2x2 box filter -- the source rectangle is
+     * twice the destination in each axis -- and every shadow map in the game
+     * is one (hsfman.c:2001: a 384x384 pass copied to 192x192).  Until M23
+     * this copied min(sw,dw) x min(sh,dh) texels at 1:1, i.e. the bottom-left
+     * quarter of the pass at twice its size: Stamp Out!'s paper was a
+     * magnified corner of its own shadow map (green or blue with bands, one
+     * run in several white when the corner was blank), and every projected
+     * shadow since M3 was the wrong quadrant of its pass.  There is no
+     * FBO and no blit here, so the copy keeps the whole source rectangle at
+     * full size and lets GL's bilinear sample it at 2:1 (within a texel of
+     * the box filter); the read-back (port_gx_copy_read) does the 2x2 mean
+     * exactly.  `--nocopyhalf` is the pre-M23 corner. */
+    half = 0;
+    cw = dw;
+    ch = dh;
+    if (!port_opt.nocopyhalf && (gx.tex_dst_half || (sw == 2 * dw && sh == 2 * dh)) &&
+        sw > dw && sh > dh) {
+        half = 1;
+        cw = sw;
+        ch = sh;
+        if (!from_front) {
+            stat_copy_half++;
+        }
+    }
 
     /* The cache entry is keyed on `dest`, the address the game will later wrap
      * in a GXTexObj.  It carries no decodable texels, so it is marked `efb`
@@ -1362,15 +1525,22 @@ void gx_tex_copy(void* dest, int clear) {
     cache[slot].w = (u16)dw;
     cache[slot].h = (u16)dh;
 
-    pw = pot_up(dw);
-    ph = pot_up(dh);
+    pw = pot_up(cw);
+    ph = pot_up(ch);
     {
         GLuint name = cache[slot].gl_name;
         if (!name) {
             GL(glGenTextures)(1, &name);
             cache[slot].gl_name = name;
             cache[slot].param_wrap_s = -1;
+        } else if (cache[slot].copy_w != (u16)cw || cache[slot].copy_h != (u16)ch) {
+            /* the same buffer copied at another size (a shadow map resized
+             * by Hu3DShadowSizeSet): the texture is sized again below */
+            cache[slot].param_wrap_s = -1;
         }
+        cache[slot].copy_w = (u16)cw;
+        cache[slot].copy_h = (u16)ch;
+        cache[slot].copy_half = (u8)half;
         glc_active_texture(0);
         GL(glBindTexture)(GL_TEXTURE_2D, name);
         glc_note_bind(0, name);
@@ -1380,8 +1550,24 @@ void gx_tex_copy(void* dest, int clear) {
          * glTexImage2D and refilled with glCopyTexSubImage2D thereafter --
          * which is also cheaper, because it does not reallocate. */
         if (cache[slot].param_wrap_s == -1) {
+            /* M23 (PLAN.md 38): the texture is sized with *defined* texels,
+             * not NULL.  The copied region fills its bottom-left `cw` x `ch`
+             * and the padding beyond it was never written -- whatever the
+             * driver's VRAM held -- and a shadow map is sampled *through a
+             * projection* (SetShadow, GX_TG_MTX3x4 from position), whose
+             * coordinates run past the region's edge on any receiver larger
+             * than the shadow camera's view.  GX clamps at the copy's real
+             * edge; GL clamps at the padded texture's, so the receiver read
+             * a stretched column of VRAM garbage: Stamp Out!'s paper in
+             * bands, green or blue or orange by card and by run, white on
+             * the run where that memory was black.  Zero is the shadow
+             * map's own edge (its clear colour, hsfman.c:1930, and the
+             * two-pixel border its scissor leaves), so a clamped sample
+             * past the region reads what the console's would. */
+            u8* zero = (u8*)calloc((size_t)pw * ph, 4);
             GL(glTexImage2D)(GL_TEXTURE_2D, 0, GL_RGBA8, pw, ph, 0, GL_RGBA,
-                             GL_UNSIGNED_BYTE, NULL);
+                             GL_UNSIGNED_BYTE, zero);
+            free(zero);
             cache[slot].param_wrap_s = 0;
             cache_gl_bytes -= cache[slot].gl_bytes;
             cache[slot].gl_bytes = (unsigned)(pw * ph * 4);
@@ -1400,14 +1586,43 @@ void gx_tex_copy(void* dest, int clear) {
             GL(glReadBuffer)(GL_FRONT);
         }
         GL(glCopyTexSubImage2D)(GL_TEXTURE_2D, 0, 0, 0, sl, 480 - (st + sh),
-                                sw < dw ? sw : dw, sh < dh ? sh : dh);
+                                sw < cw ? sw : cw, sh < ch ? sh : ch);
         if (from_front) {
             GL(glReadBuffer)(GL_BACK);
         }
     }
-    cache[slot].su = (float)dw / (float)pw;
-    cache[slot].sv = (float)dh / (float)ph;
+    cache[slot].su = (float)cw / (float)pw;
+    cache[slot].sv = (float)ch / (float)ph;
     stat_efb++;
+    /* --dumpcopy on a --dumpframe frame: the copy's texels as GL holds them
+     * right after the copy, before the clear below (M23) */
+    if (port_opt.dumpcopy && gl13_frame_wanted(gl13_frame_number() + 1) && !from_front) {
+        static unsigned n;
+        u8* rgba = (u8*)malloc((size_t)pw * ph * 4);
+        if (rgba && n < 64) {
+            char path[1024];
+            FILE* f;
+            GL(glPixelStorei)(GL_PACK_ALIGNMENT, 1);
+            GL(glGetTexImage)(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+            snprintf(path, sizeof(path), "%s/efbcopy-%02u-f%05u-%dx%d.ppm",
+                     port_opt.shotdir ? port_opt.shotdir : ".", n++, gl13_frame_number() + 1,
+                     cw, ch);
+            f = fopen(path, "wb");
+            if (f) {
+                int yy, xx;
+                fprintf(f, "P6\n%d %d\n255\n", cw, ch);
+                for (yy = 0; yy < ch; yy++) {
+                    for (xx = 0; xx < cw; xx++) {
+                        fwrite(rgba + ((size_t)(ch - 1 - yy) * pw + xx) * 4, 1, 3, f);
+                    }
+                }
+                fclose(f);
+            }
+            port_log("port> --dumpcopy: wrote %s (src %d,%d %dx%d dst %dx%d fmt %u clear %d)\n", path,
+                     sl, st, sw, sh, dw, dh, (unsigned)gx.tex_dst_fmt, clear);
+        }
+        free(rgba);
+    }
     if (from_front) {
         return; /* nothing to clear: nothing was drawn */
     }
@@ -1445,7 +1660,7 @@ void GXCopyTex(void* dest, GXBool clear) { GX_FLUSH_NOW(); gx_tex_copy(dest, cle
  * console's MEM1 would hold too.  A destination nothing was copied to (or
  * not in a one-byte format) is answered with zeros and one line in the log. */
 void port_gx_copy_read(const void* dest, void* out, unsigned long nbytes) {
-    int slot, is_efb = 0, w, h, pw, ph, x, y, chan;
+    int slot, is_efb = 0, w, h, cw, ch, pw, ph, x, y, chan, half;
     u8* rgba;
     u8* o = (u8*)out;
     GLuint name;
@@ -1461,6 +1676,9 @@ void port_gx_copy_read(const void* dest, void* out, unsigned long nbytes) {
     }
     w = cache[slot].w;
     h = cache[slot].h;
+    half = cache[slot].copy_half ? 1 : 0;
+    cw = cache[slot].copy_w ? cache[slot].copy_w : w;
+    ch = cache[slot].copy_h ? cache[slot].copy_h : h;
     switch (cache[slot].format) {
         case GX_TF_I8: chan = -1; break;
         case GX_CTF_R8: chan = 0; break;
@@ -1478,8 +1696,8 @@ void port_gx_copy_read(const void* dest, void* out, unsigned long nbytes) {
         }
         return;
     }
-    pw = pot_up(w);
-    ph = pot_up(h);
+    pw = pot_up(cw);
+    ph = pot_up(ch);
     rgba = (u8*)malloc((size_t)pw * ph * 4);
     if (!rgba) {
         memset(out, 0, nbytes);
@@ -1493,21 +1711,76 @@ void port_gx_copy_read(const void* dest, void* out, unsigned long nbytes) {
     GL(glGetTexImage)(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
     /* gx_tex_copy wrote the region into the bottom-left of the padded
      * texture, GL row 0 = the bottom of the copied region, so GX row y is GL
-     * row h-1-y.  For I8, intensity as the copy unit computes it (BT.601 luma
-     * with the 16 offset, the same as Dolphin's I8 copy). */
+     * row ch-1-y.  For I8, intensity as the copy unit computes it (BT.601 luma
+     * with the 16 offset, the same as Dolphin's I8 copy).  A half-scale copy
+     * (M23) holds the source rectangle at full size, so destination texel
+     * (x, y) is the mean of source texels (2x..2x+1, 2y..2y+1), which is the
+     * copy unit's box filter. */
     for (y = 0; y < h; y++) {
-        const u8* row = rgba + ((size_t)(h - 1 - y) * pw) * 4;
         u8* tile_row = o + (size_t)(y >> 2) * (w >> 3) * 32 + (y & 3) * 8;
         for (x = 0; x < w; x++) {
-            const u8* p = row + (size_t)x * 4;
             unsigned v;
-            if (chan >= 0) {
-                v = p[chan];
+            if (half) {
+                const u8* r0 = rgba + ((size_t)(ch - 1 - 2 * y) * pw + 2 * (size_t)x) * 4;
+                const u8* r1 = r0 - (size_t)pw * 4; /* the GX row below = the GL row under it */
+                unsigned c0, c1, c2, c3;
+                if (chan >= 0) {
+                    c0 = r0[chan]; c1 = r0[4 + chan]; c2 = r1[chan]; c3 = r1[4 + chan];
+                } else {
+                    c0 = ((66u * r0[0] + 129u * r0[1] + 25u * r0[2] + 128u) >> 8) + 16u;
+                    c1 = ((66u * r0[4] + 129u * r0[5] + 25u * r0[6] + 128u) >> 8) + 16u;
+                    c2 = ((66u * r1[0] + 129u * r1[1] + 25u * r1[2] + 128u) >> 8) + 16u;
+                    c3 = ((66u * r1[4] + 129u * r1[5] + 25u * r1[6] + 128u) >> 8) + 16u;
+                }
+                v = (c0 + c1 + c2 + c3 + 2u) >> 2;
             } else {
-                v = ((66u * p[0] + 129u * p[1] + 25u * p[2] + 128u) >> 8) + 16u;
+                const u8* p = rgba + ((size_t)(ch - 1 - y) * pw + (size_t)x) * 4;
+                if (chan >= 0) {
+                    v = p[chan];
+                } else {
+                    v = ((66u * p[0] + 129u * p[1] + 25u * p[2] + 128u) >> 8) + 16u;
+                }
             }
             tile_row[(size_t)(x >> 3) * 32 + (x & 7)] = (u8)(v > 255u ? 255u : v);
         }
+    }
+    /* --dumpcopy (M23): the copy's texels as GL holds them and the bytes the
+     * game gets, the first eight read-backs, so the paper's question can be
+     * answered from files rather than from the picture. */
+    if (port_opt.dumpcopy && stat_copy_read < 8) {
+        char path[1024];
+        FILE* f;
+        snprintf(path, sizeof(path), "%s/copy-%02u-f%05u-%dx%d-of-%dx%d.ppm",
+                 port_opt.shotdir ? port_opt.shotdir : ".", stat_copy_read,
+                 gl13_frame_number(), cw, ch, pw, ph);
+        f = fopen(path, "wb");
+        if (f) {
+            int yy, xx;
+            fprintf(f, "P6\n%d %d\n255\n", cw, ch);
+            for (yy = 0; yy < ch; yy++) {
+                for (xx = 0; xx < cw; xx++) {
+                    fwrite(rgba + ((size_t)(ch - 1 - yy) * pw + xx) * 4, 1, 3, f);
+                }
+            }
+            fclose(f);
+        }
+        snprintf(path, sizeof(path), "%s/canvas-%02u-f%05u-%dx%d.pgm",
+                 port_opt.shotdir ? port_opt.shotdir : ".", stat_copy_read,
+                 gl13_frame_number(), w, h);
+        f = fopen(path, "wb");
+        if (f) {
+            int yy, xx;
+            fprintf(f, "P5\n%d %d\n255\n", w, h);
+            for (yy = 0; yy < h; yy++) {
+                for (xx = 0; xx < w; xx++) {
+                    fputc(o[(size_t)(yy >> 2) * (w >> 3) * 32 + (yy & 3) * 8 + (size_t)(xx >> 3) * 32 + (xx & 7)], f);
+                }
+            }
+            fclose(f);
+        }
+        port_log("port> --dumpcopy: read-back %u at frame %u: %dx%d %s copy (%s) -> %dx%d canvas\n",
+                 stat_copy_read, gl13_frame_number(), cw, ch, half ? "half-scale" : "1:1",
+                 chan == -1 ? "I8" : "R8/G8/B8/A8", w, h);
     }
     free(rgba);
     stat_copy_read++;

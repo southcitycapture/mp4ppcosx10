@@ -187,6 +187,19 @@ static void usage(const char* argv0) {
             "                    ring fence waits\n"
             "  --nohilitetex     M22: the textured highlight and the mask/reflect\n"
             "                    register triple (the results portraits) as before\n"
+            "  --nocopyhalf      M23: a half-scale EFB copy (the shadow map) copies\n"
+            "                    its bottom-left quarter at 1:1 as before PLAN.md 38\n"
+            "  --oldfirsthash    M23: a texture's first sight stores the exhaustive hash\n"
+            "                    the next frame's sampled one never matches (the\n"
+            "                    pre-M23 double decode of every texture over 1 KB)\n"
+            "  --norekey         M23: a texture the cache already holds under another\n"
+            "                    address is decoded and uploaded again as before\n"
+            "  --dumpcopy        M23: the first eight copy read-backs (m415's canvas)\n"
+            "                    as copy-*.ppm (the GL texels) and canvas-*.pgm (the bytes)\n"
+            "  --tintlog         M23: one line per frame that drew a tinted lerp-by-konst\n"
+            "                    pair (the tint the M22 rewrite drops), with the tint\n"
+            "  --texdecodelog    M23: a line for every frame that spent over 20 ms\n"
+            "                    decoding textures (needs --perf/--status)\n"
             "  --lazyflush       M22: a state setter applies the pending batch's state\n"
             "                    to GL and the next primitive decides whether the\n"
             "                    batch ends (measured: slower, PLAN.md 37; off)\n"
@@ -673,6 +686,18 @@ int port_parse_args(int argc, char** argv) {
             port_opt.regfix2dbg = 1;
         } else if (!strcmp(a, "--nohilitetex")) {
             port_opt.nohilitetex = 1;
+        } else if (!strcmp(a, "--nocopyhalf")) {
+            port_opt.nocopyhalf = 1;
+        } else if (!strcmp(a, "--oldfirsthash")) {
+            port_opt.oldfirsthash = 1;
+        } else if (!strcmp(a, "--norekey")) {
+            port_opt.norekey = 1;
+        } else if (!strcmp(a, "--dumpcopy")) {
+            port_opt.dumpcopy = 1;
+        } else if (!strcmp(a, "--tintlog")) {
+            port_opt.tintlog = 1;
+        } else if (!strcmp(a, "--texdecodelog")) {
+            port_opt.texdecodelog = 1;
         } else if (!strcmp(a, "--lazyflush")) {
             port_opt.lazyflush = 1;
         } else if (!strcmp(a, "--premerge-max") && i + 1 < argc) {

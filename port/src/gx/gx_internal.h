@@ -165,6 +165,7 @@ typedef struct GXState {
     u16 disp_src[4], disp_dst[2];
     u16 tex_src[4], tex_dst[2];
     u32 tex_dst_fmt;
+    u8 tex_dst_half; /* GXSetTexCopyDst's mipmap flag: the 2x2 box filter (M23) */
 } GXState;
 
 extern GXState gx;
