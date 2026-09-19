@@ -239,6 +239,7 @@ static void card_format_image(Slot* s) {
     reseal(s);
 }
 
+unsigned gl13_frame_number(void);
 static void card_flush(Slot* s) {
     FILE* f;
     if (!s->present || !s->dirty) {
@@ -264,8 +265,19 @@ static void card_flush(Slot* s) {
         s->dirty = 0;
         return;
     }
-    fwrite(s->img, 1, CARD_IMAGE_SIZE, f);
-    fclose(f);
+    {
+        /* M23 (PLAN.md 38): the write is timed.  Three real-time walks in
+         * four stalled 1.7-2.9 s of game time at frame 14,198 -- the results
+         * screen's save -- with no texture work on the frame; whether it is
+         * this write is what the line answers. */
+        double t0 = port_now_seconds(), ms;
+        fwrite(s->img, 1, CARD_IMAGE_SIZE, f);
+        fclose(f);
+        ms = (port_now_seconds() - t0) * 1000.0;
+        if (ms > 50.0) {
+            port_log("port> CARD: image flush took %.0f ms (frame %u)\n", ms, gl13_frame_number());
+        }
+    }
     s->dirty = 0;
     stat_flushes++;
 }

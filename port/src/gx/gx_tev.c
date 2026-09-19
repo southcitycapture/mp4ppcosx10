@@ -1092,8 +1092,14 @@ void gx_tev_apply(void) {
             if (emit && regfix_k >= 0 && regfix_shape == 3 && i >= regfix_k && i <= regfix_k + 1) {
                 regfix3_emit(i - regfix_k, i, regfix_k);
                 stat_regfix2++;
-            } else if (emit && regfix_k >= 0 && i >= regfix_k && i <= regfix_k + 2 &&
-                !(regfix_shape == 2 && i == regfix_k)) {
+            } else if (emit && regfix_k >= 0 && regfix_shape != 3 && i >= regfix_k &&
+                       i <= regfix_k + 2 && !(regfix_shape == 2 && i == regfix_k)) {
+                /* M23 (PLAN.md 38): shape 3 is a *pair*; without the guard the
+                 * stage after it (k+2) was emitted as the M16 triple's third
+                 * unit -- PREV * RAS, alpha PREV -- and hsfdraw's invAlpha
+                 * stage (colour pass, alpha APREV * A0) behind the mode
+                 * select's file boxes lost its 0.3: the frames drew at 170
+                 * where the console has 99. */
                 if (regfix_shape == 2) {
                     regfix2_emit(i - regfix_k, i, regfix_k);
                     stat_regfix2++;
