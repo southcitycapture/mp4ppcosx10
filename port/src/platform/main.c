@@ -148,6 +148,9 @@ static void usage(const char* argv0) {
             "  --reltest         load and unload all 99 REL bundles twice and report\n"
             "  --gxdemo          draw the GX self-test frame instead of the game\n"
             "  --relzerobss      always zero a module's bss by hand on load\n"
+            "  --nodatareset     do not put a re-opened module's .data back to its\n"
+            "                    on-disc contents (the pre-M20 loader: m406dll's\n"
+            "                    intro countdown then starts a second play below 0)\n"
             "  --reldlclose      really dlclose a REL when the game unlinks it.  The\n"
             "                    port keeps it mapped by default, because the game\n"
             "                    calls into bootDll after unlinking it and the\n"
@@ -574,6 +577,8 @@ int port_parse_args(int argc, char** argv) {
             port_opt.memmap = 1;
         } else if (!strcmp(a, "--relzerobss")) {
             port_opt.relzerobss = 1;
+        } else if (!strcmp(a, "--nodatareset")) {
+            port_opt.nodatareset = 1;
         } else if (!strcmp(a, "--noaudio")) {
             port_opt.noaudio = 1;
         } else if (!strcmp(a, "--wav") && i + 1 < argc) {

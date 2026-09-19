@@ -20,6 +20,14 @@
  * commands.  `--reltest` exercises the whole thing over all 99 modules twice
  * and prints what it found.
  *
+ * The bss was only half of point 5 (M20, PLAN.md §35).  On the console the
+ * `Link DLL` path reads the REL off the disc again, so its initialised data
+ * starts every play as the linker wrote it; a bundle kept mapped keeps the
+ * last play's `.data`, and m406dll's intro countdown -- an initialised
+ * global counted down past zero by its outro -- began its second play at
+ * -333 and never reached zero again.  So a re-open of a kept module also puts
+ * `__data` back to a copy taken at its first dlopen (`dll_data_reset`).
+ *
  * The game's own bookkeeping is left completely intact.  `omDllData.bss` --
  * which on the console held the module's bss block -- holds the `dlopen`
  * handle instead (nothing but this file and the loader ever dereferences it),
@@ -59,6 +67,15 @@ typedef struct DllModule {
                          * the module unlinked, so it is the wrong thing for a
                          * snapshot to compare (PLAN.md 24.2). */
     int ordered;        /* it is in load_order */
+    /* M20: the module's `__data` as dlopen left it -- the REL's on-disc
+     * initialised globals, relocated.  On the console every `Link DLL` reads
+     * the REL from the disc again, so a module's `.data` starts each play as
+     * the linker wrote it; a bundle the port keeps mapped keeps the last
+     * play's values instead (m406dll's intro countdown, PLAN.md §35).  A
+     * re-open copies this back, next to the bss it zeroes. */
+    unsigned char* data_init;
+    void* data_addr;
+    unsigned long data_len;
 } DllModule;
 
 /* The order in which modules were first mapped.  A snapshot replays exactly
@@ -76,6 +93,7 @@ static int scanned;
 
 /* counters, printed by port_dll_report() */
 static int stat_open, stat_close, stat_reenter, stat_stuck;
+static int stat_datareset, stat_datachanged; /* re-opens; of them, .data was dirty */
 
 /* ---- where the bundles live ---------------------------------------------- */
 
@@ -297,6 +315,104 @@ static void* dll_image_of(void* handle) {
     return info.dli_fbase;
 }
 
+/* ---- .data across plays (M20, PLAN.md §35) --------------------------------
+ * `__DATA,__data` of a loaded image: its address and size, slide applied. */
+static void dll_data_section(void* image, void** addr, unsigned long* size) {
+    *addr = NULL;
+    *size = 0;
+    if (!image) {
+        return;
+    }
+#ifdef __LP64__
+    {
+        unsigned long n = 0;
+        char* p = (char*)getsectiondata((const struct mach_header_64*)image, "__DATA",
+                                        "__data", &n);
+        if (p && n) {
+            *addr = p;
+            *size = n;
+        }
+    }
+#else
+    {
+        const struct mach_header* mh = (const struct mach_header*)image;
+        const struct segment_command* seg = NULL;
+        const struct load_command* lc =
+            (const struct load_command*)((const char*)mh + sizeof(*mh));
+        const struct section* sec;
+        uint32_t ci;
+        long slide;
+        for (ci = 0; ci < mh->ncmds; ci++) {
+            if (lc->cmd == LC_SEGMENT &&
+                !strncmp(((const struct segment_command*)lc)->segname, "__TEXT", 16)) {
+                seg = (const struct segment_command*)lc;
+                break;
+            }
+            lc = (const struct load_command*)((const char*)lc + lc->cmdsize);
+        }
+        slide = seg ? (long)((char*)mh - (long)seg->vmaddr) : 0;
+        sec = getsectbynamefromheader((struct mach_header*)mh, "__DATA", "__data");
+        if (sec && sec->size) {
+            *addr = (char*)(long)sec->addr + slide;
+            *size = sec->size;
+        }
+    }
+#endif
+}
+
+/* Once, at the module's first dlopen in this process, before its prolog has
+ * run: what the REL's initialised data holds when it is freshly linked. */
+static void dll_data_capture(DllModule* m) {
+    if (m->data_init) {
+        return;
+    }
+    dll_data_section(m->image, &m->data_addr, &m->data_len);
+    if (!m->data_addr || !m->data_len) {
+        return;
+    }
+    m->data_init = malloc(m->data_len);
+    if (!m->data_init) {
+        m->data_len = 0;
+        return;
+    }
+    memcpy(m->data_init, m->data_addr, m->data_len);
+    if (port_opt.verbose) {
+        port_log("port> REL %s: %lu bytes of .data captured at first load\n", m->name,
+                 m->data_len);
+    }
+}
+
+/* A `Link DLL` of a module the port kept mapped: the console would be reading
+ * the REL off the disc again, so `.data` goes back to what it held.  The line
+ * this logs is the guard for the next stall of the m406 kind -- it names the
+ * module and how much of its `.data` the last play had changed. */
+static void dll_data_reset(DllModule* m) {
+    unsigned long i, changed = 0;
+    if (!m->data_init || !m->data_len) {
+        return;
+    }
+    for (i = 0; i < m->data_len; i++) {
+        if (m->data_init[i] != ((unsigned char*)m->data_addr)[i]) {
+            changed++;
+        }
+    }
+    if (port_opt.nodatareset) {
+        if (changed) {
+            port_log("port> %s: --nodatareset: %lu of %lu .data bytes carried over "
+                     "from the last play (not reset)\n", m->name, changed, m->data_len);
+        }
+        return;
+    }
+    stat_datareset++;
+    if (changed) {
+        stat_datachanged++;
+        memcpy(m->data_addr, m->data_init, m->data_len);
+        port_log("port> %s: re-opened: %lu of %lu .data bytes had been changed by "
+                 "the last play; reset to the REL's contents\n", m->name, changed,
+                 m->data_len);
+    }
+}
+
 /* ---- snapshots (PLAN.md 24.2) --------------------------------------------
  * A module's `__data`, `__bss` and `__common` are its entire state: the REL's
  * own globals.  The other sections of `__DATA` are dyld's (the lazy and
@@ -423,6 +539,9 @@ int port_dll_snap_reopen(const char* name, void** handle, void** image,
         if (load_order_n < (int)(sizeof(load_order) / sizeof(load_order[0]))) {
             load_order[load_order_n++] = m;
         }
+        /* fresh in this process: the REL's own .data, before the snapshot's
+         * is written over it */
+        dll_data_capture(m);
     }
     /* The module is mapped either way -- the port never really unloads one --
      * but the game's own view of it comes back from the snapshot, so the
@@ -437,7 +556,11 @@ int port_dll_snap_reopen(const char* name, void** handle, void** image,
 
 /* ---- the four entry points objdll.c calls -------------------------------- */
 
-void* portDLLOpen(const char* relpath) {
+/* `fresh`: this is objdll.c's `Link DLL` path, where the console reads the REL
+ * off the disc again -- so a kept mapping gets its .data put back as well as
+ * its bss zeroed.  The "Already Loaded" re-entry (portDLLReenter) memsets the
+ * bss only, on the console too, and keeps .data. */
+static void* dll_open(const char* relpath, int fresh) {
     DllModule* m = find(relpath);
     void* h;
     if (!m) {
@@ -463,9 +586,13 @@ void* portDLLOpen(const char* relpath) {
         if (load_order_n < (int)(sizeof(load_order) / sizeof(load_order[0]))) {
             load_order[load_order_n++] = m;
         }
+        dll_data_capture(m);
     }
     if (m->stuck || port_opt.relzerobss) {
         zero_bss(h, m->name);
+        if (fresh) {
+            dll_data_reset(m);
+        }
     }
     if (port_opt.verbose) {
         port_log("port> REL %s: dlopen ok (%s), open #%d\n", m->name, m->path, m->opens);
@@ -477,6 +604,8 @@ void* portDLLOpen(const char* relpath) {
     }
     return m->image;
 }
+
+void* portDLLOpen(const char* relpath) { return dll_open(relpath, 1); }
 
 s32 portDLLProlog(void* token) {
     DllModule* m = by_token(token);
@@ -564,7 +693,7 @@ s32 portDLLClose(void* token) {
 void* portDLLReenter(const char* name, void* token) {
     stat_reenter++;
     portDLLClose(token);
-    return portDLLOpen(name);
+    return dll_open(name, 0); /* bss only: the console's memset, .data kept */
 }
 
 /* How many modules are mapped but unlinked, for the shutdown report -- the
@@ -638,4 +767,10 @@ void port_dll_report(void) {
     port_log("port> REL bundles: %d loads, %d unloads, %d re-entries, "
              "%d modules dlclose would not unload\n",
              stat_open, stat_close, stat_reenter, stat_stuck);
+    if (stat_datareset || port_opt.nodatareset) {
+        port_log("port> REL .data: %d re-opens of a kept module, %d of them with "
+                 ".data the last play had changed (reset%s)\n",
+                 stat_datareset, stat_datachanged,
+                 port_opt.nodatareset ? " OFF: --nodatareset" : "");
+    }
 }

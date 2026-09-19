@@ -46,6 +46,9 @@ typedef struct PortOptions {
     const char* guardtest;  /* --guardtest WHERE: prove the guards fault */
     int relzerobss;         /* --relzerobss  always zero a module's bss by
                              *   hand on load, as if dlclose never unloaded   */
+    int nodatareset;        /* --nodatareset  M20: keep a re-entered module's
+                             *   .data as the last play left it (the pre-M20
+                             *   loader, for the m406 reproduction)           */
     int noaudio;            /* --noaudio  HuAudInit/msm succeed as silent stubs */
     int glcheck;            /* --glcheck  assert no GL call outside GL 1.3    */
     int glinfo;             /* --glinfo   dump GL strings, limits, extensions */
