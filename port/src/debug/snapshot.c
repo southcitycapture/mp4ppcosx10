@@ -58,6 +58,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <pthread.h>
 
 #if defined(__APPLE__)
 #include <mach-o/dyld.h>
@@ -360,13 +361,116 @@ static void snap_diff_dump(unsigned frame) {
 
 /* ---- taking one ---------------------------------------------------------- */
 
-static int wr(FILE* f, const void* p, size_t n) {
-    return fwrite(p, 1, n, f) == n;
+/* ---- the write, off the game thread (M18, PLAN.md 33.5) --------------------
+ *
+ * M17's leave-behind soak paid 3.1 s for every snapshot -- 40 MB through
+ * fwrite on the game thread -- which at real time is a resync every 83 s of
+ * game (§32.5).  The image is now *serialised into memory* at the retrace
+ * boundary (the same instant, the same bytes: the restore path is untouched)
+ * and a worker thread writes and renames it while the game runs on.  The
+ * game thread's cost is one 40 MB copy.  The worker touches nothing but its
+ * own buffer and the file; the bookkeeping (the ring of kept files, the log
+ * line) is done by the game thread when it next finds the job finished.
+ * `--snapsync` is the old synchronous write, for comparison. */
+typedef struct SnapBuf {
+    u8* p;
+    size_t len, cap;
+    int ok;
+} SnapBuf;
+
+static int wr(SnapBuf* b, const void* p, size_t n) {
+    if (!b->ok) {
+        return 0;
+    }
+    if (b->len + n > b->cap) {
+        size_t nc = b->cap ? b->cap : (size_t)1 << 20;
+        u8* np;
+        while (nc < b->len + n) {
+            nc *= 2;
+        }
+        np = (u8*)realloc(b->p, nc);
+        if (!np) {
+            b->ok = 0;
+            return 0;
+        }
+        b->p = np;
+        b->cap = nc;
+    }
+    memcpy(b->p + b->len, p, n);
+    b->len += n;
+    return 1;
+}
+
+typedef struct SnapJob {
+    volatile int state;      /* 0 idle, 1 writing, 2 done, 3 failed */
+    pthread_t thread;
+    int threaded;
+    SnapBuf buf;
+    char path[1100];
+    char tmp[1100];
+    double t0, t_copy;
+    unsigned frame, nmods, stack_kb;
+    unsigned long mb;
+} SnapJob;
+static SnapJob job;
+static unsigned stat_skipped_busy;
+
+static int snap_job_write_file(SnapJob* j) {
+    FILE* f = fopen(j->tmp, "wb");
+    int ok;
+    if (!f) {
+        return 0;
+    }
+    ok = fwrite(j->buf.p, 1, j->buf.len, f) == j->buf.len;
+    if (fclose(f) != 0) {
+        ok = 0;
+    }
+    if (!ok) {
+        unlink(j->tmp);
+        return 0;
+    }
+    if (rename(j->tmp, j->path) != 0) {
+        unlink(j->tmp);
+        return 0;
+    }
+    return 1;
+}
+
+static void* snap_job_main(void* arg) {
+    SnapJob* j = (SnapJob*)arg;
+    int ok = snap_job_write_file(j);
+    j->state = ok ? 2 : 3;
+    return NULL;
+}
+
+/* Called by the game thread: reap a finished write (log it, keep the ring). */
+static void snap_job_finish(void) {
+    if (job.state == 1 || job.state == 0) {
+        return;
+    }
+    if (job.threaded) {
+        pthread_join(job.thread, NULL);
+        job.threaded = 0;
+    }
+    if (job.state == 3) {
+        port_log("port> snapshot: write failed, %s left alone\n", job.path);
+    } else {
+        stat_last_cost = port_now_seconds() - job.t0;
+        stat_written++;
+        stat_bytes += (unsigned long)job.buf.len;
+        port_log("port> snapshot: %s at frame %u -- %lu MB, %.0f ms on the game thread, "
+                 "written in %.2f s behind it (stack %u KB, %u modules)\n",
+                 job.path, job.frame, job.mb, job.t_copy * 1000.0, stat_last_cost,
+                 job.stack_kb, job.nmods);
+        snap_note_written(job.path);
+    }
+    free(job.buf.p);
+    memset(&job.buf, 0, sizeof(job.buf));
+    job.state = 0;
 }
 
 static void snap_write(const char* path) {
-    char tmp[1100];
-    FILE* f;
+    SnapBuf* f;
     SnapHeader h;
     double t0 = port_now_seconds();
     int i, ok = 1;
@@ -374,16 +478,31 @@ static void snap_write(const char* path) {
     u8* stack_lo;
     long slide = image_slide();
 
+    snap_job_finish();
+    if (job.state == 1) {
+        stat_skipped_busy++;
+        port_log("port> snapshot: skipped at frame %u, the previous one is still being "
+                 "written\n", gl13_frame_number());
+        return;
+    }
+
     stack_lo = stack_low_water ? stack_low_water : stack_top - 0x1000;
     if (stack_lo > stack_top) {
         stack_lo = stack_top;
     }
     stack_lo -= SNAP_STACK_MARGIN;
 
-    snprintf(tmp, sizeof(tmp), "%s.tmp", path);
-    f = fopen(tmp, "wb");
-    if (!f) {
-        port_log("port> snapshot: cannot write %s\n", tmp);
+    memset(&job, 0, sizeof(job));
+    snprintf(job.path, sizeof(job.path), "%s", path);
+    snprintf(job.tmp, sizeof(job.tmp), "%s.tmp", path);
+    job.t0 = t0;
+    f = &job.buf;
+    f->ok = 1;
+    f->cap = (size_t)PORT_MEM1_SIZE + PORT_ARAM_SIZE + ranges_bytes + ((size_t)2 << 20);
+    f->p = (u8*)malloc(f->cap);
+    if (!f->p) {
+        port_log("port> snapshot: cannot allocate %lu MB for %s\n",
+                 (unsigned long)(f->cap >> 20), path);
         return;
     }
     memset(&h, 0, sizeof(h));
@@ -451,32 +570,28 @@ static void snap_write(const char* path) {
     ok &= wr(f, port_aram(), PORT_ARAM_SIZE);
     ok &= wr(f, stack_lo, (size_t)h.stack_size);
 
-    if (fclose(f) != 0) {
-        ok = 0;
-    }
-    if (!ok) {
-        port_log("port> snapshot: write failed, %s left alone\n", path);
-        unlink(tmp);
+    if (!ok || !f->ok) {
+        port_log("port> snapshot: could not serialise %s\n", path);
+        free(f->p);
+        memset(&job, 0, sizeof(job));
         return;
     }
-    /* Atomic: a snapshot only ever appears complete.  A crash during a write
-     * leaves a .tmp, never a half file that a restore would trust. */
-    if (rename(tmp, path) != 0) {
-        port_log("port> snapshot: cannot rename %s -> %s\n", tmp, path);
-        unlink(tmp);
+    job.t_copy = port_now_seconds() - t0;
+    job.frame = h.frame;
+    job.nmods = h.nmods;
+    job.stack_kb = h.stack_size >> 10;
+    job.mb = (unsigned long)(f->len >> 20);
+    job.state = 1;
+    /* Atomic either way: the file is written as .tmp and renamed, so a
+     * snapshot only ever appears complete (a crash mid-write leaves a .tmp
+     * that no restore would trust). */
+    if (port_opt.snapsync || pthread_create(&job.thread, NULL, snap_job_main, &job) != 0) {
+        job.threaded = 0;
+        job.state = snap_job_write_file(&job) ? 2 : 3;
+        snap_job_finish();
         return;
     }
-    stat_last_cost = port_now_seconds() - t0;
-    stat_written++;
-    stat_bytes += (unsigned long)(sizeof(h) + ranges_bytes + PORT_MEM1_SIZE +
-                                  PORT_ARAM_SIZE + h.stack_size);
-    port_log("port> snapshot: %s at frame %u -- %lu MB in %.2f s (stack %u KB, "
-             "%u modules)\n",
-             path, h.frame,
-             (unsigned long)((sizeof(h) + ranges_bytes + PORT_MEM1_SIZE +
-                              PORT_ARAM_SIZE + h.stack_size) >> 20),
-             stat_last_cost, h.stack_size >> 10, h.nmods);
-    snap_note_written(path);
+    job.threaded = 1;
 }
 
 /* The safe point.  `gcsetjmp` here and the restore's `gclongjmp` lands back in
@@ -508,6 +623,9 @@ void port_snap_tick(void) {
     }
     if (!snap_ready) {
         return;
+    }
+    if (job.state >= 2) {
+        snap_job_finish();
     }
     frame = gl13_frame_number();
     if (port_opt.snapdiff) {
@@ -716,9 +834,18 @@ void port_snap_init(void) {
 }
 
 void port_snap_report(void) {
+    /* a write still in flight at shutdown is finished, not abandoned */
+    if (job.state == 1 && job.threaded) {
+        pthread_join(job.thread, NULL);
+        job.threaded = 0;
+    }
+    snap_job_finish();
     if (!stat_written) {
         return;
     }
-    port_log("port> snapshots: %lu written, %lu MB, last one cost %.2f s\n",
-             stat_written, stat_bytes >> 20, stat_last_cost);
+    port_log("port> snapshots: %lu written, %lu MB, last one cost %.2f s%s; %u skipped "
+             "with the previous write still in flight\n",
+             stat_written, stat_bytes >> 20, stat_last_cost,
+             port_opt.snapsync ? " (--snapsync)" : " behind the game thread",
+             stat_skipped_busy);
 }
