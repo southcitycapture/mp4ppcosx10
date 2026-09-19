@@ -36,6 +36,7 @@
  * read alongside it as the independent statement of the same thing.
  */
 #include "gx_internal.h"
+#include "gx_skin.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -86,6 +87,7 @@ typedef void (*vp_bindprog_t)(GLenum, GLuint);
 typedef void (*vp_progstr_t)(GLenum, GLenum, GLsizei, const void*);
 typedef void (*vp_envp4fv_t)(GLenum, GLuint, const GLfloat*);
 typedef void (*vp_getprogiv_t)(GLenum, GLenum, GLint*);
+typedef void (*vp_envp4fvn_t)(GLenum, GLuint, GLsizei, const GLfloat*);
 
 static vp_genprog_t    vp_GenProgramsARB;
 static vp_delprog_t    vp_DeleteProgramsARB;
@@ -93,6 +95,7 @@ static vp_bindprog_t   vp_BindProgramARB;
 static vp_progstr_t    vp_ProgramStringARB;
 static vp_envp4fv_t    vp_ProgramEnvParameter4fvARB;
 static vp_getprogiv_t  vp_GetProgramivARB;
+static vp_envp4fvn_t   vp_ProgramEnvParameters4fvEXT; /* GL_EXT_gpu_program_parameters */
 #endif
 
 /* the card's answers, filled by the probe */
@@ -105,8 +108,26 @@ typedef struct VpLimits {
     int max_addr_regs;
     int max_env, max_local;
     int trivial_ok;       /* a trivial program compiled, loaded and was native */
+    int pal_ok;           /* ARL + relative env addressing loaded native (M18) */
+    int pal_slots;        /* palette slots the parameter block holds          */
 } VpLimits;
 static VpLimits vpl;
+
+/* the parameter block's layout; the block itself is described below */
+#define VPE_POSMTX 0
+#define VPE_NRMMTX 3
+#define VPE_MAT    6
+#define VPE_AMB    7
+#define VPE_LIGHT  8
+#define VPE_NLIGHTS 2  /* M18: was 8; nothing in this game lights with more than
+                        * one (PLAN.md 25), and the room went to the palette */
+#define VPE_TEXMTX (VPE_LIGHT + 3 * VPE_NLIGHTS)            /* 14 */
+#define VPE_TEXSCL (VPE_TEXMTX + 3 * GX_TEXCOORDS)          /* 38 */
+#define VPE_COUNT  (VPE_TEXSCL + GX_TEX_UNITS)              /* 44 */
+/* M18: the matrix palette, GX_PAL_STRIDE params a slot, from here to the
+ * card's native limit (192 on the Radeon 9000: 24 slots) */
+#define VPE_PAL    VPE_COUNT
+#define VPE_TOTAL  (VPE_PAL + GX_PAL_STRIDE * GX_PAL_SLOTS_MAX)
 
 int gx_vprog_available(void) { return vpl.have && vpl.trivial_ok; }
 int gx_vprog_native_instr_limit(void) { return vpl.max_native_instr; }
@@ -127,6 +148,26 @@ static const char VP_TRIVIAL[] =
     "DP4 result.position.w, state.matrix.mvp.row[3], vertex.position;\n"
     "MOV result.color, vertex.color;\n"
     "MOV result.texcoord[0], vertex.texcoord[0];\n"
+    "END\n";
+
+/* M18: the shape the matrix palette needs -- an address register loaded from
+ * the fog coordinate and a parameter read relative to it.  If the driver runs
+ * *this* in software the palette is dead on arrival, so it is asked first. */
+static const char VP_PALETTE[] =
+    "!!ARBvp1.0\n"
+    "ADDRESS a0;\n"
+    "TEMP vp;\n"
+    "PARAM pal[144] = { program.env[46..189] };\n" /* VPE_PAL .. +6*24-1 */
+    "ARL a0.x, vertex.fogcoord.x;\n"
+    "DP4 vp.x, pal[a0.x + 0], vertex.position;\n"
+    "DP4 vp.y, pal[a0.x + 1], vertex.position;\n"
+    "DP4 vp.z, pal[a0.x + 2], vertex.position;\n"
+    "MOV vp.w, 1.0;\n"
+    "DP4 result.position.x, state.matrix.projection.row[0], vp;\n"
+    "DP4 result.position.y, state.matrix.projection.row[1], vp;\n"
+    "DP4 result.position.z, state.matrix.projection.row[2], vp;\n"
+    "DP4 result.position.w, state.matrix.projection.row[3], vp;\n"
+    "MOV result.color, vertex.color;\n"
     "END\n";
 
 #ifndef PORT_NO_SDL
@@ -164,6 +205,8 @@ void gx_vprog_probe(void) {
     vp_ProgramEnvParameter4fvARB =
         (vp_envp4fv_t)SDL_GL_GetProcAddress("glProgramEnvParameter4fvARB");
     vp_GetProgramivARB = (vp_getprogiv_t)SDL_GL_GetProcAddress("glGetProgramivARB");
+    vp_ProgramEnvParameters4fvEXT = strstr(ext, "GL_EXT_gpu_program_parameters")
+        ? (vp_envp4fvn_t)SDL_GL_GetProcAddress("glProgramEnvParameters4fvEXT") : NULL;
     if (!vp_GenProgramsARB || !vp_DeleteProgramsARB || !vp_BindProgramARB ||
         !vp_ProgramStringARB || !vp_ProgramEnvParameter4fvARB || !vp_GetProgramivARB) {
         port_log("port> vprog: the extension string is there but an entry point "
@@ -197,6 +240,8 @@ void gx_vprog_probe(void) {
     port_log("MAX_PROGRAM_ADDRESS_REGISTERS       %6d\n", vpl.max_addr_regs);
     port_log("MAX_PROGRAM_ENV_PARAMETERS          %6d\n", vpl.max_env);
     port_log("MAX_PROGRAM_LOCAL_PARAMETERS        %6d\n", vpl.max_local);
+    port_log("GL_EXT_gpu_program_parameters       %s\n",
+             vp_ProgramEnvParameters4fvEXT ? "present (one call per palette upload)" : "absent");
 
     /* the trivial program: does it load, and is it native */
     vp_GenProgramsARB(1, &id);
@@ -219,8 +264,47 @@ void gx_vprog_probe(void) {
     }
     vp_BindProgramARB(VP_VERTEX_PROGRAM_ARB, 0);
     vp_DeleteProgramsARB(1, &id);
+
+    /* the palette shape (M18) */
+    vp_GenProgramsARB(1, &id);
+    vp_BindProgramARB(VP_VERTEX_PROGRAM_ARB, id);
+    errpos = -1;
+    vp_ProgramStringARB(VP_VERTEX_PROGRAM_ARB, VP_PROGRAM_FORMAT_ASCII_ARB,
+                        (GLsizei)(sizeof(VP_PALETTE) - 1), VP_PALETTE);
+    glGetIntegerv(VP_PROGRAM_ERROR_POSITION_ARB, &errpos);
+    if (errpos != -1) {
+        const char* msg = (const char*)glGetString(VP_PROGRAM_ERROR_STRING_ARB);
+        port_log("palette program (ARL)      REJECTED at char %d: %s\n", (int)errpos,
+                 msg ? msg : "(no message)");
+    } else {
+        int native = vp_geti(VP_PROGRAM_UNDER_NATIVE_LIMITS_ARB);
+        port_log("palette program (ARL)      loaded, %d instructions (%d native), "
+                 "under native limits: %s\n",
+                 vp_geti(VP_PROGRAM_INSTRUCTIONS_ARB),
+                 vp_geti(VP_PROGRAM_NATIVE_INSTRUCTIONS_ARB), native ? "YES" : "NO");
+        vpl.pal_ok = native ? 1 : 0;
+    }
+    vp_BindProgramARB(VP_VERTEX_PROGRAM_ARB, 0);
+    vp_DeleteProgramsARB(1, &id);
+    vpl.pal_slots = 0;
+    if (vpl.pal_ok && vpl.max_native_params > VPE_PAL) {
+        vpl.pal_slots = (vpl.max_native_params - VPE_PAL) / GX_PAL_STRIDE;
+        if (vpl.pal_slots > GX_PAL_SLOTS_MAX) {
+            vpl.pal_slots = GX_PAL_SLOTS_MAX;
+        }
+        if (port_opt.palsize > 0 && port_opt.palsize < vpl.pal_slots) {
+            vpl.pal_slots = port_opt.palsize;
+        }
+    }
+    port_log("matrix palette             %d slots of %d params from env[%d]\n",
+             vpl.pal_slots, GX_PAL_STRIDE, VPE_PAL);
     port_log("---- end vprog probe ----\n");
 #endif
+}
+
+int gx_skin_palette_slots(void) { return vpl.pal_slots; }
+int gx_vprog_palette_available(void) {
+    return gx_vprog_available() && vpl.pal_ok && vpl.pal_slots > 0;
 }
 
 /* ---- the variant key -------------------------------------------------------
@@ -249,6 +333,8 @@ typedef struct VpKey {
     u8 tg_div[GX_TEXCOORDS];
     u8 tg_mtx[GX_TEXCOORDS];   /* 1 = a real matrix, 0 = identity          */
     u8 fog;
+    u8 pal;            /* M18: the matrices come from the palette, indexed
+                        * by vertex.fogcoord, not from env[0..5]          */
 } VpKey;
 
 /* ---- the parameter block ---------------------------------------------------
@@ -257,28 +343,22 @@ typedef struct VpKey {
  *   env[3..5]    normal matrix, three rows of a 3x3 (w = 0)
  *   env[6]       the register material RGBA
  *   env[7]       the register ambient RGB
- *   env[8+3i]    light i: position / colour / (k0,k1,k2)
- *   env[32+3t]   texgen t's matrix, three rows of a 3x4
- *   env[56+u]    GL unit u's (su, sv): the NPOT fold gx_tex.c puts in the
+ *   env[8+3i]    light i: position / colour / (k0,k1,k2), i < VPE_NLIGHTS
+ *   env[14+3t]   texgen t's matrix, three rows of a 3x4
+ *   env[38+u]    GL unit u's (su, sv): the NPOT fold gx_tex.c puts in the
  *                fixed-function GL_TEXTURE matrix, which a vertex program
  *                bypasses and therefore has to apply itself
+ *   env[44..]    the matrix palette (M18): 24 slots of 6
  *
- * 62 of the card's 192 native parameters.  The block is *environment* rather
+ * 44 of the card's 192 native parameters before the palette.  The block is
+ * *environment* rather
  * than local state so one upload serves every variant: consecutive draws
  * usually share the lights and the texgen matrices and differ only in the
  * position matrix, and the shadow below emits only what changed. */
-#define VPE_POSMTX 0
-#define VPE_NRMMTX 3
-#define VPE_MAT    6
-#define VPE_AMB    7
-#define VPE_LIGHT  8
-#define VPE_TEXMTX 32
-#define VPE_TEXSCL 56
-#define VPE_COUNT  64
 
 #ifndef PORT_NO_SDL
-static float env_shadow[VPE_COUNT][4];
-static u8 env_valid[VPE_COUNT];
+static float env_shadow[VPE_TOTAL][4];
+static u8 env_valid[VPE_TOTAL];
 static unsigned stat_env_set, stat_env_elided;
 
 static void env4(int i, float x, float y, float z, float w) {
@@ -381,14 +461,31 @@ static void vp_gen(const VpKey* k, VpBuf* b) {
     vpb_add(b, "!!ARBvp1.0\n");
     vpb_add(b, "# generated by gx_vprog.c -- phase 2 of the GX vertex path\n");
     vpb_add(b, "TEMP vp, nr, ac, mt, t0, t1;\n");
+    if (k->pal) {
+        /* relative addressing is only allowed into a declared PARAM array,
+         * and an array bound to program.env is an alias of it, not a copy */
+        vpb_add(b, "ADDRESS a0;\n");
+        vpb_add(b, "PARAM pal[%d] = { program.env[%d..%d] };\n",
+                GX_PAL_STRIDE * vpl.pal_slots, VPE_PAL,
+                VPE_PAL + GX_PAL_STRIDE * vpl.pal_slots - 1);
+    }
 
     /* --- position: model -> view, then view -> clip.
      * The view-space position is kept because the CPU's `op[]` is what the
      * lighting and a GX_TG_POS texgen read; the projection is the one
-     * `gl13_apply_transform` has already loaded, so the driver tracks it. */
-    vpi(b, "DP4 vp.x, program.env[%d], vertex.position;\n", VPE_POSMTX + 0);
-    vpi(b, "DP4 vp.y, program.env[%d], vertex.position;\n", VPE_POSMTX + 1);
-    vpi(b, "DP4 vp.z, program.env[%d], vertex.position;\n", VPE_POSMTX + 2);
+     * `gl13_apply_transform` has already loaded, so the driver tracks it.
+     * With the palette (M18) the vertex's fog coordinate is its slot times
+     * GX_PAL_STRIDE, and the matrices are read relative to it. */
+    if (k->pal) {
+        vpi(b, "ARL a0.x, vertex.fogcoord.x;\n");
+        vpi(b, "DP4 vp.x, pal[a0.x + 0], vertex.position;\n");
+        vpi(b, "DP4 vp.y, pal[a0.x + 1], vertex.position;\n");
+        vpi(b, "DP4 vp.z, pal[a0.x + 2], vertex.position;\n");
+    } else {
+        vpi(b, "DP4 vp.x, program.env[%d], vertex.position;\n", VPE_POSMTX + 0);
+        vpi(b, "DP4 vp.y, program.env[%d], vertex.position;\n", VPE_POSMTX + 1);
+        vpi(b, "DP4 vp.z, program.env[%d], vertex.position;\n", VPE_POSMTX + 2);
+    }
     vpi(b, "MOV vp.w, 1.0;\n");
     vpi(b, "DP4 result.position.x, state.matrix.projection.row[0], vp;\n");
     vpi(b, "DP4 result.position.y, state.matrix.projection.row[1], vp;\n");
@@ -404,7 +501,15 @@ static void vp_gen(const VpKey* k, VpBuf* b) {
 
     /* --- the normal, transformed and renormalised (finish_vertices) */
     if (need_nrm) {
-        if (k->have_nrm) {
+        if (k->have_nrm && k->pal) {
+            vpi(b, "DP3 nr.x, pal[a0.x + 3], vertex.normal;\n");
+            vpi(b, "DP3 nr.y, pal[a0.x + 4], vertex.normal;\n");
+            vpi(b, "DP3 nr.z, pal[a0.x + 5], vertex.normal;\n");
+            vpi(b, "DP3 t0.w, nr, nr;\n");
+            vpi(b, "MAX t0.w, t0.w, 1.0e-30;\n");
+            vpi(b, "RSQ t0.w, t0.w;\n");
+            vpi(b, "MUL nr.xyz, nr, t0.w;\n");
+        } else if (k->have_nrm) {
             vpi(b, "DP3 nr.x, program.env[%d], vertex.normal;\n", VPE_NRMMTX + 0);
             vpi(b, "DP3 nr.y, program.env[%d], vertex.normal;\n", VPE_NRMMTX + 1);
             vpi(b, "DP3 nr.z, program.env[%d], vertex.normal;\n", VPE_NRMMTX + 2);
@@ -535,6 +640,7 @@ static int vp_enabled;        /* GL_VERTEX_PROGRAM_ARB is on                  */
 static unsigned stat_gpu_draws, stat_gpu_verts;
 static unsigned stat_cpu_draws, stat_cpu_verts;
 static unsigned stat_compiles, stat_dead;
+static unsigned stat_pal_batches, stat_pal_uploads, stat_pal_rows;
 static unsigned frame_cpu_draws, frame_gpu_draws;
 static unsigned worst_frame_cpu;
 
@@ -582,6 +688,14 @@ static VpVariant* vp_lookup(const VpKey* k) {
     v->instr = b.instr;
     stat_compiles++;
 
+    if (k->nlights > VPE_NLIGHTS) {
+        v->why = "more lights than the parameter block holds (VPE_NLIGHTS)";
+        stat_dead++;
+        port_log("port> vprog: variant %d wants %d lights, the block holds %d -- CPU "
+                 "fallback\n", vp_nvariants, k->nlights, VPE_NLIGHTS);
+        free(b.s);
+        return v;
+    }
     /* Refuse before asking the driver, when the count alone settles it: the
      * generator knows how many instructions it wrote and the probe knows how
      * many the card has. */
@@ -681,6 +795,7 @@ static void vp_build_key(const GxXfDesc* d, VpKey* k, int* nlights_out,
     memset(k, 0, sizeof(*k));
     k->have_nrm = (u8)(d->have_nrm != 0);
     k->lit = (u8)(d->chan_mode == 2);
+    k->pal = (u8)(d->pal_n > 0 && !port_opt.palnoarl);
     k->fog = (u8)(gx.fog_type != GX_FOG_NONE);
     if (k->lit) {
         k->mat_reg = (u8)(cc->mat_src == GX_SRC_REG);
@@ -794,17 +909,41 @@ void gx_vprog_bind(const GxXfDesc* d) {
     /* ---- the parameters.  env4 emits only what changed, which matters:
      * consecutive draws share the lights and the texgen matrices and usually
      * differ in nothing but the position matrix. */
-    {
+    if (key.pal) {
+        /* M18: the palette rows filled since the last upload, in one call
+         * (or one per row without EXT_gpu_program_parameters).  The rows
+         * persist on the card across batches; gx_draw.c's cache decides
+         * what is resident. */
+        if (d->pal_dirty_hi >= d->pal_dirty_lo) {
+            int lo = d->pal_dirty_lo, n = d->pal_dirty_hi - d->pal_dirty_lo + 1;
+            const f32* rows = &d->pal[lo][0];
+            if (vp_ProgramEnvParameters4fvEXT) {
+                vp_ProgramEnvParameters4fvEXT(VP_VERTEX_PROGRAM_ARB, (GLuint)(VPE_PAL + lo),
+                                              (GLsizei)n, rows);
+                stat_env_set++;
+            } else {
+                int r;
+                for (r = 0; r < n; r++) {
+                    vp_ProgramEnvParameter4fvARB(VP_VERTEX_PROGRAM_ARB, (GLuint)(VPE_PAL + lo + r),
+                                                 rows + 4 * r);
+                    stat_env_set++;
+                }
+            }
+            stat_pal_rows += (unsigned)n;
+            stat_pal_uploads++;
+        }
+        stat_pal_batches++;
+    } else {
         const f32* m = d->pos_mtx;
         env4(VPE_POSMTX + 0, m[0], m[1], m[2], m[3]);
         env4(VPE_POSMTX + 1, m[4], m[5], m[6], m[7]);
         env4(VPE_POSMTX + 2, m[8], m[9], m[10], m[11]);
-    }
-    if (key.have_nrm) {
-        const f32* nm = d->nrm_mtx;
-        env4(VPE_NRMMTX + 0, nm[0], nm[1], nm[2], 0.0f);
-        env4(VPE_NRMMTX + 1, nm[3], nm[4], nm[5], 0.0f);
-        env4(VPE_NRMMTX + 2, nm[6], nm[7], nm[8], 0.0f);
+        if (key.have_nrm) {
+            const f32* nm = d->nrm_mtx;
+            env4(VPE_NRMMTX + 0, nm[0], nm[1], nm[2], 0.0f);
+            env4(VPE_NRMMTX + 1, nm[3], nm[4], nm[5], 0.0f);
+            env4(VPE_NRMMTX + 2, nm[6], nm[7], nm[8], 0.0f);
+        }
     }
     if (key.lit) {
         if (key.mat_reg) {
@@ -851,6 +990,8 @@ void gx_vprog_bind(const GxXfDesc* d) {
     glc_vertex_array(d->base, d->stride);
     glc_color_array(d->base + d->off_clr, d->stride);
     glc_normal_array(key.have_nrm ? d->base + d->off_nrm : NULL, d->stride);
+    glc_fogcoord_array((d->pal_n > 0 && !port_opt.palnofog) ? d->base + d->off_skin : NULL,
+                       d->stride);
     for (u = 0; u < gl13_max_tex_units && u < GX_TEX_UNITS; u++) {
         /* the program reads vertex.texcoord[k] for the raw coordinate a texgen
          * names, so the arrays are indexed by *source* slot, not by unit */
@@ -884,6 +1025,12 @@ void gx_vprog_report(void) {
              tot > 0 ? 100.0 * stat_gpu_verts / tot : 0.0, worst_frame_cpu);
     port_log("port> vprog: env params %u emitted, %u elided\n", stat_env_set,
              stat_env_elided);
+    if (stat_pal_batches) {
+        port_log("port> vprog: palette on %u batches: %u uploads of %u rows (%.1f rows a "
+                 "batch; %d slots of %d rows)\n",
+                 stat_pal_batches, stat_pal_uploads, stat_pal_rows,
+                 (double)stat_pal_rows / stat_pal_batches, vpl.pal_slots, GX_PAL_STRIDE);
+    }
     for (h = 0; h < VP_BUCKETS; h++) {
         VpVariant* v;
         for (v = vp_tab[h]; v; v = v->next) {

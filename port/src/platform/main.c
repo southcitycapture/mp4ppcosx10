@@ -20,7 +20,23 @@
 
 #if defined(__APPLE__)
 #include <mach-o/dyld.h>
+#include <mach/mach.h>
 #endif
+
+/* The process's resident set, in MB, for the status line (M18).  A number that
+ * only grows across a soak names what the long-running process accumulates;
+ * one that does not says the slowdown is somewhere else. */
+unsigned port_rss_mb(void) {
+#ifdef __APPLE__
+    struct task_basic_info info;
+    mach_msg_type_number_t n = TASK_BASIC_INFO_COUNT;
+    if (task_info(mach_task_self(), TASK_BASIC_INFO, (task_info_t)&info, &n) ==
+        KERN_SUCCESS) {
+        return (unsigned)(info.resident_size / (1024 * 1024));
+    }
+#endif
+    return 0;
+}
 
 PortOptions port_opt;
 
@@ -31,6 +47,7 @@ void port_dvd_stats(void);
 void port_crash_handler_install(void);
 void port_watchdog_arm(int seconds);
 void gx_tex_set_validate_every_bind(int v);
+void gx_tex_set_budget_mb(int mb);
 
 static void usage(const char* argv0) {
     fprintf(stderr,
@@ -63,6 +80,20 @@ static void usage(const char* argv0) {
             "  --altivec         the AltiVec PSMTXROMultVecArray: bit-exact with the\n"
             "                    scalar body and measured 3.5%% slower, so off (PLAN.md 32)\n"
             "  --noprefetch      no dcbt of the next vertex's arrays in those loops\n"
+            "  --cpuskin         the game's own CPU skinning at every EnvelopeProc\n"
+            "                    (M18 A/B; default: the same skinning, run only when\n"
+            "                    a drawn frame first needs it -- never on a consumed\n"
+            "                    frame)\n"
+            "  --palette         the vertex-program matrix palette (batches span\n"
+            "                    GXLoadPosMtxImm, the card skins); measured slower on\n"
+            "                    this driver, so opt-in (PLAN.md 33.2)\n"
+            "  --palsize N       palette slots per batch (default: what fits, 24)\n"
+            "  --skinstats       per-mesh envelope shapes and per-frame skin counts\n"
+            "  --snapsync        write snapshots synchronously on the game thread\n"
+            "                    (default: copied at the retrace, written by a worker)\n"
+            "  --texbudget MB    GL texture bytes the cache may hold before it evicts\n"
+            "                    least-recently-bound entries (default 40; 0 = never,\n"
+            "                    the pre-M18 behaviour that paged the 64 MB card)\n"
             "  --olddecode3      the general plan walker for every primitive instead\n"
             "                    of the specialised loops for the common shapes\n"
             "  --decodestats     per decoded vertex: do its indexed attributes share\n"
@@ -324,7 +355,9 @@ int port_parse_args(int argc, char** argv) {
      * The 4-tap was there to buy quality and on this hardware it buys none, so
      * it is the flag now and linear is the default. */
     port_opt.resample4 = 0;
-    port_opt.cmpmask = 15; /* every compare-first group on; see gx_internal.h */
+    port_opt.cmpmask = 255; /* every compare-first group on; see gx_internal.h (M18:
+                             * 15 left Z mode, Z comp loc, cull and alpha compare
+                             * flushing unconditionally, PLAN.md 33.2) */
     for (i = 1; i < argc; i++) {
         const char* a = argv[i];
         if (!strcmp(a, "--image") && i + 1 < argc) {
@@ -348,6 +381,24 @@ int port_parse_args(int argc, char** argv) {
             port_opt.altivec = 1;
         } else if (!strcmp(a, "--noaltivec")) {
             port_opt.altivec = 0;
+        } else if (!strcmp(a, "--cpuskin")) {
+            port_opt.cpuskin = 1;
+        } else if (!strcmp(a, "--nopalette")) {
+            port_opt.nopalette = 1;
+        } else if (!strcmp(a, "--palette")) {
+            port_opt.palette = 1;
+        } else if (!strcmp(a, "--palsize") && i + 1 < argc) {
+            port_opt.palsize = atoi(argv[++i]);
+        } else if (!strcmp(a, "--skinstats")) {
+            port_opt.skinstats = 1;
+        } else if (!strcmp(a, "--palnoarl")) {
+            port_opt.palnoarl = 1;
+        } else if (!strcmp(a, "--palnofog")) {
+            port_opt.palnofog = 1;
+        } else if (!strcmp(a, "--snapsync")) {
+            port_opt.snapsync = 1;
+        } else if (!strcmp(a, "--texbudget") && i + 1 < argc) {
+            gx_tex_set_budget_mb(atoi(argv[++i]));
         } else if (!strcmp(a, "--noprefetch")) {
             port_opt.noprefetch = 1;
         } else if (!strcmp(a, "--olddecode3")) {

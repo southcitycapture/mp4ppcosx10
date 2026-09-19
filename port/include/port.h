@@ -236,6 +236,28 @@ typedef struct PortOptions {
                              *   at the first paced retrace, so a drawn frame
                              *   that overruns does not starve the device
                              *   (default 100 under --realtime, else 0)       */
+    /* M18 (PLAN.md 33): the skinning and the matrix palette */
+    int cpuskin;            /* --cpuskin   the game's own EnvelopeProc every
+                             *   frame, CPU skinning as on the console; the
+                             *   A/B lever for the GPU palette path          */
+    int palette;            /* --palette   the vertex-program matrix palette:
+                             *   batches span GXLoadPosMtxImm and skinned
+                             *   meshes are skinned by the card.  Measured
+                             *   SLOWER on this driver (ARL runs in software,
+                             *   PLAN.md 33.2), so opt-in                    */
+    int nopalette;          /* --nopalette (the default; kept for scripts)  */
+    int skinstats;          /* --skinstats per-mesh envelope shape and the
+                             *   per-frame counts                            */
+    int palsize;            /* --palsize N  palette slots per batch (max 24) */
+    int palnoarl;           /* --palnoarl  diagnostic: palette batches, arrays and
+                             *   uploads as usual, but the program reads env[0..5]
+                             *   (no ARL) -- wrong picture, times the ARL     */
+    int palnofog;           /* --palnofog  diagnostic: no fog-coordinate array
+                             *   bound (every vertex reads slot 0) -- wrong
+                             *   picture, times the array                     */
+    int snapsync;           /* --snapsync   write snapshots on the game thread
+                             *   (pre-M18: a 3 s stall each) instead of on a
+                             *   worker from a copy taken at the retrace     */
 } PortOptions;
 
 extern PortOptions port_opt;
@@ -267,6 +289,11 @@ void port_perf_frame(int drawn);
 void port_perf_report(void);
 void port_perf_window(double* fps, double* aud_ms, double* speed_pct,
                       double* presented_fps); /* --status's rolling second */
+
+/* what the long-running process holds (M18): the texture cache's GL-resident
+ * size (gx_tex.c) and the process's resident set (src/platform/main.c) */
+void gx_tex_cache_stats(unsigned* entries, unsigned* kb);
+unsigned port_rss_mb(void);
 
 /* --realtime, src/platform/framemode.c */
 void port_framemode_init(void);

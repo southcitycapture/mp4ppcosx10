@@ -26,6 +26,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "gx_skin.h"
 
 #ifndef PORT_NO_SDL
 #include <SDL.h>
@@ -181,6 +182,10 @@ typedef struct Glc {
     const void* color_ptr;
     const void* normal_ptr;
     int vertex_stride, color_stride, normal_stride;
+    /* the fog-coordinate array carries the palette slot (M18, gx_vprog.c) */
+    signed char fog_array_on;
+    const void* fog_ptr;
+    int fog_stride;
 } Glc;
 
 static Glc glc;
@@ -237,6 +242,9 @@ void glc_invalidate(void) {
         glc.cull_on = glc.depth_on = glc.blend_on = glc.alpha_on = glc.fog_on = -1;
         glc.depth_mask = -1;
         glc.vertex_array_on = glc.color_array_on = glc.normal_array_on = -1;
+        glc.fog_array_on = -1;
+        glc.fog_ptr = (const void*)-1;
+        glc.fog_stride = -1;
         glc.proj_valid = 0;
         glc.modelview_identity = 0;
         for (i = 0; i < 4; i++) {
@@ -510,6 +518,50 @@ void glc_normal_array(const void* p, int stride) {
     glc.normal_stride = stride;
     if (p) {
         GL(glNormalPointer)(GL_FLOAT, (GLsizei)stride, p);
+    }
+}
+
+/* The fog-coordinate array (GL_EXT_fog_coord, one float per vertex) is how a
+ * vertex reaches `vertex.fogcoord` in an ARB vertex program, and M18 uses that
+ * attribute for the vertex's matrix-palette slot (gx_vprog.c) -- nothing else
+ * in the port ever hands GL a fog coordinate.  Resolved at run time like the
+ * other extensions; a driver without it simply has no palette. */
+#define GLC_FOG_COORDINATE_ARRAY_EXT 0x8457
+typedef void (*fogptr_t)(GLenum, GLsizei, const void*);
+static fogptr_t glc_FogCoordPointerEXT;
+static int glc_fog_probed;
+
+int glc_fogcoord_available(void) {
+#ifndef PORT_NO_SDL
+    if (!glc_fog_probed && gl_on) {
+        const char* ext = (const char*)glGetString(GL_EXTENSIONS);
+        glc_fog_probed = 1;
+        if (ext && strstr(ext, "GL_EXT_fog_coord")) {
+            glc_FogCoordPointerEXT = (fogptr_t)SDL_GL_GetProcAddress("glFogCoordPointerEXT");
+        }
+    }
+#endif
+    return glc_FogCoordPointerEXT != NULL;
+}
+
+void glc_fogcoord_array(const void* p, int stride) {
+    if (!glc_fogcoord_available()) {
+        return;
+    }
+    HIT(glc.fog_array_on == (signed char)(p != NULL) && glc.fog_ptr == p &&
+        glc.fog_stride == stride);
+    if (glc.fog_array_on != (signed char)(p != NULL)) {
+        glc.fog_array_on = (signed char)(p != NULL);
+        if (p) {
+            GL(glEnableClientState)(GLC_FOG_COORDINATE_ARRAY_EXT);
+        } else {
+            GL(glDisableClientState)(GLC_FOG_COORDINATE_ARRAY_EXT);
+        }
+    }
+    glc.fog_ptr = p;
+    glc.fog_stride = stride;
+    if (p) {
+        glc_FogCoordPointerEXT(GL_FLOAT, (GLsizei)stride, p);
     }
 }
 
@@ -1445,6 +1497,7 @@ void gl13_present(void) {
      * both use fixed function. */
     gx_vprog_disable();
     gx_vprog_frame_reset();
+    gx_skin_frame_end();
     frame_no++;
     port_scenelog();
     port_ovllog();

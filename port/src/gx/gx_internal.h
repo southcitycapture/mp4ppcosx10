@@ -186,6 +186,8 @@ void gx_draw_report(void);
  * pending batch under the state it was decoded under, *before* the setter
  * changes anything.  It is one load and a branch when nothing is pending. */
 extern int gx_batch_pending;
+extern int gx_palette_active; /* M18: batches carry a matrix palette (gx_draw.c) */
+int gx_palette_on(void);
 void gx_batch_flush_from(const char* who);
 #define GX_STATE_TOUCH()                                                                 \
     do {                                                                                 \
@@ -265,6 +267,8 @@ void glc_vertex_array(const void* p, int stride);
 void glc_color_array(const void* p, int stride);
 void glc_coord_array(int unit, const void* p, int stride); /* NULL turns it off */
 void glc_normal_array(const void* p, int stride);          /* NULL turns it off */
+void glc_fogcoord_array(const void* p, int stride);        /* M18: the palette slot */
+int glc_fogcoord_available(void);
 void glc_get_tex_scale(int unit, float* su, float* sv);
 /* M16: the vertex ring (PLAN.md 31).  gl13_var_setup hands back the ring --
  * DMA-visible when GL_APPLE_vertex_array_range is on, plain memory otherwise
@@ -323,6 +327,12 @@ typedef struct GxXfDesc {
         u8 divide;
         const f32* mtx;      /* NULL for the identity                        */
     } tg[GX_TEXCOORDS];
+    /* M18: the batch's matrix palette (gx_draw.c pal[]); pal_n == 0 means the
+     * pre-M18 shape, pos_mtx/nrm_mtx for the whole batch */
+    const f32 (*pal)[4];
+    int pal_n;               /* slots addressable (the palette's size)       */
+    int pal_dirty_lo, pal_dirty_hi; /* rows written since the last upload    */
+    int off_skin;            /* the slot float in the source layout          */
 } GxXfDesc;
 
 void gx_vprog_probe(void);            /* needs a live GL context */

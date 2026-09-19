@@ -126,8 +126,21 @@ GXFifoObj* GXInit(void* base, u32 size) {
 
 /* ---- vertex description --------------------------------------------------- */
 
+/* M18 (PLAN.md 33): the vertex descriptor, the attribute formats and the
+ * arrays are read by the *decode* of the next primitive and by nothing in a
+ * pending batch -- the batch's vertices are already decoded, and its layout
+ * is compared by batch_prepare.  With the palette on they end no batch, which
+ * is what lets a batch span objects (each new object re-sends all of them,
+ * hsfdraw.c FaceDraw with vtxModeBak reset per object). */
+#define GX_STATE_TOUCH_DECODE()                                                          \
+    do {                                                                                 \
+        if (gx_batch_pending && !gx_palette_active) {                                    \
+            gx_batch_flush_from(__func__);                                               \
+        }                                                                                \
+    } while (0)
+
 void GXClearVtxDesc(void) {
-    GX_STATE_TOUCH();
+    GX_STATE_TOUCH_DECODE();
     int i;
     for (i = 0; i < GX_MAX_ATTR; i++) {
         gx.vcd[i] = GX_NONE;
@@ -135,14 +148,14 @@ void GXClearVtxDesc(void) {
 }
 
 void GXSetVtxDesc(GXAttr attr, GXAttrType type) {
-    GX_STATE_TOUCH();
+    GX_STATE_TOUCH_DECODE();
     if ((unsigned)attr < GX_MAX_ATTR) {
         gx.vcd[attr] = (u8)type;
     }
 }
 
 void GXSetVtxDescv(GXVtxDescList* list) {
-    GX_STATE_TOUCH();
+    GX_STATE_TOUCH_DECODE();
     for (; list && list->attr != GX_VA_NULL; list++) {
         GXSetVtxDesc(list->attr, list->type);
     }
@@ -150,7 +163,7 @@ void GXSetVtxDescv(GXVtxDescList* list) {
 
 void GXSetVtxAttrFmt(GXVtxFmt vtxfmt, GXAttr attr, GXCompCnt cnt, GXCompType type,
                      u8 frac) {
-    GX_STATE_TOUCH();
+    GX_STATE_TOUCH_DECODE();
     if ((unsigned)vtxfmt < GX_MAX_VTXFMT && (unsigned)attr < GX_MAX_ATTR) {
         gx.vat[vtxfmt][attr].cnt = (u8)cnt;
         gx.vat[vtxfmt][attr].type = (u8)type;
@@ -172,12 +185,16 @@ void GXSetVtxAttrFmt(GXVtxFmt vtxfmt, GXAttr attr, GXCompCnt cnt, GXCompType typ
  * produced. */
 unsigned gx_array_epoch;
 
+void gx_skin_array_bound(const void* pos_array);
 void GXSetArray(GXAttr attr, const void* data, u8 stride) {
-    GX_STATE_TOUCH();
+    GX_STATE_TOUCH_DECODE();
     if ((unsigned)attr < GX_MAX_ATTR) {
         gx.array[attr].base = (const u8*)data;
         gx.array[attr].stride = stride;
         gx_array_epoch++;
+        if (attr == GX_VA_POS) {
+            gx_skin_array_bound(data); /* M18: a deferred skin owed to this buffer */
+        }
     }
 }
 
@@ -197,7 +214,8 @@ const void* gx_last_posmtx_arg;
 
 void GXLoadPosMtxImm(const void* mtx, u32 id) {
     u32 slot = id / 3;
-    GX_STATE_TOUCH_IF(GX_CMP_MATRIX, slot >= 10 || memcmp(gx.pos_mtx[slot], mtx, 48) != 0);
+    GX_STATE_TOUCH_IF(GX_CMP_MATRIX, !gx_palette_active &&
+                                         (slot >= 10 || memcmp(gx.pos_mtx[slot], mtx, 48) != 0));
     if (port_opt.drawlog) {
         gx_last_posmtx_caller = __builtin_return_address(0);
         gx_last_posmtx_arg = mtx;
@@ -215,9 +233,10 @@ void GXLoadNrmMtxImm(const void* mtx, u32 id) {
         int r;
         /* bit-exact, like GXLoadPosMtxImm's memcmp: a state call that
          * changes nothing ends no batch, and "nothing" means the bytes */
-        GX_STATE_TOUCH_IF(GX_CMP_MATRIX, memcmp(&gx.nrm_mtx[slot][0], m, 12) != 0 ||
-                          memcmp(&gx.nrm_mtx[slot][3], m + 4, 12) != 0 ||
-                          memcmp(&gx.nrm_mtx[slot][6], m + 8, 12) != 0);
+        GX_STATE_TOUCH_IF(GX_CMP_MATRIX, !gx_palette_active &&
+                                             (memcmp(&gx.nrm_mtx[slot][0], m, 12) != 0 ||
+                                              memcmp(&gx.nrm_mtx[slot][3], m + 4, 12) != 0 ||
+                                              memcmp(&gx.nrm_mtx[slot][6], m + 8, 12) != 0));
         for (r = 0; r < 3; r++) {
             gx.nrm_mtx[slot][r * 3 + 0] = m[r * 4 + 0];
             gx.nrm_mtx[slot][r * 3 + 1] = m[r * 4 + 1];
@@ -245,7 +264,10 @@ void GXLoadTexMtxImm(const void* mtx, u32 id, GXTexMtxType type) {
     }
 }
 
-void GXSetCurrentMtx(u32 id) { GX_STATE_TOUCH_IF(GX_CMP_MATRIX, gx.cur_pnmtx != id / 3); gx.cur_pnmtx = id / 3; }
+void GXSetCurrentMtx(u32 id) {
+    GX_STATE_TOUCH_IF(GX_CMP_MATRIX, !gx_palette_active && gx.cur_pnmtx != id / 3);
+    gx.cur_pnmtx = id / 3;
+}
 
 /* GX does not keep the 4x4 it is handed: it keeps six of its elements, which
  * is exactly what the fixed-function projection has degrees of freedom for.

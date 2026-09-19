@@ -40,6 +40,7 @@
 
 #include "gx_internal.h"
 #include "gx_math.h"
+#include "gx_skin.h"
 
 unsigned gl13_frame_number(void);
 
@@ -96,12 +97,14 @@ typedef struct Layout {
     int stride;
     int off_nrm; /* -1 when the descriptor has no normal */
     int off_clr;
+    int off_skin; /* -1 without the matrix palette (M18); else one float,
+                   * the vertex's palette slot times GX_PAL_STRIDE */
     int off_tex;
     int ntex;
 } Layout;
 
 #define MAX_VERTS 65536
-#define SRC_MAX_STRIDE (12 + 12 + 4 + 8 * GX_TEXCOORDS)
+#define SRC_MAX_STRIDE (12 + 12 + 4 + 4 + 8 * GX_TEXCOORDS)
 #define OUT_MAX_STRIDE (16 + 8 * GX_TEXCOORDS)
 
 /* The source vertices go into a ring (M16, PLAN.md 31).  Before M16 `src_buf`
@@ -189,8 +192,39 @@ typedef struct PrimInv {
     /* the indexed reader's per-attribute constants */
     const GXArraySpec* arr[GX_MAX_ATTR];
     const GXVatFmt* vat[GX_MAX_ATTR];
+    /* M18, the matrix palette (PLAN.md 33): every vertex names its slot.  A
+     * plain primitive's vertices all name `slotf`; a skinned mesh's name
+     * `mesh->ent_slotf[mesh->pos_ent[index]]`, the batch slot of the entry
+     * their rest position is bound to. */
+    SkinMesh* skin;
+    f32 slotf;
 } PrimInv;
 static PrimInv pi;
+static void batch_prepare(u32 count);
+static void pal_place(void);
+int gx_palette_active;     /* the batches carry a matrix palette (M18)      */
+#define palette_on gx_palette_active
+static int pal_slots;      /* its capacity, from gx_vprog.c                  */
+#define PAL_SLOTS_MAX GX_PAL_SLOTS_MAX
+static f32 pal[PAL_SLOTS_MAX][GX_PAL_STRIDE][4]; /* the pending batch's palette */
+static int pal_n;          /* slots used in the pending batch                */
+static unsigned pal_batch_serial; /* bumped by pal_reset: the window's key    */
+static void pal_reset(void);
+typedef struct PalSlot {
+    u8 kind;               /* 0 free, 1 plain object, 2 skinned entry */
+    unsigned pinned;       /* == pal_batch_serial when the pending batch uses it */
+    unsigned used;         /* LRU stamp */
+    SkinMesh* mesh;
+    int ent;
+    unsigned pose;
+    f32 posm[12];
+    f32 nrmm[9];
+} PalSlot;
+static PalSlot pal_slot[PAL_SLOTS_MAX];
+static unsigned pal_clock;
+static int pal_dirty_lo, pal_dirty_hi; /* rows to upload for the pending batch */
+
+
 static u8 prim;
 static u8 vtxfmt;
 static u16 want_verts;
@@ -209,7 +243,9 @@ static unsigned stat_prims, stat_verts, stat_draws, stat_dls;
 static unsigned long stat_fast_verts; /* through the specialised loops (M17) */
 /* --submitstats (M16): what the batching actually found in the lists */
 static unsigned stat_batches, stat_merged, stat_multi_calls, stat_multi_prims,
-    stat_wraps, stat_lists_drawn;
+    stat_wraps, stat_lists_drawn, stat_late_flush;
+static unsigned stat_pal_flushes, stat_pal_plain, stat_pal_skin, stat_pal_reused;
+static unsigned stat_pal_overflow, stat_pal_fills, stat_pal_scan_hist[8];
 static unsigned stat_list_hist[5]; /* primitives per drawn list: 1, 2-4, 5-16, 17-64, 65+ */
 #define FLUSHER_SLOTS 32
 static struct {
@@ -273,6 +309,18 @@ void gx_draw_report(void) {
         port_log("port> submit: vertex ring %s: %u fence waits (%u blocked), "
                  "%u fences set, %u range flushes\n",
                  gl13_var_active() ? "on" : "off", w, b, f, fl);
+        if (palette_on) {
+            port_log("port> submit: batches ended by the palette      %u "
+                     "(%u slot fills: %u plain objects placed, %u reused resident; %u "
+                     "skinned primitives; %u late flushes, %u entries over the palette)\n",
+                     stat_pal_flushes, stat_pal_fills, stat_pal_plain, stat_pal_reused,
+                     stat_pal_skin, stat_late_flush, stat_pal_overflow);
+            port_log("port> submit: distinct entries per skinned primitive: 1: %u  2: %u  "
+                     "3: %u  4: %u  5-8: %u  9-16: %u  17-24: %u  25+: %u\n",
+                     stat_pal_scan_hist[0], stat_pal_scan_hist[1], stat_pal_scan_hist[2],
+                     stat_pal_scan_hist[3], stat_pal_scan_hist[4], stat_pal_scan_hist[5],
+                     stat_pal_scan_hist[6], stat_pal_scan_hist[7]);
+        }
         {
             int i;
             for (i = 0; i < FLUSHER_SLOTS && flushers[i].who; i++) {
@@ -455,11 +503,45 @@ static int color_bytes(u8 type) {
 static void build_decode_plan(void);
 static size_t ring_claim(size_t need);
 
+/* Whether the batches carry a matrix palette (M18).  Decided once, at the
+ * first primitive, when the vertex-program probe has run: the ARL shape must
+ * have loaded native, the fog-coordinate array must exist, and none of the
+ * levers that need one matrix per batch may be on. */
+static int palette_settled;
+int gx_palette_on(void) {
+    if (!palette_settled) {
+        palette_settled = 1;
+        palette_on = 0;
+        if (port_opt.palette && !port_opt.nopalette && !port_opt.cpuxf &&
+            !port_opt.olddecode && !port_opt.dlcache && gl13_live() &&
+            gx_vprog_palette_available() && glc_fogcoord_available()) {
+            palette_on = 1;
+            pal_slots = gx_skin_palette_slots();
+            memset(pal_slot, 0, sizeof(pal_slot));
+            pal_reset();
+        }
+        port_log("port> matrix palette: %s%s\n",
+                 palette_on ? "on" : "off",
+                 palette_on ? "" : !port_opt.palette ? " (opt-in: --palette; PLAN.md 33.2)"
+                             : port_opt.nopalette ? " (--nopalette)"
+                             : port_opt.cpuxf ? " (--cpuxf)"
+                             : port_opt.olddecode ? " (--olddecode)"
+                             : port_opt.dlcache ? " (--dlcache)"
+                             : !gl13_live() ? " (no GL)"
+                             : !gx_vprog_palette_available() ? " (the ARL program is not native here)"
+                             : " (no GL_EXT_fog_coord)");
+    }
+    return palette_on;
+}
+
 static void begin_attr_order(void) {
     static const int order[] = { GX_VA_POS,  GX_VA_NRM,  GX_VA_CLR0, GX_VA_CLR1,
                                  GX_VA_TEX0, GX_VA_TEX1, GX_VA_TEX2, GX_VA_TEX3,
                                  GX_VA_TEX4, GX_VA_TEX5, GX_VA_TEX6, GX_VA_TEX7 };
     size_t i;
+    if (!palette_settled) {
+        gx_palette_on();
+    }
     nactive = 0;
     for (i = 0; i < sizeof(order) / sizeof(order[0]); i++) {
         if (gx.vcd[order[i]] != GX_NONE) {
@@ -568,6 +650,11 @@ static void begin_attr_order(void) {
         }
         sl.off_clr = o;
         o += 4;
+        sl.off_skin = -1;
+        if (palette_on) {
+            sl.off_skin = o;
+            o += 4;
+        }
         sl.off_tex = o;
         o += 8 * sl.ntex;
         sl.stride = o;
@@ -576,6 +663,18 @@ static void begin_attr_order(void) {
         out_off_clr = 12;
         out_off_tex = 16;
         out_stride = 16 + 8 * out_ntex;
+    }
+
+    /* M18: is the position array a skinned mesh's buffer?  Then the decode
+     * reads the rest pose and the palette does the skinning (gx_skin.c). */
+    pi.skin = NULL;
+    pi.slotf = 0.0f;
+    if (palette_on && dl_replaying && gx.vcd[GX_VA_POS] == GX_INDEX16) {
+        SkinMesh* m = gx_skin_lookup(gx.array[GX_VA_POS].base, gl13_frame_number());
+        if (m) {
+            gx_skin_pose(m);
+            pi.skin = m;
+        }
     }
 
     build_decode_plan();
@@ -788,6 +887,15 @@ static void build_decode_plan(void) {
             s->base = arr->base;
             s->stride = arr->stride;
             s->advance = s->idx;
+            if (pi.skin) {
+                /* the rest pose, in the same layout (float Vec, hsfdraw.c:508
+                 * and :515 for a cenv model) at the file's addresses */
+                if (a == GX_VA_POS) {
+                    s->base = (const u8*)gx_skin_rest_pos(pi.skin);
+                } else if (a == GX_VA_NRM) {
+                    s->base = (const u8*)gx_skin_rest_nrm(pi.skin);
+                }
+            }
         }
 
         if (a == GX_VA_POS) {
@@ -1245,6 +1353,9 @@ static void transform_and_store(void) {
             c[3] = pending.clr[0][3];
         }
     }
+    if (sl.off_skin >= 0) {
+        *(f32*)(v + sl.off_skin) = pi.slotf; /* never a skinned mesh: those are lists */
+    }
     {
         f32* t = (f32*)(v + sl.off_tex);
         for (k = 0; k < sl.ntex; k++) {
@@ -1475,7 +1586,9 @@ void GXBegin(GXPrimitive type, GXVtxFmt fmt, u16 n) {
     sv_first = 0;
     in_prim = 1;
     begin_attr_order();
+    batch_prepare(n);
     run_pos = ring_claim((size_t)n * (size_t)sl.stride);
+    pal_place();
     GXLOG("GXBegin", "prim %02x fmt %d n %u, %d attrs", type, fmt, n, nactive);
 }
 
@@ -1639,6 +1752,11 @@ static void fill_xf_desc(GxXfDesc* d, const u8* s) {
     d->off_clr = sl.off_clr;
     d->off_tex = sl.off_tex;
     d->ntex = sl.ntex;
+    d->off_skin = sl.off_skin;
+    d->pal = (const f32(*)[4])pal;
+    d->pal_n = (palette_on && sl.off_skin >= 0) ? pal_slots : 0;
+    d->pal_dirty_lo = pal_dirty_lo;
+    d->pal_dirty_hi = pal_dirty_hi;
     for (t = 0; t < GX_TEXCOORDS; t++) {
         d->tg[t].src_kind = pi.tg[t].src_kind;
         d->tg[t].src_k = pi.tg[t].src_k;
@@ -1679,6 +1797,296 @@ static size_t batch_pos;   /* ring offset of the batch's first vertex */
 static u32 batch_verts;
 static Layout batch_sl;
 
+/* ---- the batch's matrix palette (M18, PLAN.md 33) --------------------------
+ *
+ * Before M18 a batch had one position matrix, so `GXLoadPosMtxImm` -- a new
+ * object -- ended it: 693K of the walk's 1.96M batches (§31.2), and the
+ * driver's per-batch validation was 17.5% of a drawn frame (§32.3).  Now the
+ * matrices live in the vertex program's parameter block as a palette of
+ * `pal_slots` (position 3x4, normal 3x3: GX_PAL_STRIDE params each), every
+ * vertex carries its slot (`Layout.off_skin`), and a matrix load changes
+ * nothing the pending batch depends on.  A batch ends when the palette is
+ * full instead.
+ *
+ * A *skinned* mesh places all of its envelope entries at once, premultiplied
+ * by the object's own matrices, so the card does one multiply per vertex --
+ * the same shape as a plain object, whose one slot is its (pos, nrm) pair.
+ *
+ * Placement happens *before* a primitive is decoded and after every flush
+ * that could precede its decode (layout, limits, ring wrap), so no vertex is
+ * ever written with a slot of a palette that is then thrown away. */
+/* ---- the palette as a cache ---------------------------------------------------
+ *
+ * The first M18 build gave every batch a fresh palette, uploaded whole: the
+ * parameter uploads went from 340 a frame to 3,100 and the walk got slower
+ * (PLAN.md 33.2).  The parameters *persist* on the card, so the palette is a
+ * cache now: a slot keeps its matrix until something evicts it, a batch pins
+ * the slots it uses (an eviction of a pinned slot would re-address vertices
+ * already decoded), a primitive whose matrix is resident costs nothing, and
+ * the upload per batch is one call over the dirty range
+ * (GL_EXT_gpu_program_parameters).  A batch ends on the palette only when
+ * every slot is pinned. */
+static void pal_reset(void) {
+    /* a new batch: nothing is pinned any more; the contents stay */
+    pal_batch_serial++;
+    pal_n = pal_slots; /* every slot is addressable now */
+    pal_dirty_lo = GX_PAL_STRIDE * PAL_SLOTS_MAX;
+    pal_dirty_hi = -1;
+}
+
+static void pal_mark_dirty(int slot) {
+    int lo = GX_PAL_STRIDE * slot, hi = lo + GX_PAL_STRIDE - 1;
+    if (lo < pal_dirty_lo) {
+        pal_dirty_lo = lo;
+    }
+    if (hi > pal_dirty_hi) {
+        pal_dirty_hi = hi;
+    }
+}
+
+static void pal_rows_plain(int slot, const f32* pm, const f32* nm) {
+    f32(*r)[4] = pal[slot];
+    r[0][0] = pm[0]; r[0][1] = pm[1]; r[0][2] = pm[2]; r[0][3] = pm[3];
+    r[1][0] = pm[4]; r[1][1] = pm[5]; r[1][2] = pm[6]; r[1][3] = pm[7];
+    r[2][0] = pm[8]; r[2][1] = pm[9]; r[2][2] = pm[10]; r[2][3] = pm[11];
+    r[3][0] = nm[0]; r[3][1] = nm[1]; r[3][2] = nm[2]; r[3][3] = 0.0f;
+    r[4][0] = nm[3]; r[4][1] = nm[4]; r[4][2] = nm[5]; r[4][3] = 0.0f;
+    r[5][0] = nm[6]; r[5][1] = nm[7]; r[5][2] = nm[8]; r[5][3] = 0.0f;
+    pal_mark_dirty(slot);
+}
+
+/* slot = (object position matrix) x P_e,  (object normal matrix) x N_e */
+static void pal_rows_skin(int slot, const f32* pm, const f32* nm, const Mtx P, const Mtx N) {
+    f32(*r)[4] = pal[slot];
+    Mtx out;
+    int i, j;
+    PSMTXConcat((const f32(*)[4])pm, P, out);
+    for (i = 0; i < 3; i++) {
+        for (j = 0; j < 4; j++) {
+            r[i][j] = out[i][j];
+        }
+    }
+    for (i = 0; i < 3; i++) {
+        for (j = 0; j < 3; j++) {
+            r[3 + i][j] = nm[i * 3 + 0] * N[0][j] + nm[i * 3 + 1] * N[1][j] +
+                          nm[i * 3 + 2] * N[2][j];
+        }
+        r[3 + i][3] = 0.0f;
+    }
+    pal_mark_dirty(slot);
+}
+
+static void batch_flush(void);
+
+/* A slot to fill: a free one, else the least recently used unpinned one;
+ * -1 when every slot is pinned by the pending batch. */
+static int pal_victim(void) {
+    int i, best = -1;
+    for (i = 0; i < pal_slots; i++) {
+        PalSlot* ps = &pal_slot[i];
+        if (ps->pinned == pal_batch_serial) {
+            continue;
+        }
+        if (ps->kind == 0) {
+            return i;
+        }
+        if (best < 0 || ps->used < pal_slot[best].used) {
+            best = i;
+        }
+    }
+    return best;
+}
+
+static void pal_flush_for_room(void) {
+    Layout cur = sl;
+    sl = batch_sl;
+    batch_flush();
+    sl = cur;
+    stat_pal_flushes++;
+}
+
+/* The primitive about to be decoded, for the skinned pre-scan: its list bytes
+ * and vertex count (set by GXCallDisplayList before pal_place). */
+static const u8* pal_scan_p;
+static u32 pal_scan_count;
+
+/* Give the primitive in hand its slot(s).  May flush the pending batch (every
+ * slot is pinned); the caller has decoded nothing yet.
+ *
+ * A skinned mesh's entries are placed *as the primitives need them* -- a
+ * character's body has 43-50 entries (PLAN.md 33.1) and the palette 24 -- so
+ * the mesh keeps a map entry -> slot (`ent_slotf`, checked against the slot's
+ * own key since another object may have evicted it), the primitive's index
+ * list is scanned for the entries it touches, and the ones not resident get
+ * a slot. */
+static void pal_place(void) {
+    const f32* pm = pi.pos_mtx;
+    const f32* nm = pi.nrm_mtx;
+    int k;
+    if (!palette_on) {
+        return;
+    }
+    pal_clock++;
+    if (pi.skin) {
+        SkinMesh* m = pi.skin;
+        int e, per = 0, need = 0, pass;
+        const u8* p = pal_scan_p;
+        u32 i;
+        int needed[PAL_SLOTS_MAX + 1];
+        int nneeded = 0;
+        for (k = 0; k < nplan; k++) {
+            per += plan[k].advance;
+        }
+        if (!p || per <= 0 || nplan < 1 || plan[0].attr != GX_VA_POS || plan[0].idx != 2) {
+            /* not a shape the window can scan; should not happen (the lookup
+             * requires the list shape) -- counted, drawn with slot 0 */
+            stat_pal_overflow++;
+            for (e = 0; e < m->nent; e++) {
+                m->ent_slotf[e] = 0.0f;
+            }
+            return;
+        }
+        /* the map is per object matrix and pose: a different one means none
+         * of the resident entries is this primitive's */
+        if (m->map_pose != m->pose_serial || memcmp(m->map_posm, pm, 48) != 0 ||
+            memcmp(m->map_nrmm, nm, 36) != 0) {
+            for (e = 0; e < m->nent; e++) {
+                m->ent_slotf[e] = -1.0f;
+            }
+            m->map_pose = m->pose_serial;
+            memcpy(m->map_posm, pm, 48);
+            memcpy(m->map_nrmm, nm, 36);
+        }
+        /* the distinct entries this primitive touches */
+        for (i = 0; i < pal_scan_count; i++) {
+            u32 ix = ((u32)p[i * per] << 8) | p[i * per + 1];
+            int j, seen = 0;
+            if (ix >= (u32)m->nvtx) {
+                continue;
+            }
+            e = m->pos_ent[ix];
+            for (j = 0; j < nneeded; j++) {
+                if (needed[j] == e) {
+                    seen = 1;
+                    break;
+                }
+            }
+            if (!seen && nneeded <= PAL_SLOTS_MAX) {
+                needed[nneeded++] = e;
+            }
+        }
+        stat_pal_scan_hist[nneeded <= 4 ? (nneeded ? nneeded - 1 : 0)
+                           : nneeded <= 8 ? 4 : nneeded <= 16 ? 5 : nneeded <= 24 ? 6 : 7]++;
+        for (pass = 0; pass < 2; pass++) {
+            /* pin what is resident, count what is not */
+            need = 0;
+            for (k = 0; k < nneeded; k++) {
+                e = needed[k];
+                if (m->ent_slotf[e] >= 0.0f) {
+                    int slot = (int)m->ent_slotf[e] / GX_PAL_STRIDE;
+                    PalSlot* ps = &pal_slot[slot];
+                    if (ps->kind == 2 && ps->mesh == m && ps->ent == e &&
+                        ps->pose == m->pose_serial && memcmp(ps->posm, pm, 48) == 0 &&
+                        memcmp(ps->nrmm, nm, 36) == 0) {
+                        ps->pinned = pal_batch_serial;
+                        ps->used = pal_clock;
+                        continue;
+                    }
+                    m->ent_slotf[e] = -1.0f; /* evicted under us */
+                }
+                need++;
+            }
+            if (need == 0) {
+                break;
+            }
+            /* room: unpinned slots */
+            {
+                int room = 0;
+                for (k = 0; k < pal_slots; k++) {
+                    if (pal_slot[k].pinned != pal_batch_serial) {
+                        room++;
+                    }
+                }
+                if (room >= need || pass == 1) {
+                    break;
+                }
+            }
+            pal_flush_for_room(); /* unpins everything; contents stay */
+        }
+        for (k = 0; k < nneeded; k++) {
+            int slot;
+            e = needed[k];
+            if (m->ent_slotf[e] >= 0.0f &&
+                pal_slot[(int)m->ent_slotf[e] / GX_PAL_STRIDE].pinned == pal_batch_serial &&
+                pal_slot[(int)m->ent_slotf[e] / GX_PAL_STRIDE].mesh == m &&
+                pal_slot[(int)m->ent_slotf[e] / GX_PAL_STRIDE].ent == e) {
+                continue; /* pinned above */
+            }
+            slot = pal_victim();
+            if (slot < 0) {
+                m->ent_slotf[e] = 0.0f; /* more entries than slots: wrong, counted */
+                stat_pal_overflow++;
+                continue;
+            }
+            {
+                PalSlot* ps = &pal_slot[slot];
+                if (ps->kind == 2 && ps->mesh && ps->mesh->ent_slotf &&
+                    ps->ent < ps->mesh->nent &&
+                    ps->mesh->ent_slotf[ps->ent] == (f32)(GX_PAL_STRIDE * slot)) {
+                    ps->mesh->ent_slotf[ps->ent] = -1.0f; /* tell the evictee */
+                }
+                pal_rows_skin(slot, pm, nm, m->P[e].m, m->N[e].m);
+                ps->kind = 2;
+                ps->mesh = m;
+                ps->ent = e;
+                ps->pose = m->pose_serial;
+                memcpy(ps->posm, pm, 48);
+                memcpy(ps->nrmm, nm, 36);
+                ps->pinned = pal_batch_serial;
+                ps->used = pal_clock;
+                m->ent_slotf[e] = (f32)(GX_PAL_STRIDE * slot);
+                stat_pal_fills++;
+            }
+        }
+        stat_pal_skin++;
+        return;
+    }
+    /* a plain object: resident already? */
+    for (k = 0; k < pal_slots; k++) {
+        PalSlot* ps = &pal_slot[k];
+        if (ps->kind == 1 && memcmp(ps->posm, pm, 48) == 0 && memcmp(ps->nrmm, nm, 36) == 0) {
+            ps->pinned = pal_batch_serial;
+            ps->used = pal_clock;
+            pi.slotf = (f32)(GX_PAL_STRIDE * k);
+            stat_pal_reused++;
+            return;
+        }
+    }
+    k = pal_victim();
+    if (k < 0) {
+        pal_flush_for_room();
+        k = pal_victim();
+    }
+    {
+        PalSlot* ps = &pal_slot[k];
+        if (ps->kind == 2 && ps->mesh && ps->mesh->ent_slotf && ps->ent < ps->mesh->nent &&
+            ps->mesh->ent_slotf[ps->ent] == (f32)(GX_PAL_STRIDE * k)) {
+            ps->mesh->ent_slotf[ps->ent] = -1.0f;
+        }
+        pal_rows_plain(k, pm, nm);
+        ps->kind = 1;
+        ps->mesh = NULL;
+        ps->ent = -1;
+        memcpy(ps->posm, pm, 48);
+        memcpy(ps->nrmm, nm, 36);
+        ps->pinned = pal_batch_serial;
+        ps->used = pal_clock;
+        pi.slotf = (f32)(GX_PAL_STRIDE * k);
+        stat_pal_plain++;
+        stat_pal_fills++;
+    }
+}
+
 static void draw_submit(const u8* s, int n, const Seg* segs, int nsegs, int in_ring);
 
 static void ring_ensure(void) {
@@ -1700,6 +2108,7 @@ static void batch_flush(void) {
         draw_submit(src_buf + batch_pos, (int)nv, batch, n, 1);
         stat_batches++;
     }
+    pal_reset();
     /* the chunks the writer has finished with get their fences, after the
      * draws that read them */
     gl13_var_left(fence_from, ring_cursor, ring_wrapped);
@@ -1725,22 +2134,17 @@ static size_t ring_claim(size_t need) {
     return ring_cursor;
 }
 
-/* The run at `run_pos` has `nverts` vertices: advance the cursor and add it
- * to the batch, or flush and start a new one when it cannot join. */
-static void batch_add(void) {
-    u32 count = (u32)nverts; /* before anything below can flush */
-    u8 p = prim;
-    size_t bytes = (size_t)count * sl.stride;
-    ring_cursor = run_pos + bytes;
-    if (!count) {
-        return;
-    }
+/* Before a primitive is decoded: if it cannot join the pending batch -- the
+ * layout differs, the batch is full, --oldsubmit / --batchmax -- flush now,
+ * while nothing of the primitive has been written.  M16 made this decision
+ * *after* the decode, in batch_add; the palette (M18) needs it before, because
+ * a vertex's slot is written during the decode and belongs to the batch the
+ * primitive will end up in. */
+static void batch_prepare(u32 count) {
     if (batch_n &&
         (port_opt.oldsubmit || batch_n >= BATCH_MAX ||
          (port_opt.batchmax && batch_n >= port_opt.batchmax) ||
-         batch_verts + count > MAX_VERTS ||
-         memcmp(&batch_sl, &sl, sizeof(sl)) != 0 ||
-         batch_pos + (size_t)batch_verts * batch_sl.stride != run_pos)) {
+         batch_verts + count > MAX_VERTS || memcmp(&batch_sl, &sl, sizeof(sl)) != 0)) {
         /* The layout cannot change inside a list (it is a function of the
          * descriptor, the texgens and the TEV chain, none of which a list can
          * touch), so the pending batch was assembled under `sl` as it is now
@@ -1750,6 +2154,29 @@ static void batch_add(void) {
         sl = batch_sl;
         batch_flush();
         sl = cur;
+    }
+}
+
+/* The run at `run_pos` has `nverts` vertices: advance the cursor and add it
+ * to the batch.  batch_prepare and ring_claim have already made sure it can
+ * join; the check here is the belt to their braces. */
+static void batch_add(void) {
+    u32 count = (u32)nverts; /* before anything below can flush */
+    u8 p = prim;
+    size_t bytes = (size_t)count * sl.stride;
+    ring_cursor = run_pos + bytes;
+    if (!count) {
+        return;
+    }
+    if (batch_n &&
+        (batch_n >= BATCH_MAX || batch_verts + count > MAX_VERTS ||
+         memcmp(&batch_sl, &sl, sizeof(sl)) != 0 ||
+         batch_pos + (size_t)batch_verts * batch_sl.stride != run_pos)) {
+        Layout cur = sl;
+        sl = batch_sl;
+        batch_flush();
+        sl = cur;
+        stat_late_flush++;
     }
     if (!batch_n) {
         batch_pos = run_pos;
@@ -2635,6 +3062,7 @@ static f32 dec_f32_portable(const u8* q) {
             const DecStep* st = plan;                                                    \
             u8* v;                                                                       \
             int j;                                                                       \
+            u32 pos_ix = 0, nrm_ix = 0;                                                  \
             if (nverts >= MAX_VERTS ||                                                   \
                 run_pos + (size_t)(nverts + 1) * sl.stride > src_cap) {                  \
                 gx_warn("GXBegin: more than 65536 vertices in one primitive; truncated");\
@@ -2667,12 +3095,22 @@ static f32 dec_f32_portable(const u8* q) {
                     if (TRACK) {                                                         \
                         dl_track_index(st->attr, ix);                                    \
                     }                                                                    \
+                    if (st->attr == GX_VA_POS) {                                         \
+                        pos_ix = ix;                                                     \
+                    } else if (st->attr == GX_VA_NRM) {                                  \
+                        nrm_ix = ix;                                                     \
+                    }                                                                    \
                     p += 2;                                                              \
                 } else if (st->idx == 1) {                                               \
                     u32 ix = p[0];                                                       \
                     q = st->base + (size_t)ix * st->stride;                              \
                     if (TRACK) {                                                         \
                         dl_track_index(st->attr, ix);                                    \
+                    }                                                                    \
+                    if (st->attr == GX_VA_POS) {                                         \
+                        pos_ix = ix;                                                     \
+                    } else if (st->attr == GX_VA_NRM) {                                  \
+                        nrm_ix = ix;                                                     \
                     }                                                                    \
                     p += 1;                                                              \
                 } else {                                                                 \
@@ -2694,6 +3132,17 @@ static f32 dec_f32_portable(const u8* q) {
                     DEC_CASE_COLOUR                                                      \
                     default: break; /* DEC_NONE: a null array, as before */              \
                 }                                                                        \
+            }                                                                            \
+            if (sl.off_skin >= 0) {                                                      \
+                f32 sf = pi.slotf;                                                       \
+                if (pi.skin) {                                                           \
+                    sf = pos_ix < (u32)pi.skin->nvtx                                     \
+                             ? pi.skin->ent_slotf[pi.skin->pos_ent[pos_ix]] : 0.0f;      \
+                    if (TRACK && port_opt.skinstats) {                                   \
+                        gx_skin_count_vertex(pi.skin, pos_ix, nrm_ix, sl.off_nrm >= 0);  \
+                    }                                                                    \
+                }                                                                        \
+                *(f32*)(v + sl.off_skin) = sf;                                           \
             }                                                                            \
             if (TRACK && port_opt.decodestats) {                                         \
                 ds_vertex();                                                             \
@@ -2730,9 +3179,14 @@ DECODE_RUN(decode_run_tracked, 1)
  * descriptor, 1 rgba8 into the vertex, 2 rgba8 into `pending` (the register
  * material wins, but the index is still consumed and the old path still
  * stored it).  TEX: 0 none, 1 f32 s/t into slot 0.  Every step GX_INDEX16. */
-#define DECODE_FAST(NAME, NRM, CLR, TEX)                                                 \
+#define DECODE_FAST(NAME, NRM, CLR, TEX, SKIN)                                           \
     static const u8* NAME(const u8* p, const u8* end, u32 count) {                       \
         const int PREFETCH = !port_opt.noprefetch;                                       \
+        const int off_skin = sl.off_skin;                                                \
+        const f32 slotf = pi.slotf;                                                      \
+        const f32* entf = (SKIN == 2) ? pi.skin->ent_slotf : NULL;                       \
+        const u16* pent = (SKIN == 2) ? pi.skin->pos_ent : NULL;                         \
+        const u32 nvtx = (SKIN == 2) ? (u32)pi.skin->nvtx : 0;                           \
         const u8* pb = plan[0].base;                                                     \
         const u32 ps = plan[0].stride;                                                   \
         const u8* nb = NRM ? plan[1].base : NULL;                                        \
@@ -2786,6 +3240,11 @@ DECODE_RUN(decode_run_tracked, 1)
             ((f32*)v)[0] = DEC_F32(q, 0);                                                \
             ((f32*)v)[1] = DEC_F32(q, 1);                                                \
             ((f32*)v)[2] = DEC_F32(q, 2);                                                \
+            if (SKIN == 1) {                                                             \
+                *(f32*)(v + off_skin) = slotf;                                           \
+            } else if (SKIN == 2) {                                                      \
+                *(f32*)(v + off_skin) = ix < nvtx ? entf[pent[ix]] : 0.0f;               \
+            }                                                                            \
             p += 2;                                                                      \
             if (NRM) {                                                                   \
                 f32* dp = (f32*)(v + off_nrm);                                           \
@@ -2831,19 +3290,28 @@ DECODE_RUN(decode_run_tracked, 1)
  * the same two without a texcoord, and the four with a vertex colour share
  * the last 4%.  No shape stores a colour in `pending` (the register
  * material wins with no CLR0 in the descriptor), so CLR 2 is not built. */
-DECODE_FAST(decode_fast_n2c0t1, 2, 0, 1)
-DECODE_FAST(decode_fast_n1c0t1, 1, 0, 1)
-DECODE_FAST(decode_fast_n1c0t0, 1, 0, 0)
-DECODE_FAST(decode_fast_n2c0t0, 2, 0, 0)
-DECODE_FAST(decode_fast_n1c1t1, 1, 1, 1)
-DECODE_FAST(decode_fast_n2c1t1, 2, 1, 1)
-DECODE_FAST(decode_fast_n0c1t1, 0, 1, 1)
-DECODE_FAST(decode_fast_n1c1t0, 1, 1, 0)
+#define DECODE_FAST3(NAME, NRM, CLR, TEX)                                                \
+    DECODE_FAST(NAME##s0, NRM, CLR, TEX, 0)                                              \
+    DECODE_FAST(NAME##s1, NRM, CLR, TEX, 1)                                              \
+    DECODE_FAST(NAME##s2, NRM, CLR, TEX, 2)
+DECODE_FAST3(decode_fast_n2c0t1, 2, 0, 1)
+DECODE_FAST3(decode_fast_n1c0t1, 1, 0, 1)
+DECODE_FAST3(decode_fast_n1c0t0, 1, 0, 0)
+DECODE_FAST3(decode_fast_n2c0t0, 2, 0, 0)
+DECODE_FAST3(decode_fast_n1c1t1, 1, 1, 1)
+DECODE_FAST3(decode_fast_n2c1t1, 2, 1, 1)
+DECODE_FAST3(decode_fast_n0c1t1, 0, 1, 1)
+DECODE_FAST3(decode_fast_n1c1t0, 1, 1, 0)
+/* the SKIN axis (M18): 0 no palette, 1 a plain primitive's one slot, 2 a
+ * skinned mesh's per-vertex entry */
+#define PICK3(NAME)                                                                      \
+    (skin == 0 ? NAME##s0 : skin == 1 ? NAME##s1 : NAME##s2)
 
 /* Match the plan against the shapes above; NULL when none fits and the
  * general walker runs.  Called once per primitive from build_decode_plan. */
 static DecodeFast pick_fast(void) {
     int i = 0, nrm = 0, clr = 0, tex = 0;
+    const int skin = sl.off_skin < 0 ? 0 : pi.skin ? 2 : 1;
     if (port_opt.olddecode3 || !plan_ok || plan_nfill != 0 || nplan < 2 || nplan > 4) {
         return NULL;
     }
@@ -2905,14 +3373,14 @@ static DecodeFast pick_fast(void) {
     if (!tex && (plan_nback != 0 || sl.ntex != 0)) {
         return NULL;
     }
-    if (nrm == 2 && clr == 0 && tex == 1) return decode_fast_n2c0t1;
-    if (nrm == 1 && clr == 0 && tex == 1) return decode_fast_n1c0t1;
-    if (nrm == 1 && clr == 0 && tex == 0) return decode_fast_n1c0t0;
-    if (nrm == 2 && clr == 0 && tex == 0) return decode_fast_n2c0t0;
-    if (nrm == 1 && clr == 1 && tex == 1) return decode_fast_n1c1t1;
-    if (nrm == 2 && clr == 1 && tex == 1) return decode_fast_n2c1t1;
-    if (nrm == 0 && clr == 1 && tex == 1) return decode_fast_n0c1t1;
-    if (nrm == 1 && clr == 1 && tex == 0) return decode_fast_n1c1t0;
+    if (nrm == 2 && clr == 0 && tex == 1) return PICK3(decode_fast_n2c0t1);
+    if (nrm == 1 && clr == 0 && tex == 1) return PICK3(decode_fast_n1c0t1);
+    if (nrm == 1 && clr == 0 && tex == 0) return PICK3(decode_fast_n1c0t0);
+    if (nrm == 2 && clr == 0 && tex == 0) return PICK3(decode_fast_n2c0t0);
+    if (nrm == 1 && clr == 1 && tex == 1) return PICK3(decode_fast_n1c1t1);
+    if (nrm == 2 && clr == 1 && tex == 1) return PICK3(decode_fast_n2c1t1);
+    if (nrm == 0 && clr == 1 && tex == 1) return PICK3(decode_fast_n0c1t1);
+    if (nrm == 1 && clr == 1 && tex == 0) return PICK3(decode_fast_n1c1t0);
     return NULL;
 }
 
@@ -3089,7 +3557,12 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
         sv_first = total;
         in_prim = 1;
         begin_attr_order();
+        batch_prepare(count);
         run_pos = ring_claim((size_t)count * (size_t)sl.stride);
+        pal_scan_p = p;
+        pal_scan_count = count;
+        pal_place();
+        pal_scan_p = NULL;
         if (nops == 0) {
             list_pos = run_pos;
         } else if (ring_wrapped) {
@@ -3266,6 +3739,7 @@ void gl13_state_report(void);
 void port_gx_shutdown(void) {
     gx_draw_report();
     gx_decodestats_report();
+    gx_skin_report();
     if (port_opt.vprogstats) {
         gx_vprog_report();
     }

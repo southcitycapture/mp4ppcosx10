@@ -669,3 +669,28 @@ src/game/board/player.c	static s32 MegaPlayerPassFunc(s32 player, s32 space)\n{	
 # instruction screen's players jumped (PLAN.md 31.5).  The fix is the index
 # the author meant.  Fourth upstream note for decomp-struct-notes.md.
 src/REL/instDll/main.c	                CharMotionVoiceOnSet(charNo[i], motId[i][1], 1);	                CharMotionVoiceOnSet(charNo[j], motId[j][1], 1);
+
+# ------------------------------------------------------------ game/EnvelopeExec.c
+# M18 (PLAN.md 33): the skinning is deferred to the draw.  EnvelopeProc asks
+# port_envelope_proc first; by default it returns 1 and the game's body -- the
+# bone walk and the per-vertex skinning -- does not run here: the port runs
+# exactly that body (SetEnvelopMtx + SetEnvelopMain, made visible below, on
+# the same inputs) when a *drawn* frame first needs it, and never on a
+# consumed frame (port/src/gx/gx_skin.c).  --cpuskin makes it return 0 and
+# this file runs as written.
+src/game/EnvelopeExec.c	#include "string.h"\n	#include "string.h"\n\nint port_envelope_proc(HSFDATA *hsf);\n
+src/game/EnvelopeExec.c	static void SetEnvelopMtx(HSFOBJECT *arg0, HSFOBJECT *arg1, Mtx arg2);	void SetEnvelopMtx(HSFOBJECT *arg0, HSFOBJECT *arg1, Mtx arg2);
+src/game/EnvelopeExec.c	static void SetEnvelopMtx(HSFOBJECT *arg0, HSFOBJECT *arg1, Mtx arg2) {	void SetEnvelopMtx(HSFOBJECT *arg0, HSFOBJECT *arg1, Mtx arg2) {
+src/game/EnvelopeExec.c	static void SetEnvelopMain(HSFDATA *arg0);	void SetEnvelopMain(HSFDATA *arg0);
+src/game/EnvelopeExec.c	static void SetEnvelopMain(HSFDATA *arg0) {	void SetEnvelopMain(HSFDATA *arg0) {
+src/game/EnvelopeExec.c	static u32 nObj;	u32 nObj;
+src/game/EnvelopeExec.c	static u32 nMesh;	u32 nMesh;
+src/game/EnvelopeExec.c	    PSMTXIdentity(sp8);\n    SetEnvelopMtx(arg0->object, temp_r29, sp8);\n    SetEnvelopMain(arg0);\n}	    if (port_envelope_proc(arg0)) {\n        return;\n    }\n    PSMTXIdentity(sp8);\n    SetEnvelopMtx(arg0->object, temp_r29, sp8);\n    SetEnvelopMain(arg0);\n}
+
+# ------------------------------------------------------------------ game/hsfdraw.c
+# M18: objMesh's one read of the envelope's bone matrices (the skinned mesh's
+# own world matrix).  With the skinning deferred to the draw, the port brings
+# the matrices up to date here first -- and on a consumed frame (frame mode)
+# does nothing, since the value feeds a GXLoadPosMtxImm that is dropped.
+src/game/hsfdraw.c	#include "ext_math.h"\n#include <string.h>\n	#include "ext_math.h"\n#include <string.h>\n\nvoid port_envelope_sync(HSFDATA *hsf);\n
+src/game/hsfdraw.c	                i = objPtr - hsf->object;\n                MTXConcat(MTXBuf[0], hsf->matrix->data[i + hsf->matrix->base_idx], MTXBuf[MTXIdx]);	                i = objPtr - hsf->object;\n                port_envelope_sync(hsf);\n                MTXConcat(MTXBuf[0], hsf->matrix->data[i + hsf->matrix->base_idx], MTXBuf[MTXIdx]);
