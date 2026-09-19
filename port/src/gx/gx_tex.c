@@ -385,11 +385,82 @@ typedef struct CacheEntry {
      * current for this epoch costs a hash-table lookup and nothing else: no
      * FNV pass at all. */
     unsigned validated_epoch;
+    /* bytes GL holds for this entry (the padded RGBA8 upload), so the cache's
+     * resident size is a number and not a guess (M18: the 45-minute soak
+     * slowed from 99% to 80% speed while a fresh process at the same frame
+     * ran at 100%; the first suspect is what the long process accumulates) */
+    unsigned gl_bytes;
+    unsigned last_used;   /* the frame that last bound it (the budget's LRU) */
 } CacheEntry;
 
 #define CACHE_MAX 2048
 static CacheEntry cache[CACHE_MAX];
 static int cache_used;
+static size_t cache_gl_bytes; /* sum of cache[].gl_bytes: what the driver holds */
+/* ---- the VRAM budget (M18, PLAN.md 33.0) -----------------------------------
+ *
+ * The cache was bounded by *entries* (2048, random replacement when full) and
+ * not by bytes.  The M17 overnight soak slowed from 99% real-time speed at
+ * turn 1 to 80% at turn 12, while a fresh process restored at the same frame
+ * ran at 100%; the instrumented re-run showed the cache holding 130-142 MB of
+ * GL textures on a card with 64 MB, from frame 60,000 on.  Past the card's
+ * memory the driver pages textures over AGP every frame, and that is the
+ * slowdown.  So the cache now has a byte budget: when an upload takes it over,
+ * the entries that have not been bound for the longest go first, never one
+ * bound this frame.  `--texbudget MB` (0 = the pre-M18 behaviour). */
+static void hash_remove(int slot);
+static size_t tex_budget_bytes = (size_t)40 << 20;
+static int free_slots[CACHE_MAX];
+static int nfree_slots;
+static unsigned stat_budget_evict;
+static size_t stat_budget_evict_bytes;
+static unsigned cache_frame;  /* the frame gx_tex_bind last saw */
+
+void gx_tex_set_budget_mb(int mb) { tex_budget_bytes = (size_t)(mb > 0 ? mb : 0) << 20; }
+
+static void cache_free_slot(int slot) {
+    hash_remove(slot);
+    if (gl13_live() && cache[slot].gl_name) {
+        GLuint n = cache[slot].gl_name;
+        GL(glDeleteTextures)(1, &n);
+    }
+    cache_gl_bytes -= cache[slot].gl_bytes;
+    memset(&cache[slot], 0, sizeof(cache[slot]));
+    cache[slot].hash_next = -1;
+    free_slots[nfree_slots++] = slot;
+}
+
+/* Evict the least recently bound entries until the GL-resident bytes are
+ * under budget.  An entry bound in this frame or the last is never taken:
+ * the frame mode draws every other retrace, so "last frame" is the frame the
+ * game built and the card did not see. */
+static void cache_evict_to_budget(void) {
+    int guard = 0;
+    if (!tex_budget_bytes) {
+        return;
+    }
+    while (cache_gl_bytes > tex_budget_bytes && guard++ < CACHE_MAX) {
+        int i, oldest = -1;
+        for (i = 0; i < cache_used; i++) {
+            const CacheEntry* e = &cache[i];
+            if (!e->gl_name || e->image == NULL) {
+                continue;
+            }
+            if (e->last_used + 1 >= cache_frame) {
+                continue;
+            }
+            if (oldest < 0 || e->last_used < cache[oldest].last_used) {
+                oldest = i;
+            }
+        }
+        if (oldest < 0) {
+            return; /* everything resident was bound this frame or the last */
+        }
+        stat_budget_evict++;
+        stat_budget_evict_bytes += cache[oldest].gl_bytes;
+        cache_free_slot(oldest);
+    }
+}
 static unsigned stat_hit, stat_miss, stat_evict, stat_bytes, stat_npot;
 static unsigned stat_hash_full, stat_hash_sampled;
 static unsigned stat_efb;
@@ -506,14 +577,23 @@ void gx_tex_init(void) {
     cache_epoch_started = 0;
 }
 
+/* the cache's resident size, for the status line (M18) */
+void gx_tex_cache_stats(unsigned* entries, unsigned* kb) {
+    *entries = (unsigned)cache_used;
+    *kb = (unsigned)(cache_gl_bytes / 1024);
+}
+
 void gx_tex_report(void) {
     if (!stat_hit && !stat_miss) {
         return;
     }
     port_log("port> texture cache: %u hits, %u misses, %u re-uploads, %u entries, "
-             "%u KB decoded, %u padded to a power of two\n",
+             "%u KB decoded, %u padded to a power of two, %u KB held by GL\n",
              stat_hit, stat_miss, stat_evict, (unsigned)cache_used, stat_bytes / 1024,
-             stat_npot);
+             stat_npot, (unsigned)(cache_gl_bytes / 1024));
+    port_log("port> texture budget: %u MB; %u evictions (%u KB) to stay under it\n",
+             (unsigned)(tex_budget_bytes >> 20), stat_budget_evict,
+             (unsigned)(stat_budget_evict_bytes / 1024));
     port_log("port> texture hash: %u KB hashed in full, %u KB sampled, %u "
              "revalidations (of %u binds)%s%s\n",
              stat_hash_full / 1024, stat_hash_sampled / 1024, stat_revalidate,
@@ -755,6 +835,9 @@ static void tex_bind_decode_and_upload(int slot, int unit, const GXTexObjPort* o
              * mipmapped and therefore incomplete here; force the
              * parameters to be re-emitted for it. */
             cache[slot].param_wrap_s = -1;
+            cache_gl_bytes -= cache[slot].gl_bytes;
+            cache[slot].gl_bytes = (unsigned)(pw * ph * 4);
+            cache_gl_bytes += cache[slot].gl_bytes;
         }
         if (up != rgba) {
             free(up);
@@ -907,6 +990,7 @@ void gx_tex_bind_swapped(int unit, GXTexObjPort* o, u8 swap) {
         cache_epoch_frame = frame;
         cache_epoch++;
     }
+    cache_frame = frame;
 
     if (o->is_ci && o->tlut_name < 64 && gx.tlut[o->tlut_name].magic == TLUT_MAGIC) {
         tlut = &gx.tlut[o->tlut_name];
@@ -924,6 +1008,7 @@ void gx_tex_bind_swapped(int unit, GXTexObjPort* o, u8 swap) {
          * buffer is whatever it was before the copy, and the pixels live in a
          * GL texture the copy already filled. */
         o->gl_name = cache[slot].gl_name;
+        cache[slot].last_used = frame;
         if (!gl13_live() || !o->gl_name) {
             return;
         }
@@ -966,6 +1051,7 @@ void gx_tex_bind_swapped(int unit, GXTexObjPort* o, u8 swap) {
         CacheEntry* e = &cache[slot];
         int need_validate = port_opt.texhash_full || validate_every_bind ||
                             e->validated_epoch != cache_epoch;
+        e->last_used = frame;
         if (!need_validate) {
             stat_hit++;
         } else {
@@ -991,13 +1077,16 @@ void gx_tex_bind_swapped(int unit, GXTexObjPort* o, u8 swap) {
     /* A genuine miss: no entry for this (image, format, w, h, lut) key. */
     {
         u32 content = tex_bind_content_hash(o, tlut, 1 /* first sight: exhaustive */);
-        if (cache_used == CACHE_MAX) {
+        if (nfree_slots) {
+            slot = free_slots[--nfree_slots]; /* a slot the budget freed */
+        } else if (cache_used == CACHE_MAX) {
             slot = (int)(content % CACHE_MAX); /* an eviction, not a leak */
             hash_remove(slot); /* unlink whatever key that slot held before */
             if (gl13_live() && cache[slot].gl_name) {
                 GLuint n = cache[slot].gl_name;
                 GL(glDeleteTextures)(1, &n);
             }
+            cache_gl_bytes -= cache[slot].gl_bytes;
             memset(&cache[slot], 0, sizeof(cache[slot]));
         } else {
             slot = cache_used++;
@@ -1011,9 +1100,13 @@ void gx_tex_bind_swapped(int unit, GXTexObjPort* o, u8 swap) {
         cache[slot].swap = swap;
         cache[slot].content = content;
         cache[slot].validated_epoch = cache_epoch;
+        cache[slot].last_used = frame;
         hash_insert(slot);
         tex_bind_decode_and_upload(slot, unit, o, tlut);
         tex_bind_finish(unit, o, slot);
+        if (cache_gl_bytes > tex_budget_bytes) {
+            cache_evict_to_budget();
+        }
     }
 }
 
@@ -1209,11 +1302,14 @@ void gx_tex_copy(void* dest, int clear) {
      * is keyed on `image` alone (see `find_slot()`). */
     slot = find_slot(dest, 0, 0, 0, NULL, GX_SWAP_IDENTITY, &i);
     if (slot < 0) {
-        if (cache_used == CACHE_MAX) {
+        if (nfree_slots) {
+            slot = free_slots[--nfree_slots];
+        } else if (cache_used == CACHE_MAX) {
             gx_warn("GXCopyTex: the texture cache is full; the copy is dropped");
             return;
+        } else {
+            slot = cache_used++;
         }
-        slot = cache_used++;
         memset(&cache[slot], 0, sizeof(cache[slot]));
         cache[slot].image = dest;
         cache[slot].efb = 1;
@@ -1245,6 +1341,10 @@ void gx_tex_copy(void* dest, int clear) {
             GL(glTexImage2D)(GL_TEXTURE_2D, 0, GL_RGBA8, pw, ph, 0, GL_RGBA,
                              GL_UNSIGNED_BYTE, NULL);
             cache[slot].param_wrap_s = 0;
+            cache_gl_bytes -= cache[slot].gl_bytes;
+            cache[slot].gl_bytes = (unsigned)(pw * ph * 4);
+            cache_gl_bytes += cache[slot].gl_bytes;
+            cache[slot].last_used = cache_frame;
             GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
             GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
             GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -1677,6 +1777,8 @@ void gx_tex_flush_all(void) {
     memset(tiles, 0, sizeof(tiles));
     cache_used = 0;
     tiles_used = 0;
+    cache_gl_bytes = 0;
+    nfree_slots = 0;
     for (i = 0; i < (int)TEX_HASH_SIZE; i++) {
         hash_head[i] = -1;
     }
