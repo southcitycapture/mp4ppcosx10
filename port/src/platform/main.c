@@ -166,6 +166,7 @@ static void usage(const char* argv0) {
             "  --cpuxf           phase 2 on the CPU (the pre-M11 path), for the A/B\n"
             "  --vprogstats      GPU-path vs CPU-fallback draws, and why a variant died\n"
             "  --perf            per-frame game/gx/present timing, both clocks\n"
+            "  --gxsplit         ...and the gx time split into its regions (M21)\n"
             "  --drawlog N       explain the first N draws: geometry, texture, state\n"
             "  --drawlog-at F    ...but only on presented frame F, which is how you\n"
             "  --oldnulltev      drop a TEV stage that names no texture (the pre-M15\n"
@@ -176,6 +177,11 @@ static void usage(const char* argv0) {
             "  --novar           batch and merge draws but keep the vertex ring\n"
             "                    out of GL_APPLE_vertex_array_range\n"
             "  --nomultidraw     one glDrawArrays per strip, no glMultiDrawArraysEXT\n"
+            "  --nohilite        M21: the specular (hilite) channel unlit, as before\n"
+            "  --noindexed       M21: strips/fans through multi-draw, not one\n"
+            "                    glDrawRangeElements per batch (--indexed restores)\n"
+            "  --nofixbase       M21: vertex arrays based at the batch, not at the\n"
+            "                    ring's start (--fixbase restores)\n"
             "  --submitstats     batches, merged draws, primitives per list,\n"
             "                    ring fence waits\n"
             "  --noregfix        fold a TEV stage's GX_TEVREG write to PREV (the\n"
@@ -601,6 +607,9 @@ int port_parse_args(int argc, char** argv) {
             port_opt.vproglog = 1;
         } else if (!strcmp(a, "--gxwarn")) {
             port_opt.gxwarn = 1;
+        } else if (!strcmp(a, "--gxsplit")) {
+            port_opt.gxsplit = 1;
+            port_opt.perf = 1;
         } else if (!strcmp(a, "--perf")) {
             port_opt.perf = 1;
         } else if (!strcmp(a, "--drawlog") && i + 1 < argc) {
@@ -623,6 +632,16 @@ int port_parse_args(int argc, char** argv) {
             port_opt.gltrace = atoi(argv[++i]);
         } else if (!strcmp(a, "--nomerge")) {
             port_opt.nomerge = 1;
+        } else if (!strcmp(a, "--nohilite")) {
+            port_opt.nohilite = 1;
+        } else if (!strcmp(a, "--noindexed")) {
+            port_opt.noindexed = 1;
+        } else if (!strcmp(a, "--indexed")) {
+            port_opt.noindexed = 0;
+        } else if (!strcmp(a, "--nofixbase")) {
+            port_opt.nofixbase = 1;
+        } else if (!strcmp(a, "--fixbase")) {
+            port_opt.nofixbase = 0;
         } else if (!strcmp(a, "--nomultidraw")) {
             port_opt.nomultidraw = 1;
         } else if (!strcmp(a, "--submitstats")) {

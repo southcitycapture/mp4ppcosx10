@@ -80,6 +80,7 @@ static const char* const GL13_ALLOWED[] = {
     "glVertexArrayParameteriAPPLE", "glGenFencesAPPLE", "glSetFenceAPPLE",
     "glFinishFenceAPPLE", "glTestFenceAPPLE", "glMultiDrawArraysEXT",
     "glDrawElements",
+    "glDrawRangeElements", /* M21: one call per batch (GL 1.2 core) */
 };
 
 int gl13_check(const char* fn) {
@@ -187,6 +188,7 @@ typedef struct Glc {
     signed char fog_array_on;
     const void* fog_ptr;
     int fog_stride;
+    signed char color_sum_on;  /* M21: GL_COLOR_SUM (GL 1.4 / EXT_secondary_color) */
 } Glc;
 
 static Glc glc;
@@ -244,6 +246,7 @@ void glc_invalidate(void) {
         glc.depth_mask = -1;
         glc.vertex_array_on = glc.color_array_on = glc.normal_array_on = -1;
         glc.fog_array_on = -1;
+        glc.color_sum_on = -1;
         glc.fog_ptr = (const void*)-1;
         glc.fog_stride = -1;
         glc.proj_valid = 0;
@@ -455,6 +458,15 @@ static void glc_enable(GLenum cap, int on, signed char* shadow) {
     } else {
         GL(glDisable)(cap);
     }
+}
+
+/* M21: the colour sum (GL 1.4 core, GL_EXT_secondary_color on GL 1.3 -- the
+ * token is the same, 0x8458, and g4-glinfo.log lists the extension).  Adds
+ * the fragment's secondary colour after the texture units; the vertex
+ * program writes it (gx_vprog.c) for the hilite fold and nothing else. */
+#define GLC_COLOR_SUM 0x8458
+void glc_color_sum(int on) {
+    glc_enable(GLC_COLOR_SUM, on, &glc.color_sum_on);
 }
 
 void glc_projection(const float* m) {
@@ -809,6 +821,22 @@ void gl13_var_left(size_t from, size_t cursor, int wrapped) {
     (void)from;
     (void)cursor;
     (void)wrapped;
+#endif
+}
+
+/* M21: one indexed draw per batch.  glDrawRangeElements is GL 1.2 core and in
+ * the 10.4u SDK's gl.h; `wide` selects GL_UNSIGNED_INT indices. */
+void gl13_draw_range_elements(unsigned mode, unsigned lo, unsigned hi, int n, int wide,
+                              const void* idx) {
+#ifndef PORT_NO_SDL
+    if (gl13_trace_armed()) {
+        port_log("gltrace> glDrawRangeElements mode %04x range %u..%u count %d %s\n", mode,
+                 lo, hi, n, wide ? "u32" : "u16");
+    }
+    GL(glDrawRangeElements)((GLenum)mode, (GLuint)lo, (GLuint)hi, (GLsizei)n,
+                            wide ? GL_UNSIGNED_INT : GL_UNSIGNED_SHORT, idx);
+#else
+    (void)mode; (void)lo; (void)hi; (void)n; (void)wide; (void)idx;
 #endif
 }
 

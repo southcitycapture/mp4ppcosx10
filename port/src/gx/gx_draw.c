@@ -200,6 +200,51 @@ typedef struct PrimInv {
     f32 slotf;
 } PrimInv;
 static PrimInv pi;
+
+/* M21: the hilite fold (gx_internal.h).  Decided per primitive from the
+ * channel and TEV state, which a batch shares (every setter that could
+ * change it ends the batch). */
+int gx_hilite_stage = -1;
+static unsigned stat_hilite_prims, stat_hilite_unfoldable;
+
+int gx_hilite_decide(void) {
+    int k, stages = gx.num_tev;
+    gx_hilite_stage = -1;
+    if (port_opt.nohilite || gx.num_chans < 2 || !gx.chan[GX_COLOR1].enable ||
+        gx.chan[GX_COLOR1].attn_fn != GX_AF_SPEC) {
+        return -1;
+    }
+    for (k = 0; k < stages && k < GX_TEV_STAGES; k++) {
+        const GXTevStage* t = &gx.tev[k];
+        if (t->chan != GX_COLOR1A1) {
+            continue;
+        }
+        if (t->cin[0] == GX_CC_CPREV && t->cin[1] == GX_CC_ONE && t->cin[2] == GX_CC_RASC &&
+            t->cin[3] == GX_CC_ZERO && t->cop == GX_TEV_ADD && t->cbias == GX_TB_ZERO &&
+            t->cscale == GX_CS_SCALE_1 && t->creg == GX_TEVPREV) {
+            /* hsfdraw.c:827 / 1370: the screen.  Exact when everything
+             * before it is linear in RAS0 and nothing follows -- which is
+             * the material setup's shape; a stage after it (a projection
+             * map) would see the sum added after it and is counted. */
+            gx_hilite_stage = k;
+            stat_hilite_prims++;
+            if (k + 1 < stages) {
+                stat_hilite_unfoldable++;
+                gx_warn("TEV: a hilite stage with stages after it; the specular "
+                        "sum lands after them");
+            }
+            return k;
+        }
+        /* hsfdraw.c:1374: TEXC * RASC1 + CPREV, the textured highlight; a
+         * colour sum cannot carry a texture factor, so it is left as
+         * before (fed from channel 0) and counted */
+        stat_hilite_unfoldable++;
+        gx_warn("TEV: a textured hilite stage (TEXC * RASC1 + CPREV); drawn "
+                "from channel 0 as before");
+        return -1;
+    }
+    return -1;
+}
 static void batch_prepare(u32 count);
 static void pal_place(void);
 int gx_palette_active;     /* the batches carry a matrix palette (M18)      */
@@ -242,6 +287,8 @@ static float byte_scale[256];
 static unsigned stat_prims, stat_verts, stat_draws, stat_dls;
 static unsigned long stat_fast_verts; /* through the specialised loops (M17) */
 /* --submitstats (M16): what the batching actually found in the lists */
+static unsigned stat_indexed_batches, stat_indexed_tris, stat_indexed_u32; /* M21 */
+static unsigned stat_fixbase_batches, stat_fixbase_miss;                   /* M21 */
 static unsigned stat_batches, stat_merged, stat_multi_calls, stat_multi_prims,
     stat_wraps, stat_lists_drawn, stat_late_flush;
 static unsigned stat_pal_flushes, stat_pal_plain, stat_pal_skin, stat_pal_reused;
@@ -302,6 +349,14 @@ void gx_draw_report(void) {
                  "%u ring wraps\n",
                  stat_batches, stat_prims, stat_draws, stat_merged, stat_multi_prims,
                  stat_multi_calls, stat_wraps);
+        port_log("port> submit: M21 hilite: %u primitives with the specular channel folded, "
+                 "%u stages the fold does not cover\n",
+                 stat_hilite_prims, stat_hilite_unfoldable);
+        port_log("port> submit: M21 indexed: %u batches as one glDrawRangeElements "
+                 "(%u triangles, %u with 32-bit indices); fixbase: %u batches based at "
+                 "the ring, %u not aligned\n",
+                 stat_indexed_batches, stat_indexed_tris, stat_indexed_u32,
+                 stat_fixbase_batches, stat_fixbase_miss);
         port_log("port> submit: %u display lists drawn; primitives per list: "
                  "1: %u  2-4: %u  5-16: %u  17-64: %u  65+: %u\n",
                  stat_lists_drawn, stat_list_hist[0], stat_list_hist[1],
@@ -601,6 +656,7 @@ static void begin_attr_order(void) {
         } else {
             pi.chan_mode = 2;
         }
+        gx_hilite_decide();
         pi.ntexgen = gx.num_texgens < GX_TEXCOORDS ? gx.num_texgens : GX_TEXCOORDS;
         for (t = 0; t < pi.ntexgen; t++) {
             const GXTexGen* g = &gx.texgen[t];
@@ -1753,6 +1809,7 @@ static void fill_xf_desc(GxXfDesc* d, const u8* s) {
     d->off_tex = sl.off_tex;
     d->ntex = sl.ntex;
     d->off_skin = sl.off_skin;
+    d->hilite = gx_hilite_stage >= 0 && pi.chan_mode == 2;
     d->pal = (const f32(*)[4])pal;
     d->pal_n = (palette_on && sl.off_skin >= 0) ? pal_slots : 0;
     d->pal_dirty_lo = pal_dirty_lo;
@@ -2124,6 +2181,16 @@ static size_t ring_claim(size_t need) {
     if (need > src_cap) {
         need = src_cap; /* the decoder truncates to the sink past the end */
     }
+    /* M21 (--fixbase): a batch's first vertex sits at a multiple of its
+     * stride from the ring's start, so the batch can be addressed as an
+     * index from a base that never moves (draw_submit).  A few bytes of
+     * padding per batch; nothing inside a batch moves. */
+    if (!batch_n && !port_opt.nofixbase && sl.stride > 0) {
+        size_t rem = ring_cursor % (size_t)sl.stride;
+        if (rem) {
+            ring_cursor += (size_t)sl.stride - rem;
+        }
+    }
     if (ring_cursor + need > src_cap) {
         batch_flush();
         ring_cursor = 0;
@@ -2289,6 +2356,103 @@ static void issue_segments(const Seg* segs, int nsegs) {
     }
 }
 
+/* ---- M21: one draw call per batch ------------------------------------------
+ *
+ * `glMultiDrawArraysEXT` is a loop inside the driver: every strip of a batch
+ * is still its own draw with its own per-draw validation.  A batch whose
+ * segments are all triangles, quads, strips and fans is instead expressed as
+ * one triangle list through an index buffer and issued with one
+ * `glDrawRangeElements`.  Nothing about any triangle changes: a strip's
+ * triangle i is (i, i+1, i+2) for even i and (i+1, i, i+2) for odd i, which
+ * is the order GL itself defines (so the winding, hence the culling, is the
+ * same), a fan's is (0, i+1, i+2), and a quad is (0,1,2)(0,2,3), the split
+ * the hardware makes of a GL_QUADS quad.  The shade model is GL_SMOOTH
+ * everywhere (gl13.c), so no provoking vertex can differ.  The md5s are the
+ * check; `--noindexed` is the A/B. */
+static u32 idx_buf[3 * MAX_VERTS];
+
+/* Build the batch's index list with `bias` added to every index.  Returns
+ * the index count, or 0 when a segment is not a triangle-family primitive. */
+static u32 build_indices(const Seg* segs, int nsegs, u32 bias, u32* lo, u32* hi) {
+    u32 n = 0;
+    int k;
+    u32 mn = 0xffffffffu, mx = 0;
+    for (k = 0; k < nsegs; k++) {
+        u32 f = segs[k].first + bias, c = segs[k].count, i;
+        if (c < 3) {
+            continue;
+        }
+        switch (segs[k].prim) {
+            case GX_TRIANGLES:
+                c -= c % 3;
+                for (i = 0; i < c; i++) {
+                    idx_buf[n++] = f + i;
+                }
+                break;
+            case GX_QUADS:
+                c -= c % 4;
+                for (i = 0; i < c; i += 4) {
+                    idx_buf[n++] = f + i;
+                    idx_buf[n++] = f + i + 1;
+                    idx_buf[n++] = f + i + 2;
+                    idx_buf[n++] = f + i;
+                    idx_buf[n++] = f + i + 2;
+                    idx_buf[n++] = f + i + 3;
+                }
+                break;
+            case GX_TRIANGLESTRIP:
+                for (i = 0; i + 2 < c; i++) {
+                    if (i & 1) {
+                        idx_buf[n++] = f + i + 1;
+                        idx_buf[n++] = f + i;
+                    } else {
+                        idx_buf[n++] = f + i;
+                        idx_buf[n++] = f + i + 1;
+                    }
+                    idx_buf[n++] = f + i + 2;
+                }
+                break;
+            case GX_TRIANGLEFAN:
+                for (i = 1; i + 1 < c; i++) {
+                    idx_buf[n++] = f;
+                    idx_buf[n++] = f + i;
+                    idx_buf[n++] = f + i + 1;
+                }
+                break;
+            default:
+                return 0;
+        }
+        if (f < mn) {
+            mn = f;
+        }
+        if (f + c - 1 > mx) {
+            mx = f + c - 1;
+        }
+    }
+    *lo = mn;
+    *hi = mx;
+    return n;
+}
+
+static void issue_indexed(u32 nidx, u32 lo, u32 hi) {
+    if (hi <= 0xffffu) {
+        /* 16-bit indices: the same buffer, packed in place (front to back,
+         * so no element is overwritten before it is read) */
+        u16* p16 = (u16*)idx_buf;
+        u32 i;
+        for (i = 0; i < nidx; i++) {
+            p16[i] = (u16)idx_buf[i];
+        }
+        gl13_draw_range_elements(GL_TRIANGLES, lo, hi, (int)nidx, 0, p16);
+    } else {
+        gl13_draw_range_elements(GL_TRIANGLES, lo, hi, (int)nidx, 1, idx_buf);
+        stat_indexed_u32++;
+    }
+    stat_draws++;
+    stat_indexed_batches++;
+    stat_indexed_tris += nidx / 3;
+}
+
 /* The draw itself, once the span is in hand.  `s` is where phase 2 reads
  * from: the ring for a batch the decoder just assembled, and the cached copy
  * for a display list that hit.  `n` is the span's vertex count; the segments
@@ -2296,6 +2460,7 @@ static void issue_segments(const Seg* segs, int nsegs) {
 static void draw_submit(const u8* s, int n, const Seg* segs, int nsegs, int in_ring) {
     GxXfDesc xfd;
     int on_gpu = 0;
+    u32 bias = 0; /* M21 --fixbase: the batch's first vertex as an index from the ring's start */
     if (!n || !nsegs) {
         return;
     }
@@ -2313,14 +2478,35 @@ static void draw_submit(const u8* s, int n, const Seg* segs, int nsegs, int in_r
     if (!port_opt.cpuxf) {
         fill_xf_desc(&xfd, s);
         on_gpu = gx_vprog_draw(&xfd, n);
+        /* M21 (--fixbase): the arrays are based at the ring, not at the
+         * batch, so their pointers -- and whatever the driver rebuilds when
+         * a pointer changes -- change only when the layout does.  The
+         * batch's position becomes an index bias on every segment.  Only
+         * for a batch the ring_claim alignment placed (a late flush in
+         * batch_add can start a batch anywhere: then the old base). */
+        if (on_gpu && in_ring && !port_opt.nofixbase && src_buf && s >= src_buf &&
+            sl.stride > 0 && ((size_t)(s - src_buf) % (size_t)sl.stride) == 0) {
+            bias = (u32)((size_t)(s - src_buf) / (size_t)sl.stride);
+            xfd.base = src_buf;
+            stat_fixbase_batches++;
+        } else if (on_gpu && in_ring && !port_opt.nofixbase) {
+            stat_fixbase_miss++;
+        }
     }
     if (!on_gpu) {
         gx_vprog_disable();
+        port_perf_sub_enter(PERF_SUB_XF);
         finish_vertices(s, n);
+        port_perf_sub_leave();
     }
+    port_perf_sub_enter(PERF_SUB_STATE);
     gl13_apply_transform();
     gl13_apply_raster_state();
     gx_tev_apply();
+    /* M21: the specular colour sum, only where the vertex program wrote a
+     * secondary colour for it (gx_internal.h, gx_hilite_decide) */
+    glc_color_sum(on_gpu && !port_opt.cpuxf && xfd.hilite);
+    port_perf_sub_leave();
     /* After the state is applied, not before: the texture cache fills in
      * gl_name at bind time, so a log taken earlier reports a stale 0 and
      * sends you hunting for a texture upload that already happened. */
@@ -2343,6 +2529,7 @@ static void draw_submit(const u8* s, int n, const Seg* segs, int nsegs, int in_r
      * reads it from index zero, so the base pointer never moves; the offsets
      * and the stride do, because the layout is packed to the primitive.
      * glc_* compares both. */
+    port_perf_sub_enter(PERF_SUB_ISSUE);
     if (on_gpu) {
         /* the parameters and the arrays, now that the texture binds this draw
          * needs have happened: gx_vprog.c says why that ordering matters */
@@ -2391,9 +2578,34 @@ static void draw_submit(const u8* s, int n, const Seg* segs, int nsegs, int in_r
             GL(glDrawArrays)(gl_prim(segs[i].prim), 0, (GLsizei)segs[i].count);
             stat_draws++;
         }
+        port_perf_sub_leave();
         return;
     }
-    issue_segments(segs, nsegs);
+    if (!port_opt.noindexed && !port_opt.oldsubmit) {
+        u32 lo = 0, hi = 0, nidx;
+        port_perf_sub_enter(PERF_SUB_INDEX);
+        nidx = build_indices(segs, nsegs, bias, &lo, &hi);
+        port_perf_sub_leave();
+        if (nidx) {
+            issue_indexed(nidx, lo, hi);
+            port_perf_sub_leave();
+            return;
+        }
+    }
+    if (bias) {
+        /* the arrays are based at the ring: every segment starts `bias`
+         * vertices in */
+        static Seg biased[BATCH_MAX];
+        int i;
+        for (i = 0; i < nsegs; i++) {
+            biased[i] = segs[i];
+            biased[i].first += bias;
+        }
+        issue_segments(biased, nsegs);
+    } else {
+        issue_segments(segs, nsegs);
+    }
+    port_perf_sub_leave();
 }
 
 /* An immediate-mode primitive: its own batch, flushed at once. */
@@ -3597,6 +3809,7 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
             if (port_opt.decodestats) {
                 ds_plan_note(count);
             }
+            port_perf_sub_enter(PERF_SUB_DECODE);
             if (plan_fast && !caching && !port_opt.decodestats) {
                 stat_fast_verts += count;
                 p = plan_fast(p, end, count);
@@ -3604,6 +3817,7 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
                 p = (caching || port_opt.decodestats) ? decode_run_tracked(p, end, count)
                                                       : decode_run(p, end, count);
             }
+            port_perf_sub_leave();
         } else {
             for (i = 0; i < count && p < end; i++) {
                 for (k = 0; k < nactive; k++) {

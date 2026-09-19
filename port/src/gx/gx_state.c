@@ -100,6 +100,14 @@ GXFifoObj* GXInit(void* base, u32 size) {
     }
     gx.num_tev = 1;
     gx.num_chans = 0;
+    /* GXInit's channel defaults (GXInit.c:276-280): ambient black, material
+     * white, both channels.  Channel 1's are what a hilite material's
+     * specular channel runs with, since hsfdraw.c never sets them (M21). */
+    for (i = 0; i < 4; i++) {
+        gx.chan[i].mat.r = gx.chan[i].mat.g = gx.chan[i].mat.b = gx.chan[i].mat.a = 255;
+        gx.chan[i].amb_src = GX_SRC_REG;
+        gx.chan[i].mat_src = GX_SRC_VTX;
+    }
     gx.z_enable = 1;
     gx.z_func = GX_LEQUAL;
     gx.z_update = 1;
@@ -504,13 +512,34 @@ void GXInitLightDistAttn(GXLightObj* o, f32 ref_distance, f32 ref_brightness,
     l->k[1] = k1;
     l->k[2] = k2;
 }
+/* M21: exactly the SDK's GXLight.c.  The light's *direction* becomes the
+ * half-angle vector between the light and the viewer (0,0,1), which is what
+ * a GX_AF_SPEC channel dots the normal with, and its *position* moves to a
+ * point 2^20 units away along the light -- so a channel that reads the
+ * position (channel 0's diffuse, in hsfdraw.c's hilite materials, which set
+ * one light object for both channels) sees a directional light.  Before M21
+ * only the direction was stored and the position stayed where
+ * GXInitLightPos had put it (PLAN.md 36). */
 void GXInitSpecularDir(GXLightObj* o, f32 x, f32 y, f32 z) {
     GX_STATE_TOUCH();
     GXLight* l = light_of(o);
-    l->dir[0] = x;
-    l->dir[1] = y;
-    l->dir[2] = z;
-    gx_warn("GXInitSpecularDir: specular is approximated by the diffuse term");
+    f32 vx = -x, vy = -y, vz = -z + 1.0f;
+    f32 mag = vx * vx + vy * vy + vz * vz;
+    mag = mag > 0.0f ? 1.0f / sqrtf(mag) : 0.0f;
+    l->dir[0] = vx * mag;
+    l->dir[1] = vy * mag;
+    l->dir[2] = vz * mag;
+    if (port_opt.nohilite) {
+        /* the pre-M21 shape: direction only, position untouched */
+        l->dir[0] = x;
+        l->dir[1] = y;
+        l->dir[2] = z;
+        return;
+    }
+    l->pos[0] = -x * 1048576.0f;
+    l->pos[1] = -y * 1048576.0f;
+    l->pos[2] = -z * 1048576.0f;
+    l->used = 1;
 }
 
 void GXLoadLightObjImm(GXLightObj* o, GXLightID id) {

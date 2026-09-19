@@ -47,6 +47,41 @@ static int n_samples;
 static unsigned long n_frames_seen; /* every frame, past the sample cap too */
 static double t_first;
 
+/* --gxsplit: exclusive regions inside gx.  A small stack; entering a region
+ * closes the slice of the one above it, leaving re-opens it.  Two timer
+ * reads per enter/leave pair, only with the flag. */
+static double sub_total[PERF_SUB_N];
+static unsigned long sub_count[PERF_SUB_N];
+static int sub_stack[16];
+static double sub_open;
+static int sub_depth;
+
+void port_perf_sub_enter(int which) {
+    double now;
+    if (!port_opt.gxsplit || sub_depth >= 16) {
+        return;
+    }
+    now = port_now_seconds();
+    if (sub_depth > 0) {
+        sub_total[sub_stack[sub_depth - 1]] += now - sub_open;
+    }
+    sub_stack[sub_depth++] = which;
+    sub_count[which]++;
+    sub_open = now;
+}
+
+void port_perf_sub_leave(void) {
+    double now;
+    if (!port_opt.gxsplit || sub_depth <= 0) {
+        return;
+    }
+    now = port_now_seconds();
+    sub_total[sub_stack[--sub_depth]] += now - sub_open;
+    sub_open = now;
+}
+
+static unsigned long drawn_frames_seen;
+
 void port_perf_gx_begin(void) {
     if (!port_opt.perf) {
         return;
@@ -143,6 +178,9 @@ void port_perf_frame(int drawn) {
         return;
     }
     n_frames_seen++;
+    if (drawn) {
+        drawn_frames_seen++;
+    }
     wall = now - t_frame_start - t_sleep;
     game = wall - t_gx - t_present - t_audio;
     if (game < 0.0) {
@@ -334,5 +372,27 @@ void port_perf_report(void) {
              wall / gameclock > 1.02 ? "  (WALL CLOCK IS BEHIND: the gate is hiding an overrun)"
                                      : "  (keeping up)");
     port_log("  fps      %.1f effective\n", n_samples / wall);
+    if (port_opt.gxsplit) {
+        static const char* names[PERF_SUB_N] = {"decode", "cpu-xf", "state", "texbind",
+                                                "issue", "index"};
+        double gx_sum = 0.0, sub_sum = 0.0;
+        unsigned long df = drawn_frames_seen ? drawn_frames_seen : 1;
+        for (i = 0; i < n_samples; i++) {
+            gx_sum += s_gx[i];
+        }
+        for (i = 0; i < PERF_SUB_N; i++) {
+            sub_sum += sub_total[i];
+        }
+        port_log("  ---- --gxsplit: %lu drawn frames, gx %.2f ms/drawn frame (sampled) ----\n",
+                 drawn_frames_seen, gx_sum / (double)df);
+        for (i = 0; i < PERF_SUB_N; i++) {
+            port_log("  %-8s %7.2f ms/drawn frame  %5.1f%% of the regions  %9lu enters, %6.1f us each\n",
+                     names[i], sub_total[i] * 1000.0 / (double)df,
+                     sub_sum > 0.0 ? 100.0 * sub_total[i] / sub_sum : 0.0, sub_count[i],
+                     sub_count[i] ? sub_total[i] * 1e6 / (double)sub_count[i] : 0.0);
+        }
+        port_log("  %-8s %7.2f ms/drawn frame  (gx minus the regions: hashing, copies, the rest)\n",
+                 "other", gx_sum / (double)df - sub_sum * 1000.0 / (double)df);
+    }
     perf_windows();
 }

@@ -597,6 +597,7 @@ static u32 tev_sig_hash(int stages, u32 have_tex_bits) {
     } while (0)
     TEV_MIX(&gx.num_tev, sizeof(gx.num_tev));
     TEV_MIX(&have_tex_bits, sizeof(have_tex_bits));
+    TEV_MIX(&gx_hilite_stage, sizeof(gx_hilite_stage)); /* M21 */
     TEV_MIX(&gx.num_ind, sizeof(gx.num_ind));
     TEV_MIX(gx.swap_tbl, sizeof(gx.swap_tbl));
     TEV_MIX(gx.kcolor, sizeof(gx.kcolor));
@@ -621,6 +622,7 @@ static unsigned long stat_konst_draws;    /* draws whose config has a collision 
 static unsigned long stat_konst_configs;  /* distinct configs (cache misses) with one */
 static unsigned long stat_draws_applied;
 static unsigned long tev_hits, tev_misses;
+static unsigned stat_hilite_stages; /* M21: hilite stages emitted as a pass */
 
 void gx_tev_cache_invalidate(void) { tev_cache_live = 0; }
 
@@ -747,6 +749,22 @@ void gx_tev_apply(void) {
             if (emit && regfix_k >= 0 && i >= regfix_k && i <= regfix_k + 2) {
                 regfix_emit(i - regfix_k, i, regfix_k);
                 stat_regfix++;
+            } else if (emit && i == gx_hilite_stage) {
+                /* M21: the hilite screen, lerp(CPREV, ONE, RASC[COLOR1A1]).
+                 * The vertex side has already folded (1 - spec) into the
+                 * primary colour and GL_COLOR_SUM adds spec after the
+                 * units (gx_internal.h), so here the colour passes through
+                 * and only the stage's alpha (APREV * A0) is emitted. */
+                glc_texenvi(i, GL_TEXTURE_ENV_MODE, GL_COMBINE);
+                glc_texenvi(i, GL_COMBINE_RGB, GL_REPLACE);
+                glc_texenvi(i, GL_SOURCE0_RGB, GL_PREVIOUS);
+                glc_texenvi(i, GL_OPERAND0_RGB, GL_SRC_COLOR);
+                glc_texenvf(i, GL_RGB_SCALE, 1.0f);
+                emit_channel(i, 0, alpha_arg(s, s->ain[0]), alpha_arg(s, s->ain[1]),
+                             alpha_arg(s, s->ain[2]), alpha_arg(s, s->ain[3]), s->aop,
+                             s->abias, s->ascale, konst, &konst_set);
+                glc_texenv_color(i, konst);
+                stat_hilite_stages++;
             } else if (emit) {
                 glc_texenvi(i, GL_TEXTURE_ENV_MODE, GL_COMBINE);
                 emit_channel(i, 1, color_arg(s, s->cin[0]), color_arg(s, s->cin[1]),
@@ -772,6 +790,10 @@ void gx_tev_report(void) {
         port_log("port> tev: konst collision (two constants in one stage): %lu of %lu "
                  "draws carry one, in %lu distinct configs (PLAN.md 31.4)\n",
                  stat_konst_draws, stat_draws_applied, stat_konst_configs);
+    }
+    if (stat_hilite_stages) {
+        port_log("port> tev: %u hilite stage emissions folded into the specular colour "
+                 "sum (PLAN.md 36)\n", stat_hilite_stages);
     }
     if (stat_regfix || reg_write_warned) {
         port_log("port> tev: %u unit emissions through the register rewrite "

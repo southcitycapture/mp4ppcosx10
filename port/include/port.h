@@ -54,6 +54,9 @@ typedef struct PortOptions {
     int glinfo;             /* --glinfo   dump GL strings, limits, extensions */
     long long seed;         /* --seed N   deterministic clock origin (RNG seed) */
     int perf;               /* --perf     per-frame game/gx/present timing     */
+    int gxsplit;            /* --gxsplit  M21: the gx time split into exclusive
+                             *   regions (decode, CPU transform, state, texture
+                             *   bind, issue) per drawn frame                  */
     int drawlog;            /* --drawlog N  explain the first N draws in full  */
     int dumptex;            /* --dumptex  write every decoded texture as a PPM */
     int texhash_full;       /* --texhash-full  hash whole textures every bind */
@@ -194,6 +197,20 @@ typedef struct PortOptions {
                              *   primitives (triangles/quads) into one call */
     int nomultidraw;        /* --nomultidraw  one glDrawArrays per strip
                              *   instead of glMultiDrawArraysEXT              */
+    /* ---- M21: the drawn frame ---- */
+    int noindexed;          /* --noindexed  M21: issue a batch's strips and
+                             *   fans through glMultiDrawArraysEXT as M16 did,
+                             *   instead of one glDrawRangeElements over an
+                             *   index list built for the batch (--indexed) */
+    int nohilite;           /* --nohilite  M21: the pre-M21 picture for a
+                             *   hilite (specular) material: channel 1 not
+                             *   lit, its stage fed from channel 0, the
+                             *   light's position not moved by
+                             *   GXInitSpecularDir (PLAN.md 36)            */
+    int nofixbase;          /* --nofixbase  M21: the vertex arrays based at
+                             *   each batch's ring position as M16 did,
+                             *   instead of at the ring's start with the
+                             *   batch's offset in `first` (--fixbase)      */
     int submitstats;        /* --submitstats  batches, merges, primitives per
                              *   list, fence waits                            */
     unsigned cmpmask;       /* --cmpmask N  which compare-first setter groups
@@ -306,6 +323,19 @@ void port_perf_gx_end(void);
 void port_perf_present_begin(void);
 void port_perf_present_end(void);
 void port_perf_slept(double seconds);
+/* --gxsplit (M21): exclusive sub-regions of the gx time.  Nested enters
+ * charge the inner region only; every enter is paired with a leave. */
+enum {
+    PERF_SUB_DECODE = 0, /* the display-list / immediate decode into the ring */
+    PERF_SUB_XF,         /* finish_vertices: the CPU transform path            */
+    PERF_SUB_STATE,      /* gl13_apply_transform/raster + gx_tev_apply         */
+    PERF_SUB_TEX,        /* gx_tex_bind: hash, decode, upload, bind            */
+    PERF_SUB_ISSUE,      /* gx_vprog_bind + the VAR flush + the draw calls     */
+    PERF_SUB_INDEX,      /* M21: building the batch's index list               */
+    PERF_SUB_N
+};
+void port_perf_sub_enter(int which);
+void port_perf_sub_leave(void);
 void port_perf_audio_begin(void);
 void port_perf_audio_end(void);
 void port_perf_frame(int drawn);

@@ -972,13 +972,21 @@ static void swizzle_rgba(u8* rgba, int w, int h, u8 swap) {
 
 void gx_tex_bind(int unit, GXTexObjPort* o) { gx_tex_bind_swapped(unit, o, GX_SWAP_IDENTITY); }
 
+static void tex_bind_body(int unit, GXTexObjPort* o, u8 swap);
+
 void gx_tex_bind_swapped(int unit, GXTexObjPort* o, u8 swap) {
-    const GXTlutObjPort* tlut = NULL;
-    int slot, is_efb;
-    unsigned frame;
     if (!o || o->magic != TEXOBJ_MAGIC) {
         return;
     }
+    port_perf_sub_enter(PERF_SUB_TEX);
+    tex_bind_body(unit, o, swap);
+    port_perf_sub_leave();
+}
+
+static void tex_bind_body(int unit, GXTexObjPort* o, u8 swap) {
+    const GXTlutObjPort* tlut = NULL;
+    int slot, is_efb;
+    unsigned frame;
     if (gl13_draw_off()) {
         /* --nodraw: nothing will sample it, and decoding a texture is the
          * second most expensive thing this backend does.  The cache is

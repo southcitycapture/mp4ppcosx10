@@ -121,9 +121,15 @@ static VpLimits vpl;
 #define VPE_LIGHT  8
 #define VPE_NLIGHTS 2  /* M18: was 8; nothing in this game lights with more than
                         * one (PLAN.md 25), and the room went to the palette */
-#define VPE_TEXMTX (VPE_LIGHT + 3 * VPE_NLIGHTS)            /* 14 */
-#define VPE_TEXSCL (VPE_TEXMTX + 3 * GX_TEXCOORDS)          /* 38 */
-#define VPE_COUNT  (VPE_TEXSCL + GX_TEX_UNITS)              /* 44 */
+/* M21: five params a light -- position, colour, distance attenuation (k),
+ * angle attenuation (a), direction (the half-angle vector for a specular
+ * light) -- the last two for the specular channel (PLAN.md 36) */
+#define VPE_LSTRIDE 5
+#define VPE_MAT1   (VPE_LIGHT + VPE_LSTRIDE * VPE_NLIGHTS)  /* 18: channel 1's material */
+#define VPE_AMB1   (VPE_MAT1 + 1)                           /* 19: channel 1's ambient  */
+#define VPE_TEXMTX (VPE_AMB1 + 1)                           /* 20 */
+#define VPE_TEXSCL (VPE_TEXMTX + 3 * GX_TEXCOORDS)          /* 44 */
+#define VPE_COUNT  (VPE_TEXSCL + GX_TEX_UNITS)              /* 50 */
 /* M18: the matrix palette, GX_PAL_STRIDE params a slot, from here to the
  * card's native limit (192 on the Radeon 9000: 24 slots) */
 #define VPE_PAL    VPE_COUNT
@@ -335,6 +341,11 @@ typedef struct VpKey {
     u8 fog;
     u8 pal;            /* M18: the matrices come from the palette, indexed
                         * by vertex.fogcoord, not from env[0..5]          */
+    u8 hilite;         /* M21: channel 1 (GX_AF_SPEC) computed and folded:
+                        * primary *= (1 - spec), secondary = spec         */
+    u8 mat1_reg, amb1_reg;
+    u8 l0mask, l1mask; /* which of the packed lights each channel reads
+                        * (all of them for channel 0 without the fold)    */
 } VpKey;
 
 /* ---- the parameter block ---------------------------------------------------
@@ -343,14 +354,17 @@ typedef struct VpKey {
  *   env[3..5]    normal matrix, three rows of a 3x3 (w = 0)
  *   env[6]       the register material RGBA
  *   env[7]       the register ambient RGB
- *   env[8+3i]    light i: position / colour / (k0,k1,k2), i < VPE_NLIGHTS
- *   env[14+3t]   texgen t's matrix, three rows of a 3x4
- *   env[38+u]    GL unit u's (su, sv): the NPOT fold gx_tex.c puts in the
+ *   env[8+5i]    light i: position / colour / (k0,k1,k2) / (a0,a1,a2) /
+ *                direction (M21: the last two for the specular channel),
+ *                i < VPE_NLIGHTS
+ *   env[18], [19] channel 1's register material and ambient (M21)
+ *   env[20+3t]   texgen t's matrix, three rows of a 3x4
+ *   env[44+u]    GL unit u's (su, sv): the NPOT fold gx_tex.c puts in the
  *                fixed-function GL_TEXTURE matrix, which a vertex program
  *                bypasses and therefore has to apply itself
- *   env[44..]    the matrix palette (M18): 24 slots of 6
+ *   env[50..]    the matrix palette (M18): 23 slots of 6
  *
- * 44 of the card's 192 native parameters before the palette.  The block is
+ * 50 of the card's 192 native parameters before the palette.  The block is
  * *environment* rather
  * than local state so one upload serves every variant: consecutive draws
  * usually share the lights and the texgen matrices and differ only in the
@@ -539,7 +553,10 @@ static void vp_gen(const VpKey* k, VpBuf* b) {
         vpi(b, "MOV ac.xyz, %s;\n",
             k->amb_reg ? "program.env[7]" : "vertex.color");
         for (i = 0; i < k->nlights; i++) {
-            int lp = VPE_LIGHT + 3 * i;
+            int lp = VPE_LIGHT + VPE_LSTRIDE * i;
+            if (k->hilite && !(k->l0mask & (1u << i))) {
+                continue; /* a light only channel 1 reads */
+            }
             vpi(b, "SUB t0.xyz, program.env[%d], vp;\n", lp);
             vpi(b, "DP3 t0.w, t0, t0;\n");                 /* d2            */
             vpi(b, "MAX t0.w, t0.w, 1.0e-30;\n");
@@ -569,7 +586,60 @@ static void vp_gen(const VpKey* k, VpBuf* b) {
         }
         vpi(b, "MUL t0.xyz, ac, mt;\n");
         vpi(b, "MAX t0.xyz, t0, 0.0;\n");
-        vpi(b, "MIN result.color.xyz, t0, 1.0;\n");
+        if (!k->hilite) {
+            vpi(b, "MIN result.color.xyz, t0, 1.0;\n");
+        } else {
+            /* M21: the specular channel, GX_DF_NONE + GX_AF_SPEC exactly as
+             * the hardware (and Dolphin's LightingShaderGen) compute it:
+             *   ldir = normalize(lpos - pos)
+             *   nh   = (N . ldir >= 0) ? max(0, N . H) : 0      H = the light's dir
+             *   attn = max(0, a . (1, nh, nh^2)) / (k . (1, nh, nh^2))
+             *   c1   = mat1 * clamp(amb1 + sum(attn * lcol), 0, 1)
+             * then the fold (gx_internal.h): primary = c0 * (1 - c1),
+             * secondary = c1, and GL_COLOR_SUM adds it after the units. */
+            vpi(b, "MIN t0.xyz, t0, 1.0;\n"); /* t0 = c0 */
+            if (k->amb1_reg) {
+                vpi(b, "MOV ac.xyz, program.env[%d];\n", VPE_AMB1);
+            } else {
+                vpi(b, "MOV ac.xyz, vertex.color;\n");
+            }
+            for (i = 0; i < k->nlights; i++) {
+                int lp = VPE_LIGHT + VPE_LSTRIDE * i;
+                if (!(k->l1mask & (1u << i))) {
+                    continue;
+                }
+                vpi(b, "SUB t1.xyz, program.env[%d], vp;\n", lp);
+                vpi(b, "DP3 t1.w, t1, t1;\n");
+                vpi(b, "MAX t1.w, t1.w, 1.0e-30;\n");
+                vpi(b, "RSQ t1.w, t1.w;\n");
+                vpi(b, "MUL t1.xyz, t1, t1.w;\n");              /* ldir          */
+                vpi(b, "DP3 t1.w, nr, t1;\n");                   /* N . ldir      */
+                vpi(b, "SGE t1.w, t1.w, 0.0;\n");                /* the gate      */
+                vpi(b, "DP3 t1.x, nr, program.env[%d];\n", lp + 4); /* N . H      */
+                vpi(b, "MAX t1.x, t1.x, 0.0;\n");
+                vpi(b, "MUL t1.x, t1.x, t1.w;\n");               /* nh            */
+                vpi(b, "MUL t1.y, t1.x, t1.x;\n");               /* nh^2          */
+                vpi(b, "MAD t1.w, program.env[%d].y, t1.x, program.env[%d].x;\n", lp + 3, lp + 3);
+                vpi(b, "MAD t1.w, program.env[%d].z, t1.y, t1.w;\n", lp + 3); /* numerator */
+                vpi(b, "MAX t1.w, t1.w, 0.0;\n");
+                vpi(b, "MAD t1.z, program.env[%d].y, t1.x, program.env[%d].x;\n", lp + 2, lp + 2);
+                vpi(b, "MAD t1.z, program.env[%d].z, t1.y, t1.z;\n", lp + 2); /* denominator */
+                vpi(b, "MAX t1.z, t1.z, 1.0e-20;\n");
+                vpi(b, "RCP t1.z, t1.z;\n");
+                vpi(b, "MUL t1.w, t1.w, t1.z;\n");               /* attn          */
+                vpi(b, "MAD ac.xyz, program.env[%d], t1.w, ac;\n", lp + 1);
+            }
+            vpi(b, "MAX ac.xyz, ac, 0.0;\n");
+            vpi(b, "MIN ac.xyz, ac, 1.0;\n");
+            if (k->mat1_reg) {
+                vpi(b, "MUL ac.xyz, ac, program.env[%d];\n", VPE_MAT1);
+            } else {
+                vpi(b, "MUL ac.xyz, ac, vertex.color;\n");
+            }
+            vpi(b, "MOV result.color.secondary, ac;\n");
+            vpi(b, "SUB t1.xyz, 1.0, ac;\n");
+            vpi(b, "MUL result.color.xyz, t0, t1;\n");
+        }
         vpi(b, "MOV result.color.w, mt.w;\n");
     }
 
@@ -810,6 +880,34 @@ static void vp_build_key(const GxXfDesc* d, VpKey* k, int* nlights_out,
     }
     k->nlights = (u8)nl;
     *nlights_out = nl;
+    if (k->lit && d->hilite) {
+        /* M21: the packed light list is the union of both channels' lights
+         * (hsfdraw.c gives both the same mask, so usually the same list),
+         * channel 0's first; each channel reads its own subset by mask */
+        const GXChanCtrl* c1 = &gx.chan[GX_COLOR1];
+        int j;
+        k->hilite = 1;
+        k->mat1_reg = (u8)(c1->mat_src == GX_SRC_REG);
+        k->amb1_reg = (u8)(c1->amb_src == GX_SRC_REG);
+        k->l0mask = (u8)((1u << nl) - 1u);
+        for (i = 0; i < 8; i++) {
+            if ((c1->light_mask & (1u << i)) && gx.light[i].used) {
+                for (j = 0; j < nl; j++) {
+                    if (lightidx[j] == i) {
+                        break;
+                    }
+                }
+                if (j == nl && nl < 8) {
+                    lightidx[nl++] = i;
+                }
+                if (j < 8) {
+                    k->l1mask |= (u8)(1u << j);
+                }
+            }
+        }
+        k->nlights = (u8)nl;
+        *nlights_out = nl;
+    }
 
     for (i = 0; i < d->ntexgen && i < GX_TEXCOORDS; i++) {
         k->tg_kind[i] = d->tg[i].src_kind;
@@ -954,13 +1052,27 @@ void gx_vprog_bind(const GxXfDesc* d) {
             env4(VPE_AMB, cc->amb.r / 255.0f, cc->amb.g / 255.0f,
                  cc->amb.b / 255.0f, 1.0f);
         }
-        for (i = 0; i < nl; i++) {
+        for (i = 0; i < nl && i < VPE_NLIGHTS; i++) {
             const GXLight* l = &gx.light[pending_lightidx[i]];
-            int lp = VPE_LIGHT + 3 * i;
+            int lp = VPE_LIGHT + VPE_LSTRIDE * i;
             env4(lp + 0, l->pos[0], l->pos[1], l->pos[2], 1.0f);
             env4(lp + 1, l->color.r / 255.0f, l->color.g / 255.0f,
                  l->color.b / 255.0f, 1.0f);
             env4(lp + 2, l->k[0], l->k[1], l->k[2], 0.0f);
+            if (key.hilite) {
+                env4(lp + 3, l->a[0], l->a[1], l->a[2], 0.0f);
+                env4(lp + 4, l->dir[0], l->dir[1], l->dir[2], 0.0f);
+            }
+        }
+        if (key.hilite) {
+            const GXChanCtrl* c1 = &gx.chan[GX_COLOR1];
+            if (key.mat1_reg) {
+                env4(VPE_MAT1, c1->mat.r / 255.0f, c1->mat.g / 255.0f, c1->mat.b / 255.0f,
+                     c1->mat.a / 255.0f);
+            }
+            if (key.amb1_reg) {
+                env4(VPE_AMB1, c1->amb.r / 255.0f, c1->amb.g / 255.0f, c1->amb.b / 255.0f, 1.0f);
+            }
         }
     }
     (void)nl;

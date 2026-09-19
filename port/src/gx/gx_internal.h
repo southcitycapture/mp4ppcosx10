@@ -283,6 +283,8 @@ void gl13_var_flush(const void* p, size_t len);
 void gl13_var_left(size_t from, size_t cursor, int wrapped);
 void gl13_var_stats(unsigned* waits, unsigned* blocked, unsigned* sets, unsigned* flushes);
 void gl13_multi_draw_arrays(unsigned mode, const int* first, const int* count, int n);
+void gl13_draw_range_elements(unsigned mode, unsigned lo, unsigned hi, int n, int wide,
+                              const void* idx); /* M21 */
 int gl13_trace_armed(void);       /* --gltrace F: this is frame F */
 int gl13_live(void);
 /* --nodraw / --ffto (PLAN.md 24.1): the renderer is switched off under a live
@@ -333,7 +335,20 @@ typedef struct GxXfDesc {
     int pal_n;               /* slots addressable (the palette's size)       */
     int pal_dirty_lo, pal_dirty_hi; /* rows written since the last upload    */
     int off_skin;            /* the slot float in the source layout          */
+    int hilite;              /* M21: fold the specular channel (gx_draw.c)   */
 } GxXfDesc;
+
+/* M21 (PLAN.md 36): hsfdraw.c's hilite materials light a second colour
+ * channel (GX_COLOR1, GX_DF_NONE + GX_AF_SPEC: the specular term) and add
+ * it in a TEV stage of the shape lerp(CPREV, ONE, RASC[COLOR1A1]).  GL 1.3's
+ * combiner has one per-vertex colour, so the stage is folded: the vertex
+ * program writes primary = c0 * (1 - spec) and secondary = spec, the stage
+ * passes PREV through, and GL_COLOR_SUM adds the secondary colour after the
+ * units.  `gx_hilite_stage` is that stage's index for the primitive being
+ * drawn, or -1. */
+extern int gx_hilite_stage;
+int gx_hilite_decide(void);
+void glc_color_sum(int on);
 
 void gx_vprog_probe(void);            /* needs a live GL context */
 int gx_vprog_available(void);
