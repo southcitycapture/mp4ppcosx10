@@ -313,6 +313,32 @@ on the Mac. What is different there:
   And a minigame the soaks never dealt (`m415`, 0 of 44 dealt) is a
   minigame nothing has tested: `--minigame` it on purpose.
 
+## 0i. Four things M21 paid for *(2026-09-19)*
+
+* **`--ffto N --realtime` used to sleep the fast-forward's lead out.**
+  The retrace schedule advanced 1/59.94 s per retrace while ffto ran at
+  160+ fps, so real time began with a pause of (game time − ffto wall
+  time): 154 s on the instruction screen for `--ffto 14400`, and the
+  process sat at 3% CPU looking hung. Fixed (`port_vi_rebase_schedule`);
+  any teleported real-time number before commit M21 that was read *soon*
+  after the handover was read during that sleep.
+* **A snapshot from an intermediate build is gone with the build.** M21
+  took the results-screen and the paper rings on a build it then
+  overwrote; both `--restore`s are refused now. Either keep the bundle
+  under another name (`cp -R ~/MarioParty4.app ~/MarioParty4-mNN.app`
+  *before* installing over it — M21 did this for the M20 build and not for
+  its own) or record the 2-minute `--ffto` reproduction instead, which is
+  what PLAN.md 36 does.
+* **A `--minigame NAME` run without `--play` sits at the title.** The
+  navigator only comes with `--soak`; a `--ffto` to a minigame frame needs
+  `--play board-start-com4.play` on the line or the frame dumped is the
+  title screen (M21 lost one round to it).
+* **`g4 shot` has a 45-second window for a minigame at real time.** The
+  status line's frame number tells you where the run is; Stamp Out! runs
+  from 14,477 to 17,178 in a `--minigame m415 --turns 1` walk, i.e. from
+  4:00 to 4:45 after boot. Poll every 20 s once `w01dll` shows, not every
+  75.
+
 ## 1. m425 to its result screen — the M8 crash, witnessed
 
 §18.2 proved the `unk_3C[6]` correction at the level of the instructions. This

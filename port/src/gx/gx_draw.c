@@ -288,6 +288,8 @@ static unsigned stat_prims, stat_verts, stat_draws, stat_dls;
 static unsigned long stat_fast_verts; /* through the specialised loops (M17) */
 /* --submitstats (M16): what the batching actually found in the lists */
 static unsigned stat_indexed_batches, stat_indexed_tris, stat_indexed_u32; /* M21 */
+static unsigned stat_mergeable, stat_mergeable_small, stat_mergeable_verts; /* M21 */
+static unsigned stat_batch_hist[6]; /* vertices per batch: <=16, <=64, <=256, <=1024, <=4096, more */
 static unsigned stat_fixbase_batches, stat_fixbase_miss;                   /* M21 */
 static unsigned stat_batches, stat_merged, stat_multi_calls, stat_multi_prims,
     stat_wraps, stat_lists_drawn, stat_late_flush;
@@ -349,6 +351,12 @@ void gx_draw_report(void) {
                  "%u ring wraps\n",
                  stat_batches, stat_prims, stat_draws, stat_merged, stat_multi_prims,
                  stat_multi_calls, stat_wraps);
+        port_log("port> submit: M21 mergeable: %u batches differ from the one before in the "
+                 "matrices alone (%u of them of 256 vertices or fewer), %u vertices; vertices "
+                 "per batch <=16: %u  <=64: %u  <=256: %u  <=1024: %u  <=4096: %u  more: %u\n",
+                 stat_mergeable, stat_mergeable_small, stat_mergeable_verts, stat_batch_hist[0],
+                 stat_batch_hist[1], stat_batch_hist[2], stat_batch_hist[3], stat_batch_hist[4],
+                 stat_batch_hist[5]);
         port_log("port> submit: M21 hilite: %u primitives with the specular channel folded, "
                  "%u stages the fold does not cover\n",
                  stat_hilite_prims, stat_hilite_unfoldable);
@@ -2153,6 +2161,40 @@ static void ring_ensure(void) {
     }
 }
 
+/* M21 (--submitstats): how many batches differ from the one before them in
+ * nothing but the matrices -- the same layout, TEV config, textures, raster
+ * state and channel colours -- and how many vertices they carry.  That is
+ * the batch count a CPU pre-transform of small objects (or any other way of
+ * spanning GXLoadPosMtxImm) could take back; PLAN.md 36. */
+static u32 last_batch_sig;
+static Layout last_batch_sl;
+
+static u32 batch_state_sig(void) {
+    u32 h = gx_tev_last_sig();
+    const u8* p;
+    size_t n;
+    int i;
+#define SIG_MIX(ptr, len) do { p = (const u8*)(ptr); n = (size_t)(len); while (n--) { h = (h ^ *p++) * 16777619u; } } while (0)
+    for (i = 0; i < GX_TEV_STAGES && i < gx.num_tev; i++) {
+        GXTexObjPort* t = gx_bound_tex(gx.tev[i].map);
+        SIG_MIX(&t, sizeof(t));
+    }
+    SIG_MIX(&gx.z_enable, sizeof(gx.z_enable));
+    SIG_MIX(&gx.z_func, sizeof(gx.z_func));
+    SIG_MIX(&gx.z_update, sizeof(gx.z_update));
+    SIG_MIX(&gx.blend_mode, sizeof(gx.blend_mode));
+    SIG_MIX(&gx.blend_src, sizeof(gx.blend_src));
+    SIG_MIX(&gx.blend_dst, sizeof(gx.blend_dst));
+    SIG_MIX(&gx.alpha_comp0, sizeof(gx.alpha_comp0));
+    SIG_MIX(&gx.cull, sizeof(gx.cull));
+    SIG_MIX(gx.chan, sizeof(gx.chan));
+    SIG_MIX(&gx.num_chans, sizeof(gx.num_chans));
+    SIG_MIX(&gx.num_texgens, sizeof(gx.num_texgens));
+    SIG_MIX(gx.texgen, sizeof(gx.texgen));
+#undef SIG_MIX
+    return h;
+}
+
 static void batch_flush(void) {
     if (batch_n) {
         /* cleared before the submit, so a GX_STATE_TOUCH reached from inside
@@ -2164,6 +2206,19 @@ static void batch_flush(void) {
         gx_batch_pending = 0;
         draw_submit(src_buf + batch_pos, (int)nv, batch, n, 1);
         stat_batches++;
+        if (port_opt.submitstats) {
+            u32 sig = batch_state_sig();
+            stat_batch_hist[nv <= 16 ? 0 : nv <= 64 ? 1 : nv <= 256 ? 2 : nv <= 1024 ? 3 : nv <= 4096 ? 4 : 5]++;
+            if (sig == last_batch_sig && memcmp(&last_batch_sl, &batch_sl, sizeof(Layout)) == 0) {
+                stat_mergeable++;
+                stat_mergeable_verts += nv;
+                if (nv <= 256) {
+                    stat_mergeable_small++;
+                }
+            }
+            last_batch_sig = sig;
+            last_batch_sl = batch_sl;
+        }
     }
     pal_reset();
     /* the chunks the writer has finished with get their fences, after the

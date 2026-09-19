@@ -61,6 +61,7 @@ int gl13_frame_wanted(unsigned n);
 int gl13_shot_pending(void);
 void gl13_begin_frame(void);
 int port_ffto_active(void);
+void port_vi_rebase_schedule(void);
 int port_ffto_user_turbo(void);
 
 #define PERIOD (1.0 / 59.94)
@@ -140,6 +141,7 @@ void port_framemode_decide(double late, double now) {
         lost_seconds = max_late = 0.0;
         t_pace0 = now;
         r_pace0 = VIGetRetraceCount();
+        port_vi_rebase_schedule(); /* M21: real time starts here, not at boot */
         gl13_begin_frame();
         return;
     }

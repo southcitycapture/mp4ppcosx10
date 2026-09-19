@@ -180,6 +180,7 @@ static void usage(const char* argv0) {
             "  --nohilite        M21: the specular (hilite) channel unlit, as before\n"
             "  --noindexed       M21: strips/fans through multi-draw, not one\n"
             "                    glDrawRangeElements per batch (--indexed restores)\n"
+            "  --noenvbulk       M21: matrix rows as separate env-param calls\n"
             "  --nofixbase       M21: vertex arrays based at the batch, not at the\n"
             "                    ring's start (--fixbase restores)\n"
             "  --submitstats     batches, merged draws, primitives per list,\n"
@@ -391,6 +392,13 @@ int port_parse_args(int argc, char** argv) {
     port_opt.cmpmask = 255; /* every compare-first group on; see gx_internal.h (M18:
                              * 15 left Z mode, Z comp loc, cull and alpha compare
                              * flushing unconditionally, PLAN.md 33.2) */
+    /* M21 (PLAN.md 36): measured on the 9,000-frame walk and both *off*.
+     * --indexed (one glDrawRangeElements per batch) is 4-12% slower than the
+     * driver's multi-draw of strips and its triangle setup differs at the
+     * rounding level; --fixbase and --envbulk are exact and within noise. */
+    port_opt.noindexed = 1;
+    port_opt.nofixbase = 1;
+    port_opt.noenvbulk = 1; /* exact; gx_vprog_bind 3.4% -> 3.2% of the board frame, noise */
     for (i = 1; i < argc; i++) {
         const char* a = argv[i];
         if (!strcmp(a, "--image") && i + 1 < argc) {
@@ -638,6 +646,10 @@ int port_parse_args(int argc, char** argv) {
             port_opt.noindexed = 1;
         } else if (!strcmp(a, "--indexed")) {
             port_opt.noindexed = 0;
+        } else if (!strcmp(a, "--noenvbulk")) {
+            port_opt.noenvbulk = 1;
+        } else if (!strcmp(a, "--envbulk")) {
+            port_opt.noenvbulk = 0;
         } else if (!strcmp(a, "--nofixbase")) {
             port_opt.nofixbase = 1;
         } else if (!strcmp(a, "--fixbase")) {

@@ -466,6 +466,7 @@ static unsigned stat_hash_full, stat_hash_sampled;
 static unsigned stat_efb;
 static unsigned stat_copy_read, stat_copy_read_miss; /* port_gx_copy_read */
 static unsigned stat_copy_front, stat_copy_region_front;
+static unsigned stat_copy_kept; /* M21: clear-after copies on consumed frames, kept */
 /* How many times an already-cached slot's content hash was actually
  * recomputed to check for an in-place rewrite -- as opposed to a pure
  * epoch-cached hit, which touches none of the texel bytes at all.  This is
@@ -603,8 +604,9 @@ void gx_tex_report(void) {
              validate_every_bind ? " (--texvalidate-every-bind: epoch bypassed)" : "");
     if (stat_efb) {
         port_log("port> EFB copies: %u colour copies into the cache (on consumed frames "
-                 "from the front buffer: %u whole-screen, %u region)\n",
-                 stat_efb, stat_copy_front, stat_copy_region_front);
+                 "from the front buffer: %u whole-screen, %u region; %u clear-after copies "
+                 "kept from the last drawn frame, M21)\n",
+                 stat_efb, stat_copy_front, stat_copy_region_front, stat_copy_kept);
     }
     if (stat_copy_read || stat_copy_read_miss) {
         port_log("port> copy-read: %u copies read back by the game (m415's canvas), "
@@ -1266,6 +1268,17 @@ void gx_tex_copy(void* dest, int clear) {
          * wrong region this way, but nothing draws on this frame and the
          * next drawn frame redoes it before reading it. */
         if (!gl13_have_context() || !gl13_draw_off() || !port_framemode_active()) {
+            return;
+        }
+        /* M21 (PLAN.md 36): a copy the game *clears* after is an offscreen
+         * pass -- the shadow map (hsfman.c:2007, m428, m439), never a picture
+         * of the screen -- so the front buffer is the wrong answer for it and
+         * the texture keeps what the last drawn frame's pass put there.  This
+         * is what m415's canvas read back (port_gx_copy_read) when the last
+         * intro frame was a consumed one: the presented picture, as the
+         * paper's texture, for the rest of the minigame. */
+        if (clear) {
+            stat_copy_kept++;
             return;
         }
         from_front = 1;

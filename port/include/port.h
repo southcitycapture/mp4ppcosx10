@@ -207,6 +207,9 @@ typedef struct PortOptions {
                              *   lit, its stage fed from channel 0, the
                              *   light's position not moved by
                              *   GXInitSpecularDir (PLAN.md 36)            */
+    int noenvbulk;          /* --noenvbulk  M21: the position/normal matrix
+                             *   rows as three-to-six glProgramEnvParameter
+                             *   calls instead of one bulk upload            */
     int nofixbase;          /* --nofixbase  M21: the vertex arrays based at
                              *   each batch's ring position as M16 did,
                              *   instead of at the ring's start with the

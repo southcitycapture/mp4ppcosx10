@@ -10744,3 +10744,389 @@ the leave-behind, turns 1–10, 0 incidents, are
 lines and whether m415 or a second m406 came up naturally; `m415`'s white
 toys from its snapshot (§35.3) — a texture/TEV question with a console
 frame to diff against; then item 3.
+
+## 36. M21 log — the channel the port never lit, and the copy that was a picture of the screen *(2026-09-19, littlejelly)*
+
+M21's brief was three items: read the M20 leave-behind soak (§36.1), the
+white toys of *Stamp Out!* (§36.2), and the drawn frame — measure its 25 ms
+before touching it, then strips → indexed and the text fragment shader
+(§36.3). The toys turned out to be a **colour channel the port had never
+computed**: hsfdraw.c's hilite materials light `GX_COLOR1` as a specular
+term and screen it into the picture, and the port fed that stage from
+channel 0, so every shiny object in the game was drawn washed to white. It
+is lit now, folded through GL's colour sum, and the title's cake and the
+board's Toad change with the toys (§36.2). The drawn frame was measured
+three ways and **both submit levers lost**: one `glDrawRangeElements` per
+batch is 4–12% slower than the driver's multi-draw of strips and not
+bit-exact, and re-basing the arrays or bulk-uploading the matrices is within
+noise (§36.3). What the measurement says instead is where the next lever is
+(§36.4). On the way: the shadow map that was copied from the front buffer on
+a consumed frame (§36.2), a fast-forward that slept two and a half minutes
+before real time began, one walk in twelve that faulted at the top of
+MEM1 (§36.5), and the paper itself, which turns out to have been wrong all
+along (§36.2).
+
+### 36.1 The soak, read
+
+`g4 run --soak --com4 --rtc dolphin --freshcard --realtime --snap-every 5000
+--snap-keep 3 --status --ovllog --stuckwatch 200` on the M20 build
+(`2fd60253…`), restarted 12:39 G4 time and stopped at 12:58 when the G4 was
+needed — **19 minutes, 1,141 status lines**
+(`docs/soak/m21-soak10-m20-leave2-19min.log.gz`):
+
+| | |
+|---|---|
+| mean speed | **100.2%** (board lines 100.0%) |
+| presented fps | 19.0 overall, **18.2 on the board** |
+| where it got | board 1, turns 1–6 of 20; seven minigames dealt: m412, m428, m420, m444, m423, m438, m429 |
+| `REL .data:` re-opens | `instdll` 1 of 800 bytes ×5, `resultdll` 1–4 of 1,760 bytes ×5, `w01dll` 1 of 3,528 bytes ×2 — every play, as M20 predicted, all reset |
+| `copy-read:` | none — m415 was not dealt; no second m406 either |
+| STUCK / faults / stalls | 0 / 0 / 0; one resync, the board load (retrace 5,116, 1.0 s) |
+| `tex` / `rss` at the end | 665 entries, 39.1 MB (peak 43.0 MB) / 121 MB |
+
+Nothing to act on; the shutdown report lines the brief asked for were not
+written because the stop is a `killall`. The final build's soak (§36.6) is
+the one that will carry them.
+
+### 36.2 Stamp Out!'s toys: a second colour channel, and a fold through the colour sum
+
+**The reading.** The M20 snapshot restored on the M20 build with `--drawlog
+6000 --drawlog-at 16006` (`docs/soak/m21-m415-restore-drawlog-f16006.txt.gz`)
+names every draw of the frame with its model, object and stages. The car
+(`kuruma33`, correct) is one stage, `TEXC * RASC`. The mushroom stamp
+(`kinoko`, white) is:
+
+```
+stage0 coord 0 map 0 chan COLOR0A0   cin ZERO TEXC RASC ZERO      = T * RAS0
+stage1 coord - map - chan COLOR1A1   cin CPREV ONE RASC ZERO      = lerp(PREV, 1, RAS1)
+                                     ain ZERO APREV A0 ZERO       = APREV * A0
+chan0 enable 1 ...   (2 chan(s))
+```
+
+That second stage is hsfdraw.c:827 (`SetTevStageNoTex`) and :1370
+(`SetTevStageTex`), emitted for every material with `vtxMode` 2 or 3
+(`matHiliteF`). Its rasterised colour is **channel 1**, which
+hsfdraw.c:863/873 sets up as `GXSetChanCtrl(GX_COLOR1, TRUE, SRC_REG,
+SRC_REG|VTX, lightBit, GX_DF_NONE, GX_AF_SPEC)` — the specular term of the
+light `Hu3DLightSet` loads with `GXInitSpecularDir` and
+`GXInitLightAttn(0,0,1, s/2, 0, 1-s/2)` (hsfman.c:1844, s = the material's
+`hiliteScale`). `lerp(PREV, 1, spec)` is a screen: the highlight brightens
+the lit texture towards white where the half-angle is small.
+
+The port lit **channel 0 only** (`light_channel`, `vp_gen`), and `color_arg`
+resolved `GX_CC_RASC` to `GL_PRIMARY_COLOR` whatever the stage's channel —
+so the screen ran on the *diffuse* colour: `lerp(T*RAS0, 1, RAS0)`, which for
+a lit white material is white. Every hilite material in the game was drawn
+that way since M3: the toys, the stamps under the players, the title's cake,
+the board's Toad, and (§31.4 counted them) 44,902 `GXInitSpecularDir` calls
+on the walk. `GXInitSpecularDir` itself was also half-implemented: it stored
+the direction and warned, where the SDK (GXLight.c:251) stores the
+**half-angle vector** as the direction and moves the light's *position* to
+`-dir * 2^20`, so channel 0's diffuse of a hilite material saw the light
+where the game had put it rather than at infinity.
+
+**The fix** (gx_state.c, gx_draw.c, gx_tev.c, gx_vprog.c, gl13.c):
+
+* `GXInitSpecularDir` is the SDK's, to the constant; `GXInit`'s channel
+  defaults (ambient black, material white, both channels — GXInit.c:276) are
+  set, since hsfdraw.c never sets channel 1's colours and the console's
+  defaults are what the specular runs with.
+* The vertex program computes channel 1 as the hardware does (Dolphin's
+  `LightingShaderGen`, checked against the SDK): `ldir = normalize(lpos -
+  pos)`, `nh = (N.ldir >= 0) ? max(0, N.H) : 0`, `attn = max(0, a.(1, nh,
+  nh²)) / k.(1, nh, nh²)`, `c1 = mat1 * clamp(amb1 + Σ attn * lcol)`. The
+  parameter block grew from 3 to 5 params a light (the angle coefficients
+  and the direction) plus channel 1's material and ambient; the palette
+  lost one slot (23 of 6) and nothing else moved.
+* **The fold.** GL 1.3's combiner has one per-vertex colour, but everything
+  before the hilite stage is linear in `RAS0` (the material setup's shapes:
+  `T*RAS`, the shadow's `PREV*T`, the two-texture blend §31.3 rewrote), so
+  `lerp(F*RAS0, 1, spec) = F*RAS0*(1-spec) + spec`. The program writes
+  `primary = c0 * (1 - spec)` and `secondary = spec`, the hilite stage is
+  emitted as a pass (`REPLACE PREVIOUS`, its alpha `APREV * A0` as before),
+  and `GL_COLOR_SUM` (0x8458, GL 1.4 core / `EXT_secondary_color`, which the
+  card lists) adds the secondary colour after the units. Exact up to the
+  interpolation of a product against a product of interpolants, which is
+  below a level. `gx_hilite_decide` recognises exactly the hsfdraw.c shape;
+  the textured variant (:1374, `TEXC * RASC1 + CPREV`) cannot ride a colour
+  sum and is counted (38,304 stage emissions on the walk, 0 in m415), as
+  is a hilite stage followed by a projection stage. `--nohilite` is the
+  whole pre-M21 picture: the channel unlit, the stage fed from channel 0,
+  the light's position left where it was.
+
+**The witness.** The same frame, fresh from boot (`--minigame m415 --turns 1
+--play board-start-com4.play --ffto 16000 --lockstep --dumpframe 16006`),
+M20 build against M21, and the console's frame 10,973 from `port/ref`:
+
+![Stamp Out! frame 16006: before, after, the console](screenshots/m21-m415-toys-f16006-before-after-console.png)
+
+The star balls, the house, the mushroom stamp with its die, the pencil, the
+crayons, the star, the cylinder, and the four stamps under the players are
+the console's colours. (The paper in both port frames is a fast-forward
+artefact, below.) Then at real time, from boot, on the final build:
+
+![Stamp Out! at real time on the final build](screenshots/m21-m415-realtime.png)
+
+**The md5s, re-based with that justification.** `--nohilite` reproduces
+§31's three references to the byte on the final build (800 `60f8b7a0…`,
+3000 `8762d432…`, 7000 `9264207c…`, the last via `--ffto 6900`); the default
+changes two of them:
+
+| frame | §31 md5 (= `--nohilite`) | **M21 md5** | pixels differing | what |
+|---:|---|---|---:|---|
+| 800 | `60f8b7a0…` | **`5df69d400ff34fb2c2c04049927b0876`** | 24,904 (8.1%), mean 4.5 levels | the title's cake: its pink star pattern was screened to white |
+| 3000 | `8762d432…` | `8762d432…` unchanged | 0 | no hilite material on the character select |
+| 7000 | `9264207c…` | **`f5b52130f8bcd7c9f8949aad9c6bfe27`** | 10,054 (3.3%), mean 0.9 levels | Toad and the yellow balloon-star behind him |
+
+![the title's cake at 2x, before and after](screenshots/m21-hilite-title-f800-crop-before-after.png)
+![the board's Toad, before and after](screenshots/m21-hilite-board-f7000-crop-before-after.png)
+
+(diff masks `m21-hilite-f800-diffmask.png`, `m21-hilite-f7000-diffmask.png`.)
+
+**The paper is a second, pre-existing fault, and §35.3's verdict on it
+was a lucky frame.** The real-time play-throughs on the M21 build drew the
+paper deep blue with diagonal bands; a `--ffto 14400 --lockstep` run (the
+intro live, every frame drawn, all 120 read-backs served) draws it green
+with dark bands, and the *M20 build* on the identical run draws it green
+too (`screenshots/m21-m415-paper-f15800-{m21,m20}-lockstep.png`). So the
+texture Stamp Out! reads back from the shadow-map copy (§35.3) is wrong
+before any of M21's changes and varies with the run, and M20's white paper
+(`m20-m415-canvas-r8.png`) was one run where it came out right. What the
+bands look like is a *corner of the scene* magnified — the copy is
+`GXSetTexCopySrc(0,0,384,384)` box-filtered to 192×192 with the shadow
+pass's own 384×384 viewport, and which of the source rectangle, the
+half-size filter, the pre-pass clear or the pass itself is wrong is not
+settled. Reproduction in 2.5 minutes on any build: `--minigame m415
+--turns 1 --com4 --rtc dolphin --freshcard --play board-start-com4.play
+--ffto 14400 --lockstep --frames 15900 --dumpframe 15800`. One thing on
+the way is right and stays: §32.1's rule for a `GXCopyTex` on a consumed
+frame ("read the front buffer, it is the last picture presented") is
+right for the wipe and the bubbles and wrong for an offscreen pass copied
+with `clear = 1` (the shadow map, hsfman.c:2007, m428, m439), which is
+never what is on screen; such a copy now keeps what the last drawn frame's
+pass produced (`gx_tex_copy`, counted in the `EFB copies:` line). It does
+not fix the paper — the lockstep run has no consumed frames — and the
+`--ffto`/`--restore` frames' streaks are the same read-back with no pass
+having run yet.
+
+**The results screen's blank portraits** (§35.3, pre-existing) are *not*
+this fault. The drawlog of the results (snapshot
+`snaps/lib/m415-results-f017000.snap` on the G4, the M21 build's;
+`docs/soak/m21-results-drawlog-f17400.txt.gz`) shows each portrait cube as
+hsfdraw.c:1290–1305: `T_face * RAS -> PREV`, `T_mask * K -> REG2`,
+`lerp(PREV, T_reflect, C2) -> PREV`, then a textured hilite. The port
+folds the REG2 write to PREV (§31.3's open shape) — the face is overwritten
+by the mask, the reflection lerps against the register's constant (255),
+and the textured hilite adds `T_mask * RAS0` — white. A crossbar rewrite
+of that triple (the mask's red channel swapped into alpha through the
+texture cache, `INTERPOLATE(TEXTURE2, PREVIOUS, PREVIOUS.a)`, the material
+alpha restored from `TEXTURE0.a`) is the fix; named, snapshotted, not
+done.
+
+### 36.3 The drawn frame, measured, and the two levers that lost
+
+**The measurement**, three instruments on the same board frame:
+
+*(i)* `--gxsplit` (new: exclusive timed regions inside gx, two timer reads
+per region), over the whole 9,000-frame walk at `--turbo`
+(`docs/soak/m21-walk-base-split.log.gz`), mean per drawn frame:
+
+| region | ms/drawn frame | share | per call |
+|---|---:|---:|---:|
+| decode (the display-list decode into the ring) | 6.96 | 26% | 8.2 µs per list |
+| state (`gl13_apply_*` + `gx_tev_apply`, minus binds) | 1.83 | 7% | 8.5 µs per batch |
+| texbind (hash, decode, upload, bind) | 1.56 | 6% | 6.3 µs per bind |
+| **issue** (`gx_vprog_bind` + the range flush + the draw calls) | **12.97** | **49%** | **60 µs per batch** |
+| other (the list walk, hashing, copies) | 3.16 | 12% | |
+| gx | 26.47 | | |
+
+*(ii)* `sample isle 10` on a `--ffto 6500 --turbo` board teleport, the
+M21 build, nothing else on the G4 (`docs/soak/m21-board-drawn-profile-{1,2}.txt.gz`,
+7,128 samples on the game thread):
+
+| inclusive | samples | % | inside |
+|---|---:|---:|---|
+| `draw_submit` | 3,040 | 42.6% | |
+| — `issue_segments` (the draw calls) | 1,775 | 24.9% | `gleDrawArraysOrElements_VAR_Exec` 1,167 (of which `gldUpdateDispatch` 899, the per-draw validation), **`gleDrawArraysOrElements_IMM_Exec` 438** (the copying path, from the batched submit), `glMultiDrawArrays_Exec` 113 |
+| — `gx_tev_apply` | 505 | 7.1% | |
+| — `gx_vprog_bind` | 214 | 3.0% | |
+| — `gx_tex_bind_swapped` | 284 | 4.0% | |
+| the decode (`decode_fast_*`) | 879 | 12.3% | |
+| `gldFlushVertexArray` (the per-batch range flush) | 330 | 4.6% | |
+| `gldCreateQuery` / `gldPageoffBuffer` / `gldAllocVertexBuffer` (command-buffer traffic; stripped names) | 378 / 265 / 190 | 11.7% | |
+| the game side (`SetEnvelopMain`, `Hu3DMotionExec`, `HuSprExec`, the mixer…) | | ~30% | |
+
+*(iii)* the counters: 1,941,408 batches for 8,411,126 primitives on the walk
+→ 2,808,782 GL draws (multi-draw folds 5.9M strips into 317K calls);
+5,709,414 env-parameter uploads (2.9 a batch) with 8,972,969 elided; the
+batch enders unchanged since M18 (`GXLoadPosMtxImm` 693,789).
+
+So of the board's ~24 ms of gx: **(a) submission ≈ 13 ms**, and inside it
+the driver's per-draw validation (`gldUpdateDispatch`, 4.8 ms) and a
+**copying path the ring was meant to have retired** (`IMM_Exec`, 2.4 ms,
+reached from `issue_segments` for some batches); **(b) TEV/state ≈ 2.9
+ms**; **(c) texture decode/upload ≈ 1.5 ms** on a warm board (the cold
+first frame of a scene is the §32.5 stall, untouched); **(d) the batch
+enders** are a count, not a slice: ~520 batches a board frame at ~25 µs of
+issue each, set by `GXLoadPosMtxImm` (one per object) and unmovable
+without a palette (§33.2). The decode is the other 7 ms.
+
+**Lever 1, strips → indexed** (`--indexed`, gx_draw.c `build_indices` /
+`issue_indexed`): every triangle-family segment of a batch becomes one
+triangle list through an index buffer — strips as `(i, i+1, i+2)` /
+`(i+1, i, i+2)`, fans as `(0, i+1, i+2)`, quads as `(0,1,2)(0,2,3)` — and
+one `glDrawRangeElements` (u16 while the batch fits, u32 otherwise). Same
+binary, same walk, `--turbo`, each arm a full 9,000 frames:
+
+| arm | title (700–870) | character select (2600–3600) | board (6000–8900) | wall | frame 800 / 3000 / 7000 |
+|---|---:|---:|---:|---:|---|
+| **base** (M21 defaults) | 28.90 fps | 19.99 | **26.12** | 322.3 s | `5df69d40` / `8762d432` / `f5b52130` |
+| `--fixbase` (arrays based at the ring) | 28.95 | 20.30 | 26.34 | 318.0 | identical |
+| `--indexed` | 27.88 | **17.62 (−12%)** | **25.08 (−4%)** | 348.6 | `9c4edb2d` / `b1534e7f` / `8f4bd837` |
+| `--indexed --fixbase` (76% of batches on u32 indices) | 28.42 | 18.10 | 25.47 | 342.0 | as `--indexed` |
+| `--envbulk` (the six matrix rows as one upload) | | | | | 800/3000 identical; §36.5 |
+
+Indexed is slower everywhere. `--gxsplit` on the `--indexed --fixbase`
+arm says why: building the indices costs 0.63 ms a frame (744M indices
+over the walk), and the *issue* region grows from 12.97 to **14.73 ms** —
+the driver's `glDrawRangeElements` reads every index it is handed, and
+that is more work than its own loop over the strips. And the picture
+moves: 16% of the title's pixels by a level or so (`ppmdiff`: mean 0.32
+levels, 0.5% of samples by more than 8, 353 by more than 32 — edge
+pixels), which is the rasteriser's setup differing when the same triangle
+arrives with its vertices in a different order. Off by default, with the
+flag kept for the record.
+
+**Lever 2, `GL_ATI_text_fragment_shader`.** The card lists it
+(`g4-glinfo.log`) and it was not built: the day's budget went to the
+channel (§36.2), which took the specular case out of the shader's list,
+and the measurement above says the drawn frame's cost is in the driver's
+per-draw work, which a fragment shader would not touch. What is left for
+it is picture, not speed: the 5,733 register-write emissions §31.3 still
+folds (the portraits above are one), and 54,892 of 1,941,408 draws with
+a two-constant stage.
+
+**Two more, measured and off.** `--fixbase` (a batch's first vertex
+aligned to its stride, the arrays' base pointers never moving, the
+offset in `first`) is exact and +1% — within the walk's noise; the array
+pointer calls were not the driver's cost. `--envbulk` (one
+`glProgramEnvParameters4fvEXT` for the six matrix rows instead of three
+to six `glProgramEnvParameter4fvARB`) is exact on the two frames it
+reached and moves `gx_vprog_bind` from 3.4% to 3.2% of the frame. Both
+default off (`--fixbase`, `--envbulk` turn them on).
+
+### 36.4 What the measurement says the next lever is
+
+Two things in the profile were not known before this session:
+
+* **A fifth of the draw time is the copying path, and half the batches
+  are tiny.** `gleDrawArraysOrElements_IMM_Exec` — the client-array copy
+  M16's ring was built to retire — is reached from the batched submit for
+  438 of 1,775 `issue_segments` samples, and every array it is handed lies
+  inside the range: the driver chooses to copy some draws rather than DMA
+  them, and the new `--submitstats` histogram says which. Vertices per
+  batch on the final walk: **≤16: 980,541 (51%)**, ≤64: 368,666, ≤256:
+  338,109, ≤1024: 140,019, ≤4096: 89,302, more: 24,771. Half of the
+  1.94M batches carry sixteen vertices or fewer, and each costs the same
+  ~25 µs of driver time as a thousand-vertex one.
+* **Batches that differ from their predecessor in nothing but the
+  matrices: 1,177,229 of 1,941,408 (61%), 1,064,428 of them of 256
+  vertices or fewer** (`mergeable:` — same layout, TEV config, textures,
+  raster state and channels as the batch before). `GXLoadPosMtxImm` ends
+  them. The palette is dead on this driver (§33.2), but a *small* object
+  can be transformed on the CPU — position and normal by its matrices,
+  the lighting still on the card under identity matrices — and appended
+  to the running batch. At ~25 µs of driver time per batch against ~40 ns
+  per vertex of CPU transform, that pays for anything under a few hundred
+  vertices, and the count above says it could take back up to a million
+  of the walk's batches. That is M22's item 1.
+
+### 36.5 Three things found on the way
+
+* **The fast-forward that slept.** `--ffto N --realtime` paused for
+  minutes when the fast-forward ended: vi.c's retrace schedule kept
+  advancing 1/59.94 s per retrace while ffto ran at 160+ fps, so at the
+  handover the schedule was (game time − ffto wall time) ahead of the
+  clock and the first paced retrace slept it out — 154 s on the
+  instruction screen for `--ffto 14400`. §34.4's `m430` measurement was
+  taken after such a wait without noticing it. `port_vi_rebase_schedule`
+  at the handover: real time starts when the fast-forward ends.
+* **One walk in twelve faulted at the top of MEM1.** The `--envbulk` arm
+  died at the board's load — `signal 10 at 0x3820000, 0 bytes into the
+  guard above MEM1`, pc in `HuDecodeData`, called from
+  `HuDataSelHeapReadNum` ← `BoardStatusCreate` ← `BoardStarShowNext`
+  (`docs/soak/m21-walk-envbulk-FAULT-guard-top-of-mem1.log.gz`). The
+  other eleven walks of the day on the same source, the same lockstep
+  inputs and byte-identical `Rest Memory` traces up to that point passed
+  it, and the change in that arm is one GL call that cannot reach MEM1.
+  `HuDecodeLz` (decode.c:21) writes a run's `copyLen` bytes without
+  checking `size`, so an overrun of a block that ends at the top of a heap
+  is possible in the game's own code; what put the destination there once
+  and not the other eleven times is not known. Not reproduced, no
+  snapshot (the fault is in a fresh walk, frames ~5,100); the leave-behind
+  soak and every future walk are the watch for it.
+* **The results portraits** are a register-write shape, not a channel
+  (§36.2); snapshot named.
+
+**The final build's walk** (`docs/soak/m21-walk-final.log.gz`): title
+28.79 fps, character select 19.94, board 25.82, 324.6 s — the base arm's
+numbers within noise (28.90 / 19.99 / 26.12; M19: 26.5 on the board) —
+and the three md5s above.
+
+### 36.6 What M21 shipped, and what it did not
+
+| shipped, with a witness | |
+|---|---|
+| channel 1 lit as the hardware does, folded through `GL_COLOR_SUM`; `GXInitSpecularDir` exact; GXInit's channel defaults (§36.2) | Stamp Out!'s toys and stamps in the console's colours, at real time from boot; 429,992 primitives folded on the walk; the title and board re-based with diffs; `--nohilite` reproduces §31 to the byte |
+| clear-after copies kept on consumed frames (§36.2) | logically right, no witness: the paper is wrong for another reason |
+| `--gxsplit`, the three profiles, the mergeable/size histogram (§36.3, §36.4) | |
+| `--indexed`, `--fixbase`, `--envbulk`: built, measured, **off** (§36.3) | the table |
+| the ffto → real-time handover (§36.5) | |
+| the results-screen reading (§36.2) | `snaps/lib/m415-results-f017000.snap` is the intermediate build's (`d9bbfcc9…`, not kept) and will not restore on the final one; the reproduction is `--minigame m415 --turns 1 --play board-start-com4.play --ffto 17300 --lockstep --drawlog 3000 --drawlog-at 17400`, 2.5 minutes |
+| the soak's read (§36.1), logs `docs/soak/m21-*`, screenshots `docs/screenshots/m21-*` | |
+
+**Not done, and why:**
+
+* **`GL_ATI_text_fragment_shader`** — present on the card, not built
+  (§36.3): out of the day's budget, and the profile puts the drawn frame's
+  cost where a fragment shader cannot reach.
+* **The results portraits** — the REG2 rewrite shape (§36.2), snapshotted.
+* **Stamp Out!'s paper** — the shadow-map read-back is wrong on both
+  builds, run-dependent (§36.2); a 2.5-minute reproduction, no snapshot
+  (the ring that held one was the intermediate build's).
+* **The MEM1-top fault** — seen once, not reproduced (§36.5).
+* **Item 3** (the scene-change audio underruns, the fresh-process DRAW in
+  Avalanche!) — not started.
+* The textured hilite (`TEXC * RASC1 + CPREV`, 38,304 emissions on the
+  walk) still runs on channel 0; the CPU vertex path (`--cpuxf`) draws
+  hilite materials without their highlight rather than white.
+
+### 36.7 What M22 starts with
+
+Left running (15:05 G4 time): `g4 run --soak --com4 --rtc dolphin
+--freshcard --realtime --snap-every 5000 --snap-keep 3 --status --ovllog
+--stuckwatch 200` on the final build (`isle` md5 `eca3f859…`, 1,658,040
+bytes) — the first soak with the specular channel lit and the clear-after
+copies kept.
+
+1. **Read the soak's log first.** The `EFB copies:` line's kept count, the
+   `hilite:` lines, `tex`/`rss`, the speed on the board past turn 10 (the
+   longer programs of hilite materials cost nothing measurable on the walk,
+   but a soak is the test) — and whether the MEM1-top fault (§36.5)
+   recurs; if it does, the snapshot ring's newest frame before the board
+   load is the reproduction.
+2. **Fewer batches** (§36.4): the CPU pre-transform of small same-state
+   objects into the running batch — 1.18M mergeable batches on the walk,
+   half of all batches under sixteen vertices. Measure the `IMM_Exec`
+   share and the batch count before and after; the md5s should hold if
+   the transform is the same arithmetic in the same order as the program's
+   (it will not be — the card's `DP4` and the CPU's `fmadd` round
+   differently — so expect a rounding re-base argued with `ppmdiff`).
+3. **The results portraits** (§36.2): the REG2 rewrite for the
+   mask/reflect/hilite quadruple, through the swap-table texture cache.
+4. **Stamp Out!'s paper** (§36.2): which of the copy source, the half-size
+   filter, the pre-pass clear or the pass itself is wrong; the 2.5-minute
+   reproduction is above.
+5. `GL_ATI_text_fragment_shader` for the register-write shapes, if item 3
+   shows the crossbar cannot say them; item 3 of M21's brief (the
+   scene-change underruns, the Avalanche! DRAW).

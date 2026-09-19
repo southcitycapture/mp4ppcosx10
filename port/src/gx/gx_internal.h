@@ -347,6 +347,7 @@ typedef struct GxXfDesc {
  * units.  `gx_hilite_stage` is that stage's index for the primitive being
  * drawn, or -1. */
 extern int gx_hilite_stage;
+u32 gx_tev_last_sig(void); /* M21: --submitstats' mergeable-batch count */
 int gx_hilite_decide(void);
 void glc_color_sum(int on);
 

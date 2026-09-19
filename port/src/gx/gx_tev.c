@@ -612,6 +612,9 @@ static u32 tev_sig_hash(int stages, u32 have_tex_bits) {
 
 static u32 tev_cache_sig;
 static int tev_cache_live;
+/* M21: the last applied config's signature, for gx_draw.c's mergeable-batch
+ * count (--submitstats) */
+u32 gx_tev_last_sig(void) { return tev_cache_sig; }
 static int regfix_k;
 static unsigned stat_regfix;
 /* The konst collision, counted the way a degradation should be: per draw

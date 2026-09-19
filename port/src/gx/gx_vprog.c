@@ -373,7 +373,7 @@ typedef struct VpKey {
 #ifndef PORT_NO_SDL
 static float env_shadow[VPE_TOTAL][4];
 static u8 env_valid[VPE_TOTAL];
-static unsigned stat_env_set, stat_env_elided;
+static unsigned stat_env_set, stat_env_elided, stat_env_bulk; /* M21: --envbulk uploads */
 
 static void env4(int i, float x, float y, float z, float w) {
     float v[4];
@@ -1031,6 +1031,44 @@ void gx_vprog_bind(const GxXfDesc* d) {
             stat_pal_uploads++;
         }
         stat_pal_batches++;
+    } else if (vp_ProgramEnvParameters4fvEXT && !port_opt.noenvbulk) {
+        /* M21 (--envbulk): the six matrix rows as one upload.  The walk's
+         * 1.94M batches emitted 2.94 env params each through env4; the rows
+         * of a new object all differ, so the per-row elision bought nothing
+         * there and the three (or six) calls were the cost.  Compared as a
+         * block against the same shadow env4 keeps. */
+        const f32* m = d->pos_mtx;
+        const f32* nm = d->nrm_mtx;
+        float rows[6][4];
+        int n = key.have_nrm ? 6 : 3;
+        int r, same = 1;
+        rows[0][0] = m[0]; rows[0][1] = m[1]; rows[0][2] = m[2];  rows[0][3] = m[3];
+        rows[1][0] = m[4]; rows[1][1] = m[5]; rows[1][2] = m[6];  rows[1][3] = m[7];
+        rows[2][0] = m[8]; rows[2][1] = m[9]; rows[2][2] = m[10]; rows[2][3] = m[11];
+        if (key.have_nrm) {
+            rows[3][0] = nm[0]; rows[3][1] = nm[1]; rows[3][2] = nm[2]; rows[3][3] = 0.0f;
+            rows[4][0] = nm[3]; rows[4][1] = nm[4]; rows[4][2] = nm[5]; rows[4][3] = 0.0f;
+            rows[5][0] = nm[6]; rows[5][1] = nm[7]; rows[5][2] = nm[8]; rows[5][3] = 0.0f;
+        }
+        for (r = 0; r < n; r++) {
+            if (!env_valid[VPE_POSMTX + r] ||
+                memcmp(env_shadow[VPE_POSMTX + r], rows[r], sizeof(rows[r])) != 0) {
+                same = 0;
+                break;
+            }
+        }
+        if (same) {
+            stat_env_elided += (unsigned)n;
+        } else {
+            for (r = 0; r < n; r++) {
+                env_valid[VPE_POSMTX + r] = 1;
+                memcpy(env_shadow[VPE_POSMTX + r], rows[r], sizeof(rows[r]));
+            }
+            vp_ProgramEnvParameters4fvEXT(VP_VERTEX_PROGRAM_ARB, (GLuint)VPE_POSMTX, (GLsizei)n,
+                                          &rows[0][0]);
+            stat_env_set++;
+            stat_env_bulk++;
+        }
     } else {
         const f32* m = d->pos_mtx;
         env4(VPE_POSMTX + 0, m[0], m[1], m[2], m[3]);
@@ -1135,8 +1173,8 @@ void gx_vprog_report(void) {
              "worst frame %u CPU draws\n",
              stat_gpu_verts, stat_cpu_verts,
              tot > 0 ? 100.0 * stat_gpu_verts / tot : 0.0, worst_frame_cpu);
-    port_log("port> vprog: env params %u emitted, %u elided\n", stat_env_set,
-             stat_env_elided);
+    port_log("port> vprog: env params %u emitted (%u of them M21 bulk matrix uploads), %u elided\n",
+             stat_env_set, stat_env_bulk, stat_env_elided);
     if (stat_pal_batches) {
         port_log("port> vprog: palette on %u batches: %u uploads of %u rows (%.1f rows a "
                  "batch; %d slots of %d rows)\n",

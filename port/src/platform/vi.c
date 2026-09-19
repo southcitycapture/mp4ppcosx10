@@ -126,6 +126,15 @@ void __VIGetCurrentPosition(s16* x, s16* y) {
 static double now_seconds(void) { return port_now_seconds(); }
 
 static double next_retrace_at;
+
+/* M21: --ffto has just handed the game back to frame mode.  The schedule
+ * kept ticking 1/59.94 s per retrace while the fast-forward ran at 160+ fps,
+ * so it now sits minutes ahead of the wall clock and the first paced retrace
+ * would sleep the difference out (14,400 frames of ffto in 86 s: a 154 s
+ * pause on the instruction screen, PLAN.md 36).  Real time starts now. */
+void port_vi_rebase_schedule(void) {
+    next_retrace_at = now_seconds();
+}
 static double first_retrace_at;
 
 void VIWaitForRetrace(void) {
