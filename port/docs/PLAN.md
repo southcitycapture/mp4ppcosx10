@@ -9879,6 +9879,10 @@ would need the md5s re-argued for a gain that −mcpu did not show.
   4): not started; the profile put the driver's cost in the per-batch
   validation, not in the strip loop.
 * The AltiVec `C_MTXConcat`, `-O3`, a mixer fast path.
+* **A snapshot is a 3 s stall.** The leave-behind soak's `--snap-every 5000`
+  writes 40 MB synchronously (§24.2: 3.1 s), which at real time is a resync
+  every 83 s of game (`resync at retrace 10006, 3459 ms behind`). The ring
+  needs to be written off the game thread, or the soak run without it.
 
 ### 32.6 What M18 starts with
 
