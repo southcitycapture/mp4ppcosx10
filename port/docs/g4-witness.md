@@ -242,6 +242,24 @@ on the Mac. What is different there:
   Frame numbers in `--dumpframe` are drawn-frame numbers either way, so the
   §31 md5s are the check. `--lockstep` is the old gate on the same binary.
 
+## 0f. Three things M18 paid for *(2026-09-19)*
+
+* **`--dumpframe` without `--shotdir` writes to the runner's cwd, which is
+  `/`.** `ls /frame-0*.ppm` is where a run's frames went if the log says
+  `wrote ./frame-00800.ppm`; a second run overwrites them. Always give an
+  A/B arm its own `--shotdir ~/ab-mNN/<arm>`.
+* **`g4 run` keeps one previous log (`~/isle-log.prev.txt`).** A soak's
+  shutdown report — the texture cache line, the palette counts, the skin
+  and mixer statistics — is gone after two more runs. `g4 ssh 'cat
+  ~/isle-log.txt' | gzip > port/docs/soak/<name>.log.gz` *before* the next
+  `g4 run`.
+* **A `.wav` md5 is not an oracle across builds** (PLAN.md 33.4): two
+  builds differing only in dead code produce different bytes from retrace
+  1,580. Compare audio on one binary with a runtime lever, or per sample
+  (`--mixcheck`). For game-state divergence between two arms use
+  `--snap-at F` in both and `python ~/snapdiff.py A B --spans=60` on the G4
+  — it names the global (it named `MTXBuf`).
+
 ## 1. m425 to its result screen — the M8 crash, witnessed
 
 §18.2 proved the `unk_3C[6]` correction at the level of the instructions. This

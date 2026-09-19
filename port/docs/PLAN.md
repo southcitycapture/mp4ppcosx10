@@ -9894,3 +9894,318 @@ would need the md5s re-argued for a gain that −mcpu did not show.
 2. **The matrix palette** (§32.3): batches spanning `GXLoadPosMtxImm`.
 3. **The three game-side patches** (§32.4), each an exact rewrite.
 4. `--maxskip` stretching under a persistent overrun; the texture decode.
+
+## 33. M18 log — the skinning that only had to run when a frame was drawn, and the palette that ran in software *(2026-09-19, littlejelly)*
+
+M18's brief was the two costs §32 left measured to the sample: the consumed
+frame (11.2 ms on the board, paid sixty times a second) and the drawn one
+(43 ms). Its named lever was the vertex-program matrix palette — batches
+spanning `GXLoadPosMtxImm`, the character meshes skinned by the card from
+their rest pose. The palette was built, made exact, and measured
+(§33.2): **it is slower on this driver**, because the Radeon 9000's
+relative parameter addressing runs in software however native the driver
+says it is. What shipped instead is the half of the design that did not
+need the card at all: the game's CPU skinning, deferred to the drawn frame
+and skipped on the consumed one, bit-identical by construction (§33.3).
+On the same binary at real time the **board goes from 13.2 to 17.9 presented
+fps at 100% speed**, and against the M17 binary from 12.5.
+
+Before any of that, the soak §32.6 said to read first had a finding of its
+own: the port slows down as the process ages (§33.1), and the reason was
+the texture cache's 130 MB of textures on a 64 MB card.
+
+### 33.1 The long-running process slows down
+
+The M17 leave-behind soak (§32.6 item 1) ran the board at 99% real-time
+speed with 14 presented fps on turn 1 and at **80% with 8 fps on turn 12**
+(255 resyncs in 45 minutes; `docs/soak/m18-aging-soak-m17build.log.gz` is
+the instrumented re-run). The first question was whether the game state or
+the process had grown: `--restore` of the soak's own frame-150,000 snapshot
+into a fresh process ran the same board, same turn, at **100% with no
+resync** (turbo 27 fps, the turn-1 figure). So the process.
+
+The status line now carries what the process holds — the texture cache's
+GL-resident bytes and the RSS — and the re-run of the soak with it read:
+
+| frame | scene | speed | presented | textures held by GL | RSS |
+|---:|---|---:|---:|---:|---:|
+| 2,400 | mode entry | 102% | 16.3 | 32 MB (249 entries) | 93 MB |
+| 44,100 | `m444dll` | 101% | 12.1 | 110 MB | 191 MB |
+| 62,460 | board turn 5 | 114% | 11.4 | **139 MB, 2,048 entries (full)** | 224 MB |
+| 78,060 | `m430dll` | 35% | 4.2 | 142 MB | 229 MB |
+| 82,860 | board turn 7 | 95% | 10.5 | 143 MB | 229 MB |
+
+The cache was bounded by *count* (2,048 entries, random replacement when
+full) and never by bytes, so after two minigames it held more than twice
+the card's memory and the driver paged textures over AGP on every frame —
+which is why the board's presented rate fell 14 → 11 → 10 across the first
+seven turns while its speed still read 100%, and why a fresh process was
+fine. The cache has a byte budget now (`--texbudget MB`, default 40): an
+upload that takes it over evicts the least recently bound entries, never
+one bound this frame or the last, through a free list the miss path
+reuses. The 9,000-frame walk ends with `40503 KB held by GL` and the
+`texture budget: 40 MB` line counts the evictions; the leave-behind soak
+(§33.7) is the test of the claim, since the slowdown took forty minutes
+to show.
+
+Also on the way: `m430dll` runs at 35-37% speed and `m444dll` at 80-85%
+on this build, the two heaviest scenes the soak reached.
+
+### 33.2 The matrix palette, built and measured: ARL is software here
+
+The design was §32.6's: the position and normal matrices as slots of the
+vertex program's parameter block, every vertex naming its slot, so a batch
+spans objects and a skinned mesh's entries are matrices the card indexes.
+What was built (`--palette`; gx_draw.c `pal_place`, gx_vprog.c,
+gx_skin.c):
+
+* the fixed parameter block trimmed from 64 to 46 params (lights 8 → 2;
+  nothing in the game lights with more than one) for **24 slots of 6**
+  (three rows of a 3x4 position matrix, three of a 3x3 normal matrix);
+* the slot in the vertex's **fog coordinate** (`GL_EXT_fog_coord`, one
+  float, `vertex.fogcoord.x` in the program), read through
+  `PARAM pal[144] = { program.env[46..189] }` and `ARL a0.x` — the only
+  form of relative addressing ARB_vertex_program allows;
+* the palette as a **persistent cache**: a slot keeps its matrix across
+  batches, a batch pins the slots it uses, a primitive whose matrix is
+  resident costs nothing, and the upload is one
+  `glProgramEnvParameters4fvEXT` over the dirty range per batch (the first
+  build gave every batch a fresh palette and its uploads went from 340 a
+  frame to 3,100);
+* skinned meshes placed **entry by entry through a window**: `--skinstats`
+  found a character body has 43-50 envelope entries (29 single + 20 dual
+  weights over 17 pairs; `all` 1,378 vertices, 43 entries; no `multi`
+  entries anywhere on the walk), more than any palette holds, so the
+  primitive's index list is scanned for the entries it touches and only
+  those get slots;
+* the per-entry matrices computed with the very PSMTX calls `SetEnvelop`
+  uses, in its order, premultiplied by the object's matrices, so the card
+  does one multiply; and `GXLoadPosMtxImm`, `GXLoadNrmMtxImm`,
+  `GXSetCurrentMtx` and the descriptor setters no longer ending batches.
+
+It is exact for plain objects — frame 800 comes out `60f8b7a0…` to the byte
+with every 2D and 3D object of the title going through the palette — and
+the probe program loads "under native limits: YES". **And it is slower.**
+The same binary over 3,700 frames, `--turbo`, `gx` ms per frame:
+
+| arm | title (700-870) | character select (2600-3600) | batches |
+|---|---:|---:|---:|
+| `--nopalette` (the pre-M18 shape) | 29.1 | **38.8** | 557,809 |
+| palette, `--palnoarl` (arrays, uploads, batching — the program reads env[0..5]) | 31.7 | 46.9 | 604,483 |
+| palette, `--palnofog` (ARL, no fog array bound) | 38.3 | 65.1 | 604,483 |
+| palette (the design) | 39.4 | **66.7** | 604,483 |
+
+The ARL program alone is 20 ms a frame on the character select and 8 on the
+title — a cost that scales with the scene's vertex count, which is what a
+vertex program run on the CPU by the driver looks like. Leopard's Radeon
+9000 driver reports the program native and executes its relative
+addressing in software. The rest (fog array, bulk uploads, the cache's
+bookkeeping) is another 8 ms, and the window makes *more* batches than the
+material-based split (604K against 558K), not fewer: a body's faces sweep
+through 50 entries and a 24-slot window turns over every few hundred
+faces.
+
+So the lever §32.6 named is dead on this hardware. The code stays as the
+measured answer, opt-in (`--palette`, with `--palnoarl`/`--palnofog` as the
+two diagnostics that settled it), and the one thing it found that is not
+its own: **four compare-first setters had been flushing unconditionally
+since M16.** `GXSetZMode`, `GXSetZCompLoc`, `GXSetCullMode` and
+`GXSetAlphaCompare` were given `--cmpmask` groups 16-128 and the default
+mask was 15, so a bit that was never set made each of them end the batch
+whether or not the value changed (784,556 batch ends on the walk once the
+matrix load stopped hiding them). The default is 255 now; the argument is
+the same as for the other compare-first setters, the md5s hold, and the
+walk's batch count is 1,941,408 against §31.2's 1,960,066.
+
+### 33.3 The skinning, deferred: bit-identical, and most of the consumed frame's game time
+
+The fact under the whole item: **nothing but the draw reads what
+`EnvelopeProc` produces.** Its two outputs are the skinned position and
+normal buffers (`mesh.vertex->data`, `mesh.normal->data`), read by
+`FaceDraw`'s `GXSetArray` and by no game logic (grep of src/game and
+src/REL: `m440Dll` and `m438Dll` read vertex data of their own stage
+meshes; the board reads none), and the bone matrices `hsf->matrix->data`,
+read by one line of `objMesh` (hsfdraw.c:230). `Hu3DModelObjMtxGet` and its
+family recompute from the transforms (`PGObjCalc`). So on a *consumed* frame
+— frame mode, §32.1: the GX calls are dropped — every cycle of it is
+waste, and on a drawn frame the vertex half can run as late as the draw.
+
+`port/patches.txt` plants `port_envelope_proc(hsf)` at the head of
+`EnvelopeProc` and `port_envelope_sync(hsf)` before `objMesh`'s read, and
+makes `SetEnvelopMtx`, `SetEnvelopMain` and the two table indices extern.
+The port (gx_skin.c) then:
+
+1. at `EnvelopeProc`: runs the game's own `SetEnvelopMtx` (the bone walk) at
+   once, as the game would, marks the HSF's vertex skinning owed, returns
+   1 — `SetEnvelopMain` does not run;
+2. at `objMesh`'s read, and at `GXSetArray(GX_VA_POS, p)` when `p` is a
+   skinned mesh's buffer (a hooked model is drawn inside its parent's walk,
+   before its own `EnvelopeProc` of the frame): if the frame is **drawn**
+   and the skinning is owed, runs `SetEnvelopMain(hsf)` on the game's own
+   statics and marks it done. On a consumed frame nothing runs.
+
+A body runs at most once per mark and every mark follows the game's own
+refresh of the buffers it reads (`InitVtxParm`/`ClusterProc`), which is
+what keeps the in-place cluster case exact; a shared HSF drawn by two
+models comes out as on the console (both with the last pose written).
+`--cpuskin` is the game's schedule, for the A/B.
+
+**Why the bone walk is not deferred too.** The first build deferred all of
+`EnvelopeProc` and gained 2 fps more on the board (18.9 presented) — and the
+`.wav` of the walk under `--nodraw` diverged from `--cpuskin`'s at retrace
+8,108, tiny differences from a DSP frame boundary on: a 3D sound placed a
+rounding step away. `snapdiff.py` (which lists every differing span now,
+`--spans`) on snapshots at frame 8,100 named hsfdraw.c's `MTXBuf`: the draw
+walk builds its matrix stack from the bone matrices, `objNull` for a
+skinned model leaves its slot untouched, and `Hu3DModelObjMtxGet` walks the
+same stack — so a stale bone matrix on a consumed frame reaches game logic
+through a position. With the bone walk on schedule, the same snapdiff shows
+**every game global identical** but `EnvelopeExec.c`'s own statics
+(`MtxTop`, `Vertextop`, `Meshno`…), and the heap differing only in
+coroutine stacks below their live frames and in saved registers (the same
+residue two *builds* differ by — §33.4). `--skindeferall` keeps the full
+deferral with that price on the label.
+
+**The md5s.** Both arms of the deferred build and the shipping build give
+§32's three reference frames to the byte on the 9,000-frame walk: 800
+`60f8b7a0…`, 3000 `8762d432…`, 7000 `9264207c…` — as they must, the
+arithmetic being the game's own, on the same inputs, later. Nothing is
+re-based in M18.
+
+**The cost, three ways, same binary** (`--play board-start-com4.play`,
+`--com4 --rtc dolphin --freshcard --frames 9000`):
+
+| | `--cpuskin` (the game's schedule) | deferred (shipping) | `--skindeferall` |
+|---|---:|---:|---:|
+| consumed board frame, `--nodraw --turbo` (game ms) | 10.61 (8.93) | **7.50 (5.83)** | 6.36 (4.70) |
+| consumed character-select frame | 7.57 (5.93) | — | 5.12 (3.50) |
+| drawn board frame, `--turbo` | 38.1 ms, 26.3 fps | 38.1 ms, 26.2 fps | 38.0 ms, 26.3 fps |
+
+The consumed frame drops by 3.1 ms (29%) — more than the profile's 30% of
+"game", because `--nodraw`'s frame is nothing but game — and the drawn
+frame is unchanged: the skinning still runs on it, once, at the draw.
+
+**Real time, the table the milestone is judged by** (`--realtime`,
+`--perfdump` medians; speed is game seconds over wall seconds):
+
+| scene | M17 binary | M18 `--cpuskin` | **M18 (shipping)** | M18 `--skindeferall` |
+|---|---:|---:|---:|---:|
+| title (700-870): speed / presented | 99.1% / 21.2 fps | 99.4% / 20.9 | **99.1% / 20.1** | 99.2% / 20.9 |
+| character select (2600-3600) | 100.0% / 12.4 | 100.2% / 12.4 | **100.1% / 13.9** | 100.0% / 14.3 |
+| board (6000-8900) | 100.0% / 12.5 | 100.0% / 13.2 | **100.0% / 17.9** | 100.0% / 18.9 |
+| board consumed frame (game + aud) | 11.1 ms (9.0 + 2.1) | 10.7 (9.1 + 1.6) | **7.7 (5.8 + 1.8)** | 6.7 (5.1 + 1.6) |
+| board drawn frame (game + gx + aud) | 38.6 (11.2 + 25.0 + 2.0) | 38.6 (11.3 + 25.1 + 1.6) | **38.8 (11.3 + 25.2 + 1.8)** | 38.9 (11.6 + 25.2 + 1.6) |
+| board skipped | 79% | 78% | **70%** | 68% |
+| resyncs over the walk | 1 (the board load) | 1 | 1 | 1 |
+
+(`docs/soak/m18-{m17-rt,rt-cpuskin,rt-final,rt-deferred}-perfdump.csv.gz`;
+the `--cpuskin` column is the M17 build's own gain from the mixer and the
+setters, §33.4/§33.2.) §32.1's budget arithmetic predicted k = 3 → 15 fps
+for a 7.7 ms consumed frame against a 38.8 ms drawn one; the gate does
+better than the integer model because a drawn frame that comes in under
+budget lets the next skip count be two.
+
+![the board at real time on the shipping build: the four skinned characters at the first dice block](screenshots/m18-realtime-board-start.png)
+
+### 33.4 The three game-side patches, the mixer, and what the .wav can and cannot say
+
+**Item 2, the three patches §32.4 named**, mostly moot after §33.3: on a
+consumed frame none of `Hu3DMtxScaleGet`, `SetEnvelopMtx`'s rotations or the
+envelope's concats run any more except the bone walk, and on a drawn frame
+they are 2.7 ms of 38.8. What shipped is the one that is exact and free:
+`PSMTXRotRad`'s `sinf`/`cosf` pair goes through a 1,024-entry memo keyed on
+the angle's bits (`port_sincosf`, patched into `mtx.c`; `--nosincos`) —
+the same libm values for the same input — and **57.8%** of the walk's
+4.3 million calls hit it. `Hu3DMtxScaleGet`'s six square roots have no
+exact shortcut (the `!= 1.0f` tests are on the computed magnitudes, and a
+`frsqrte` refinement is not libm's `sqrt`); an AltiVec `C_MTXConcat` was
+declined for §32.4's reason. Neither is worth its md5 argument for a share
+of the drawn frame under 1 ms.
+
+**Item 3, the mixer.** `render_voice` did five 64-bit multiplies and four
+64-bit compares per sample per voice on a 32-bit PowerPC. Every operand
+there is bounded — an s16 sample out of the resampler, a 0..0x8000
+envelope, an s16 bus volume, a ±0x7fffff bus — so the products and sums
+fit an s32 and the arithmetic shift and the clamp give the same bits
+(`apply_gain32`, `mixcheck_acc`; the studio-input path keeps the 64-bit
+form, its gain being a widened u16 on a bus value). `--mixcheck` runs the
+64-bit form beside the 32-bit one on every sample: **205,880,245 checks
+over the walk, 0 disagreed.** The mixer's frame went from 466.6 to 360 µs
+(`musyx_mix: --perf` mean, `--nodraw`), `aud` from 2.1 to 1.6 ms a retrace.
+
+**What the .wav cannot say.** The plan was to prove item 3 with the `.wav`
+of the walk against the M17 binary, and the two differed — from retrace
+1,580, mostly by one level. So did two *M18* builds that differ only in
+dead diagnostic code (`--mixcheck` off), and so did `--cpuskin` against the
+deferral on one build, from the same retrace. On one binary with one flag
+set the `.wav` is byte-stable run to run (two default runs: `9cb0cbbb…`
+both), and `--nosincos` against the memo is identical (`64cdcd6e…` both).
+The audio of this game is a function of the binary's layout and of the
+code path's stack residue — an uninitialised read somewhere in the sound
+path, of the `ResultCoinNumGet` kind (§20), still to be found — so a
+cross-build `.wav` md5 is not an oracle for an audio change; `--mixcheck`
+is. Noted for `decomp-struct-notes.md`.
+
+### 33.5 The snapshot off the game thread
+
+§32.5's 3.1 s stall — 40 MB through `fwrite` on the game thread, a resync
+every 83 s of game at real time — is gone: the image is serialised into
+memory at the retrace boundary (the same instant, the same bytes; the
+restore path is untouched) and a pthread writes and renames it while the
+game runs on, the game thread finishing the bookkeeping when it next finds
+the job done. On the walk with `--snap-every 2000`: **228-296 ms on the
+game thread**, 3.4 s written behind it, and the run's only resync is the
+board load's, as in every other run. `--restore` of the worker-written
+frame-6,000 snapshot and `--dumpframe 7000` gives `9264207c…` — the §24
+continuation, exact. The 230 ms is the 40 MB copy into freshly faulted
+pages; keeping the buffer across snapshots would halve it (`--snapsync` is
+the old write). A snapshot due while one is still writing is skipped and
+counted.
+
+### 33.6 What M18 shipped, and what it did not
+
+| shipped, with a witness | |
+|---|---|
+| the texture cache's VRAM budget (§33.1), the status line's `tex`/`rss` | the aging finding, the mechanism, 40 MB held at the end of the walk; the soak (§33.7) is the long test |
+| the skinning deferred to the drawn frame, bone walk on schedule (§33.3) | board 13.2 → **17.9** presented fps at 100% speed on the same binary, 12.5 on the M17 binary; consumed frame 10.7 → 7.7 ms; md5s 800/3000/7000 identical on every arm; `--cpuskin`, `--skindeferall`, `--skinstats` |
+| the matrix palette, opt-in, and its verdict (§33.2) | exact on plain objects; ARL in software: +20 ms on the character select; `--palette`, `--palnoarl`, `--palnofog`, `--palsize` |
+| the four compare-first setters that always flushed (§33.2) | default `--cmpmask` 255; md5s identical |
+| the mixer in 32 bits (§33.4) | `--mixcheck` 0 of 205.9M; 466.6 → 360 µs a DSP frame |
+| the sin/cos memo (§33.4) | exact by construction, `.wav` identical either way; 57.8% hit |
+| the snapshot worker (§33.5) | 3.1 s → 0.23-0.30 s on the game thread; restore continuation exact |
+| `snapdiff.py --spans` | every differing span, which is what named `MTXBuf` |
+
+**Not done, and why:**
+
+* **30 presented fps at real time.** The board presents 17.9. The consumed
+  frame is 7.7 ms (game 5.8: `Hu3DDraw`'s material walk, `Hu3DMotionExec`
+  and the bone walk; aud 1.8) and the drawn frame 38.8, of which `gx` 25.2.
+  The next lever is the drawn frame, and it is the driver's per-batch work
+  and the decode (§32.3) — not the palette.
+* **GPU skinning.** Built, exact to rounding, slower (§33.2); on this
+  driver a per-vertex matrix index does not exist in hardware.
+* **The uninitialised read in the sound path** (§33.4): found to exist,
+  not found.
+* **`m430dll` at 35% speed**, `m444dll` at 80-85% (§33.1's soak): the
+  heaviest scenes; not looked at.
+* **Strips → indexed, the `ATI_text_fragment_shader` backend, the
+  scene-change audio underruns** (item 5): not started.
+* The snapshot buffer kept across writes (230 → ~100 ms); `Hu3DMtxScaleGet`.
+
+### 33.7 What M19 starts with
+
+1. **Read the soak's log first.** Left running: `g4 run --soak --com4 --rtc
+   dolphin --freshcard --realtime --snap-every 5000 --snap-keep 3 --status
+   --ovllog --stuckwatch 200` on the shipping build. The status lines carry
+   `tex`/`rss` now; if `tex` holds near 40 MB and the board's speed holds
+   at turn 12 where M17's fell to 80%, §33.1 is closed. Its coins/stars per
+   frame against `docs/soak/m18-aging-soak-m17build.log.gz` are the
+   game-state check of the deferral over a whole board.
+2. **The drawn frame** (38.8 ms): the driver's per-batch validation
+   (17.5%, §32.3) without a palette — fewer batches by other means (the
+   material-change enders: `GXSetChanMatColor` 145K, `GXInitTexObj`/
+   `GXInitTlutObj` 210K/227K, `GXSetTexCoordGen2` 120K on the walk, several
+   of which may be compare-first), and the decode.
+3. **The consumed frame** (7.7 ms): `Hu3DDraw`'s material walk with
+   nothing drawn (16%), `Hu3DMotionExec` (13%), the mixer's remaining 1.8.
+4. The sound path's uninitialised read; `m430dll`.
