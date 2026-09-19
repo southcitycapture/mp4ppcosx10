@@ -22,6 +22,13 @@ the GameCube, so nothing needs byteswapping, and the game addresses memory
 through ordinary pointers and ARAM through plain offsets, so there is no
 pinned-globals scheme.
 
+**Status (2026-09-19, M21):** full twenty-turn boards with COM players,
+chained unattended overnight at 100% of console game speed, the board at
+about 18 presented fps at real time; 45 of 60 minigames dealt and played
+through. The paragraph that follows is the M5 status kept for the record;
+the current state, every measurement and the working method are in
+[`docs/PLAN.md`](docs/PLAN.md) (§0 first, then the latest milestone log).
+
 **Status: M5 in part — it plays a board, and a minigame.** The port boots
 through SELECT A FILE, the new-file scene, PARTY MODE and character select,
 starts **Toad's Midway Madness** with 1P and three COM players on EASY, plays
