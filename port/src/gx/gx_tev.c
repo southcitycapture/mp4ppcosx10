@@ -95,6 +95,8 @@ static void konst_color(const GXTevStage* s, int alpha, float* out) {
     }
 }
 
+void gx_tev_stage_konst(const GXTevStage* s, int alpha, float* out) { konst_color(s, alpha, out); }
+
 /* ---- swap tables ----------------------------------------------------------
  *
  * `GXSetTevSwapModeTable` gives a stage a four-entry crossbar, and
@@ -185,6 +187,10 @@ static Arg color_arg(const GXTevStage* s, u8 a) {
         case GX_CC_RASC:
             r.src = GL_PRIMARY_COLOR;
             r.operand = ras_rgb_operand(rt);
+            if (gx_hilite_mode == 2 && s == &gx.tev[gx_hilite_stage]) {
+                /* M22: the program put the specular in the primary alpha */
+                r.operand = GL_SRC_ALPHA;
+            }
             break;
         case GX_CC_RASA:
             r.src = GL_PRIMARY_COLOR;
@@ -399,6 +405,7 @@ static void emit_channel(int unit, int rgb, Arg a, Arg b, Arg c, Arg d, u8 op, u
  * Every other register write is still folded to PREV and is now *counted*
  * by --gxwarn instead of passing silently.  --noregfix keeps the old
  * rendering for the A/B. */
+unsigned gl13_frame_number(void);
 static int reg_write_warned;
 
 /* the (ZERO, X, Y, ZERO) modulate shape, either order */
@@ -488,6 +495,277 @@ static int regfix_match(int k, int stages) {
         return -1;
     }
     return reg;
+}
+
+/* M22 (PLAN.md 37): the second register shape, hsfdraw.c:1290-1305 -- the
+ * results-screen portraits, and any material with a reflection *mask*:
+ *
+ *     stage A:  T_A * RAS              -> PREV    alpha  T_Aa * K_A (or one source)
+ *     stage B:  T_mask * K             -> REG2    alpha  APREV       -> REG2
+ *     stage C:  lerp(PREV, T_ref, C2)  -> PREV    alpha  APREV
+ *
+ * i.e. the reflection replaces the lit face where the mask says so, by
+ * K * mask per channel.  Three units, the mask's value carried in an alpha:
+ *
+ *     unit A:  as the stage says (the generic emitter)
+ *     unit B:  rgb = PREV                a = T_mask.a * K   -- the mask is bound
+ *              with red swapped into alpha through the texture cache
+ *     unit C:  rgb = lerp(PREV, T_ref, PREV.a)   a = stage A's alpha, its
+ *              texture read across (crossbar) and its constant in this unit's
+ *
+ * Exact when the mask is grey (one value for the three channels) and K is
+ * the scalar hsfdraw.c's SetKColor packs, which is what the game has.  The
+ * textured highlight that follows the triple on the portraits is the hilite
+ * fold's mode 2 (gx_internal.h). */
+static int regfix2_match(int k, int stages) {
+    const GXTevStage *a, *b, *c;
+    int reg, i;
+    if (port_opt.noregfix || port_opt.nohilitetex || !gl13_have_crossbar || k + 2 >= stages) {
+        return -1;
+    }
+    a = &gx.tev[k];
+    b = &gx.tev[k + 1];
+    c = &gx.tev[k + 2];
+    if (!stage_plain(a) || !stage_plain(b) || !stage_plain(c)) {
+        return -1;
+    }
+    if (a->creg != GX_TEVPREV || a->areg != GX_TEVPREV || c->creg != GX_TEVPREV ||
+        c->areg != GX_TEVPREV || b->creg != b->areg || b->creg == GX_TEVPREV) {
+        return -1;
+    }
+    reg = (int)b->creg - GX_TEVREG0;
+    if (reg < 0 || reg > 2) {
+        return -1;
+    }
+    if (gx_bound_tex(a->map) == NULL || a->coord >= GX_TEXCOORDS ||
+        gx_bound_tex(b->map) == NULL || b->coord >= GX_TEXCOORDS ||
+        gx_bound_tex(c->map) == NULL || c->coord >= GX_TEXCOORDS || gx.num_ind) {
+        return -1;
+    }
+    /* A: T*RAS; alpha a modulate of two of {TEXA, KONST} or one of them */
+    if (!is_modulate(a->cin, GX_CC_TEXC, GX_CC_RASC, GX_CC_ZERO)) {
+        return -1;
+    }
+    for (i = 0; i < 4; i++) {
+        u8 v = a->ain[i];
+        if (v != GX_CA_TEXA && v != GX_CA_KONST && v != GX_CA_ZERO) {
+            return -1;
+        }
+    }
+    if (a->ain[0] != GX_CA_ZERO) {
+        return -1;
+    }
+    if (a->ain[3] != GX_CA_ZERO) {
+        if (a->ain[1] != GX_CA_ZERO || a->ain[2] != GX_CA_ZERO) {
+            return -1; /* X*Y + Z: three sources, not this shape */
+        }
+    } else if (a->ain[1] == GX_CA_ZERO || a->ain[2] == GX_CA_ZERO) {
+        return -1; /* lerp(0, X, 0) = 0 on GX */
+    }
+    /* B: T_mask * K into the register, alpha APREV */
+    if (!is_modulate(b->cin, GX_CC_TEXC, GX_CC_KONST, GX_CC_ZERO)) {
+        return -1;
+    }
+    if (b->ain[0] != GX_CA_ZERO || b->ain[1] != GX_CA_ZERO || b->ain[2] != GX_CA_ZERO ||
+        b->ain[3] != GX_CA_APREV) {
+        return -1;
+    }
+    /* C: lerp(PREV, T_ref, Creg), alpha APREV */
+    if (c->cin[0] != GX_CC_CPREV || c->cin[1] != GX_CC_TEXC || c->cin[2] != GX_CC_C0 + 2 * reg ||
+        c->cin[3] != GX_CC_ZERO) {
+        return -1;
+    }
+    if (c->ain[0] != GX_CA_ZERO || c->ain[1] != GX_CA_ZERO || c->ain[2] != GX_CA_ZERO ||
+        c->ain[3] != GX_CA_APREV) {
+        return -1;
+    }
+    return reg;
+}
+
+/* M22: the third register shape, hsfdraw.c:1243 (texCol[i].a == 1, an
+ * animated texture with a tint over the material -- the results-screen
+ * portrait faces, drawn as a separate 16-vertex quad after the frame):
+ *
+ *     stage B:  T_i * K_rgb          -> REG2   alpha  K_a * APREV -> REG2
+ *     stage C:  lerp(PREV, C2, K_c)  -> PREV   alpha  T_i.a * APREV
+ *
+ * = PREV * (1 - K_c) + T_i * K_rgb * K_c, and the register's alpha is dead
+ * (C reads PREV's).  One unit says it -- INTERPOLATE(TEXTURE, PREVIOUS,
+ * CONSTANT.a = K_c) -- when K_rgb is white, which the portraits' is; a
+ * tint is counted and dropped.  Unit B passes everything through. */
+static int regfix3_match(int k, int stages) {
+    const GXTevStage *b, *c;
+    int reg;
+    if (port_opt.noregfix || port_opt.nohilitetex || k + 1 >= stages) {
+        return -1;
+    }
+    b = &gx.tev[k];
+    c = &gx.tev[k + 1];
+    if (!stage_plain(b) || !stage_plain(c)) {
+        return -1;
+    }
+    if (b->creg != b->areg || b->creg == GX_TEVPREV || c->creg != GX_TEVPREV ||
+        c->areg != GX_TEVPREV) {
+        return -1;
+    }
+    reg = (int)b->creg - GX_TEVREG0;
+    if (reg < 0 || reg > 2) {
+        return -1;
+    }
+    if (gx_bound_tex(b->map) == NULL || b->coord >= GX_TEXCOORDS || c->map != b->map ||
+        c->coord != b->coord || gx.num_ind) {
+        return -1;
+    }
+    if (!is_modulate(b->cin, GX_CC_TEXC, GX_CC_KONST, GX_CC_ZERO)) {
+        return -1;
+    }
+    if (c->cin[0] != GX_CC_CPREV || c->cin[1] != GX_CC_C0 + 2 * reg || c->cin[2] != GX_CC_KONST ||
+        c->cin[3] != GX_CC_ZERO) {
+        return -1;
+    }
+    if (!is_modulate(c->ain, GX_CA_TEXA, GX_CA_APREV, GX_CA_ZERO)) {
+        return -1;
+    }
+    return reg;
+}
+
+static unsigned stat_regfix3_tinted;
+
+static void regfix3_emit(int which, int unit, int k) {
+    const GXTevStage* b = &gx.tev[k];
+    const GXTevStage* c = &gx.tev[k + 1];
+    float konst[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    float tint[4];
+    if (!gl13_live()) {
+        return;
+    }
+    glc_texenvi(unit, GL_TEXTURE_ENV_MODE, GL_COMBINE);
+    glc_texenvf(unit, GL_RGB_SCALE, 1.0f);
+    glc_texenvf(unit, GL_ALPHA_SCALE, 1.0f);
+    if (which == 0) {
+        /* everything passes: the register write is folded into unit C */
+        glc_texenvi(unit, GL_COMBINE_RGB, GL_REPLACE);
+        glc_texenvi(unit, GL_SOURCE0_RGB, GL_PREVIOUS);
+        glc_texenvi(unit, GL_OPERAND0_RGB, GL_SRC_COLOR);
+        glc_texenvi(unit, GL_COMBINE_ALPHA, GL_REPLACE);
+        glc_texenvi(unit, GL_SOURCE0_ALPHA, GL_PREVIOUS);
+        glc_texenvi(unit, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
+        konst_color(b, 0, tint);
+        if (tint[0] < 0.996f || tint[1] < 0.996f || tint[2] < 0.996f) {
+            stat_regfix3_tinted++;
+            gx_warn("TEV: a tinted texture in the lerp-by-konst register shape; "
+                    "the tint is dropped (PLAN.md 37)");
+        }
+    } else {
+        /* rgb = lerp(PREV, T, K_c): Arg0*Arg2 + Arg1*(1-Arg2);  a = T.a * PREV.a */
+        konst_color(c, 0, tint);
+        konst[3] = tint[0];
+        glc_texenvi(unit, GL_COMBINE_RGB, GL_INTERPOLATE);
+        glc_texenvi(unit, GL_SOURCE0_RGB, GL_TEXTURE);
+        glc_texenvi(unit, GL_OPERAND0_RGB, GL_SRC_COLOR);
+        glc_texenvi(unit, GL_SOURCE1_RGB, GL_PREVIOUS);
+        glc_texenvi(unit, GL_OPERAND1_RGB, GL_SRC_COLOR);
+        glc_texenvi(unit, GL_SOURCE2_RGB, GL_CONSTANT);
+        glc_texenvi(unit, GL_OPERAND2_RGB, GL_SRC_ALPHA);
+        glc_texenvi(unit, GL_COMBINE_ALPHA, GL_MODULATE);
+        glc_texenvi(unit, GL_SOURCE0_ALPHA, GL_TEXTURE);
+        glc_texenvi(unit, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
+        glc_texenvi(unit, GL_SOURCE1_ALPHA, GL_PREVIOUS);
+        glc_texenvi(unit, GL_OPERAND1_ALPHA, GL_SRC_ALPHA);
+    }
+    glc_texenv_color(unit, konst);
+}
+
+/* the swap that binds the mask with its red channel in alpha */
+#define SWAP_RED_TO_ALPHA ((u8)(GX_CH_RED | (GX_CH_GREEN << 2) | (GX_CH_BLUE << 4) | \
+                                (GX_CH_RED << 6)))
+
+/* stage A's alpha, rebuilt in another unit: its texture read across the
+ * crossbar, its constant in this unit's slot */
+static void regfix_emit_alpha_of(int unit, const GXTevStage* a, int k, float* konst) {
+    int i, n = 0;
+    if (a->ain[3] != GX_CA_ZERO) {
+        /* the one-source pass */
+        u8 v = a->ain[3];
+        glc_texenvi(unit, GL_COMBINE_ALPHA, GL_REPLACE);
+        if (v == GX_CA_TEXA) {
+            glc_texenvi(unit, GL_SOURCE0_ALPHA, (int)(GL_TEXTURE0 + k));
+        } else {
+            konst_color(a, 1, konst);
+            glc_texenvi(unit, GL_SOURCE0_ALPHA, GL_CONSTANT);
+        }
+        glc_texenvi(unit, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
+        return;
+    }
+    for (i = 1; i <= 2; i++) {
+        u8 v = a->ain[i];
+        GLenum src;
+        if (v == GX_CA_ZERO) {
+            continue;
+        }
+        src = v == GX_CA_TEXA    ? (GLenum)(GL_TEXTURE0 + k)
+              : v == GX_CA_RASA  ? GL_PRIMARY_COLOR
+                                 : GL_CONSTANT;
+        if (v == GX_CA_KONST) {
+            konst_color(a, 1, konst);
+        }
+        glc_texenvi(unit, n == 0 ? GL_SOURCE0_ALPHA : GL_SOURCE1_ALPHA, (int)src);
+        glc_texenvi(unit, n == 0 ? GL_OPERAND0_ALPHA : GL_OPERAND1_ALPHA, GL_SRC_ALPHA);
+        n++;
+    }
+    glc_texenvi(unit, GL_COMBINE_ALPHA, GL_MODULATE); /* n is 2: the matcher says so */
+}
+
+static void regfix2_emit(int which, int unit, int k) {
+    const GXTevStage* a = &gx.tev[k];
+    const GXTevStage* b = &gx.tev[k + 1];
+    float konst[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    if (!gl13_live() || which == 0) {
+        return; /* unit A is the generic emitter's */
+    }
+    glc_texenvi(unit, GL_TEXTURE_ENV_MODE, GL_COMBINE);
+    glc_texenvf(unit, GL_RGB_SCALE, 1.0f);
+    glc_texenvf(unit, GL_ALPHA_SCALE, 1.0f);
+    if (which == 1) {
+        /* rgb = PREV;  a = T_mask.a (= its red, by the bind) * K */
+        konst_color(b, 0, konst);
+        konst[3] = konst[0];
+        glc_texenvi(unit, GL_COMBINE_RGB, GL_REPLACE);
+        glc_texenvi(unit, GL_SOURCE0_RGB, GL_PREVIOUS);
+        glc_texenvi(unit, GL_OPERAND0_RGB, GL_SRC_COLOR);
+        glc_texenvi(unit, GL_COMBINE_ALPHA, GL_MODULATE);
+        glc_texenvi(unit, GL_SOURCE0_ALPHA, GL_TEXTURE);
+        glc_texenvi(unit, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
+        glc_texenvi(unit, GL_SOURCE1_ALPHA, GL_CONSTANT);
+        glc_texenvi(unit, GL_OPERAND1_ALPHA, GL_SRC_ALPHA);
+    } else {
+        /* rgb = lerp(PREV, T_ref, PREV.a): GL_INTERPOLATE is
+         * Arg0*Arg2 + Arg1*(1-Arg2);  a = stage A's */
+        int dbg = port_opt.regfix2dbg ? (int)(gl13_frame_number() % 4u) : 0;
+        if (dbg == 1) { /* --regfix2dbg: unit A's output alone */
+            glc_texenvi(unit, GL_COMBINE_RGB, GL_REPLACE);
+            glc_texenvi(unit, GL_SOURCE0_RGB, GL_PREVIOUS);
+            glc_texenvi(unit, GL_OPERAND0_RGB, GL_SRC_COLOR);
+        } else if (dbg == 2) { /* the reflection alone */
+            glc_texenvi(unit, GL_COMBINE_RGB, GL_REPLACE);
+            glc_texenvi(unit, GL_SOURCE0_RGB, GL_TEXTURE);
+            glc_texenvi(unit, GL_OPERAND0_RGB, GL_SRC_COLOR);
+        } else if (dbg == 3) { /* the mask factor, as grey */
+            glc_texenvi(unit, GL_COMBINE_RGB, GL_REPLACE);
+            glc_texenvi(unit, GL_SOURCE0_RGB, GL_PREVIOUS);
+            glc_texenvi(unit, GL_OPERAND0_RGB, GL_SRC_ALPHA);
+        } else {
+            glc_texenvi(unit, GL_COMBINE_RGB, GL_INTERPOLATE);
+            glc_texenvi(unit, GL_SOURCE0_RGB, GL_TEXTURE);
+            glc_texenvi(unit, GL_OPERAND0_RGB, GL_SRC_COLOR);
+            glc_texenvi(unit, GL_SOURCE1_RGB, GL_PREVIOUS);
+            glc_texenvi(unit, GL_OPERAND1_RGB, GL_SRC_COLOR);
+            glc_texenvi(unit, GL_SOURCE2_RGB, GL_PREVIOUS);
+            glc_texenvi(unit, GL_OPERAND2_RGB, GL_SRC_ALPHA);
+        }
+        regfix_emit_alpha_of(unit, a, k, konst);
+    }
+    glc_texenv_color(unit, konst);
 }
 
 /* One of the three units of a matched triple: `which` is 0 (A), 1 (B), 2 (C)
@@ -598,6 +876,11 @@ static u32 tev_sig_hash(int stages, u32 have_tex_bits) {
     TEV_MIX(&gx.num_tev, sizeof(gx.num_tev));
     TEV_MIX(&have_tex_bits, sizeof(have_tex_bits));
     TEV_MIX(&gx_hilite_stage, sizeof(gx_hilite_stage)); /* M21 */
+    TEV_MIX(&gx_hilite_mode, sizeof(gx_hilite_mode));   /* M22 */
+    if (port_opt.regfix2dbg) {
+        unsigned fr = gl13_frame_number();
+        TEV_MIX(&fr, sizeof(fr));
+    }
     TEV_MIX(&gx.num_ind, sizeof(gx.num_ind));
     TEV_MIX(gx.swap_tbl, sizeof(gx.swap_tbl));
     TEV_MIX(gx.kcolor, sizeof(gx.kcolor));
@@ -616,7 +899,8 @@ static int tev_cache_live;
  * count (--submitstats) */
 u32 gx_tev_last_sig(void) { return tev_cache_sig; }
 static int regfix_k;
-static unsigned stat_regfix;
+static int regfix_shape;       /* 1 = the eyes' triple (M16), 2 = the mask's (M22) */
+static unsigned stat_regfix, stat_regfix2;
 /* The konst collision, counted the way a degradation should be: per draw
  * that carries one, whether or not the TEV cache re-emitted the config.
  * `gx_warn`'s own count only fires on a cache miss, which is why PLAN.md
@@ -664,10 +948,26 @@ void gx_tev_apply(void) {
     {
         int rk = -1; /* the first stage of a matched register triple, or -1 */
         int j;
+        regfix_shape = 0;
         for (j = 0; j + 2 < stages; j++) {
             if (regfix_match(j, stages) >= 0) {
                 rk = j;
+                regfix_shape = 1;
                 break;
+            }
+            if (regfix2_match(j, stages) >= 0) {
+                rk = j;
+                regfix_shape = 2;
+                break;
+            }
+        }
+        if (rk < 0) {
+            for (j = 0; j + 1 < stages; j++) {
+                if (regfix3_match(j, stages) >= 0) {
+                    rk = j;
+                    regfix_shape = 3;
+                    break;
+                }
             }
         }
         regfix_k = rk;
@@ -675,7 +975,7 @@ void gx_tev_apply(void) {
             for (j = 0; j < stages; j++) {
                 const GXTevStage* s = &gx.tev[j];
                 if ((s->creg != GX_TEVPREV || s->areg != GX_TEVPREV) &&
-                    !(rk >= 0 && j == rk + 1)) {
+                    !(rk >= 0 && j == (regfix_shape == 3 ? rk : rk + 1))) {
                     gx_warn("TEV: a stage writes a TEV register other than PREV; GL "
                             "has only PREV, so it is treated as PREV");
                     reg_write_warned++;
@@ -716,7 +1016,9 @@ void gx_tev_apply(void) {
                                 "draws the direct stage only (PLAN.md 3.4 case 3)");
                     }
                     gx_tex_bind_swapped(i, bound,
-                                        SWAP_PACK(gx.swap_tbl[s->tex_swap & 3]));
+                                        (regfix_shape == 2 && regfix_k >= 0 && i == regfix_k + 1)
+                                            ? SWAP_RED_TO_ALPHA /* M22: the mask's value in alpha */
+                                            : SWAP_PACK(gx.swap_tbl[s->tex_swap & 3]));
                 }
             } else {
                 /* A stage with no texture still has to run its combiner, and
@@ -749,10 +1051,19 @@ void gx_tev_apply(void) {
                             "previous stage's colour passes through");
                 }
             }
-            if (emit && regfix_k >= 0 && i >= regfix_k && i <= regfix_k + 2) {
-                regfix_emit(i - regfix_k, i, regfix_k);
-                stat_regfix++;
-            } else if (emit && i == gx_hilite_stage) {
+            if (emit && regfix_k >= 0 && regfix_shape == 3 && i >= regfix_k && i <= regfix_k + 1) {
+                regfix3_emit(i - regfix_k, i, regfix_k);
+                stat_regfix2++;
+            } else if (emit && regfix_k >= 0 && i >= regfix_k && i <= regfix_k + 2 &&
+                !(regfix_shape == 2 && i == regfix_k)) {
+                if (regfix_shape == 2) {
+                    regfix2_emit(i - regfix_k, i, regfix_k);
+                    stat_regfix2++;
+                } else {
+                    regfix_emit(i - regfix_k, i, regfix_k);
+                    stat_regfix++;
+                }
+            } else if (emit && i == gx_hilite_stage && gx_hilite_mode == 1) {
                 /* M21: the hilite screen, lerp(CPREV, ONE, RASC[COLOR1A1]).
                  * The vertex side has already folded (1 - spec) into the
                  * primary colour and GL_COLOR_SUM adds spec after the
@@ -797,6 +1108,11 @@ void gx_tev_report(void) {
     if (stat_hilite_stages) {
         port_log("port> tev: %u hilite stage emissions folded into the specular colour "
                  "sum (PLAN.md 36)\n", stat_hilite_stages);
+    }
+    if (stat_regfix2) {
+        port_log("port> tev: %u unit emissions of the M22 register shapes (the mask/reflect "
+                 "triple, the lerp-by-konst pair; %u tinted pairs had the tint dropped) "
+                 "(PLAN.md 37)\n", stat_regfix2, stat_regfix3_tinted);
     }
     if (stat_regfix || reg_write_warned) {
         port_log("port> tev: %u unit emissions through the register rewrite "

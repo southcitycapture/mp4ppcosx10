@@ -342,7 +342,9 @@ typedef struct VpKey {
     u8 pal;            /* M18: the matrices come from the palette, indexed
                         * by vertex.fogcoord, not from env[0..5]          */
     u8 hilite;         /* M21: channel 1 (GX_AF_SPEC) computed and folded:
-                        * primary *= (1 - spec), secondary = spec         */
+                        * 1: primary *= (1 - spec), secondary = spec;
+                        * 2 (M22): primary = c0, primary.a = spec's
+                        * luminance (the textured highlight)              */
     u8 mat1_reg, amb1_reg;
     u8 l0mask, l1mask; /* which of the packed lights each channel reads
                         * (all of them for channel 0 without the fold)    */
@@ -636,11 +638,19 @@ static void vp_gen(const VpKey* k, VpBuf* b) {
             } else {
                 vpi(b, "MUL ac.xyz, ac, vertex.color;\n");
             }
-            vpi(b, "MOV result.color.secondary, ac;\n");
-            vpi(b, "SUB t1.xyz, 1.0, ac;\n");
-            vpi(b, "MUL result.color.xyz, t0, t1;\n");
+            if (k->hilite == 2) {
+                /* M22: the textured highlight rides the primary alpha */
+                vpi(b, "MOV result.color.xyz, t0;\n");
+                vpi(b, "DP3 result.color.w, ac, {0.299, 0.587, 0.114, 0.0};\n");
+            } else {
+                vpi(b, "MOV result.color.secondary, ac;\n");
+                vpi(b, "SUB t1.xyz, 1.0, ac;\n");
+                vpi(b, "MUL result.color.xyz, t0, t1;\n");
+            }
         }
-        vpi(b, "MOV result.color.w, mt.w;\n");
+        if (k->hilite != 2) {
+            vpi(b, "MOV result.color.w, mt.w;\n");
+        }
     }
 
     /* --- texgen, one GL unit at a time (the mapping draw_run makes) */
@@ -886,7 +896,7 @@ static void vp_build_key(const GxXfDesc* d, VpKey* k, int* nlights_out,
          * channel 0's first; each channel reads its own subset by mask */
         const GXChanCtrl* c1 = &gx.chan[GX_COLOR1];
         int j;
-        k->hilite = 1;
+        k->hilite = (u8)d->hilite;
         k->mat1_reg = (u8)(c1->mat_src == GX_SRC_REG);
         k->amb1_reg = (u8)(c1->amb_src == GX_SRC_REG);
         k->l0mask = (u8)((1u << nl) - 1u);

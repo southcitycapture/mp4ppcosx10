@@ -339,6 +339,33 @@ on the Mac. What is different there:
   4:00 to 4:45 after boot. Poll every 20 s once `w01dll` shows, not every
   75.
 
+## 0j. Four things M22 paid for *(2026-09-19)*
+
+* **Do not start an A/B walk right after `g4_install.sh`.** The install
+  rewrites the 20 MB bundle and the G4 spends the next half-minute on
+  it; two walks started within a minute of one read 20.8 and 23.0 fps on
+  the title window against 27–28.6 for every other run (PLAN.md 37.5).
+  Ninety seconds, or a throwaway run, first.
+* **The M21 "mergeable" count hashed an address.** `gx_bound_tex()`
+  returns `&gx.bound[unit]` — the same pointer whatever is loaded — so a
+  signature that mixes the *return value* never sees a texture change.
+  Hash the object's contents (PLAN.md 37.2). The same trap waits in any
+  future instrument that keys on a "bound" thing.
+* **A white surface can be two draws.** The results portraits were the
+  frame (a 216-vertex mask/reflection quadruple) *and* a 16-vertex face
+  quad drawn after it with a different register shape; a per-unit debug
+  cycle on the first draw changed nothing, and the GL trace (`--gltrace
+  F`) showing the units programmed exactly as designed was what said
+  "look at the next draw". `--drawlog` prints `creg`/`areg` and the
+  konst colours now; `--dumptex` slot numbers are cache slots, not the
+  drawlog's `gl N`.
+* **A setter that flushes at once cannot see a transient.** hsfdraw.c's
+  material setup writes states no primitive is drawn under and comes
+  back; making setters compare-first peels one layer at a time
+  (GXInitTexObj → GXSetTexCoordGen2 → GXLoadTexMtxImm → the konst
+  selects). The lazy flush sees through it and is still not faster,
+  because the batch count was never the cost (PLAN.md 37.2).
+
 ## 1. m425 to its result screen — the M8 crash, witnessed
 
 §18.2 proved the `unk_3C[6]` correction at the level of the instructions. This

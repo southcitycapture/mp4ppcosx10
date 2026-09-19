@@ -11130,3 +11130,323 @@ copies kept.
 5. `GL_ATI_text_fragment_shader` for the register-write shapes, if item 3
    shows the crossbar cannot say them; item 3 of M21's brief (the
    scene-change underruns, the Avalanche! DRAW).
+
+## 37. M22 log — the count that was an address, and the portraits that were two shapes *(2026-09-19, littlejelly)*
+
+M22's brief was §36.7's: read the leave-behind soak (§37.1), build the
+CPU pre-transform §36.4 named as the next lever and A/B it (§37.2), and
+the results-screen portraits (§37.3). The lever was built twice and lost
+both times, and the reason is worth more than the lever: **§36.4's
+"61% of batches differ only in the matrices" was an instrument bug** — the
+M21 signature mixed in `gx_bound_tex()`'s *return value*, which is
+`&gx.bound[unit]`, one address per unit whatever is loaded, so it never
+saw a texture change. The honest count is 29%, and of those most are
+separated by a real state change the game makes *between* objects. What
+remains (13%) was merged, exactly (the three md5s held with 138K objects
+pre-transformed), and it bought nothing, because a batch that ends
+without a GL state change was never the expensive kind (§37.2). The
+portraits were **two register shapes, not one** — the bevelled frame's
+mask/reflection/textured-highlight quadruple §36.2 read, and, on the
+16-vertex face quad drawn after it, hsfdraw.c:1243's tinted-overlay pair,
+whose konst is zero and whose fold was the white — and both are drawn now
+(§37.3). On the way: five setters that ended batches for nothing, the
+textured highlight the title's characters had been drawing from the
+diffuse channel since M3 (§37.3), and a lab rule about installs (§37.5).
+
+### 37.1 The soak, read
+
+`g4 run --soak --com4 --rtc dolphin --freshcard --realtime --snap-every
+5000 --snap-keep 3 --status --ovllog --stuckwatch 200` on the M21 build
+(`eca3f859…`), 15:05 to 15:24 G4 time — **19 minutes, 1,058 status
+lines** (`docs/soak/m22-soak11-m21-leave-19min.log.gz`):
+
+| | |
+|---|---|
+| mean speed | **100.1%** (board lines 100.0%, 462 of them) |
+| presented fps | 18.9 overall, **18.1 on the board**, minigames 13.6–23.3 |
+| where it got | board 1, turns 1–5 of 20; seven minigames dealt, **in §36.1's exact order** (m412, m428, m420, m444, m423, m438, m429 — `--rtc dolphin --freshcard` is deterministic, so a leave-behind soak replays the last one) |
+| m415 | not dealt; no `copy-read:` lines |
+| `REL .data:` re-opens | `instdll` 1 of 800 ×4, `resultdll` 2–4 of 1,760 ×4, `w01dll` 1 of 3,528 ×1 — every play, all reset, as M20 predicted |
+| STUCK / faults / stalls | **0 / 0 / 0**; two resyncs (retraces 5,118 and 58,416, both board loads, ~1.0 s) |
+| **the MEM1-top fault (§36.5)** | **did not recur**: the frame-5,100 board load that faulted one walk in twelve passed, and every later load too. No reproduction, no snapshot; still the watch |
+| `tex` / `rss` at the end | 662 entries, 40.7 MB / 120 MB (M21's byte budget holding) |
+
+Nothing to act on. The M21 bundle is kept on the G4 as
+`~/MarioParty4-m21.app` so this soak's ring (`snaps/f050000..f060000`)
+stays restorable.
+
+### 37.2 The pre-transform: built, exact, and not faster
+
+**The count, corrected.** `batch_state_sig()` hashes the bound objects'
+*contents* now (image, size, format, wrap, filters, LOD, and the TLUT for
+a CI texture) and the TEV registers and konst colours. On the same
+9,000-frame walk the "differ from the batch before in the matrices alone"
+count goes from 1,177,229 to **566,764 of 1,941,408 (29%)**, and a new
+column on the `batches ended by` table — how many of a setter's flushes
+had the *next* batch's state equal to the flushed one — says what
+separates the rest: on the title, 1,802 of 2,465 same-state pairs were
+ended by `GXInitTexObj`, which writes the game's stack-local object and
+nothing the port reads.
+
+**Five setters that flushed for nothing** (gx_tex.c, gx_state.c), all
+exact, all kept: `GXInitTexObj` / `GXInitTexObjCI` / `GXInitTexObjLOD` /
+`GXInitTexObjWrapMode` / `GXInitTlutObj` and the seven `GXInitLight*`
+write the game's object, which `GXLoadTexObj` / `GXLoadTlut` /
+`GXLoadLightObjImm` copy — no touch; `GXLoadTexObj` and `GXLoadTlut`
+compare the copy first (the next object of the same material loads the
+same texture); `GXLoadTexMtxImm` ends a batch only when a texgen in use
+reads that slot; `GXSetTevKColorSel` / `GXSetTevKAlphaSel` only for a
+stage below `num_tev` (hsfdraw.c resets all sixteen per material);
+`GXInvalidateTexAll` / `GXInvalidateTexRegion` are no-ops here and end
+nothing. Then the onion: silence `GXInitTexObj` and the same pairs are
+ended by `GXSetTexCoordGen2` (texgen 0 written to the identity and then
+to `TEXMTX0`), then by `GXLoadTexMtxImm`, then by the konst selects —
+hsfdraw.c's material setup passes through states no primitive is drawn
+under, and **a setter that flushes at once cannot know the state is
+coming back**.
+
+**The lazy flush** (`--lazyflush`, gx_draw.c `gx_batch_touch` /
+`submit_rec_capture` / `draw_apply` / `draw_issue`). A setter no longer
+submits the pending batch. The first one after the batch's last
+primitive runs the *state half* of the submit right then — the transform,
+raster state, TEV, binds, program and parameters, all under the state the
+batch was decoded under, which is still the state — and records the few
+hundred bytes the submit read (only what it reads: not the descriptor,
+the arrays, the position/normal matrices, the copy setup, and of the
+indexed tables only the entries in use). The next primitive captures the
+same bytes and compares: the same, and the batch goes on with nothing
+about GL moved; different, and the batch's draw calls are issued now,
+under the GL state that is still its own because no GL call has happened
+since, before the primitive starts a new batch. A copy or the present
+flushes at once (`GX_FLUSH_NOW`). The batch's `PrimInv` is a buffer
+flip, not a copy (`pi_bufs[2]`), and the submit runs under the batch's
+own matrices (`batch_posm` / `batch_nrmm`: with the loads no longer
+ending batches, `gx.pos_mtx[]` moves under a pending one) and its own
+context (`BatchCtx`). The first build of this snapshotted the whole
+`GXState` (6 KB) at the setter and ran the deferred submit through a
+state pointer; it was exact and cost 0.8 ms a board frame in memcpy, all
+of it in the *game* column because the copy was not timed as gx.
+
+**The pre-transform** (`--premerge-max N`, `pm_decide` / `pm_apply`):
+with the matrix loads and the descriptor setters no longer ending a
+batch (`gx_batch_spans`), an object that arrives with different matrices,
+the same layout and — by the lazy compare — the same state is, when it
+has put at most N vertices into the batch so far, transformed after its
+decode from its own model space into the batch's, `pos' = inv(M_batch) ·
+M_obj · pos`, `nrm' = inv(N_batch) · N_obj · nrm` (the inverse in double,
+once per batch; a singular one refuses the merge). The card applying
+`M_batch` to `pos'` lands where `M_obj` would have put `pos`; the
+lighting, the specular fold, the fog coordinate and the position/normal
+texgens are all view-space downstream and unchanged. The running batch's
+own vertices are never touched, so a batch nothing merged into is
+submitted exactly as before — which is why the alternative (both objects
+into view space under an identity modelview) was not built: it would
+have touched the running batch retroactively, and that batch can be a
+thousand vertices deep when a four-vertex sprite arrives.
+
+**The A/B.** Same source, the 9,000-frame walk at `--turbo`
+(`--com4 --rtc dolphin --freshcard --play board-start-com4.play --frames
+9000 --status --dumpframe 800,3000,7000 --perfwin
+700-870:title,2600-3600:charsel,6000-8900:board --submitstats`), one arm
+per walk; all arms have the setter fixes above and §37.3's picture
+changes except where noted:
+
+| arm | title | character select | board | wall | batches | GL draws | 800 / 3000 / 7000 |
+|---|---:|---:|---:|---:|---:|---:|---|
+| M21 final (§36.5, for scale) | 28.79 fps | 19.94 | 25.82 | 324.6 s | 1,941,408 | 2,808,782 | `5df69d40` / `8762d432` / `f5b52130` |
+| **control**: eager flush, no merge (before §37.3) | 28.55 | **20.13** | 25.55 | **326.6** | 1,941,408 | 2,808,782 | identical |
+| lazy (GXState snapshot) + merge ≤32 (before §37.3) | 28.31 | 19.52 | 25.14 | 331.7 | 1,848,023 | 2,751,127 | **identical** (138,146 objects merged) |
+| lazy (apply early) + merge ≤32 | 20.84 † | 19.70 | 25.17 | 334.7 | 1,848,023 | 2,751,127 | `1df90661` (§37.3) / same / same |
+| lazy (apply early) + merge ≤256 | 27.83 | 19.37 | **25.67** | 331.0 | 1,758,677 | 2,742,219 | `1df90661` / same / **`047da2d2`** (board objects merged; rounding) |
+| **final**: both off (the shipped defaults) | see §37.4 | | | | | | |
+
+† started within a minute of `g4_install.sh`; §37.5. The title window is
+27.0 fps in both the default and `--nopremerge` arms of an 870-frame
+run started later (`docs/soak/m22-title-split-{default,nopremerge}.log.gz`).
+
+Reading it: the merge takes back **5% of batches and 2% of GL draw
+calls** at 32 vertices (57K of 2.81M — most merged objects are single
+strips next to quads, and a batch's calls only merge across contiguous
+segments of one type), 9% and 2.4% at 256, and the lazy flush carries
+another 163K–360K batches past a transient setup; and **none of it is
+faster** — the character select is 2–4% slower in every arm, the board is
+within noise, the wall clock 1–2% longer. M16 had already said why
+(§31.2: batching without fewer *calls* bought nothing, because the glc_*
+shadow was eliding the state walk of a same-state batch) and §36.4 read
+the M21 profile's `IMM_Exec` share as a per-batch cost when it is per
+call and per vertex. What the driver charges for is the draw call and
+the vertex, and of the 2.81M calls 2.4M are single-strip objects whose
+*texture* differs from their neighbours' — sprites — which no
+pre-transform can join without an atlas. So both levers are **off** by
+default and kept behind `--lazyflush` / `--premerge-max N` with their
+counters (`M22 premerge:` and `M22 lazy flush:` under `--submitstats`),
+the corrected signature stays, the setter fixes stay, and the lever
+§36.4 named is closed rather than open.
+
+The "second lever" of the brief (a decoded-texture cache across scene
+changes) was contingent on the first paying and was not started; note
+that §36.3's "7 ms decode" is the display-list decode into the ring, per
+vertex, not the texture decode (1.6 ms warm).
+
+### 37.3 The portraits: two register shapes, and the highlight the title had never drawn
+
+**The reading, corrected.** The 216-vertex draw §36.2 named is the
+portrait's *bevelled frame*: hsfdraw.c:1290's mask/reflection quadruple
+over the frame's own textures (`docs/screenshots/m22-results-textures-sheet.png`:
+the gold/silver/bronze frame, a grey mask with a darker square where the
+face sits, the chrome reflection map) and the textured highlight
+(:1374). The *face* is the **16-vertex draw after it**, same object,
+three stages, hsfdraw.c:1243 (`texCol[i].a == 1`, an animated texture
+with a tint):
+
+```
+stage B:  T_i * K_rgb          -> REG2    alpha  K_a * APREV -> REG2
+stage C:  lerp(PREV, C2, K_c)  -> PREV    alpha  T_i.a * APREV
+```
+
+= `PREV·(1−K_c) + T_i·K_rgb·K_c`, where `T_i` is a 64×64 I4 gloss
+overlay and **`K_c` is 0.00** on the portraits (`--drawlog` prints each
+stage's `creg`/`areg` and resolved konst now). The port folded stage B's
+register write to PREV — the gloss overwrote the face — and stage C then
+lerped the gloss towards the register's *constant* (255) by zero: the
+gloss, white. The frame quadruple's fold was a second, independent
+white, which is why `--regfix2dbg` (unit C of the rewrite showing one
+input per frame, `m22-results-unit2-debug-strip.png`) changed nothing:
+the white was drawn on top by the next draw.
+
+**Three rewrites** (gx_tev.c, gx_vprog.c, gx_draw.c), each behind
+`--nohilitetex` as the A/B:
+
+* **The tinted-overlay pair** (`regfix3_match` / `regfix3_emit`): one
+  unit says it — `INTERPOLATE(TEXTURE, PREVIOUS, CONSTANT.a = K_c)`,
+  alpha `TEXTURE.a · PREVIOUS.a` — exact when `K_rgb` is white, which the
+  portraits' is (a tint is counted and dropped); unit B passes everything
+  through, since the register's alpha is dead (C reads PREV's).
+* **The mask/reflection triple** (`regfix2_match` / `regfix2_emit`), the
+  crossbar rewrite §36.2 sketched: unit A as the stage says; unit B
+  passes the colour and computes `T_mask.a · K` in alpha, the mask bound
+  through the texture cache with **red swapped into alpha**
+  (`SWAP_RED_TO_ALPHA`, a new cache entry, the sheet's grey-square alpha
+  planes); unit C `INTERPOLATE(TEXTURE, PREVIOUS, PREVIOUS.a)` with stage
+  A's alpha rebuilt from its texture read across the crossbar and its
+  konst in this unit's constant. Exact for a grey mask and hsfdraw.c's
+  scalar `SetKColor` konst.
+* **The textured highlight** (`gx_hilite_mode` 2): `TEXC · RASC1 + CPREV`
+  cannot ride a colour sum, but where no stage reads the rasterised
+  alpha — the matcher checks every stage's inputs and swap tables — the
+  vertex program can put the specular in the **primary colour's alpha**
+  (`DP3 result.color.w, c1, {0.299, 0.587, 0.114}`; a tinted specular
+  loses its tint, and the game's lights are white) and the stage is
+  emitted as `MODULATE_ADD_ATI(TEXTURE, PREVIOUS, PRIMARY.a)`. It must be
+  the last stage and sample a texture.
+
+**The witness**, frame 17,400 of `--minigame m415 --turns 1 --com4 --rtc
+dolphin --freshcard --play board-start-com4.play --ffto 17300 --lockstep
+--frames 17420 --dumpframe 17400` (2.5 minutes), before (the frame
+triple already rewritten, the face pair not), after, and the console's
+results frame from `port/ref/frames/m415-console-12550.png`:
+
+![the results portraits: before, after, the console](screenshots/m22-results-portraits-f17400-before-after-console.png)
+![the portrait column at 2x](screenshots/m22-results-portraits-crop-before-after-console.png)
+
+Mario, Yoshi, Peach and Luigi in gold, silver and bronze frames (the
+console's run tied all four for first, hence its four gold frames). The
+GL trace of the frame draw (`--gltrace`, `docs/soak/m22-results-gltrace-f17401.log.gz`)
+shows the four units programmed exactly as designed, which is what
+pointed at the draw after it.
+
+**And the title.** The textured highlight is not rare: §36.2 counted
+38,304 emissions on the walk and the title's frame 800 alone has 19,504
+primitives of it — **every character on the title screen**, drawn since
+M3 with `T_mask · c0 + PREV` from the diffuse channel, i.e. brightened
+everywhere the mask is light. Frame 800 changes:
+
+| frame | §36 md5 (= `--nohilitetex`, to the byte) | **M22 md5** | pixels differing | what |
+|---:|---|---|---:|---|
+| 800 | `5df69d40…` | **`1df90661d29beebb8a27fdbe99ceeae2`** | 5.2% of channel samples by more than 8, mean 2.6 levels, worst 145 | the title's characters: saturated colour with a specular spot instead of a wash |
+| 3000 | `8762d432…` | unchanged | 0 | |
+| 7000 | `f5b52130…` | unchanged | 0 | Toad's highlight is the lerp shape (mode 1) |
+
+![the title, frame 800, before and after](screenshots/m22-title-f800-before-after.png)
+![Mario and Luigi at 2x, before and after](screenshots/m22-title-f800-crop-before-after.png)
+
+Not a rounding re-base: the wash was the bug, and `--nohilitetex`
+reproduces §36's `5df69d40…`. The console's `boot-0800.png` is a
+different moment of the intro (DK and Peach in close-up) and cannot be
+diffed against it; the results screen above is the pixel witness for
+the shape.
+
+### 37.4 The final build's walk
+
+`docs/soak/m22-walk-final.log.gz`, the shipped defaults (both levers
+off, the setter fixes and the three rewrites in), started ninety seconds
+after the install:
+
+| scene | M21 final | **M22 final** | gx ms/frame |
+|---|---:|---:|---|
+| title (700–870) | 28.79 fps | **28.34** | 28.48 → 28.98 (the highlight's second program on every character) |
+| character select (2600–3600) | 19.94 | **19.66** | 38.14 → 38.80 |
+| board (6000–8900) | 25.82 | **25.68** | 24.57 → 24.86 |
+| wall clock, 9,000 frames | 324.6 s | **327.0** | |
+| batches / GL draws | 1,941,408 / 2,808,782 | identical | |
+| frame 800 / 3000 / 7000 | `5df69d40` / `8762d432` / `f5b52130` | **`1df90661`** / `8762d432` / `f5b52130` | §37.3 |
+
+Within the walk's noise (±1%; §36.5's base and final arms differed by as
+much) and slightly on the slow side of it — the title's characters now
+run the lit-plus-specular program with the alpha write, and 11,330 unit
+emissions of the new shapes replace folds that were one unit each. The
+three md5s are the references from here: **800 `1df90661…`, 3000
+`8762d432…`, 7000 `f5b52130…`**; `--nohilitetex` reproduces §36's set.
+One thing the counters raise and the frames do not settle: 4,578 of the
+walk's tinted-overlay pairs carried a tint the rewrite drops (none on
+the three reference frames, none on the title's first 870); where they
+are and what they look like is an open witness.
+
+### 37.5 Three things found on the way
+
+* **A walk started within a minute of `g4_install.sh` has a slow
+  title.** Both walks that ran right after an install read 20.8 and 23.0
+  fps on frames 700–870 against 27–28.6 for every walk and short run that
+  did not (the board and character select windows, minutes later, were
+  unaffected). The install rewrites the 20 MB bundle and the G4 spends
+  the next half-minute on it (Spotlight, the disk). Wait ninety seconds,
+  or run a throwaway, before an A/B walk.
+* **`--drawlog` prints `creg`/`areg` and the resolved konst colours per
+  stage** now; §36.2's reading of the portraits was made without them
+  and mistook the frame for the face. `--dumptex` slot numbers are cache
+  slots, not GL names; the drawlog's `gl N` is the name.
+* **The batch-ender table has a `transient` column** (the flushes whose
+  next batch had the same state) — the instrument that turned the 61%
+  into an onion.
+
+### 37.6 What M22 shipped, and what it did not
+
+| shipped, with a witness | |
+|---|---|
+| the results-screen portraits: two register shapes rewritten, the textured highlight in the primary alpha (§37.3) | frame 17,400 against the console; the title's characters re-based with the diff |
+| five setters that ended batches for nothing, `GXLoadTexObj` / `GXLoadTlut` compare-first, the honest mergeable signature, the `transient` column (§37.2) | exact; the control arm reproduces §36's three md5s and its batch count |
+| the lazy flush and the CPU pre-transform, built twice, measured, **off** (§37.2) | the table; `--lazyflush`, `--premerge-max N` |
+| the soak's read (§37.1), `docs/soak/m22-*`, `docs/screenshots/m22-*` | |
+
+**Not done, and why:**
+
+* **A faster drawn frame.** The lever §36.4 named does not exist on this
+  driver (§37.2); the next honest one is fewer *draw calls*, which for
+  2.4M single-strip sprites means a texture atlas, or the fragment
+  shader (`GL_ATI_text_fragment_shader`) for the picture's remaining
+  folds — neither started.
+* **Item 3** — Stamp Out!'s paper (the 2.5-minute reproduction in §36.2
+  stands), the scene-change audio underruns, the fresh-process DRAW in
+  Avalanche! — not started: the day went to the two builds of the lever
+  and to finding the second shape.
+* The tinted specular (mode 2 takes the luminance) and a tinted overlay
+  (shape 3 drops the tint) are counted, not drawn.
+
+### 37.7 What M23 starts with
+
+Left running: `g4 run --soak --com4 --rtc dolphin --freshcard --realtime
+--snap-every 5000 --snap-keep 3 --status --ovllog --stuckwatch 200` on
+the final build (`isle` md5 `c0dd5844…`) — the first soak with the
+portraits drawn and the setter fixes in. Read it first (the MEM1-top
+fault is still unreproduced), then Item 3 of M21's brief, then the
+atlas question.

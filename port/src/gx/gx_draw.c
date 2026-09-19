@@ -187,6 +187,7 @@ typedef struct PrimInv {
         u8 src_kind;     /* 0 = a texcoord, 1 = position, 2 = normal          */
         u8 src_k;        /* which texcoord, when src_kind is 0                */
         u8 divide;       /* GX_TG_MTX3x4: divide by q                         */
+        u8 mtx_slot;     /* M22: gx.tex_mtx[] slot, resolved at submit time   */
         const f32* mtx;  /* NULL for the identity                             */
     } tg[GX_TEXCOORDS];
     /* the indexed reader's per-attribute constants */
@@ -199,17 +200,30 @@ typedef struct PrimInv {
     SkinMesh* skin;
     f32 slotf;
 } PrimInv;
-static PrimInv pi;
+/* M22: two of them, and `pi` is whichever the primitive in hand is settled
+ * into.  A batch keeps the buffer its first primitive used (bctx_pi) and the
+ * next primitive is settled into the other, so a deferred submit reads the
+ * batch's own without a copy (batch_flush, batch_apply_now). */
+static PrimInv pi_bufs[2];
+static PrimInv* pi_cur = &pi_bufs[0];
+static PrimInv* bctx_pi = &pi_bufs[1];
+#define pi (*pi_cur)
 
 /* M21: the hilite fold (gx_internal.h).  Decided per primitive from the
  * channel and TEV state, which a batch shares (every setter that could
  * change it ends the batch). */
 int gx_hilite_stage = -1;
-static unsigned stat_hilite_prims, stat_hilite_unfoldable;
+int gx_hilite_mode = 0;
+static unsigned stat_hilite_prims, stat_hilite_unfoldable, stat_hilite_textured;
+
+static int swap_is_identity(const u8* t) {
+    return t[0] == GX_CH_RED && t[1] == GX_CH_GREEN && t[2] == GX_CH_BLUE && t[3] == GX_CH_ALPHA;
+}
 
 int gx_hilite_decide(void) {
     int k, stages = gx.num_tev;
     gx_hilite_stage = -1;
+    gx_hilite_mode = 0;
     if (port_opt.nohilite || gx.num_chans < 2 || !gx.chan[GX_COLOR1].enable ||
         gx.chan[GX_COLOR1].attn_fn != GX_AF_SPEC) {
         return -1;
@@ -227,6 +241,7 @@ int gx_hilite_decide(void) {
              * the material setup's shape; a stage after it (a projection
              * map) would see the sum added after it and is counted. */
             gx_hilite_stage = k;
+            gx_hilite_mode = 1;
             stat_hilite_prims++;
             if (k + 1 < stages) {
                 stat_hilite_unfoldable++;
@@ -235,12 +250,40 @@ int gx_hilite_decide(void) {
             }
             return k;
         }
-        /* hsfdraw.c:1374: TEXC * RASC1 + CPREV, the textured highlight; a
-         * colour sum cannot carry a texture factor, so it is left as
-         * before (fed from channel 0) and counted */
+        /* hsfdraw.c:1374: TEXC * RASC1 + CPREV, the textured highlight (M22,
+         * gx_internal.h): spec rides the primary colour's alpha, so it must
+         * be the last stage, sample a texture, and no stage may read the
+         * rasterised alpha or route it through a swap table */
+        if (t->cin[0] == GX_CC_ZERO && t->cin[1] == GX_CC_TEXC && t->cin[2] == GX_CC_RASC &&
+            t->cin[3] == GX_CC_CPREV && t->cop == GX_TEV_ADD && t->cbias == GX_TB_ZERO &&
+            t->cscale == GX_CS_SCALE_1 && t->creg == GX_TEVPREV && k + 1 == stages &&
+            !port_opt.nohilitetex && gl13_have_combine3 && gx_bound_tex(t->map) != NULL &&
+            t->coord < GX_TEXCOORDS) {
+            int j, ok = 1;
+            for (j = 0; j < stages && ok; j++) {
+                const GXTevStage* u = &gx.tev[j];
+                int q;
+                for (q = 0; q < 4; q++) {
+                    if (u->cin[q] == GX_CC_RASA || u->ain[q] == GX_CA_RASA) {
+                        ok = 0;
+                    }
+                }
+                if (!swap_is_identity(gx.swap_tbl[u->ras_swap & 3]) ||
+                    !swap_is_identity(gx.swap_tbl[u->tex_swap & 3])) {
+                    ok = 0; /* the identity tables only; the emitter picks operands */
+                }
+            }
+            if (ok) {
+                gx_hilite_stage = k;
+                gx_hilite_mode = 2;
+                stat_hilite_prims++;
+                stat_hilite_textured++;
+                return k;
+            }
+        }
         stat_hilite_unfoldable++;
-        gx_warn("TEV: a textured hilite stage (TEXC * RASC1 + CPREV); drawn "
-                "from channel 0 as before");
+        gx_warn("TEV: a textured hilite stage (TEXC * RASC1 + CPREV) the alpha "
+                "fold does not cover; drawn from channel 0 as before");
         return -1;
     }
     return -1;
@@ -249,6 +292,10 @@ static void batch_prepare(u32 count);
 static void pal_place(void);
 int gx_palette_active;     /* the batches carry a matrix palette (M18)      */
 #define palette_on gx_palette_active
+int gx_batch_spans;        /* M18/M22: matrix loads and descriptor setters end
+                            * no batch (gx_state.c); settled with the palette */
+static int premerge_on;    /* M22: the CPU pre-transform (PLAN.md 37)      */
+static int lazy_on;        /* M22: the lazy flush (gx_internal.h)           */
 static int pal_slots;      /* its capacity, from gx_vprog.c                  */
 #define PAL_SLOTS_MAX GX_PAL_SLOTS_MAX
 static f32 pal[PAL_SLOTS_MAX][GX_PAL_STRIDE][4]; /* the pending batch's palette */
@@ -289,6 +336,10 @@ static unsigned long stat_fast_verts; /* through the specialised loops (M17) */
 /* --submitstats (M16): what the batching actually found in the lists */
 static unsigned stat_indexed_batches, stat_indexed_tris, stat_indexed_u32; /* M21 */
 static unsigned stat_mergeable, stat_mergeable_small, stat_mergeable_verts; /* M21 */
+static unsigned stat_pm_objects, stat_pm_prims, stat_pm_verts;              /* M22 */
+static unsigned stat_pm_refused_big, stat_pm_refused_singular, stat_pm_refused_wrap;
+static unsigned stat_pm_hist[4]; /* vertices merged per source object: <=4, <=8, <=16, more */
+static unsigned stat_lazy_snaps, stat_lazy_transient, stat_lazy_flushes;    /* M22 */
 static unsigned stat_batch_hist[6]; /* vertices per batch: <=16, <=64, <=256, <=1024, <=4096, more */
 static unsigned stat_fixbase_batches, stat_fixbase_miss;                   /* M21 */
 static unsigned stat_batches, stat_merged, stat_multi_calls, stat_multi_prims,
@@ -300,7 +351,10 @@ static unsigned stat_list_hist[5]; /* primitives per drawn list: 1, 2-4, 5-16, 1
 static struct {
     const char* who;
     unsigned n;
+    unsigned transient; /* M22: ...and the batch after was of the same state */
 } flushers[FLUSHER_SLOTS];         /* which state setters ended batches      */
+static int last_flusher = -1;      /* the slot that ended the previous batch */
+static int pending_flusher = -1;   /* the slot ending the batch being flushed  */
 /* Draws whose position matrix puts the object sideways off the world.
  *
  * M4 had to bolt a throwaway instrument on to count these (1,264 of 1,756 on
@@ -357,9 +411,20 @@ void gx_draw_report(void) {
                  stat_mergeable, stat_mergeable_small, stat_mergeable_verts, stat_batch_hist[0],
                  stat_batch_hist[1], stat_batch_hist[2], stat_batch_hist[3], stat_batch_hist[4],
                  stat_batch_hist[5]);
-        port_log("port> submit: M21 hilite: %u primitives with the specular channel folded, "
-                 "%u stages the fold does not cover\n",
-                 stat_hilite_prims, stat_hilite_unfoldable);
+        port_log("port> submit: M22 premerge (%s, max %d): %u objects (%u primitives, %u "
+                 "vertices) transformed into the pending batch; refused: %u over the "
+                 "limit, %u singular, %u ring wraps; vertices per merged object <=4: %u  "
+                 "<=8: %u  <=16: %u  more: %u\n",
+                 premerge_on ? "on" : "off", port_opt.premerge_max, stat_pm_objects,
+                 stat_pm_prims, stat_pm_verts, stat_pm_refused_big, stat_pm_refused_singular,
+                 stat_pm_refused_wrap, stat_pm_hist[0], stat_pm_hist[1], stat_pm_hist[2],
+                 stat_pm_hist[3]);
+        port_log("port> submit: M22 lazy flush (%s): %u batches applied early at a setter, %u "
+                 "went on past it (the state came back), %u issued late\n",
+                 lazy_on ? "on" : "off", stat_lazy_snaps, stat_lazy_transient, stat_lazy_flushes);
+        port_log("port> submit: M21 hilite: %u primitives with the specular channel folded "
+                 "(%u of them textured, M22), %u stages the fold does not cover\n",
+                 stat_hilite_prims, stat_hilite_textured, stat_hilite_unfoldable);
         port_log("port> submit: M21 indexed: %u batches as one glDrawRangeElements "
                  "(%u triangles, %u with 32-bit indices); fixbase: %u batches based at "
                  "the ring, %u not aligned\n",
@@ -387,8 +452,9 @@ void gx_draw_report(void) {
         {
             int i;
             for (i = 0; i < FLUSHER_SLOTS && flushers[i].who; i++) {
-                port_log("port> submit: batches ended by %-24s %u\n", flushers[i].who,
-                         flushers[i].n);
+                port_log("port> submit: batches ended by %-24s %u  (%u transient: the next "
+                         "batch's state was the same)\n", flushers[i].who, flushers[i].n,
+                         flushers[i].transient);
             }
         }
     }
@@ -583,6 +649,20 @@ int gx_palette_on(void) {
             memset(pal_slot, 0, sizeof(pal_slot));
             pal_reset();
         }
+        /* M22 (PLAN.md 37): the pre-transform wants what the palette wanted
+         * of the batch -- one set of decoded vertices the matrix loads and
+         * the descriptor setters do not end -- and nothing of the card.  It
+         * is off wherever the batch is not the ring's (--cpuxf, --dlcache,
+         * --oldsubmit) and under the palette, which spans objects itself. */
+        premerge_on = port_opt.premerge_max > 0 && !palette_on &&
+                      !port_opt.cpuxf && !port_opt.olddecode && !port_opt.dlcache &&
+                      !port_opt.oldsubmit && gl13_live();
+        lazy_on = port_opt.lazyflush && !palette_on && !port_opt.cpuxf && !port_opt.olddecode &&
+                  !port_opt.dlcache && !port_opt.oldsubmit && gl13_live();
+        gx_batch_spans = palette_on || premerge_on || lazy_on;
+        port_log("port> lazy flush: %s; premerge: %s (max %d vertices an object) -- "
+                 "both measured and off by default, PLAN.md 37\n",
+                 lazy_on ? "on" : "off", premerge_on ? "on" : "off", port_opt.premerge_max);
         port_log("port> matrix palette: %s%s\n",
                  palette_on ? "on" : "off",
                  palette_on ? "" : !port_opt.palette ? " (opt-in: --palette; PLAN.md 33.2)"
@@ -685,7 +765,8 @@ static void begin_attr_order(void) {
                 pi.tg[t].mtx = NULL;
             } else {
                 u32 ts = ((u32)g->mtx - GX_TEXMTX0) / 3;
-                pi.tg[t].mtx = gx.tex_mtx[ts < 20 ? ts : 0];
+                pi.tg[t].mtx_slot = (u8)(ts < 20 ? ts : 0);
+                pi.tg[t].mtx = gx.tex_mtx[pi.tg[t].mtx_slot];
             }
             pi.tg[t].divide = (u8)(g->func == GX_TG_MTX3x4);
         }
@@ -1278,9 +1359,15 @@ static void light_channel(int c, const float* wpos, const float* wnrm,
  * were free to merge -- but a vertex is now read once, held in registers, and
  * written once, instead of being walked four times through a 96-byte stride.
  * The reference md5s do not move, and did not. */
+/* The matrices a submit runs under: the batch's own copies for a batch from
+ * the ring (M22: gx.pos_mtx[] may have moved since it was decoded), the
+ * primitive's for a cached list (gx_batch_spans is off with --dlcache). */
+static const f32* sub_posm;
+static const f32* sub_nrmm;
+
 static void finish_vertices(const u8* s, int n) {
-    const f32* m = pi.pos_mtx;
-    const f32* nm = pi.nrm_mtx;
+    const f32* m = sub_posm;
+    const f32* nm = sub_nrmm;
     const int sstride = sl.stride, ostride = out_stride;
     int i;
 
@@ -1728,11 +1815,17 @@ static void draw_log(u32 first, u32 count, u8 dprim) {
      * TLUT are the whole question. */
     for (i = 0; i < (int)gx.num_tev && i < GX_TEV_STAGES; i++) {
         const GXTevStage* s = &gx.tev[i];
-        port_log("  stage%d coord %u map %u chan %u  cin %u %u %u %u  "
-                 "ain %u %u %u %u  swap ras %u tex %u\n",
-                 i, s->coord, s->map, s->chan, s->cin[0], s->cin[1], s->cin[2],
-                 s->cin[3], s->ain[0], s->ain[1], s->ain[2], s->ain[3],
-                 s->ras_swap, s->tex_swap);
+        {
+            float kc[4], ka[4];
+            gx_tev_stage_konst(s, 0, kc);
+            gx_tev_stage_konst(s, 1, ka);
+            port_log("  stage%d coord %u map %u chan %u  cin %u %u %u %u  "
+                     "ain %u %u %u %u  swap ras %u tex %u  creg %u areg %u  "
+                     "konst %.2f %.2f %.2f / %.2f\n",
+                     i, s->coord, s->map, s->chan, s->cin[0], s->cin[1], s->cin[2],
+                     s->cin[3], s->ain[0], s->ain[1], s->ain[2], s->ain[3],
+                     s->ras_swap, s->tex_swap, s->creg, s->areg, kc[0], kc[1], kc[2], ka[3]);
+        }
         t = gx_bound_tex(s->map);
         if (t) {
             const GXTlutObjPort* tl =
@@ -1805,8 +1898,8 @@ static void draw_log(u32 first, u32 count, u8 dprim) {
  * draw rather than per vertex, so it is a dozen stores against 54 vertices. */
 static void fill_xf_desc(GxXfDesc* d, const u8* s) {
     int t;
-    d->pos_mtx = pi.pos_mtx;
-    d->nrm_mtx = pi.nrm_mtx;
+    d->pos_mtx = sub_posm;
+    d->nrm_mtx = sub_nrmm;
     d->have_nrm = sl.off_nrm >= 0;
     d->chan_mode = pi.chan_mode;
     d->ntexgen = pi.ntexgen;
@@ -1817,7 +1910,7 @@ static void fill_xf_desc(GxXfDesc* d, const u8* s) {
     d->off_tex = sl.off_tex;
     d->ntex = sl.ntex;
     d->off_skin = sl.off_skin;
-    d->hilite = gx_hilite_stage >= 0 && pi.chan_mode == 2;
+    d->hilite = (gx_hilite_stage >= 0 && pi.chan_mode == 2) ? gx_hilite_mode : 0;
     d->pal = (const f32(*)[4])pal;
     d->pal_n = (palette_on && sl.off_skin >= 0) ? pal_slots : 0;
     d->pal_dirty_lo = pal_dirty_lo;
@@ -1826,7 +1919,9 @@ static void fill_xf_desc(GxXfDesc* d, const u8* s) {
         d->tg[t].src_kind = pi.tg[t].src_kind;
         d->tg[t].src_k = pi.tg[t].src_k;
         d->tg[t].divide = pi.tg[t].divide;
-        d->tg[t].mtx = pi.tg[t].mtx;
+        /* through gx, not pi's pointer: a deferred submit (M22) reads the
+         * batch's snapshot, and the live slot may hold the next object's */
+        d->tg[t].mtx = pi.tg[t].mtx ? gx.tex_mtx[pi.tg[t].mtx_slot] : NULL;
     }
 }
 
@@ -1861,6 +1956,377 @@ int gx_batch_pending; /* == batch_n != 0, for GX_STATE_TOUCH's one-load test */
 static size_t batch_pos;   /* ring offset of the batch's first vertex */
 static u32 batch_verts;
 static Layout batch_sl;
+
+/* ---- the CPU pre-transform (M22, PLAN.md 37) --------------------------------
+ *
+ * M21 counted it (§36.4): 61% of the walk's batches differ from the batch
+ * before them in nothing but the position and normal matrices, and half of
+ * all batches carry sixteen vertices or fewer -- a quad, a sprite, a small
+ * prop -- each costing the driver the same ~25 us of per-draw validation as
+ * a thousand-vertex one.  `GXLoadPosMtxImm` (a new object) was what ended
+ * them.  The palette (M18) would have spanned them on the card and is
+ * software on this driver (§33.2).
+ *
+ * So the span is made on the CPU instead.  A batch keeps *its own copy* of
+ * the matrices it was decoded under (`batch_posm`, `batch_nrmm`: the matrix
+ * loads no longer end it, so gx.pos_mtx[] may move under a pending batch),
+ * and an object that arrives with different matrices, the same layout and
+ * the same state -- every other setter still ends the batch -- is, when it
+ * is small enough, transformed after its decode from its own model space
+ * into the batch's:
+ *
+ *     pos' = inv(M_batch) * M_obj * pos       nrm' = inv(N_batch) * N_obj * nrm
+ *
+ * so the card, applying M_batch to pos', lands where M_obj would have put
+ * pos.  Everything downstream is view-space and unchanged: the lighting
+ * (the light positions are view-space parameters), the specular fold, the
+ * fog coordinate, and the position/normal texgens, which the program reads
+ * from `vp`/`nr` after the transform.  The running batch's own vertices are
+ * never touched, so a batch nothing merged into is submitted exactly as
+ * before; only the merged object's vertices carry the three roundings
+ * (the inverse, the composite, the CPU's fmadd against the card's DP4),
+ * which the md5s of PLAN.md 37 are the account of.  The alternative --
+ * both objects into view space under an identity modelview -- would have
+ * touched the running batch retroactively, and it can be a thousand
+ * vertices deep when a four-vertex sprite arrives.
+ *
+ * The limit is per *source object*, cumulative: an object's primitives keep
+ * merging until the object has put `--premerge-max` vertices into the
+ * batch; the next one flushes and the rest of the object is a batch of
+ * its own, which can then be merged *into*.  A singular batch matrix (a
+ * scale of zero, which the game uses to hide things) refuses the merge
+ * rather than divide by it.
+ *
+ * Measured on the 9,000-frame walk (PLAN.md 37) and *off*: at 32 vertices it
+ * merges 138K of the walk's 1.94M batches and takes back 57K of 2.81M GL
+ * draw calls, at 256 it merges 161K for 67K calls and moves the board's
+ * md5, and neither arm is faster than the eager control -- the driver's
+ * cost is per draw call and per vertex, and a batch that ends without a
+ * GL state change was never the expensive kind.  `--premerge-max N` turns
+ * it on. */
+static f32 batch_posm[12];    /* the pending batch's matrices, its own copies */
+static f32 batch_nrmm[9];
+static int batch_inv_state;   /* 0 not yet asked, 1 inverted, -1 singular      */
+static f32 batch_inv_pos[12], batch_inv_nrm[9];
+static int merge_this;        /* the primitive in hand joins through the pre-transform */
+static f32 merge_c[12], merge_cn[9];       /* inv(batch) * object                 */
+static f32 merge_src_posm[12], merge_src_nrmm[9]; /* the object merge_c was made for */
+static int merge_src_valid;
+static u32 merge_src_verts;   /* what that object has put into the batch so far */
+
+/* ---- the lazy flush (M22, PLAN.md 37) -----------------------------------------
+ *
+ * The first M22 build let the matrix loads through and merged nothing: on
+ * the title, of 2,465 batches that had the same state as the batch before
+ * them, 1,802 had been ended by GXInitTexObj, and once that was silenced
+ * the same pairs were ended by GXSetTexCoordGen2, then GXLoadTexMtxImm --
+ * hsfdraw.c's material setup writes texgen 0 to the identity and then to
+ * TEXMTX0, resets all sixteen konst selects and sets them again, and so
+ * on: a sequence that passes through states no primitive is ever drawn
+ * under.  A setter that flushes at once cannot know that the state is
+ * coming back.
+ *
+ * The second build snapshotted the whole GXState at the first setter and
+ * submitted under the snapshot: exact, and slower than the batches it
+ * saved (6 KB copied 1.16M times on the walk).  So the setters do not
+ * copy anything.  The first one after a batch's last primitive runs the
+ * *state half* of the submit right then -- draw_apply: the transform, the
+ * raster state, the TEV, the texture binds, the program and its
+ * parameters, all under the state the batch was decoded under, which is
+ * still the state -- and records the few hundred bytes the submit read
+ * (`SubmitRec`).  The next primitive captures the same bytes again and
+ * compares.  The same: the batch goes on, and nothing about GL has to
+ * move.  Different: the batch's draw calls are issued now (draw_issue),
+ * under the GL state that is still its own because no GL call has
+ * happened since the apply, and the primitive starts a new batch.  The
+ * only extra work over the eager flush is one capture and one compare
+ * per touched batch; the state walk ran once either way. */
+typedef struct BatchCtx {
+    int hilite_stage, hilite_mode;
+    int out_stride, out_off_clr, out_off_tex, out_ntex;
+} BatchCtx;
+static BatchCtx bctx;         /* the pending batch's, taken at its first primitive */
+
+#define SUBMIT_REC_MAX 2048
+typedef struct SubmitRec {
+    u32 len;
+    u8 bytes[SUBMIT_REC_MAX];
+} SubmitRec;
+static SubmitRec rec_batch;   /* what the pending batch's submit read       */
+static SubmitRec rec_now;
+static int batch_applied;     /* draw_apply has run for the pending batch   */
+static const char* applied_who;
+
+static void rec_put(SubmitRec* r, const void* p, size_t n) {
+    if (r->len + n <= SUBMIT_REC_MAX) {
+        memcpy(r->bytes + r->len, p, n);
+    }
+    r->len += (u32)n; /* past the end the record is "too long", never equal */
+}
+
+/* Everything draw_apply and its callees read of gx: not the descriptor,
+ * the arrays or the position/normal matrices (the layout compare and the
+ * pre-transform own those), not the copy setup, and of the indexed tables
+ * only the entries in use. */
+static void submit_rec_capture(SubmitRec* r) {
+    int i;
+    u8 lmask;
+    r->len = 0;
+#define PUT(f) rec_put(r, &gx.f, sizeof(gx.f))
+    PUT(proj); PUT(proj_type); PUT(vp); PUT(scissor); PUT(cull);
+    PUT(num_chans); PUT(chan);
+    lmask = (u8)(gx.chan[0].light_mask | gx.chan[1].light_mask | gx.chan[2].light_mask |
+                 gx.chan[3].light_mask);
+    for (i = 0; i < 8; i++) {
+        if (lmask & (1u << i)) {
+            PUT(light[i]);
+        }
+    }
+    PUT(num_texgens);
+    for (i = 0; i < gx.num_texgens && i < GX_TEXCOORDS; i++) {
+        u32 m = gx.texgen[i].mtx;
+        PUT(texgen[i]);
+        if (m >= GX_TEXMTX0 && m < GX_IDENTITY && (m - GX_TEXMTX0) / 3 < 20) {
+            PUT(tex_mtx[(m - GX_TEXMTX0) / 3]);
+        }
+    }
+    PUT(num_tev); PUT(num_ind);
+    for (i = 0; i < gx.num_tev && i < GX_TEV_STAGES; i++) {
+        unsigned u = gx.tev[i].map;
+        PUT(tev[i]);
+        PUT(ind_tile[i]);
+        if (u < GX_TEX_UNITS && gx_bound_tex(u)) {
+            rec_put(r, &gx.bound[u], offsetof(GXTexObjPort, gl_name));
+            if (gx.bound[u].is_ci && gx.bound[u].tlut_name < 64) {
+                PUT(tlut[gx.bound[u].tlut_name]);
+            }
+        } else {
+            rec_put(r, &i, sizeof(i)); /* "unit has nothing" */
+        }
+    }
+    PUT(tev_reg); PUT(kcolor); PUT(swap_tbl); PUT(ind);
+    PUT(z_enable); PUT(z_func); PUT(z_update); PUT(z_comploc);
+    PUT(blend_mode); PUT(blend_src); PUT(blend_dst); PUT(blend_logic);
+    PUT(alpha_comp0); PUT(alpha_ref0); PUT(alpha_op); PUT(alpha_comp1); PUT(alpha_ref1);
+    PUT(color_update); PUT(alpha_update);
+    PUT(fog_type); PUT(fog_startz); PUT(fog_endz); PUT(fog_nearz); PUT(fog_farz); PUT(fog_color);
+#undef PUT
+}
+
+static int submit_rec_differs(void) {
+    submit_rec_capture(&rec_now);
+    return rec_now.len != rec_batch.len || rec_now.len > SUBMIT_REC_MAX ||
+           memcmp(rec_now.bytes, rec_batch.bytes, rec_now.len) != 0;
+}
+
+static int flusher_slot(const char* who) {
+    int i;
+    for (i = 0; i < FLUSHER_SLOTS; i++) {
+        if (flushers[i].who == who) {
+            return i;
+        }
+        if (!flushers[i].who) {
+            flushers[i].who = who;
+            return i;
+        }
+    }
+    return -1;
+}
+
+static int batch_apply_now(void);
+static void batch_flush(void);
+
+void gx_batch_touch(const char* who) {
+    if (!lazy_on) {
+        gx_batch_flush_from(who);
+        return;
+    }
+    if (batch_applied) {
+        return; /* the state is in GL and the record is taken */
+    }
+    port_perf_gx_begin();
+    if (batch_apply_now()) {
+        submit_rec_capture(&rec_batch);
+        batch_applied = 1;
+        applied_who = who;
+        stat_lazy_snaps++;
+    } else {
+        /* a batch the apply could not hold (the CPU fallback needs its
+         * final vertex count): the eager shape for this one */
+        if (port_opt.submitstats) {
+            int i = flusher_slot(who);
+            if (i >= 0) {
+                flushers[i].n++;
+                pending_flusher = i;
+            }
+        }
+        batch_flush();
+    }
+    port_perf_gx_end();
+}
+
+static void pm_source_done(void) {
+    if (merge_src_valid && merge_src_verts) {
+        stat_pm_hist[merge_src_verts <= 4 ? 0 : merge_src_verts <= 8 ? 1
+                     : merge_src_verts <= 16 ? 2 : 3]++;
+    }
+    merge_src_valid = 0;
+    merge_src_verts = 0;
+}
+
+/* The batch just started with the primitive in hand: its matrices are the
+ * primitive's, and nothing is inverted or merged yet. */
+static void pm_batch_start(void) {
+    memcpy(batch_posm, pi.pos_mtx, sizeof(batch_posm));
+    memcpy(batch_nrmm, pi.nrm_mtx, sizeof(batch_nrmm));
+    batch_inv_state = 0;
+    pm_source_done();
+    batch_applied = 0;
+    /* this primitive's PrimInv becomes the batch's; the next primitive is
+     * settled into the other buffer */
+    bctx_pi = pi_cur;
+    pi_cur = (pi_cur == &pi_bufs[0]) ? &pi_bufs[1] : &pi_bufs[0];
+    bctx.hilite_stage = gx_hilite_stage;
+    bctx.hilite_mode = gx_hilite_mode;
+    bctx.out_stride = out_stride;
+    bctx.out_off_clr = out_off_clr;
+    bctx.out_off_tex = out_off_tex;
+    bctx.out_ntex = out_ntex;
+}
+
+/* a 3x4 affine inverse (rows of 4), in double, out in f32; 0 when singular */
+static int pm_inv_affine(const f32* m, f32* out) {
+    double a00 = m[0], a01 = m[1], a02 = m[2], t0 = m[3];
+    double a10 = m[4], a11 = m[5], a12 = m[6], t1 = m[7];
+    double a20 = m[8], a21 = m[9], a22 = m[10], t2 = m[11];
+    double c00 = a11 * a22 - a12 * a21, c01 = a02 * a21 - a01 * a22, c02 = a01 * a12 - a02 * a11;
+    double c10 = a12 * a20 - a10 * a22, c11 = a00 * a22 - a02 * a20, c12 = a02 * a10 - a00 * a12;
+    double c20 = a10 * a21 - a11 * a20, c21 = a01 * a20 - a00 * a21, c22 = a00 * a11 - a01 * a10;
+    double det = a00 * c00 + a01 * c10 + a02 * c20;
+    double r;
+    if (!(det > 1e-30 || det < -1e-30)) {
+        return 0; /* singular, or NaN */
+    }
+    r = 1.0 / det;
+    c00 *= r; c01 *= r; c02 *= r;
+    c10 *= r; c11 *= r; c12 *= r;
+    c20 *= r; c21 *= r; c22 *= r;
+    out[0] = (f32)c00; out[1] = (f32)c01; out[2] = (f32)c02;
+    out[3] = (f32)-(c00 * t0 + c01 * t1 + c02 * t2);
+    out[4] = (f32)c10; out[5] = (f32)c11; out[6] = (f32)c12;
+    out[7] = (f32)-(c10 * t0 + c11 * t1 + c12 * t2);
+    out[8] = (f32)c20; out[9] = (f32)c21; out[10] = (f32)c22;
+    out[11] = (f32)-(c20 * t0 + c21 * t1 + c22 * t2);
+    return 1;
+}
+
+static int pm_inv_3x3(const f32* m, f32* out) {
+    double a00 = m[0], a01 = m[1], a02 = m[2];
+    double a10 = m[3], a11 = m[4], a12 = m[5];
+    double a20 = m[6], a21 = m[7], a22 = m[8];
+    double c00 = a11 * a22 - a12 * a21, c01 = a02 * a21 - a01 * a22, c02 = a01 * a12 - a02 * a11;
+    double c10 = a12 * a20 - a10 * a22, c11 = a00 * a22 - a02 * a20, c12 = a02 * a10 - a00 * a12;
+    double c20 = a10 * a21 - a11 * a20, c21 = a01 * a20 - a00 * a21, c22 = a00 * a11 - a01 * a10;
+    double det = a00 * c00 + a01 * c10 + a02 * c20;
+    double r;
+    if (!(det > 1e-30 || det < -1e-30)) {
+        return 0;
+    }
+    r = 1.0 / det;
+    out[0] = (f32)(c00 * r); out[1] = (f32)(c01 * r); out[2] = (f32)(c02 * r);
+    out[3] = (f32)(c10 * r); out[4] = (f32)(c11 * r); out[5] = (f32)(c12 * r);
+    out[6] = (f32)(c20 * r); out[7] = (f32)(c21 * r); out[8] = (f32)(c22 * r);
+    return 1;
+}
+
+/* c = a * b for 3x4 affines (a's rows of 4 applied after b's) */
+static void pm_compose_affine(const f32* a, const f32* b, f32* c) {
+    int r;
+    for (r = 0; r < 3; r++) {
+        const f32* ar = a + 4 * r;
+        c[4 * r + 0] = (f32)((double)ar[0] * b[0] + (double)ar[1] * b[4] + (double)ar[2] * b[8]);
+        c[4 * r + 1] = (f32)((double)ar[0] * b[1] + (double)ar[1] * b[5] + (double)ar[2] * b[9]);
+        c[4 * r + 2] = (f32)((double)ar[0] * b[2] + (double)ar[1] * b[6] + (double)ar[2] * b[10]);
+        c[4 * r + 3] = (f32)((double)ar[0] * b[3] + (double)ar[1] * b[7] + (double)ar[2] * b[11] + ar[3]);
+    }
+}
+
+static void pm_compose_3x3(const f32* a, const f32* b, f32* c) {
+    int r;
+    for (r = 0; r < 3; r++) {
+        const f32* ar = a + 3 * r;
+        c[3 * r + 0] = (f32)((double)ar[0] * b[0] + (double)ar[1] * b[3] + (double)ar[2] * b[6]);
+        c[3 * r + 1] = (f32)((double)ar[0] * b[1] + (double)ar[1] * b[4] + (double)ar[2] * b[7]);
+        c[3 * r + 2] = (f32)((double)ar[0] * b[2] + (double)ar[1] * b[5] + (double)ar[2] * b[8]);
+    }
+}
+
+/* batch_prepare found a pending batch of this layout whose matrices are not
+ * the primitive's.  Merge, or not? */
+static int pm_decide(u32 count) {
+    int need_nrm = sl.off_nrm >= 0;
+    if (count > (u32)port_opt.premerge_max || batch_verts + count > MAX_VERTS) {
+        stat_pm_refused_big++;
+        return 0;
+    }
+    if (batch_inv_state == 0) {
+        batch_inv_state = (pm_inv_affine(batch_posm, batch_inv_pos) &&
+                           (!need_nrm || pm_inv_3x3(batch_nrmm, batch_inv_nrm)))
+                              ? 1
+                              : -1;
+    }
+    if (batch_inv_state < 0) {
+        stat_pm_refused_singular++;
+        return 0;
+    }
+    if (!merge_src_valid || memcmp(merge_src_posm, pi.pos_mtx, sizeof(merge_src_posm)) != 0 ||
+        (need_nrm && memcmp(merge_src_nrmm, pi.nrm_mtx, sizeof(merge_src_nrmm)) != 0)) {
+        /* a new source object: its composite, and the last one's count */
+        pm_source_done();
+        memcpy(merge_src_posm, pi.pos_mtx, sizeof(merge_src_posm));
+        memcpy(merge_src_nrmm, pi.nrm_mtx, sizeof(merge_src_nrmm));
+        pm_compose_affine(batch_inv_pos, pi.pos_mtx, merge_c);
+        if (need_nrm) {
+            pm_compose_3x3(batch_inv_nrm, pi.nrm_mtx, merge_cn);
+        }
+        merge_src_valid = 1;
+        merge_src_verts = 0;
+    }
+    if (merge_src_verts + count > (u32)port_opt.premerge_max) {
+        stat_pm_refused_big++;
+        return 0;
+    }
+    return 1;
+}
+
+/* the primitive's `n` decoded vertices at `v`, from its model space into the
+ * batch's; the same arithmetic as finish_vertices' position row */
+static void pm_apply(u8* v, u32 n) {
+    const f32* c = merge_c;
+    const f32* cn = merge_cn;
+    const int stride = sl.stride, off_nrm = sl.off_nrm;
+    u32 i;
+    for (i = 0; i < n; i++, v += stride) {
+        f32* p = (f32*)v;
+        float x = p[0], y = p[1], z = p[2];
+        p[0] = c[0] * x + c[1] * y + c[2] * z + c[3];
+        p[1] = c[4] * x + c[5] * y + c[6] * z + c[7];
+        p[2] = c[8] * x + c[9] * y + c[10] * z + c[11];
+        if (off_nrm >= 0) {
+            f32* q = (f32*)(v + off_nrm);
+            float nx = q[0], ny = q[1], nz = q[2];
+            q[0] = cn[0] * nx + cn[1] * ny + cn[2] * nz;
+            q[1] = cn[3] * nx + cn[4] * ny + cn[5] * nz;
+            q[2] = cn[6] * nx + cn[7] * ny + cn[8] * nz;
+        }
+    }
+    if (merge_src_verts == 0) {
+        stat_pm_objects++;
+    }
+    merge_src_verts += n;
+    stat_pm_prims++;
+    stat_pm_verts += n;
+}
 
 /* ---- the batch's matrix palette (M18, PLAN.md 33) --------------------------
  *
@@ -2153,6 +2619,8 @@ static void pal_place(void) {
 }
 
 static void draw_submit(const u8* s, int n, const Seg* segs, int nsegs, int in_ring);
+static int draw_apply(const u8* s, int n, int in_ring);
+static void draw_issue(const u8* s, int n, const Seg* segs, int nsegs, int in_ring);
 
 static void ring_ensure(void) {
     if (!src_buf) {
@@ -2176,9 +2644,21 @@ static u32 batch_state_sig(void) {
     int i;
 #define SIG_MIX(ptr, len) do { p = (const u8*)(ptr); n = (size_t)(len); while (n--) { h = (h ^ *p++) * 16777619u; } } while (0)
     for (i = 0; i < GX_TEV_STAGES && i < gx.num_tev; i++) {
+        /* M22: the object's *contents* (M21 mixed in gx_bound_tex's return,
+         * which is &gx.bound[unit] -- one address per unit, whatever is
+         * loaded -- so its count never saw a texture change: PLAN.md 37) */
         GXTexObjPort* t = gx_bound_tex(gx.tev[i].map);
-        SIG_MIX(&t, sizeof(t));
+        if (t) {
+            SIG_MIX(t, offsetof(GXTexObjPort, gl_name));
+            if (t->is_ci && t->tlut_name < 64) {
+                SIG_MIX(&gx.tlut[t->tlut_name], sizeof(gx.tlut[0]));
+            }
+        } else {
+            SIG_MIX(&i, sizeof(i));
+        }
     }
+    SIG_MIX(gx.tev_reg, sizeof(gx.tev_reg));
+    SIG_MIX(gx.kcolor, sizeof(gx.kcolor));
     SIG_MIX(&gx.z_enable, sizeof(gx.z_enable));
     SIG_MIX(&gx.z_func, sizeof(gx.z_func));
     SIG_MIX(&gx.z_update, sizeof(gx.z_update));
@@ -2201,10 +2681,43 @@ static void batch_flush(void) {
          * it (there is none today) cannot submit the same batch twice */
         int n = batch_n;
         u32 nv = batch_verts;
+        /* M22: the submit runs under the batch's own context -- the last
+         * primitive's may be the next object's (a deferred flush from
+         * batch_prepare, or a flush from a state setter after
+         * begin_attr_order ran for a primitive the batch never got) */
+        PrimInv* pi_save = pi_cur;
+        Layout sl_save = sl;
+        int hs_save = gx_hilite_stage, hm_save = gx_hilite_mode;
+        int os_save = out_stride, oc_save = out_off_clr, ot_save = out_off_tex, on_save = out_ntex;
+        int applied = batch_applied;
         batch_n = 0;
         batch_verts = 0;
         gx_batch_pending = 0;
-        draw_submit(src_buf + batch_pos, (int)nv, batch, n, 1);
+        batch_applied = 0;
+        pi_cur = bctx_pi;
+        sl = batch_sl;
+        gx_hilite_stage = bctx.hilite_stage;
+    gx_hilite_mode = bctx.hilite_mode;
+        out_stride = bctx.out_stride;
+        out_off_clr = bctx.out_off_clr;
+        out_off_tex = bctx.out_off_tex;
+        out_ntex = bctx.out_ntex;
+        if (applied) {
+            /* the state walk ran at the setter (gx_batch_touch); only the
+             * draw calls are left, and nothing has touched GL since */
+            draw_issue(src_buf + batch_pos, (int)nv, batch, n, 1);
+            stat_lazy_flushes++;
+        } else {
+            draw_submit(src_buf + batch_pos, (int)nv, batch, n, 1);
+        }
+        pi_cur = pi_save;
+        sl = sl_save;
+        gx_hilite_stage = hs_save;
+    gx_hilite_mode = hm_save;
+        out_stride = os_save;
+        out_off_clr = oc_save;
+        out_off_tex = ot_save;
+        out_ntex = on_save;
         stat_batches++;
         if (port_opt.submitstats) {
             u32 sig = batch_state_sig();
@@ -2215,9 +2728,14 @@ static void batch_flush(void) {
                 if (nv <= 256) {
                     stat_mergeable_small++;
                 }
+                if (last_flusher >= 0) {
+                    flushers[last_flusher].transient++;
+                }
             }
             last_batch_sig = sig;
             last_batch_sl = batch_sl;
+            last_flusher = pending_flusher;
+            pending_flusher = -1;
         }
     }
     pal_reset();
@@ -2263,10 +2781,33 @@ static size_t ring_claim(size_t need) {
  * a vertex's slot is written during the decode and belongs to the batch the
  * primitive will end up in. */
 static void batch_prepare(u32 count) {
+    merge_this = 0;
+    if (batch_n && batch_applied) {
+        /* M22: setters ran since the batch's last primitive and its state
+         * went to GL then.  Did any of them leave the state the submit
+         * reads different? */
+        if (submit_rec_differs()) {
+            if (port_opt.submitstats) {
+                pending_flusher = flusher_slot(applied_who);
+                if (pending_flusher >= 0) {
+                    flushers[pending_flusher].n++;
+                }
+            }
+            batch_flush(); /* issues under the GL state that is still the batch's */
+        } else {
+            stat_lazy_transient++;
+        }
+    }
     if (batch_n &&
         (port_opt.oldsubmit || batch_n >= BATCH_MAX ||
          (port_opt.batchmax && batch_n >= port_opt.batchmax) ||
-         batch_verts + count > MAX_VERTS || memcmp(&batch_sl, &sl, sizeof(sl)) != 0)) {
+         batch_verts + count > MAX_VERTS || memcmp(&batch_sl, &sl, sizeof(sl)) != 0 ||
+         /* M22: the matrices moved under the batch (the loads no longer end
+          * it): transform the object in, or flush under the batch's own */
+         (gx_batch_spans && !palette_on &&
+          (memcmp(batch_posm, pi.pos_mtx, sizeof(batch_posm)) != 0 ||
+           (sl.off_nrm >= 0 && memcmp(batch_nrmm, pi.nrm_mtx, sizeof(batch_nrmm)) != 0)) &&
+          !(premerge_on && (merge_this = pm_decide(count)) != 0)))) {
         /* The layout cannot change inside a list (it is a function of the
          * descriptor, the texgens and the TEV chain, none of which a list can
          * touch), so the pending batch was assembled under `sl` as it is now
@@ -2304,6 +2845,17 @@ static void batch_add(void) {
         batch_pos = run_pos;
         batch_sl = sl;
         batch_verts = 0;
+        /* M22: the batch's matrices are this primitive's own; a merge decided
+         * for a batch that a wrap or a late flush has since ended is off,
+         * and the vertices stay in their own model space */
+        pm_batch_start();
+        if (merge_this) {
+            stat_pm_refused_wrap++;
+            merge_this = 0;
+        }
+    } else if (merge_this) {
+        pm_apply(src_buf + run_pos, count);
+        merge_this = 0;
     }
     batch[batch_n].first = batch_verts;
     batch[batch_n].count = count;
@@ -2320,23 +2872,16 @@ static void batch_add(void) {
  * the game re-sent something it already had. */
 
 void gx_batch_flush_from(const char* who) {
+    if (port_opt.submitstats) {
+        int i = flusher_slot(who);
+        if (i >= 0) {
+            flushers[i].n++;
+            pending_flusher = i;
+        }
+    }
     port_perf_gx_begin();
     batch_flush();
     port_perf_gx_end();
-    if (port_opt.submitstats) {
-        int i;
-        for (i = 0; i < FLUSHER_SLOTS; i++) {
-            if (flushers[i].who == who) {
-                flushers[i].n++;
-                return;
-            }
-            if (!flushers[i].who) {
-                flushers[i].who = who;
-                flushers[i].n = 1;
-                return;
-            }
-        }
-    }
 }
 
 static int prim_is_list(GLenum mode) {
@@ -2512,18 +3057,22 @@ static void issue_indexed(u32 nidx, u32 lo, u32 hi) {
  * from: the ring for a batch the decoder just assembled, and the cached copy
  * for a display list that hit.  `n` is the span's vertex count; the segments
  * index into it. */
-static void draw_submit(const u8* s, int n, const Seg* segs, int nsegs, int in_ring) {
-    GxXfDesc xfd;
+/* The submit, in two halves (M22): draw_apply puts the batch's state into
+ * GL -- the program, the parameters, the arrays, the transform, the raster
+ * state, the TEV and the binds -- and draw_issue makes the draw calls.
+ * draw_submit is the two in a row; the lazy flush runs the first at the
+ * setter that would have ended the batch and the second when the batch
+ * really ends. */
+static GxXfDesc app_xfd;  /* what draw_apply settled, for draw_issue */
+static int app_on_gpu;
+static u32 app_bias;
+
+static int draw_apply(const u8* s, int n, int in_ring) {
+    GxXfDesc* xfd = &app_xfd;
     int on_gpu = 0;
     u32 bias = 0; /* M21 --fixbase: the batch's first vertex as an index from the ring's start */
-    if (!n || !nsegs) {
-        return;
-    }
-    stat_prims += (unsigned)nsegs;
-    stat_verts += (unsigned)n;
-    if (!gl13_live()) {
-        return;
-    }
+    sub_posm = in_ring ? batch_posm : pi.pos_mtx;
+    sub_nrmm = in_ring ? batch_nrmm : pi.nrm_mtx;
     /* M11: phase 2 on the GPU.  The decision has to be made *before* phase 2
      * runs, because the whole point is not to run it; `gx_vprog_draw` compiles
      * or finds the variant, uploads the parameters and binds the source
@@ -2531,8 +3080,8 @@ static void draw_submit(const u8* s, int n, const Seg* segs, int nsegs, int in_r
      * -- having counted it.  `--cpuxf` makes it always return 0, which is the
      * A/B (PLAN.md 25). */
     if (!port_opt.cpuxf) {
-        fill_xf_desc(&xfd, s);
-        on_gpu = gx_vprog_draw(&xfd, n);
+        fill_xf_desc(xfd, s);
+        on_gpu = gx_vprog_draw(xfd, n);
         /* M21 (--fixbase): the arrays are based at the ring, not at the
          * batch, so their pointers -- and whatever the driver rebuilds when
          * a pointer changes -- change only when the layout does.  The
@@ -2542,7 +3091,7 @@ static void draw_submit(const u8* s, int n, const Seg* segs, int nsegs, int in_r
         if (on_gpu && in_ring && !port_opt.nofixbase && src_buf && s >= src_buf &&
             sl.stride > 0 && ((size_t)(s - src_buf) % (size_t)sl.stride) == 0) {
             bias = (u32)((size_t)(s - src_buf) / (size_t)sl.stride);
-            xfd.base = src_buf;
+            xfd->base = src_buf;
             stat_fixbase_batches++;
         } else if (on_gpu && in_ring && !port_opt.nofixbase) {
             stat_fixbase_miss++;
@@ -2560,23 +3109,8 @@ static void draw_submit(const u8* s, int n, const Seg* segs, int nsegs, int in_r
     gx_tev_apply();
     /* M21: the specular colour sum, only where the vertex program wrote a
      * secondary colour for it (gx_internal.h, gx_hilite_decide) */
-    glc_color_sum(on_gpu && !port_opt.cpuxf && xfd.hilite);
+    glc_color_sum(on_gpu && !port_opt.cpuxf && xfd->hilite == 1);
     port_perf_sub_leave();
-    /* After the state is applied, not before: the texture cache fills in
-     * gl_name at bind time, so a log taken earlier reports a stale 0 and
-     * sends you hunting for a texture upload that already happened. */
-    /* Through parameters, not the globals: draw_submit runs from inside
-     * batch_add when a batch has to make room, and batch_add still needs
-     * `nverts` and `prim` for the segment it is adding.  The first M16 build
-     * wrote `nverts = n` here and every segment added right after an in-add
-     * flush was recorded with the *previous* batch's vertex count -- one
-     * eye on the title, 136 pixels, PLAN.md 31.3. */
-    if (port_opt.drawlog) {
-        int i;
-        for (i = 0; i < nsegs; i++) {
-            draw_log(segs[i].first, segs[i].count, segs[i].prim);
-        }
-    }
 
     /* On the GPU path the arrays are the *source* layout and gx_vprog_draw has
      * already bound them; there is no `out_buf` to point at, because phase 2
@@ -2588,11 +3122,7 @@ static void draw_submit(const u8* s, int n, const Seg* segs, int nsegs, int in_r
     if (on_gpu) {
         /* the parameters and the arrays, now that the texture binds this draw
          * needs have happened: gx_vprog.c says why that ordering matters */
-        gx_vprog_bind(&xfd);
-        if (in_ring) {
-            /* the CPU cache, out ahead of the DMA (a no-op without VAR) */
-            gl13_var_flush(s, (size_t)n * sl.stride);
-        }
+        gx_vprog_bind(xfd);
     } else {
         glc_vertex_array(out_buf, out_stride);
         glc_color_array(out_buf + out_off_clr, out_stride);
@@ -2612,12 +3142,44 @@ static void draw_submit(const u8* s, int n, const Seg* segs, int nsegs, int in_r
             }
         }
     }
+    port_perf_sub_leave();
+    app_on_gpu = on_gpu;
+    app_bias = bias;
+    return on_gpu;
+}
+
+static void draw_issue(const u8* s, int n, const Seg* segs, int nsegs, int in_ring) {
+    int on_gpu = app_on_gpu;
+    u32 bias = app_bias;
+    stat_prims += (unsigned)nsegs;
+    stat_verts += (unsigned)n;
+    /* After the state is applied, not before: the texture cache fills in
+     * gl_name at bind time, so a log taken earlier reports a stale 0 and
+     * sends you hunting for a texture upload that already happened. */
+    /* Through parameters, not the globals: draw_submit runs from inside
+     * batch_add when a batch has to make room, and batch_add still needs
+     * `nverts` and `prim` for the segment it is adding.  The first M16 build
+     * wrote `nverts = n` here and every segment added right after an in-add
+     * flush was recorded with the *previous* batch's vertex count -- one
+     * eye on the title, 136 pixels, PLAN.md 31.3. */
+    if (port_opt.drawlog) {
+        int i;
+        for (i = 0; i < nsegs; i++) {
+            draw_log(segs[i].first, segs[i].count, segs[i].prim);
+        }
+    }
+    port_perf_sub_enter(PERF_SUB_ISSUE);
+    if (on_gpu && in_ring) {
+        /* the CPU cache, out ahead of the DMA (a no-op without VAR); over
+         * the batch's final extent, which a lazy flush grew after the apply */
+        gl13_var_flush(s, (size_t)n * sl.stride);
+    }
     if (port_opt.segrebase && on_gpu) {
         /* diagnostic (PLAN.md 31.3): every segment from its own base pointer
          * with first = 0, i.e. the pre-M16 array shape inside one batch */
         int i;
         for (i = 0; i < nsegs; i++) {
-            GxXfDesc x2 = xfd;
+            GxXfDesc x2 = app_xfd;
             x2.base = s + (size_t)segs[i].first * sl.stride;
             if (port_opt.segrebase & 2) {
                 gx_tev_apply();
@@ -2661,6 +3223,52 @@ static void draw_submit(const u8* s, int n, const Seg* segs, int nsegs, int in_r
         issue_segments(segs, nsegs);
     }
     port_perf_sub_leave();
+}
+
+static void draw_submit(const u8* s, int n, const Seg* segs, int nsegs, int in_ring) {
+    if (!n || !nsegs) {
+        return;
+    }
+    if (!gl13_live()) {
+        stat_prims += (unsigned)nsegs;
+        stat_verts += (unsigned)n;
+        return;
+    }
+    draw_apply(s, n, in_ring);
+    draw_issue(s, n, segs, nsegs, in_ring);
+}
+
+/* The lazy flush's first half, for the pending batch (gx_batch_touch).
+ * Returns 0 when the batch cannot be held open: the CPU fallback transforms
+ * the vertices at the apply, and a batch that grows afterwards would leave
+ * them behind. */
+static int batch_apply_now(void) {
+    PrimInv* pi_save = pi_cur;
+    Layout sl_save = sl;
+    int hs_save = gx_hilite_stage, hm_save = gx_hilite_mode;
+    int os_save = out_stride, oc_save = out_off_clr, ot_save = out_off_tex, on_save = out_ntex;
+    int ok;
+    if (!batch_n || !gl13_live()) {
+        return 0;
+    }
+    pi_cur = bctx_pi;
+    sl = batch_sl;
+    gx_hilite_stage = bctx.hilite_stage;
+    gx_hilite_mode = bctx.hilite_mode;
+    out_stride = bctx.out_stride;
+    out_off_clr = bctx.out_off_clr;
+    out_off_tex = bctx.out_off_tex;
+    out_ntex = bctx.out_ntex;
+    ok = draw_apply(src_buf + batch_pos, (int)batch_verts, 1);
+    pi_cur = pi_save;
+    sl = sl_save;
+    gx_hilite_stage = hs_save;
+    gx_hilite_mode = hm_save;
+    out_stride = os_save;
+    out_off_clr = oc_save;
+    out_off_tex = ot_save;
+    out_ntex = on_save;
+    return ok;
 }
 
 /* An immediate-mode primitive: its own batch, flushed at once. */
@@ -3969,7 +4577,7 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
 
 void GXCopyDisp(void* dest, GXBool clear) {
     (void)dest;
-    GX_STATE_TOUCH(); /* the frame's last batch, before the swap */
+    GX_FLUSH_NOW(); /* the frame's last batch, before the swap */
     /* The XFB does not exist here: the game draws into GL's back buffer and
      * the swap happens at the retrace gate, so the double-buffer discipline
      * the game expects is preserved (PLAN.md §3.7).  The clear it asks for is
@@ -3999,7 +4607,7 @@ void port_gx_init(void) {
 }
 
 void port_gx_present(void) {
-    GX_STATE_TOUCH();
+    GX_FLUSH_NOW();
     gl13_present();
 }
 

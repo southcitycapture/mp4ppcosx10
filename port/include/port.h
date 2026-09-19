@@ -216,6 +216,21 @@ typedef struct PortOptions {
                              *   batch's offset in `first` (--fixbase)      */
     int submitstats;        /* --submitstats  batches, merges, primitives per
                              *   list, fence waits                            */
+    /* ---- M22: the CPU pre-transform (PLAN.md 37) ---- */
+    int nohilitetex;        /* --nohilitetex  M22: the textured highlight
+                             *   (the results portraits) drawn from channel
+                             *   0 as before, and the mask/reflect register
+                             *   triple folded to PREV as before            */
+    int regfix2dbg;         /* --regfix2dbg  M22: unit C of the mask/reflect
+                             *   triple shows one input per frame (frame%4)  */
+    int lazyflush;          /* --lazyflush  a state setter applies the pending
+                             *   batch's state and the next primitive decides
+                             *   whether the batch ends (M22, measured, off) */
+    int premerge_max;       /* --premerge-max N  an object of up to N vertices
+                             *   that differs from the pending batch in its
+                             *   matrices alone is transformed on the CPU into
+                             *   the batch's model space and appended (M22,
+                             *   measured, off: 0)                            */
     unsigned cmpmask;       /* --cmpmask N  which compare-first setter groups
                              *   may keep a batch alive (1 raster, 2 matrix,
                              *   4 tev, 8 chan; default 15).  0 = every

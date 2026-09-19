@@ -137,13 +137,14 @@ GXFifoObj* GXInit(void* base, u32 size) {
 /* M18 (PLAN.md 33): the vertex descriptor, the attribute formats and the
  * arrays are read by the *decode* of the next primitive and by nothing in a
  * pending batch -- the batch's vertices are already decoded, and its layout
- * is compared by batch_prepare.  With the palette on they end no batch, which
+ * is compared by batch_prepare.  With the palette on -- or the M22
+ * pre-transform (gx_batch_spans covers both) -- they end no batch, which
  * is what lets a batch span objects (each new object re-sends all of them,
  * hsfdraw.c FaceDraw with vtxModeBak reset per object). */
 #define GX_STATE_TOUCH_DECODE()                                                          \
     do {                                                                                 \
-        if (gx_batch_pending && !gx_palette_active) {                                    \
-            gx_batch_flush_from(__func__);                                               \
+        if (gx_batch_pending && !gx_batch_spans) {                                       \
+            gx_batch_touch(__func__);                                                    \
         }                                                                                \
     } while (0)
 
@@ -221,8 +222,12 @@ const void* gx_last_posmtx_caller;
 const void* gx_last_posmtx_arg;
 
 void GXLoadPosMtxImm(const void* mtx, u32 id) {
+    /* M22 (PLAN.md 37): with the pre-transform on, a new matrix ends no
+     * batch here; batch_prepare decides, per primitive, whether the object
+     * is transformed into the pending batch or the batch is flushed under
+     * the matrices it keeps its own copy of. */
     u32 slot = id / 3;
-    GX_STATE_TOUCH_IF(GX_CMP_MATRIX, !gx_palette_active &&
+    GX_STATE_TOUCH_IF(GX_CMP_MATRIX, !gx_batch_spans &&
                                          (slot >= 10 || memcmp(gx.pos_mtx[slot], mtx, 48) != 0));
     if (port_opt.drawlog) {
         gx_last_posmtx_caller = __builtin_return_address(0);
@@ -241,7 +246,7 @@ void GXLoadNrmMtxImm(const void* mtx, u32 id) {
         int r;
         /* bit-exact, like GXLoadPosMtxImm's memcmp: a state call that
          * changes nothing ends no batch, and "nothing" means the bytes */
-        GX_STATE_TOUCH_IF(GX_CMP_MATRIX, !gx_palette_active &&
+        GX_STATE_TOUCH_IF(GX_CMP_MATRIX, !gx_batch_spans &&
                                              (memcmp(&gx.nrm_mtx[slot][0], m, 12) != 0 ||
                                               memcmp(&gx.nrm_mtx[slot][3], m + 4, 12) != 0 ||
                                               memcmp(&gx.nrm_mtx[slot][6], m + 8, 12) != 0));
@@ -261,7 +266,21 @@ void GXLoadTexMtxImm(const void* mtx, u32 id, GXTexMtxType type) {
         slot = (id - GX_TEXMTX0) / 3;
     }
     if (slot < 20) {
-        GX_STATE_TOUCH_IF(GX_CMP_MATRIX, memcmp(gx.tex_mtx[slot], mtx, type == GX_MTX2x4 ? 32 : 48) != 0);
+        /* M22: a changed matrix ends the batch only if a texgen in use reads
+         * that slot (the texgen setters flush on change, so gx.texgen is the
+         * pending batch's); on the title every one of the 106 flushes here
+         * was for a slot nothing read */
+        int used = 0, t;
+        for (t = 0; t < gx.num_texgens && t < GX_TEXCOORDS; t++) {
+            /* the slot begin_attr_order resolves for this texgen (the post
+             * matrices, slots 10+, are stored and never read by the port) */
+            u32 m = gx.texgen[t].mtx;
+            if (m >= GX_TEXMTX0 && m < GX_IDENTITY && (m - GX_TEXMTX0) / 3 == slot) {
+                used = 1;
+            }
+        }
+        GX_STATE_TOUCH_IF(GX_CMP_MATRIX,
+                          used && memcmp(gx.tex_mtx[slot], mtx, type == GX_MTX2x4 ? 32 : 48) != 0);
         memcpy(gx.tex_mtx[slot], mtx, type == GX_MTX2x4 ? 32 : 48);
         if (type == GX_MTX2x4) {
             gx.tex_mtx[slot][8] = 0.0f;
@@ -273,7 +292,7 @@ void GXLoadTexMtxImm(const void* mtx, u32 id, GXTexMtxType type) {
 }
 
 void GXSetCurrentMtx(u32 id) {
-    GX_STATE_TOUCH_IF(GX_CMP_MATRIX, !gx_palette_active && gx.cur_pnmtx != id / 3);
+    GX_STATE_TOUCH_IF(GX_CMP_MATRIX, !gx_batch_spans && gx.cur_pnmtx != id / 3);
     gx.cur_pnmtx = id / 3;
 }
 
@@ -444,9 +463,10 @@ void GXSetChanMatColor(GXChannelID chan, GXColor c) {
 }
 
 static GXLight* light_of(GXLightObj* o) { return (GXLight*)o; }
+/* The GXInitLight* below write the *game's* object, which GXLoadLightObjImm
+ * copies into gx.light[]; nothing a pending batch reads, so no touch (M22). */
 
 void GXInitLightPos(GXLightObj* o, f32 x, f32 y, f32 z) {
-    GX_STATE_TOUCH();
     GXLight* l = light_of(o);
     l->pos[0] = x;
     l->pos[1] = y;
@@ -454,16 +474,14 @@ void GXInitLightPos(GXLightObj* o, f32 x, f32 y, f32 z) {
     l->used = 1;
 }
 void GXInitLightDir(GXLightObj* o, f32 x, f32 y, f32 z) {
-    GX_STATE_TOUCH();
     GXLight* l = light_of(o);
     l->dir[0] = x;
     l->dir[1] = y;
     l->dir[2] = z;
     l->used = 1;
 }
-void GXInitLightColor(GXLightObj* o, GXColor c) { GX_STATE_TOUCH(); light_of(o)->color = c; }
+void GXInitLightColor(GXLightObj* o, GXColor c) { light_of(o)->color = c; }
 void GXInitLightAttn(GXLightObj* o, f32 a0, f32 a1, f32 a2, f32 k0, f32 k1, f32 k2) {
-    GX_STATE_TOUCH();
     GXLight* l = light_of(o);
     l->a[0] = a0;
     l->a[1] = a1;
@@ -473,14 +491,12 @@ void GXInitLightAttn(GXLightObj* o, f32 a0, f32 a1, f32 a2, f32 k0, f32 k1, f32 
     l->k[2] = k2;
 }
 void GXInitLightAttnK(GXLightObj* o, f32 k0, f32 k1, f32 k2) {
-    GX_STATE_TOUCH();
     GXLight* l = light_of(o);
     l->k[0] = k0;
     l->k[1] = k1;
     l->k[2] = k2;
 }
 void GXInitLightSpot(GXLightObj* o, f32 cutoff, GXSpotFn fn) {
-    GX_STATE_TOUCH();
     /* GX's seven spot functions are polynomials in cos(theta); GL has one,
      * cos^exponent.  GX_SP_FLAT and GX_SP_COS map exactly; the rest are
      * approximated by the same cutoff with exponent 1. */
@@ -493,7 +509,6 @@ void GXInitLightSpot(GXLightObj* o, f32 cutoff, GXSpotFn fn) {
 }
 void GXInitLightDistAttn(GXLightObj* o, f32 ref_distance, f32 ref_brightness,
                          GXDistAttnFn fn) {
-    GX_STATE_TOUCH();
     GXLight* l = light_of(o);
     f32 k0 = 1.0f, k1 = 0.0f, k2 = 0.0f;
     if (fn != GX_DA_OFF && ref_distance > 0.0f && ref_brightness > 0.0f &&
@@ -521,7 +536,6 @@ void GXInitLightDistAttn(GXLightObj* o, f32 ref_distance, f32 ref_brightness,
  * only the direction was stored and the position stayed where
  * GXInitLightPos had put it (PLAN.md 36). */
 void GXInitSpecularDir(GXLightObj* o, f32 x, f32 y, f32 z) {
-    GX_STATE_TOUCH();
     GXLight* l = light_of(o);
     f32 vx = -x, vy = -y, vz = -z + 1.0f;
     f32 mag = vx * vx + vy * vy + vz * vz;
@@ -715,13 +729,13 @@ void GXSetTevKColor(GXTevKColorID id, GXColor c) {
 }
 void GXSetTevKColorSel(GXTevStageID s, GXTevKColorSel sel) {
     if ((unsigned)s < GX_TEV_STAGES) {
-        GX_STATE_TOUCH_IF(GX_CMP_TEV, gx.tev[s].kcsel != (u8)sel);
+        GX_STATE_TOUCH_IF(GX_CMP_TEV, s < gx.num_tev && gx.tev[s].kcsel != (u8)sel);
         gx.tev[s].kcsel = (u8)sel;
     }
 }
 void GXSetTevKAlphaSel(GXTevStageID s, GXTevKAlphaSel sel) {
     if ((unsigned)s < GX_TEV_STAGES) {
-        GX_STATE_TOUCH_IF(GX_CMP_TEV, gx.tev[s].kasel != (u8)sel);
+        GX_STATE_TOUCH_IF(GX_CMP_TEV, s < gx.num_tev && gx.tev[s].kasel != (u8)sel);
         gx.tev[s].kasel = (u8)sel;
     }
 }

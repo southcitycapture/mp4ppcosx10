@@ -185,6 +185,16 @@ static void usage(const char* argv0) {
             "                    ring's start (--fixbase restores)\n"
             "  --submitstats     batches, merged draws, primitives per list,\n"
             "                    ring fence waits\n"
+            "  --nohilitetex     M22: the textured highlight and the mask/reflect\n"
+            "                    register triple (the results portraits) as before\n"
+            "  --lazyflush       M22: a state setter applies the pending batch's state\n"
+            "                    to GL and the next primitive decides whether the\n"
+            "                    batch ends (measured: slower, PLAN.md 37; off)\n"
+            "  --premerge-max N  M22: an object of up to N vertices differing from\n"
+            "                    the pending batch in its matrices alone is\n"
+            "                    transformed on the CPU into the batch's model\n"
+            "                    space and appended; implies --lazyflush\n"
+            "                    (measured: slower, PLAN.md 37; default 0 = off)\n"
             "  --noregfix        fold a TEV stage's GX_TEVREG write to PREV (the\n"
             "                    pre-M16 path; the board eyes), for the A/B\n"
             "  --oldkonst        claim a unit's GL constant whole instead of RGB\n"
@@ -399,6 +409,7 @@ int port_parse_args(int argc, char** argv) {
     port_opt.noindexed = 1;
     port_opt.nofixbase = 1;
     port_opt.noenvbulk = 1; /* exact; gx_vprog_bind 3.4% -> 3.2% of the board frame, noise */
+    port_opt.premerge_max = 0; /* M22 (PLAN.md 37): the CPU pre-transform, measured and off */
     for (i = 1; i < argc; i++) {
         const char* a = argv[i];
         if (!strcmp(a, "--image") && i + 1 < argc) {
@@ -658,6 +669,15 @@ int port_parse_args(int argc, char** argv) {
             port_opt.nomultidraw = 1;
         } else if (!strcmp(a, "--submitstats")) {
             port_opt.submitstats = 1;
+        } else if (!strcmp(a, "--regfix2dbg")) {
+            port_opt.regfix2dbg = 1;
+        } else if (!strcmp(a, "--nohilitetex")) {
+            port_opt.nohilitetex = 1;
+        } else if (!strcmp(a, "--lazyflush")) {
+            port_opt.lazyflush = 1;
+        } else if (!strcmp(a, "--premerge-max") && i + 1 < argc) {
+            port_opt.premerge_max = atoi(argv[++i]);
+            port_opt.lazyflush = 1;
         } else if (!strcmp(a, "--noregfix")) {
             port_opt.noregfix = 1;
         } else if (!strcmp(a, "--oldkonst")) {

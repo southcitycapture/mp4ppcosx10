@@ -187,9 +187,31 @@ void gx_draw_report(void);
  * changes anything.  It is one load and a branch when nothing is pending. */
 extern int gx_batch_pending;
 extern int gx_palette_active; /* M18: batches carry a matrix palette (gx_draw.c) */
+extern int gx_batch_spans;    /* M18/M22: a matrix load or a descriptor setter ends no
+                               * batch -- the palette, the pre-transform or the lazy
+                               * flush decides per primitive (gx_draw.c) */
 int gx_palette_on(void);
 void gx_batch_flush_from(const char* who);
+/* M22 (PLAN.md 37): the lazy flush.  A state setter no longer submits the
+ * pending batch.  The first one after the batch's last primitive *applies*
+ * the batch's state to GL (the transform, raster state, TEV, binds and
+ * program parameters -- everything a submit does before its draw calls)
+ * while the state is still the batch's, and records what the submit read.
+ * The next primitive compares the state against that record: the same --
+ * hsfdraw.c's material setup passes through states no primitive is drawn
+ * under and comes back, for every object -- and the batch goes on; changed,
+ * and the batch's draws are issued now, under the GL state that is still
+ * its own, before anything else reaches GL.  No copy of the state is ever
+ * made.  --eagerflush is the pre-M22 shape: the setter submits at once. */
+void gx_batch_touch(const char* who);
 #define GX_STATE_TOUCH()                                                                 \
+    do {                                                                                 \
+        if (gx_batch_pending) {                                                          \
+            gx_batch_touch(__func__);                                                    \
+        }                                                                                \
+    } while (0)
+/* for a copy or the present: the batch must be *drawn* now, lazily or not */
+#define GX_FLUSH_NOW()                                                                   \
     do {                                                                                 \
         if (gx_batch_pending) {                                                          \
             gx_batch_flush_from(__func__);                                               \
@@ -204,7 +226,7 @@ void gx_batch_flush_from(const char* who);
 #define GX_STATE_TOUCH_IF(group, changed)                                                \
     do {                                                                                 \
         if (gx_batch_pending && (!(port_opt.cmpmask & (group)) || (changed))) {          \
-            gx_batch_flush_from(__func__);                                               \
+            gx_batch_touch(__func__);                                                    \
         }                                                                                \
     } while (0)
 #define GX_CMP_RASTER 1
@@ -225,7 +247,8 @@ void gx_tex_bind(int unit, GXTexObjPort* obj);
 void gx_tex_bind_swapped(int unit, GXTexObjPort* obj, u8 swap);
 int gx_tex_bind_tiled(int unit, GXTexObjPort* sheet, GXTexObjPort* map,
                       const GXIndTile* tile);
-GXTexObjPort* gx_bound_tex(unsigned id); /* NULL unless the unit holds a real object */
+GXTexObjPort* gx_bound_tex(unsigned id);
+const GXTexObjPort* gx_bound_tex_of(const GXState* st, unsigned id); /* M22 */ /* NULL unless the unit holds a real object */
 void gx_tex_copy(void* dest, int clear);
 void gx_tex_report(void);
 void gx_tex_tile_report(void);
@@ -347,7 +370,16 @@ typedef struct GxXfDesc {
  * units.  `gx_hilite_stage` is that stage's index for the primitive being
  * drawn, or -1. */
 extern int gx_hilite_stage;
+/* M22 (PLAN.md 37): 1 = the screen above, folded through the colour sum;
+ * 2 = the *textured* highlight (hsfdraw.c:1374, TEXC * RASC1 + CPREV, the
+ * results portraits): the program writes spec into the primary colour's
+ * alpha -- which the matcher has checked no stage reads as RASA -- and the
+ * stage is emitted as MODULATE_ADD_ATI(TEXTURE, PREVIOUS, PRIMARY.a).  A
+ * coloured specular loses its tint that way (the alpha is its luminance);
+ * the game's lights are white. */
+extern int gx_hilite_mode;
 u32 gx_tev_last_sig(void); /* M21: --submitstats' mergeable-batch count */
+void gx_tev_stage_konst(const GXTevStage* s, int alpha, float* out); /* M22: --drawlog */
 int gx_hilite_decide(void);
 void glc_color_sum(int on);
 

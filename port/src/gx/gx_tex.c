@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stddef.h>
 
 #ifndef PORT_NO_SDL
 #include <SDL_opengl.h>
@@ -1129,7 +1130,12 @@ static void tex_bind_body(int unit, GXTexObjPort* o, u8 swap) {
 
 void GXInitTexObj(GXTexObj* obj, void* image, u16 w, u16 h, GXTexFmt fmt,
                   GXTexWrapMode ws, GXTexWrapMode wt, u8 mipmap) {
-    GX_STATE_TOUCH();
+    /* No GX_STATE_TOUCH here or in the other GXInit* below (M22, PLAN.md
+     * 37): these write the *game's* object -- hsfdraw.c LoadTexture's stack
+     * local -- and nothing a pending batch reads.  The batch's textures are
+     * the copies GXLoadTexObj made into gx.bound[], and that is where the
+     * compare-first flush lives.  On the title, GXInitTexObj ended 3,922 of
+     * 11,982 batches and 1,802 of those pairs had the same state. */
     GXTexObjPort* o = (GXTexObjPort*)obj;
     memset(o, 0, sizeof(*o));
     o->magic = TEXOBJ_MAGIC;
@@ -1147,7 +1153,6 @@ void GXInitTexObj(GXTexObj* obj, void* image, u16 w, u16 h, GXTexFmt fmt,
 
 void GXInitTexObjCI(GXTexObj* obj, void* image, u16 w, u16 h, GXCITexFmt fmt,
                     GXTexWrapMode ws, GXTexWrapMode wt, u8 mipmap, u32 tlut_name) {
-    GX_STATE_TOUCH();
     GXTexObjPort* o = (GXTexObjPort*)obj;
     GXInitTexObj(obj, image, w, h, (GXTexFmt)fmt, ws, wt, mipmap);
     o->is_ci = 1;
@@ -1157,7 +1162,6 @@ void GXInitTexObjCI(GXTexObj* obj, void* image, u16 w, u16 h, GXCITexFmt fmt,
 void GXInitTexObjLOD(GXTexObj* obj, GXTexFilter min_filt, GXTexFilter mag_filt,
                      f32 min_lod, f32 max_lod, f32 lod_bias, GXBool bias_clamp,
                      GXBool do_edge_lod, GXAnisotropy aniso) {
-    GX_STATE_TOUCH();
     GXTexObjPort* o = (GXTexObjPort*)obj;
     (void)bias_clamp;
     (void)do_edge_lod;
@@ -1173,7 +1177,6 @@ void GXInitTexObjLOD(GXTexObj* obj, GXTexFilter min_filt, GXTexFilter mag_filt,
 }
 
 void GXInitTexObjWrapMode(GXTexObj* obj, GXTexWrapMode s, GXTexWrapMode t) {
-    GX_STATE_TOUCH();
     GXTexObjPort* o = (GXTexObjPort*)obj;
     if (o->magic == TEXOBJ_MAGIC) {
         o->wrap_s = (u8)s;
@@ -1182,7 +1185,12 @@ void GXInitTexObjWrapMode(GXTexObj* obj, GXTexWrapMode s, GXTexWrapMode t) {
 }
 
 void GXLoadTexObj(GXTexObj* obj, GXTexMapID id) {
-    GX_STATE_TOUCH();
+    /* Compare-first (M22): the same texture loaded again -- the next object
+     * of the same material -- changes nothing the pending batch reads.  The
+     * fields from gl_name on are the cache's, filled in at bind time in the
+     * copy and zero in the game's object, so they are not compared. */
+    GX_STATE_TOUCH_IF(GX_CMP_TEV, (unsigned)id >= GX_TEX_UNITS || !obj ||
+                                      memcmp(&gx.bound[id], obj, offsetof(GXTexObjPort, gl_name)) != 0);
     /* Copy, do not alias: see the comment on GXState::bound.  This is what
      * the console's write to the texture registers is, and the game's sprite
      * path depends on it -- HuSprTexLoad's GXTexObj is a stack local. */
@@ -1198,10 +1206,16 @@ GXTexObjPort* gx_bound_tex(unsigned id) {
     }
     return &gx.bound[id];
 }
+/* the same question of a state that is not the current one (M22) */
+const GXTexObjPort* gx_bound_tex_of(const GXState* st, unsigned id) {
+    if (id >= GX_TEX_UNITS || st->bound[id].magic != TEXOBJ_MAGIC) {
+        return NULL;
+    }
+    return &st->bound[id];
+}
 
 void GXInitTlutObj(GXTlutObj* obj, void* lut, GXTlutFmt fmt, u16 n) {
-    GX_STATE_TOUCH();
-    GXTlutObjPort* t = (GXTlutObjPort*)obj;
+    GXTlutObjPort* t = (GXTlutObjPort*)obj; /* the game's object; no flush (above) */
     t->magic = TLUT_MAGIC;
     t->lut = lut;
     t->fmt = (u32)fmt;
@@ -1209,8 +1223,9 @@ void GXInitTlutObj(GXTlutObj* obj, void* lut, GXTlutFmt fmt, u16 n) {
 }
 
 void GXLoadTlut(GXTlutObj* obj, u32 tlut_name) {
-    GX_STATE_TOUCH();
     GXTlutObjPort* t = (GXTlutObjPort*)obj;
+    GX_STATE_TOUCH_IF(GX_CMP_TEV, tlut_name >= 64 || t->magic != TLUT_MAGIC ||
+                                      memcmp(&gx.tlut[tlut_name], t, sizeof(*t)) != 0);
     if (tlut_name < 64 && t->magic == TLUT_MAGIC) {
         gx.tlut[tlut_name] = *t;
         /* --tlutlog, the load half: the game's own two calls, as the game
@@ -1240,8 +1255,9 @@ u32 GXGetTexBufferSize(u16 w, u16 h, u32 fmt, u8 mipmap, u8 max_lod) {
 }
 
 /* TMEM does not exist here; the cache is content keyed and must survive. */
-void GXInvalidateTexAll(void) { GX_STATE_TOUCH();}
-void GXInvalidateTexRegion(GXTexRegion* r) { GX_STATE_TOUCH(); (void)r; }
+/* neither touches anything the port has, so neither ends a batch (M22) */
+void GXInvalidateTexAll(void) {}
+void GXInvalidateTexRegion(GXTexRegion* r) { (void)r; }
 
 /* ---- EFB copies ----------------------------------------------------------- */
 /* No FBO on this card, so an EFB copy is glCopyTexSubImage2D out of the back
@@ -1412,7 +1428,7 @@ void gx_tex_copy(void* dest, int clear) {
     }
 }
 
-void GXCopyTex(void* dest, GXBool clear) { GX_STATE_TOUCH(); gx_tex_copy(dest, clear ? 1 : 0); }
+void GXCopyTex(void* dest, GXBool clear) { GX_FLUSH_NOW(); gx_tex_copy(dest, clear ? 1 : 0); }
 
 /* ---- a copy the game reads with the CPU (M20, PLAN.md 35.3) ----------------
  * The copy above never writes MEM1: it lives in a GL texture keyed on `dest`,
