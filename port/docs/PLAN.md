@@ -10209,3 +10209,282 @@ counted.
 3. **The consumed frame** (7.7 ms): `Hu3DDraw`'s material walk with
    nothing drawn (16%), `Hu3DMotionExec` (13%), the mixer's remaining 1.8.
 4. The sound path's uninitialised read; `m430dll`.
+
+## 34. M19 log — the registry that outlived its models *(2026-09-19, littlejelly)*
+
+M19 opened on a corpse. The M18 leave-behind soak (§33.7) faulted fifteen
+minutes in — `signal 11 at address 0x8200ad0a`, pc in
+`gx_skin_array_bound`, the first fault of the skinning deferral — at status
+frame ~54,660, board turn 5, some 2,250 frames after `resultdll` handed the
+board back. Everything else waited on it (§34.1–34.3). Then the M18
+leftovers that fit in the remaining day (§34.4).
+
+### 34.1 What the registry was holding
+
+`gx_skin.c`'s registry (§33.3) is a table of raw pointers into the game's
+heap: the `HSFDATA`, its object array, its bone-matrix table, and for each
+skinned mesh the object, the rest-pose and skinned buffers and the `cenv`
+tables — looked up by the skinned buffer's address at `GXSetArray(GX_VA_POS)`
+(`gx_skin_array_bound`) and by the HSF's address at `objMesh`
+(`port_envelope_sync`). Nothing told it when a model died. The game frees a
+model in `Hu3DModelKill` with one `HuMemDirectFree` of the file image that
+all of the above lives in (hsfload.c parses the HSF in place: `MatrixLoad`,
+`file[0]`, the vertex buffers), and the heap hands that memory to the next
+load.
+
+M18's reasoning for why that was safe was implicit and wrong: an entry that
+is *clean* is never dereferenced at a bind (the `dirty &&` short-circuit
+comes first), and in lockstep every frame is drawn, so an entry is clean by
+the time its model can be killed. In frame mode (§32.1) a model's last
+`EnvelopeProc` can fall on a *consumed* frame — `port_envelope_sync` returns
+before running the body, the entry stays dirty — and the kill follows. The
+entry then waits, armed, for any later `GXSetArray` of the same address.
+When one comes, `gx_skin_array_bound` matches it in the hash and reads
+`m->obj->mesh.vertex` through the freed object array: whatever now lives
+there is a pointer or it is not. At status frame 54,660 of the M18 soak it
+was `0x8200ad0a`. The silent variant is worse than the fault: a value that
+happens to look like a pointer whose `->data` equals `p` would have run
+`SetEnvelopMain` on the dead HSF and written a skinned mesh over whatever
+the game had loaded into those buffers since.
+
+### 34.2 The reproduction: the same fault, to the byte, on demand
+
+The brief's route — `--restore` the soak's `f050000.snap` (saved as
+`snaps/lib/skinfault-f050000.snap`, §0 rule 5) under gdb — ran into two
+things before the fault:
+
+* **A restored process had no memory card.** The card image is allocated
+  by the game's own `CARDInit` → `card_load`, which a restore never
+  executes, and `port_card_snap_register` (which runs before it) only
+  registered the image *if it already existed* — so no snapshot since M10
+  has carried the card, and every restore has run card-less without anyone
+  noticing, because none crossed a save. `f050000` sits inside `m423dll`;
+  the results screen after it saves, and "No valid Memory Card is
+  inserted" stopped the restore for good (the navigator's B/START/A do
+  not dismiss it). Fixed (`card_file.c`): the buffer is made at
+  registration, `card_load` fills it, the snapshot carries it and
+  `present`/`mounted` together, and a card that arrived by restore is
+  never flushed to a file the process did not open ("its saves stay in
+  memory").
+* **A fixed build cannot restore an M18 snapshot.** The build id hashes
+  the executable's size and mtime; the 320 bytes the fix adds push every
+  game global a page up (`snapmap` ranges +0x1000), and MEM1 holds code
+  addresses besides. `--restore-lax` exists now for the one case it is
+  sound in — a re-link of the same source — and says so; it did not apply.
+
+So the exact reproduction is a run from boot. `--noskinlifetime` keeps the
+M18 registry verbatim (no drop at a free, the raw `m->obj->mesh.vertex`
+read) behind report-only checks, and `--ffto 54600` makes the run
+deterministic: every frame before it is consumed, so every entry a free
+leaves behind is dirty, and the first drawn bind of a reused address must
+fire. `--soak --com4 --rtc dolphin --freshcard --noskinlifetime --ffto
+54600` walks the M18 soak's schedule frame for frame (m428 at 20,641, m444
+at 42,180, m423 at 49,525 … the board back at 52,408 — the same numbers as
+the M18 log) and at **frame 54,689** faults at **`0x8200ad0a`**, the M18
+address to the byte, under gdb (`port/tools/gdb/skinfault.gdb`;
+transcript `docs/soak/m19-skinfault-gdb.txt.gz`):
+
+```
+port> skin: --noskinlifetime: STALE READ at frame 54689: array 0x2c9ef30 matched entry
+      of hsf 0x2c9ea10 (registered/last frame 49520), whose object 0x2ca8eb0 is now
+      0x93029300, matrix 0x2cb4bdc now 0x9200a602; obj 0x2ca927c mesh.vertex reads
+      0x8200ad02 -- the M18 read follows
+Program received signal EXC_BAD_ACCESS ... KERN_INVALID_ADDRESS at address: 0x8200ad0a
+#0  gx_skin_array_bound (p=0x2c9ef30) at gx_skin.c:750
+#1  FaceDraw (hsfDrawObject=0x1a6acc) at hsfdraw.c:584      GXSetArray(GX_VA_POS, ...)
+#2  ObjDraw at hsfdraw.c:2328
+#3  objCall (modelP=0x13b230, objPtr=0x2ca1570) at hsfdraw.c:333
+#4  objCall (modelP=0x13afe8, objPtr=0x2c96e80) at hsfdraw.c:292   objCall(hookMdlP, ...)
+#5  objNull … #6-7 objCall … #8 Hu3DDraw … #9 Hu3DExec (hsfman.c:258) … #10 mp4_game_main
+*m->owner = {hsf = 0x2c9ea10, object = 0x2ca8eb0, matrix = 0x2cb4bdc, objectNum = 21,
+             serial = 2, mtx_dirty = 0, skin_dirty = 1, last_frame = 49520, nmesh = 6}
+live models with this hsf: 0
+x/8wx hsf-32:  7d027d00 a5028002 8000b202 83028300 a1028202 8200ad02 81028100 af028402
+```
+
+Read: the entry belongs to a model registered on **the first frame of
+`m423dll`** (49,520) that skinned twice and was never drawn — `serial 2`,
+still dirty — and freed with the minigame at 51,990 (`--noskinlifetime`
+logs six such "freed while DIRTY" models at that frame, last EnvelopeProc
+51,989). Its memory now holds face-index data (the 16-bit pairs in the
+block header). The array that matched, `0x2c9ef30`, is a *live* board
+model's position buffer — a hooked model drawn inside its parent's walk
+(hsfdraw.c:292) at the start of turn 5 (the `Rest Memory 1424a0` load in
+the M18 log is that model arriving) — allocated where the dead model's
+skinned buffer had been. Of the registry's 48 slots, 40 were stale
+(last frames 38,890 / 45,975 / 49,516 / 51,989: the ends of m420, m444,
+instdll and m423), which is also why `hsf_register`'s "oldest slot"
+eviction never reached this one. Over the same run the instrument counts
+**112 entries left behind by frees, 89 of them dirty** — the M18 registry
+was armed like this after every minigame; the fault was only the first
+time an address came back.
+
+### 34.3 The fix: the registry learns about frees, and trusts nothing it did not check
+
+Two answers, both cheap, both in `gx_skin.c`:
+
+* **The game's own free is the lifetime.** `port_mem_freed(data, size)` is
+  planted in `HuMemMemoryFree` (`patches.txt`; every free of every heap
+  goes through it, `HuMemDirectFreeNum` included) and drops every registry
+  entry that references the block going back to the heap — the HSF, its
+  object array or matrix table, or any mesh's object, buffers or `cenv`.
+  A skinned model is one file image, so one free is one drop. Game
+  behaviour is unchanged; the hook reads the block's body range and
+  nothing else.
+* **Every draw-time read through a registry pointer is guarded first.**
+  Inside MEM1, and the HSF still holding the object array, matrix table
+  and object count it was registered with (`hsf_live`); the mesh's object
+  still at `&object[objIdx]`; the vertex table inside MEM1 — only then
+  `v->data == p` and the body. A guard that fires drops the entry, skips
+  the body (that model draws unskinned for one frame) and is counted in
+  the report as `guard hits (must be 0)`.
+
+`hsf_register` prefers an emptied slot over growing; `--noskinlifetime`
+keeps the M18 registry for the reproduction, with the report-only checks
+that produced the `STALE READ` line above. The report line is
+`skin: lifetime: N entries dropped by the game's frees, M guard hits`.
+
+**Witness.** The identical run to the reproduction — same flags, lever
+off — passes frame 54,689 without incident, plays turn 5 into `m438dll`
+at 56,502 and exits clean at 60,000: **165 HSFs registered, 155 dropped by
+the game's frees (129 of them while dirty), 0 guard hits**
+(`docs/soak/m19-fixed-ffto54600-witness.log.gz`). The 9,000-frame walk at
+real time on the final build:
+
+| scene | speed | presented fps | consumed frame (game + aud) | drawn frame (game + gx + aud) | §33 |
+|---|---:|---:|---:|---:|---|
+| title (700–870) | 99.1% | 20.2 | 2.1 (1.7 + 0.3) | 34.9 (3.5 + 29.0 + 0.3) | 99.1% / 20.1 |
+| character select (2600–3600) | 100.1% | 14.3 | 5.9 (4.1 + 1.8) | 51.6 (11.5 + 37.9 + 1.8) | 100.1% / 13.9 |
+| board (6000–8900) | 100.0% | 17.6 | 7.8 (5.9 + 1.8) | 38.7 (11.2 + 25.2 + 1.8) | 100.0% / 17.9 |
+
+(`--perfdump` medians, `docs/soak/m19-rt-final-perfdump.csv.gz`; 8 entries
+dropped, 0 guard hits over the walk.) The three reference frames are
+unchanged on every run of the day: 800 `60f8b7a0…`, 3000 `8762d432…`,
+7000 `9264207c…`. The chained soak is §34.6.
+
+### 34.4 The M18 leftovers: the sound that was never in ARAM, and `m430dll`
+
+**The `.wav` that differed across builds (§33.4) — found, and it was never
+an uninitialised read.** `--mixtrace FILE` (new) writes, per DSP frame, a
+digest of studio 0's buses after each stage and, per voice, every
+`DSPvoice` input the mixer reads, the port's own `MixVoice` state, a digest
+of the sample bytes about to be read, and the bus digest after the voice.
+Two builds differing only in a function nothing calls
+(`build-ppc-dead`, `-DPORT_DEADCODE`), the 3,000-frame walk under
+`--nodraw --turbo`, and the first differing line was:
+
+* every `DSPvoice` field identical, every `MixVoice` field identical,
+  every voice's output identical — until voice 0 at DSP frame 5,277
+  (retrace ~1,580, where §33.4 saw it), whose output differs;
+* three frames earlier, at 5,274, the **sample bytes** that voice was about
+  to read already differed, though the block was never freed under it;
+* at voice start (a heap walk, `mem_block_of`), voice 0's "sample 351" —
+  219,904 ADPCM samples, 125 KB — sat at `0x25cc050` in a 36,896-byte
+  block allocated by `Hu3DShadowSizeSet`: **the shadow-map buffer**. Ten
+  other voices of the walk started on samples inside *free* blocks of
+  `HEAP_MODEL` tagged `HU_MEMNUM_OVL` — overlay data the game had already
+  released.
+
+The cause is one `#if`. `hwSaveSample` (musyx `hardware.c:560`) — the
+call that copies a sample out of main memory into ARAM when a group is
+pushed — is compiled only for `MUSY_TARGET_DOLPHIN`; on the PC target it
+is an empty body, so `sdir->addr` stayed `offset + base`: a pointer into
+the buffer `msmSysPushGroup` (msmsys.c) reads a group's samples through
+and reuses at once (`sys.aramP += sampSize` — the game counts them as
+gone to ARAM). **Every sample the port has played since M6 was read from
+memory the game had already recycled**, and what the heap put there next
+— block headers whose `retaddr` is a code address, model data, the shadow
+map — is what came out of the speakers, mostly quietly (zeros decode to
+silence) and sometimes as the "residual clicks" on the books since M6.
+The port's `aramStoreData`/`aramRemoveData` (M6's flat-ARAM arm) were
+there all along with nothing calling them; the comment in `aramRemoveData`
+even documented the underflow as expected.
+
+The fix keeps `extern/` untouched: `hardware.o` alone is compiled with the
+two empty bodies renamed away (`-DhwSaveSample=…` in the Makefile), and
+`musyx_aram.c` defines `hwSaveSample`/`hwRemoveSample` over
+`aramStoreData`/`aramRemoveData` exactly as the Dolphin arm does. On the
+walk: **594 samples stored, 0 refused, 132 removed, 0 mismatches**, heap
+peak 7.2 MB of the 8 MB below `HU_AMEM_BASE` (the game's own budget); the
+"MEM1 sample" and "SAMPLE IN FREED MEMORY" lines are gone; **the two builds'
+`.wav` files and mixer traces are byte-identical** (`23dbbfb1…`). Against
+the M18 bundle on the same walk (`wavstat.py`): steps over half full scale
+**4,645 → 2**, peak −1.2 → −1.8 dBFS, RMS 3376 → 2127 — the garbage was
+loud — and the two diverge at 14.67 s, the title's first sound effects.
+Frames are untouched (the three md5s). Left in as instruments:
+`--mixtrace`, the heap check at voice start, the "FREED UNDER A VOICE"
+hook off `port_mem_freed`.
+
+**`m430dll` at 35%** (§33.1): measured teleported on the fixed build
+(`--minigame m430 --play board-start-com4.play --ffto 10700 --realtime`):
+**100.5% speed, 15.7 presented fps**, consumed 8.8 ms (game 5.9, aud 2.8),
+drawn 39.5 (gx 25.6) — the board's shape. The 35% was the M17 build's
+142 MB texture set thrashing the card, which §33.1's budget already
+removed. On the way: **`--ffto` ran lockstep to the end** — `port_ffto_init`
+borrowed `port_opt.turbo` for the skip before `port_framemode_init` read
+it, so "frame mode takes over when it ends" (§32.1) never had; frame mode
+now reads the run's own turbo (`port_ffto_user_turbo`). Any teleported
+real-time number before this commit was a lockstep number.
+
+**The scene-change audio underruns** were not looked at beyond the walk's
+figure (125 underruns, 1.9 s, the loads and the one resync).
+
+### 34.5 What M19 shipped, and what it did not
+
+| shipped, with a witness | |
+|---|---|
+| the skinning registry's lifetime: drops at the game's frees, guards on every draw-time read (§34.3) | the M18 fault reproduced to the byte with `--noskinlifetime --ffto 54600`; the same run on the fixed path clean through 60,000 (155 drops, 0 guard hits); md5s and the §33 speed table unchanged; the chained soak of §34.6 |
+| the reproduction itself (§34.2): `port/tools/gdb/skinfault.gdb`, the gdb transcript, the logs | `docs/soak/m19-skinfault-gdb.txt.gz`, `m19-repro-lever-ffto54600.log.gz`, `m18-soak8-skinfault.log.gz` |
+| the memory card in snapshots (§34.2) | a restore now crosses the results screen's save |
+| samples copied to the sample heap at group push (§34.4) | byte-identical `.wav` across builds; 4,645 → 2 clicks on the walk |
+| `--ffto` handing back to frame mode (§34.4) | `m430` at 100.5% |
+| `--mixtrace`, the two heap checks in the mixer, `--restore-lax`, `build-ppc-dead` | |
+
+**Not done, and why:**
+
+* **Item 3 — the drawn frame** (strips → indexed, the
+  `ATI_text_fragment_shader` backend): not started; the day went to the
+  fault, the card, and the sound path.
+* **The scene-change underruns**: measured, not addressed (the cold
+  texture decode at every scene's first drawn frame, §32.5).
+* `--restore-lax` is only for a re-link of the same source: MEM1 holds code
+  addresses, so no snapshot survives a rebuild that moves a function —
+  the M18 snapshots are the M18 binary's for good.
+
+### 34.6 The chained soak, and what M20 starts with
+
+`--soak --turns 3 --com4 --rtc dolphin --freshcard --realtime --status
+--ovllog --stuckwatch 200 --snap-every 5000 --snap-keep 3` on the final
+build, read at frame 98,000 (28 minutes): board 1's three turns (m403,
+m409, m427), the results ceremony, `modeseldll` → `mentdll` (the chain's
+three designed 200 s waits), **board 2** through its turn-order roll and
+its first minigame (m403 again, 96,775–97,983) — **two boards chained,
+four minigames, 0 faults, 0 guard hits**, 3 resyncs (the board loads,
+~1 s each), mean speed **100.2%** over 1,648 status lines, 18.9 presented
+fps overall and 18.4 on the boards, the texture cache at 40.8 MB
+throughout. Stopped at frame 100,500 (board 2, turn 2) for the leave-behind:
+game 1,677.4 s against wall 1,680.6 s — **99.8%** — 113 registry entries
+dropped by the game's frees, **0 guard hits**, 1,210 samples stored and
+692 removed with 0 refused (`docs/soak/m19-chain-turns3.log.gz`).
+
+![the second board of the chain: the turn-order roll, four skinned characters](screenshots/m19-chain-board2-turnorder.png)
+
+Left running afterwards, the same command M18 left: `g4 run --soak
+--com4 --rtc dolphin --freshcard --realtime --snap-every 5000 --snap-keep
+3 --status --ovllog --stuckwatch 200` — the first overnight run on which
+the registry cannot go stale and the mixer reads its own copies.
+
+**What M20 starts with:**
+
+1. **Read the soak's log first.** `skin: lifetime:` must say 0 guard hits;
+   `musyx_aram: samples stored … refused 0`; `tex` near 40 MB; the
+   speed at turn 12 and beyond.
+2. **The drawn frame** (§33.7 item 2, untouched by M19): the batch enders
+   and the decode; strips → indexed; the `ATI_text_fragment_shader`
+   backend, with the §31/§32 A/B discipline.
+3. **The scene-change stalls / audio underruns**: the texture decode at
+   a scene's first drawn frame; now that the samples are in the heap,
+   the `aud` cost in `m430` (2.8 ms, many voices) is also worth a look.
+4. **Upstream note** (`decomp-struct-notes.md`): the msm/MusyX PC-target
+   sample lifetime is a port matter, not a decomp bug; nothing new for
+   the list.
