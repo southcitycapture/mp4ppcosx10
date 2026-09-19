@@ -332,3 +332,24 @@ console (12,500 -> 14,000); the port's stalled visit sat in the module for
 port's restored run produced; the striped garbage polygon the user
 photographed on the G4 in that DRAW frame has no console counterpart here
 and is still unexplained.
+
+## m415 on the console (2026-09-19, capture on littlejelly, PLAN.md §35.3)
+
+m415 is **Stamp Out!** (its instruction card, `m415-console-9600.png`), not
+Trace Race. Schedule: `m406-end.txt` with the `mg_next` poke changed to 14
+(index = minigame − 401); Dolphin Flatpak on littlejelly at ~9 fps with
+`DumpFramesAsImages = True` under `[Settings]` of GFX.ini (an AVI otherwise;
+no ffmpeg on that host), ~25 min to frame 12,700. Frames: 10300 the paper
+before the start, 10973 mid-game, 12550 "MARIO WON!", 12700 the results.
+What they settle for the port: (1) the paper is WHITE with faint blue line
+art — the port's read-back canvas (`port_gx_copy_read`) matches, the
+zero canvas (lavender) was wrong; (2) the toys around the paper (star
+balls, the blue house, the red mushroom stamp, the yellow star, the
+pencil) are textured and coloured on the console and plain white on the
+port — an open m415 fault, snapshot `snaps/lib/m415-white-toys-f016000.snap`
+on the G4; (3) the minigame results screen has the four character
+portraits in its boxes; the port's boxes are blank (pre-existing since M8,
+`screenshots/mp4-minigame-result.png`).
+Note for `capture-linux.sh`: killing the Flatpak wrapper PID does not
+reach `dolphin-emu` inside the sandbox — two captures on 2026-09-19 ran on
+as orphans (one for 37 min, 8.9 GB of AVI); kill `pgrep -x dolphin-emu`.

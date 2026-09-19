@@ -10663,12 +10663,32 @@ the alias, not the picture).
 
 ![Stamp Out!, the canvas read back from the copy](screenshots/m20-m415-canvas-r8.png)
 
-**Open:** which paper is the console's — the lavender one under a zero
-canvas or the near-white one under the read-back copy — needs a Dolphin
-reference frame this host cannot take; the read-back is the console's
-mechanism and is what ships. The blank portrait boxes on the minigame
-results screen are pre-existing (`screenshots/mp4-minigame-result.png`,
-M8) and not M20's.
+**Settled by the console** (later the same day: the oracle rig of
+`port/ref` runs on littlejelly too — Flatpak Dolphin at ~9 fps with PNG
+dumps, the `m406-end.txt` schedule with `mg_next` poked to 14; frames
+`port/ref/frames/m415-console-*.png`, notes in `port/ref/notes.md`): **the
+paper is white** with faint blue line art — the read-back canvas is the
+console's picture and the zero canvas was wrong.
+
+![Stamp Out! on the console, frame 10,973](../ref/frames/m415-console-10973.png)
+
+The same frames show two things the port gets wrong in `m415`, both
+visible in the screenshots above once you know to look:
+
+* **The toys around the paper are plain white on the port** — the star
+  balls, the blue house, the red mushroom stamp, the yellow star, the
+  pencil — and textured, coloured objects on the console. Unfixed, so it
+  has its snapshot: `snaps/lib/m415-white-toys-f016000.snap` on the G4
+  (inside the minigame, frames 14,477–17,183 of a `--minigame m415
+  --turns 1` run on the final build; `docs/soak/m20-m415-snap.log.gz`).
+  First suspects: the `Hu3DModelShadowMapObjSet`/`SetShadow` stage on
+  objects that receive the paper's shadow map (a `GX_CC_TEXC` lerp
+  against a copy the port binds as an `efb` texture), or a texture format
+  the toys share.
+* **The minigame results screen's portrait boxes are blank on the port**
+  (`screenshots/mp4-minigame-result.png`, since M8) and hold the four
+  characters' faces on the console (`m415-console-12700.png`). Pre-existing,
+  now with a reference.
 
 ### 35.4 Item 2: the picture and the counter
 
@@ -10691,6 +10711,7 @@ the user's captures, and the runner's captures here were live).
 | `port_gx_copy_read`: the copy the game reads back (§35.3) | 120 readbacks in the intro, the paper textured from the copy |
 | the M19 soak's log, the restore/poke log, three witness logs, seven screenshots | `docs/soak/m20-*`, `docs/screenshots/m20-*` |
 | `--nodatareset`; `~/MarioParty4-m19src.app` on the G4 (the M19-source re-link, for the stall snapshot) | |
+| the oracle on littlejelly: five `m415` console frames, `port/ref/notes.md` (§35.3) | the paper's colour settled; two m415 faults referenced |
 
 **Not done, and why:**
 
@@ -10698,7 +10719,8 @@ the user's captures, and the runner's captures here were live).
   not started. The day went to the stall's verification, the DRAW
   pictures, and the minigame the first witness surfaced.
 * A fresh-process DRAW in Avalanche! to close §35.2's ribbon to the byte.
-* The Stamp Out! paper's reference colour (§35.3).
+* `m415`'s white toys and the results screen's blank portraits (§35.3):
+  found, referenced, snapshotted, not fixed.
 * `--texbudget 0` / `--cpuskin` / `--noskinlifetime` arms on m406 were not
   run: the stall's cause was read out of the module's data before any arm
   was needed, and the pictures pointed away from the deferral (§35.2).
@@ -10714,5 +10736,11 @@ Left running (12:03): `g4 run --soak --com4 --rtc dolphin --freshcard
 200` on the final build (`isle` md5 `2fd60253…`, 1,655,632 bytes) — the
 first soak on which a module's second play starts where its first did.
 
+Restarted at 12:44 after the m415 snapshot run (the first 40 minutes of
+the leave-behind, turns 1–10, 0 incidents, are
+`docs/soak/m20-soak-leave1-partial.log.gz`).
+
 **What M21 starts with:** the soak's `REL .data:` and `copy-read:` report
-lines and whether m415 or a second m406 came up naturally; then item 3.
+lines and whether m415 or a second m406 came up naturally; `m415`'s white
+toys from its snapshot (§35.3) — a texture/TEV question with a console
+frame to diff against; then item 3.
