@@ -18,7 +18,11 @@ SECS="$1"; OUT="$2"; shift 2
 export LC_ALL=C.UTF-8
 rm -rf "$MP4_USERDIR/Dump/Frames"
 mkdir -p "$MP4_USERDIR/Dump/Frames" "$OUT"
-$MP4_DOLPHIN -u "$MP4_USERDIR" -b -e "$MP4_ISO" -v OGL "$@" \
+# Linux Dolphin (2606 Flatpak) dumps a VIDEO, not PNGs: FFV1 (lossless) so the
+# frames are exact, then ffmpeg (a static build in ~/bin) splits it into
+# framedump_N.png, 1-based, the same names capture.sh produces on the Mac.
+$MP4_DOLPHIN -u "$MP4_USERDIR" -b -e "$MP4_ISO" -v OGL \
+  -C GFX.Settings.FrameDumpsUseFFV1=True "$@" \
   > "$OUT/dolphin.log" 2>&1 &
 PID=$!
 sleep "$SECS"
@@ -26,4 +30,8 @@ kill -TERM "$PID" 2>/dev/null
 for _ in $(seq 1 20); do ps -p "$PID" >/dev/null 2>&1 || break; sleep 1; done
 ps -p "$PID" >/dev/null 2>&1 && kill -9 "$PID"
 sleep 2
-echo "frames: $(ls "$MP4_USERDIR/Dump/Frames" 2>/dev/null | wc -l)"
+for avi in "$MP4_USERDIR"/Dump/Frames/*.avi; do
+  [ -f "$avi" ] || continue
+  "${FFMPEG:-$HOME/bin/ffmpeg}" -v error -i "$avi" -start_number 1 "$MP4_USERDIR/Dump/Frames/framedump_%d.png" && rm -f "$avi"
+done
+echo "frames: $(ls "$MP4_USERDIR"/Dump/Frames/*.png 2>/dev/null | wc -l)"
