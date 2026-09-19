@@ -81,6 +81,9 @@ static const char* const GL13_ALLOWED[] = {
     "glFinishFenceAPPLE", "glTestFenceAPPLE", "glMultiDrawArraysEXT",
     "glDrawElements",
     "glDrawRangeElements", /* M21: one call per batch (GL 1.2 core) */
+    /* M23: gl13_downsample_read, the copy read back at half size */
+    "glBegin", "glEnd", "glTexCoord2f", "glVertex2f", "glPushMatrix", "glPopMatrix",
+    "glOrtho", "glTexEnvi",
 };
 
 int gl13_check(const char* fn) {
@@ -99,6 +102,9 @@ int gl13_check(const char* fn) {
 #define GL(fn) (port_opt.glcheck ? gl13_check(#fn) : 0, fn)
 
 /* ---- ATI_texture_env_combine3, spelled out so no host header is needed ---- */
+#ifndef GL_COLOR_SUM
+#define GL_COLOR_SUM 0x8458
+#endif
 #ifndef GL_MODULATE_ADD_ATI
 #define GL_MODULATE_ADD_ATI 0x8744
 #define GL_MODULATE_SIGNED_ADD_ATI 0x8745
@@ -1600,6 +1606,75 @@ void gl13_begin_frame(void) {
         clear_pending = 0;
         gl13_clear(clear_color, clear_z);
     }
+}
+
+/* M23 (PLAN.md 38): a texture drawn into a rectangle of the back buffer and
+ * read back from there.  port_gx_copy_read wants the shadow map at the
+ * game's size -- 192x192 -- and the copy holds it at the pass's 384x384 in
+ * a 512x512 texture; glGetTexImage of that is a megabyte back over AGP,
+ * 120 ms on the Radeon 9000, and Stamp Out!'s intro asks 120 times.  A
+ * bilinear quad at exactly 2:1 is the copy unit's 2x2 box filter (every
+ * output pixel's centre lands on a texel boundary in both axes), and a
+ * glReadPixels of 192x192 is a seventh of the bytes.  The rectangle is the
+ * shadow region itself, which the game's clear-after copy wipes right
+ * after.  The state is set directly and the shadow forgets it. */
+void gl13_downsample_read(unsigned name, float su, float sv, int x, int y, int w, int h,
+                          unsigned char* out_rgba) {
+    int i;
+    if (!gl_on) {
+        return;
+    }
+    for (i = 5; i >= 0; i--) {
+        GL(glActiveTexture)(GL_TEXTURE0 + i);
+        if (i) {
+            GL(glDisable)(GL_TEXTURE_2D);
+        }
+    }
+    gx_vprog_disable();
+    GL(glEnable)(GL_TEXTURE_2D);
+    GL(glBindTexture)(GL_TEXTURE_2D, name);
+    GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    GL(glTexEnvi)(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+    GL(glDisable)(GL_BLEND);
+    GL(glDisable)(GL_DEPTH_TEST);
+    GL(glDisable)(GL_ALPHA_TEST);
+    GL(glDisable)(GL_CULL_FACE);
+    GL(glDisable)(GL_FOG);
+    GL(glDisable)(GL_LIGHTING);
+    GL(glDisable)(GL_COLOR_SUM);
+    GL(glDisable)(GL_SCISSOR_TEST);
+    GL(glColorMask)(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    GL(glViewport)(0, 0, EFB_W, EFB_H);
+    GL(glMatrixMode)(GL_TEXTURE);
+    GL(glPushMatrix)();
+    GL(glLoadIdentity)();
+    GL(glMatrixMode)(GL_PROJECTION);
+    GL(glPushMatrix)();
+    GL(glLoadIdentity)();
+    GL(glOrtho)(0.0, (double)EFB_W, 0.0, (double)EFB_H, -1.0, 1.0);
+    GL(glMatrixMode)(GL_MODELVIEW);
+    GL(glPushMatrix)();
+    GL(glLoadIdentity)();
+    GL(glBegin)(GL_QUADS);
+    GL(glTexCoord2f)(0.0f, 0.0f);
+    GL(glVertex2f)((float)x, (float)y);
+    GL(glTexCoord2f)(su, 0.0f);
+    GL(glVertex2f)((float)(x + w), (float)y);
+    GL(glTexCoord2f)(su, sv);
+    GL(glVertex2f)((float)(x + w), (float)(y + h));
+    GL(glTexCoord2f)(0.0f, sv);
+    GL(glVertex2f)((float)x, (float)(y + h));
+    GL(glEnd)();
+    GL(glPopMatrix)();
+    GL(glMatrixMode)(GL_PROJECTION);
+    GL(glPopMatrix)();
+    GL(glMatrixMode)(GL_TEXTURE);
+    GL(glPopMatrix)();
+    GL(glMatrixMode)(GL_MODELVIEW);
+    GL(glPixelStorei)(GL_PACK_ALIGNMENT, 1);
+    GL(glReadPixels)(x, y, w, h, GL_RGBA, GL_UNSIGNED_BYTE, out_rgba);
+    glc_invalidate();
 }
 
 /* --restore sets the frame number back to the snapshot's, so --dumpframe,

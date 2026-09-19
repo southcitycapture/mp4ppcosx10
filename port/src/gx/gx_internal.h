@@ -274,6 +274,8 @@ int gl13_check(const char* fn);   /* --glcheck; returns 0, for the GL() macro */
  * `glc_invalidate` forgets the lot, and must be called after anything that
  * changes GL behind the cache's back. */
 void glc_invalidate(void);
+void gl13_downsample_read(unsigned name, float su, float sv, int x, int y, int w, int h,
+                          unsigned char* out_rgba); /* M23 */
 void glc_stats(unsigned* emitted, unsigned* elided);
 void glc_active_texture(int unit);
 void glc_client_active_texture(int unit);

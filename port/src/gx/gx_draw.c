@@ -336,6 +336,7 @@ static unsigned long stat_fast_verts; /* through the specialised loops (M17) */
 /* --submitstats (M16): what the batching actually found in the lists */
 static unsigned stat_indexed_batches, stat_indexed_tris, stat_indexed_u32; /* M21 */
 static unsigned stat_mergeable, stat_mergeable_small, stat_mergeable_verts; /* M21 */
+static unsigned stat_mergeable_atlas, stat_mergeable_atlas_small, stat_mergeable_atlas_verts; /* M23 */
 static unsigned stat_pm_objects, stat_pm_prims, stat_pm_verts;              /* M22 */
 static unsigned stat_pm_refused_big, stat_pm_refused_singular, stat_pm_refused_wrap;
 static unsigned stat_pm_hist[4]; /* vertices merged per source object: <=4, <=8, <=16, more */
@@ -405,6 +406,10 @@ void gx_draw_report(void) {
                  "%u ring wraps\n",
                  stat_batches, stat_prims, stat_draws, stat_merged, stat_multi_prims,
                  stat_multi_calls, stat_wraps);
+        port_log("port> submit: M23 atlas: %u batches differ from the one before in the matrices "
+                 "and the textures' identity alone (same format/wrap/filter; %u of them of 16 "
+                 "vertices or fewer -- sprites), %u vertices\n",
+                 stat_mergeable_atlas, stat_mergeable_atlas_small, stat_mergeable_atlas_verts);
         port_log("port> submit: M21 mergeable: %u batches differ from the one before in the "
                  "matrices alone (%u of them of 256 vertices or fewer), %u vertices; vertices "
                  "per batch <=16: %u  <=64: %u  <=256: %u  <=1024: %u  <=4096: %u  more: %u\n",
@@ -2634,10 +2639,14 @@ static void ring_ensure(void) {
  * state and channel colours -- and how many vertices they carry.  That is
  * the batch count a CPU pre-transform of small objects (or any other way of
  * spanning GXLoadPosMtxImm) could take back; PLAN.md 36. */
-static u32 last_batch_sig;
+static u32 last_batch_sig, last_batch_sig_notex;
 static Layout last_batch_sl;
+/* M23 (PLAN.md 38, the atlas question): batches that differ from the one
+ * before in the matrices *and the textures' identity* alone -- same format,
+ * wrap and filter, another image -- which is what a runtime atlas of the
+ * sprite cache could join, over and above the M21 count. */
 
-static u32 batch_state_sig(void) {
+static u32 batch_state_sig_body(int with_tex) {
     u32 h = gx_tev_last_sig();
     const u8* p;
     size_t n;
@@ -2649,9 +2658,19 @@ static u32 batch_state_sig(void) {
          * loaded -- so its count never saw a texture change: PLAN.md 37) */
         GXTexObjPort* t = gx_bound_tex(gx.tev[i].map);
         if (t) {
-            SIG_MIX(t, offsetof(GXTexObjPort, gl_name));
-            if (t->is_ci && t->tlut_name < 64) {
-                SIG_MIX(&gx.tlut[t->tlut_name], sizeof(gx.tlut[0]));
+            if (with_tex) {
+                SIG_MIX(t, offsetof(GXTexObjPort, gl_name));
+                if (t->is_ci && t->tlut_name < 64) {
+                    SIG_MIX(&gx.tlut[t->tlut_name], sizeof(gx.tlut[0]));
+                }
+            } else {
+                /* the atlas view: what an atlas page must share */
+                SIG_MIX(&t->format, sizeof(t->format));
+                SIG_MIX(&t->wrap_s, sizeof(t->wrap_s));
+                SIG_MIX(&t->wrap_t, sizeof(t->wrap_t));
+                SIG_MIX(&t->min_filt, sizeof(t->min_filt));
+                SIG_MIX(&t->mag_filt, sizeof(t->mag_filt));
+                SIG_MIX(&t->is_ci, sizeof(t->is_ci));
             }
         } else {
             SIG_MIX(&i, sizeof(i));
@@ -2674,6 +2693,7 @@ static u32 batch_state_sig(void) {
 #undef SIG_MIX
     return h;
 }
+static u32 batch_state_sig(void) { return batch_state_sig_body(1); }
 
 static void batch_flush(void) {
     if (batch_n) {
@@ -2721,7 +2741,17 @@ static void batch_flush(void) {
         stat_batches++;
         if (port_opt.submitstats) {
             u32 sig = batch_state_sig();
+            u32 sig_notex = batch_state_sig_body(0);
             stat_batch_hist[nv <= 16 ? 0 : nv <= 64 ? 1 : nv <= 256 ? 2 : nv <= 1024 ? 3 : nv <= 4096 ? 4 : 5]++;
+            if (sig != last_batch_sig && sig_notex == last_batch_sig_notex &&
+                memcmp(&last_batch_sl, &batch_sl, sizeof(Layout)) == 0) {
+                stat_mergeable_atlas++;
+                stat_mergeable_atlas_verts += nv;
+                if (nv <= 16) {
+                    stat_mergeable_atlas_small++;
+                }
+            }
+            last_batch_sig_notex = sig_notex;
             if (sig == last_batch_sig && memcmp(&last_batch_sl, &batch_sl, sizeof(Layout)) == 0) {
                 stat_mergeable++;
                 stat_mergeable_verts += nv;

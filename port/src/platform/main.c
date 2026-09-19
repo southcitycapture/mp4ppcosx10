@@ -196,6 +196,8 @@ static void usage(const char* argv0) {
             "                    address is decoded and uploaded again as before\n"
             "  --dumpcopy        M23: the first eight copy read-backs (m415's canvas)\n"
             "                    as copy-*.ppm (the GL texels) and canvas-*.pgm (the bytes)\n"
+            "  --notint          M23: a tinted lerp-by-konst pair with K_c = 1 drops its\n"
+            "                    tint as M22 did (the mode select's 0.95 grey)\n"
             "  --tintlog         M23: one line per frame that drew a tinted lerp-by-konst\n"
             "                    pair (the tint the M22 rewrite drops), with the tint\n"
             "  --texdecodelog    M23: a line for every frame that spent over 20 ms\n"
@@ -694,6 +696,8 @@ int port_parse_args(int argc, char** argv) {
             port_opt.norekey = 1;
         } else if (!strcmp(a, "--dumpcopy")) {
             port_opt.dumpcopy = 1;
+        } else if (!strcmp(a, "--notint")) {
+            port_opt.notint = 1;
         } else if (!strcmp(a, "--tintlog")) {
             port_opt.tintlog = 1;
         } else if (!strcmp(a, "--texdecodelog")) {

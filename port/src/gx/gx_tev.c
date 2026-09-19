@@ -632,11 +632,13 @@ static int regfix3_match(int k, int stages) {
 
 static unsigned stat_regfix3_tinted;
 
+static unsigned stat_regfix3_tint_drawn; /* M23: K_c = 1, the tint modulates the texture */
+
 static void regfix3_emit(int which, int unit, int k) {
     const GXTevStage* b = &gx.tev[k];
     const GXTevStage* c = &gx.tev[k + 1];
     float konst[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
-    float tint[4];
+    float tint[4], kc[4];
     if (!gl13_live()) {
         return;
     }
@@ -652,19 +654,19 @@ static void regfix3_emit(int which, int unit, int k) {
         glc_texenvi(unit, GL_SOURCE0_ALPHA, GL_PREVIOUS);
         glc_texenvi(unit, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
         konst_color(b, 0, tint);
-        if (tint[0] < 0.996f || tint[1] < 0.996f || tint[2] < 0.996f) {
+        konst_color(c, 0, kc);
+        if ((tint[0] < 0.996f || tint[1] < 0.996f || tint[2] < 0.996f) &&
+            (kc[0] < 0.996f || port_opt.notint)) {
             stat_regfix3_tinted++;
             gx_warn("TEV: a tinted texture in the lerp-by-konst register shape; "
                     "the tint is dropped (PLAN.md 37)");
-            /* M23 --tintlog: where they are.  One line per frame that has
+            /* M23 --tintlog: where they are (the dropped ones).  One line per frame that has
              * any, the first pair's tint, konst weight and texture. */
             if (port_opt.tintlog) {
                 static unsigned last_frame = ~0u, lines;
                 unsigned f = gl13_frame_number();
                 if (f != last_frame && lines < 400) {
                     const GXTexObjPort* t = gx_bound_tex(b->map);
-                    float kc[4];
-                    konst_color(c, 0, kc);
                     last_frame = f;
                     lines++;
                     port_log("port> tintlog: frame %u ovl %d tint %.2f %.2f %.2f  lerp %.2f  "
@@ -676,16 +678,33 @@ static void regfix3_emit(int which, int unit, int k) {
             }
         }
     } else {
-        /* rgb = lerp(PREV, T, K_c): Arg0*Arg2 + Arg1*(1-Arg2);  a = T.a * PREV.a */
-        konst_color(c, 0, tint);
-        konst[3] = tint[0];
-        glc_texenvi(unit, GL_COMBINE_RGB, GL_INTERPOLATE);
-        glc_texenvi(unit, GL_SOURCE0_RGB, GL_TEXTURE);
-        glc_texenvi(unit, GL_OPERAND0_RGB, GL_SRC_COLOR);
-        glc_texenvi(unit, GL_SOURCE1_RGB, GL_PREVIOUS);
-        glc_texenvi(unit, GL_OPERAND1_RGB, GL_SRC_COLOR);
-        glc_texenvi(unit, GL_SOURCE2_RGB, GL_CONSTANT);
-        glc_texenvi(unit, GL_OPERAND2_RGB, GL_SRC_ALPHA);
+        konst_color(c, 0, kc);
+        konst_color(b, 0, tint);
+        if (kc[0] >= 0.996f && !port_opt.notint) {
+            /* M23 (PLAN.md 38): K_c = 1 -- the lerp takes the texture whole,
+             * PREV drops out, and the tint has a home: rgb = T * K_rgb.
+             * Every tinted pair the walk counted (2,256 on 16,000 frames,
+             * all of them the mode select's, K_rgb = 0.95) is this case. */
+            konst[0] = tint[0];
+            konst[1] = tint[1];
+            konst[2] = tint[2];
+            glc_texenvi(unit, GL_COMBINE_RGB, GL_MODULATE);
+            glc_texenvi(unit, GL_SOURCE0_RGB, GL_TEXTURE);
+            glc_texenvi(unit, GL_OPERAND0_RGB, GL_SRC_COLOR);
+            glc_texenvi(unit, GL_SOURCE1_RGB, GL_CONSTANT);
+            glc_texenvi(unit, GL_OPERAND1_RGB, GL_SRC_COLOR);
+            stat_regfix3_tint_drawn++;
+        } else {
+            /* rgb = lerp(PREV, T, K_c): Arg0*Arg2 + Arg1*(1-Arg2);  a = T.a * PREV.a */
+            konst[3] = kc[0];
+            glc_texenvi(unit, GL_COMBINE_RGB, GL_INTERPOLATE);
+            glc_texenvi(unit, GL_SOURCE0_RGB, GL_TEXTURE);
+            glc_texenvi(unit, GL_OPERAND0_RGB, GL_SRC_COLOR);
+            glc_texenvi(unit, GL_SOURCE1_RGB, GL_PREVIOUS);
+            glc_texenvi(unit, GL_OPERAND1_RGB, GL_SRC_COLOR);
+            glc_texenvi(unit, GL_SOURCE2_RGB, GL_CONSTANT);
+            glc_texenvi(unit, GL_OPERAND2_RGB, GL_SRC_ALPHA);
+        }
         glc_texenvi(unit, GL_COMBINE_ALPHA, GL_MODULATE);
         glc_texenvi(unit, GL_SOURCE0_ALPHA, GL_TEXTURE);
         glc_texenvi(unit, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
@@ -1130,8 +1149,9 @@ void gx_tev_report(void) {
     }
     if (stat_regfix2) {
         port_log("port> tev: %u unit emissions of the M22 register shapes (the mask/reflect "
-                 "triple, the lerp-by-konst pair; %u tinted pairs had the tint dropped) "
-                 "(PLAN.md 37)\n", stat_regfix2, stat_regfix3_tinted);
+                 "triple, the lerp-by-konst pair; %u tinted pairs had the tint dropped, "
+                 "%u drawn tinted with K_c = 1, M23) "
+                 "(PLAN.md 37)\n", stat_regfix2, stat_regfix3_tinted, stat_regfix3_tint_drawn);
     }
     if (stat_regfix || reg_write_warned) {
         port_log("port> tev: %u unit emissions through the register rewrite "

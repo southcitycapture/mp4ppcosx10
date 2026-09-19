@@ -393,6 +393,15 @@ typedef struct CacheEntry {
      * box-filters 2x2 down to what the copy unit would have written. */
     u16 copy_w, copy_h;
     u8 copy_half;
+    /* M23: once the game has read this copy back (port_gx_copy_read), every
+     * later copy also reads itself back at the destination size through
+     * gl13_downsample_read into `cpu_rgba` (w*h*4 bytes), so the game's
+     * read costs no GL at all and the bus carries a seventh of the bytes. */
+    u8* cpu_rgba;
+    u8 cpu_read;
+    unsigned cpu_read_at; /* stat_efb at the game's last read: the read-back stops
+                           * a few copies after the game stops asking (the intro
+                           * reads every frame; the game after it never does) */
     /* O(1) lookup: every entry (efb or not) chains off a bucket of
      * `hash_head[]` keyed on `image` alone -- see `find_slot()`.  -1 ends a
      * chain. */
@@ -437,6 +446,7 @@ void gx_tex_set_budget_mb(int mb) { tex_budget_bytes = (size_t)(mb > 0 ? mb : 0)
 
 static void cache_free_slot(int slot) {
     hash_remove(slot);
+    free(cache[slot].cpu_rgba);
     if (gl13_live() && cache[slot].gl_name) {
         GLuint n = cache[slot].gl_name;
         GL(glDeleteTextures)(1, &n);
@@ -482,6 +492,8 @@ static unsigned stat_hit, stat_miss, stat_evict, stat_bytes, stat_npot;
 static unsigned stat_hash_full, stat_hash_sampled;
 static unsigned stat_efb;
 static unsigned stat_copy_read, stat_copy_read_miss; /* port_gx_copy_read */
+static unsigned stat_copy_read_gpu, stat_copy_read_tex; /* M23: read at the copy / on demand */
+static double stat_copy_read_gpu_s, stat_copy_read_tex_s;
 static unsigned stat_copy_front, stat_copy_region_front;
 static unsigned stat_copy_kept; /* M21: clear-after copies on consumed frames, kept */
 static unsigned stat_copy_half; /* M23: half-scale (box-filtered) copies, kept at source size */
@@ -647,7 +659,10 @@ void gx_tex_report(void) {
     }
     if (stat_copy_read || stat_copy_read_miss) {
         port_log("port> copy-read: %u copies read back by the game (m415's canvas), "
-                 "%u answered with zeros\n", stat_copy_read, stat_copy_read_miss);
+                 "%u answered with zeros; %u read at the copy through the back buffer "
+                 "(%.0f ms), %u drawn and read on demand (%.0f ms) (M23)\n",
+                 stat_copy_read, stat_copy_read_miss, stat_copy_read_gpu,
+                 stat_copy_read_gpu_s * 1000.0, stat_copy_read_tex, stat_copy_read_tex_s * 1000.0);
     }
 }
 
@@ -1239,6 +1254,7 @@ static void tex_bind_body(int unit, GXTexObjPort* o, u8 swap) {
                 GL(glDeleteTextures)(1, &n);
             }
             cache_gl_bytes -= cache[slot].gl_bytes;
+            free(cache[slot].cpu_rgba);
             memset(&cache[slot], 0, sizeof(cache[slot]));
         } else {
             slot = cache_used++;
@@ -1594,6 +1610,20 @@ void gx_tex_copy(void* dest, int clear) {
     cache[slot].su = (float)cw / (float)pw;
     cache[slot].sv = (float)ch / (float)ph;
     stat_efb++;
+    if (cache[slot].cpu_read && !from_front && stat_efb - cache[slot].cpu_read_at <= 8) {
+        /* the game reads this one back (M23): downsample it into the region
+         * the clear below is about to wipe, and keep the bytes */
+        if (!cache[slot].cpu_rgba) {
+            cache[slot].cpu_rgba = (u8*)malloc((size_t)dw * dh * 4);
+        }
+        if (cache[slot].cpu_rgba) {
+            double t0 = port_now_seconds();
+            gl13_downsample_read(cache[slot].gl_name, cache[slot].su, cache[slot].sv, sl,
+                                 480 - (st + sh), dw, dh, cache[slot].cpu_rgba);
+            stat_copy_read_gpu++;
+            stat_copy_read_gpu_s += port_now_seconds() - t0;
+        }
+    }
     /* --dumpcopy on a --dumpframe frame: the copy's texels as GL holds them
      * right after the copy, before the clear below (M23) */
     if (port_opt.dumpcopy && gl13_frame_wanted(gl13_frame_number() + 1) && !from_front) {
@@ -1659,11 +1689,27 @@ void GXCopyTex(void* dest, GXBool clear) { GX_FLUSH_NOW(); gx_tex_copy(dest, cle
  * consumed frame the texture holds the last drawn copy, which is what the
  * console's MEM1 would hold too.  A destination nothing was copied to (or
  * not in a one-byte format) is answered with zeros and one line in the log. */
+static void dump_canvas(const u8* o, int w, int h, unsigned n) {
+    char path[1024];
+    FILE* f;
+    snprintf(path, sizeof(path), "%s/canvas-%02u-f%05u-%dx%d.pgm",
+             port_opt.shotdir ? port_opt.shotdir : ".", n, gl13_frame_number(), w, h);
+    f = fopen(path, "wb");
+    if (f) {
+        int yy, xx;
+        fprintf(f, "P5\n%d %d\n255\n", w, h);
+        for (yy = 0; yy < h; yy++) {
+            for (xx = 0; xx < w; xx++) {
+                fputc(o[(size_t)(yy >> 2) * (w >> 3) * 32 + (yy & 3) * 8 + (size_t)(xx >> 3) * 32 + (xx & 7)], f);
+            }
+        }
+        fclose(f);
+    }
+}
+
 void port_gx_copy_read(const void* dest, void* out, unsigned long nbytes) {
-    int slot, is_efb = 0, w, h, cw, ch, pw, ph, x, y, chan, half;
-    u8* rgba;
+    int slot, is_efb = 0, w, h, cw, ch, x, y, chan, half;
     u8* o = (u8*)out;
-    GLuint name;
 
     slot = find_slot(dest, 0, 0, 0, NULL, GX_SWAP_IDENTITY, &is_efb);
     if (slot < 0 || !is_efb || !cache[slot].gl_name || !gl13_have_context()) {
@@ -1696,93 +1742,57 @@ void port_gx_copy_read(const void* dest, void* out, unsigned long nbytes) {
         }
         return;
     }
-    pw = pot_up(cw);
-    ph = pot_up(ch);
-    rgba = (u8*)malloc((size_t)pw * ph * 4);
-    if (!rgba) {
-        memset(out, 0, nbytes);
-        return;
+    if (!cache[slot].cpu_rgba) {
+        /* M23: the first read of this copy (or a read on a consumed frame
+         * before any copy has read itself back): draw the copy's texture
+         * at the game's size into the bottom-left of the back buffer as
+         * scratch and read that -- 147 KB through glReadPixels rather
+         * than a megabyte through glGetTexImage (22 ms on the Radeon;
+         * the M21 intro's 120 reads were two resyncs of it).  A consumed
+         * frame's back buffer is nobody's picture, and a drawn one begins
+         * with the game's clear. */
+        cache[slot].cpu_rgba = (u8*)malloc((size_t)w * h * 4);
+        if (!cache[slot].cpu_rgba) {
+            memset(out, 0, nbytes);
+            return;
+        }
+        {
+            double t0 = port_now_seconds();
+            gl13_downsample_read(cache[slot].gl_name, cache[slot].su, cache[slot].sv, 0, 0, w, h,
+                                 cache[slot].cpu_rgba);
+            stat_copy_read_tex++;
+            stat_copy_read_tex_s += port_now_seconds() - t0;
+        }
     }
-    name = cache[slot].gl_name;
-    glc_active_texture(0);
-    GL(glBindTexture)(GL_TEXTURE_2D, name);
-    glc_note_bind(0, name);
-    GL(glPixelStorei)(GL_PACK_ALIGNMENT, 1);
-    GL(glGetTexImage)(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
-    /* gx_tex_copy wrote the region into the bottom-left of the padded
-     * texture, GL row 0 = the bottom of the copied region, so GX row y is GL
-     * row ch-1-y.  For I8, intensity as the copy unit computes it (BT.601 luma
-     * with the 16 offset, the same as Dolphin's I8 copy).  A half-scale copy
-     * (M23) holds the source rectangle at full size, so destination texel
-     * (x, y) is the mean of source texels (2x..2x+1, 2y..2y+1), which is the
-     * copy unit's box filter. */
-    for (y = 0; y < h; y++) {
-        u8* tile_row = o + (size_t)(y >> 2) * (w >> 3) * 32 + (y & 3) * 8;
-        for (x = 0; x < w; x++) {
-            unsigned v;
-            if (half) {
-                const u8* r0 = rgba + ((size_t)(ch - 1 - 2 * y) * pw + 2 * (size_t)x) * 4;
-                const u8* r1 = r0 - (size_t)pw * 4; /* the GX row below = the GL row under it */
-                unsigned c0, c1, c2, c3;
-                if (chan >= 0) {
-                    c0 = r0[chan]; c1 = r0[4 + chan]; c2 = r1[chan]; c3 = r1[4 + chan];
-                } else {
-                    c0 = ((66u * r0[0] + 129u * r0[1] + 25u * r0[2] + 128u) >> 8) + 16u;
-                    c1 = ((66u * r0[4] + 129u * r0[5] + 25u * r0[6] + 128u) >> 8) + 16u;
-                    c2 = ((66u * r1[0] + 129u * r1[1] + 25u * r1[2] + 128u) >> 8) + 16u;
-                    c3 = ((66u * r1[4] + 129u * r1[5] + 25u * r1[6] + 128u) >> 8) + 16u;
-                }
-                v = (c0 + c1 + c2 + c3 + 2u) >> 2;
-            } else {
-                const u8* p = rgba + ((size_t)(ch - 1 - y) * pw + (size_t)x) * 4;
+    cache[slot].cpu_read = 1; /* from the next copy on, it reads itself back */
+    cache[slot].cpu_read_at = stat_efb;
+    {
+        /* the copy read itself back at the game's size (gl13_downsample_read);
+         * GL row 0 is the bottom of the region, so GX row y is GL row h-1-y,
+         * one byte a texel in 8x4 tiles.  For I8, intensity as the copy unit
+         * computes it (BT.601 luma with the 16 offset, the same as Dolphin's
+         * I8 copy). */
+        const u8* rgba_s = cache[slot].cpu_rgba;
+        for (y = 0; y < h; y++) {
+            u8* tile_row = o + (size_t)(y >> 2) * (w >> 3) * 32 + (y & 3) * 8;
+            const u8* row = rgba_s + (size_t)(h - 1 - y) * w * 4;
+            for (x = 0; x < w; x++) {
+                const u8* p = row + (size_t)x * 4;
+                unsigned v;
                 if (chan >= 0) {
                     v = p[chan];
                 } else {
                     v = ((66u * p[0] + 129u * p[1] + 25u * p[2] + 128u) >> 8) + 16u;
                 }
+                tile_row[(size_t)(x >> 3) * 32 + (x & 7)] = (u8)(v > 255u ? 255u : v);
             }
-            tile_row[(size_t)(x >> 3) * 32 + (x & 7)] = (u8)(v > 255u ? 255u : v);
         }
     }
-    /* --dumpcopy (M23): the copy's texels as GL holds them and the bytes the
-     * game gets, the first eight read-backs, so the paper's question can be
-     * answered from files rather than from the picture. */
     if (port_opt.dumpcopy && stat_copy_read < 8) {
-        char path[1024];
-        FILE* f;
-        snprintf(path, sizeof(path), "%s/copy-%02u-f%05u-%dx%d-of-%dx%d.ppm",
-                 port_opt.shotdir ? port_opt.shotdir : ".", stat_copy_read,
-                 gl13_frame_number(), cw, ch, pw, ph);
-        f = fopen(path, "wb");
-        if (f) {
-            int yy, xx;
-            fprintf(f, "P6\n%d %d\n255\n", cw, ch);
-            for (yy = 0; yy < ch; yy++) {
-                for (xx = 0; xx < cw; xx++) {
-                    fwrite(rgba + ((size_t)(ch - 1 - yy) * pw + xx) * 4, 1, 3, f);
-                }
-            }
-            fclose(f);
-        }
-        snprintf(path, sizeof(path), "%s/canvas-%02u-f%05u-%dx%d.pgm",
-                 port_opt.shotdir ? port_opt.shotdir : ".", stat_copy_read,
-                 gl13_frame_number(), w, h);
-        f = fopen(path, "wb");
-        if (f) {
-            int yy, xx;
-            fprintf(f, "P5\n%d %d\n255\n", w, h);
-            for (yy = 0; yy < h; yy++) {
-                for (xx = 0; xx < w; xx++) {
-                    fputc(o[(size_t)(yy >> 2) * (w >> 3) * 32 + (yy & 3) * 8 + (size_t)(xx >> 3) * 32 + (xx & 7)], f);
-                }
-            }
-            fclose(f);
-        }
-        port_log("port> --dumpcopy: read-back %u at frame %u: %dx%d %s copy (%s) -> %dx%d canvas\n",
-                 stat_copy_read, gl13_frame_number(), cw, ch, half ? "half-scale" : "1:1",
-                 chan == -1 ? "I8" : "R8/G8/B8/A8", w, h);
+        dump_canvas(o, w, h, stat_copy_read);
+        port_log("port> --dumpcopy: read-back %u at frame %u: %dx%d canvas from the %dx%d %s copy\n",
+                 stat_copy_read, gl13_frame_number(), w, h, cw, ch, half ? "half-scale" : "1:1");
     }
-    free(rgba);
     stat_copy_read++;
 }
 

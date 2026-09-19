@@ -229,6 +229,8 @@ typedef struct PortOptions {
                              *   another address is decoded again as before */
     int dumpcopy;           /* --dumpcopy  M23: the first eight copy read-backs
                              *   (m415's canvas) as .ppm/.pgm in --shotdir   */
+    int notint;             /* --notint  M23: a tinted lerp-by-konst pair with
+                             *   K_c = 1 drops its tint as M22 did          */
     int tintlog;            /* --tintlog  M23: one line per frame that drew a
                              *   tinted lerp-by-konst pair (the dropped tint) */
     int texdecodelog;       /* --texdecodelog  M23: a line for every frame that
