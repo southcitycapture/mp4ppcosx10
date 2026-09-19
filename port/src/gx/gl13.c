@@ -72,6 +72,7 @@ static const char* const GL13_ALLOWED[] = {
     "glVertexPointer", "glViewport", "glActiveTexture", "glClientActiveTexture",
     "glDeleteTextures", "glShadeModel", "glLightModelfv", "glLightModeli",
     "glColorMaterial", "glPolygonMode", "glHint", "glGetError",
+    "glGetTexImage", /* M20: port_gx_copy_read, the copy m415 reads back */
     /* M16, the per-draw submit (PLAN.md 31): GL_APPLE_vertex_array_range,
      * GL_APPLE_fence and GL_EXT_multi_draw_arrays are all in g4-glinfo.log,
      * and every one of them is resolved at run time and skipped when absent. */

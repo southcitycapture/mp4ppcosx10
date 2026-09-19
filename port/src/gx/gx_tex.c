@@ -464,6 +464,7 @@ static void cache_evict_to_budget(void) {
 static unsigned stat_hit, stat_miss, stat_evict, stat_bytes, stat_npot;
 static unsigned stat_hash_full, stat_hash_sampled;
 static unsigned stat_efb;
+static unsigned stat_copy_read, stat_copy_read_miss; /* port_gx_copy_read */
 static unsigned stat_copy_front, stat_copy_region_front;
 /* How many times an already-cached slot's content hash was actually
  * recomputed to check for an in-place rewrite -- as opposed to a pure
@@ -604,6 +605,10 @@ void gx_tex_report(void) {
         port_log("port> EFB copies: %u colour copies into the cache (on consumed frames "
                  "from the front buffer: %u whole-screen, %u region)\n",
                  stat_efb, stat_copy_front, stat_copy_region_front);
+    }
+    if (stat_copy_read || stat_copy_read_miss) {
+        port_log("port> copy-read: %u copies read back by the game (m415's canvas), "
+                 "%u answered with zeros\n", stat_copy_read, stat_copy_read_miss);
     }
 }
 
@@ -1387,6 +1392,89 @@ void gx_tex_copy(void* dest, int clear) {
 }
 
 void GXCopyTex(void* dest, GXBool clear) { GX_STATE_TOUCH(); gx_tex_copy(dest, clear ? 1 : 0); }
+
+/* ---- a copy the game reads with the CPU (M20, PLAN.md 35.3) ----------------
+ * The copy above never writes MEM1: it lives in a GL texture keyed on `dest`,
+ * and the bytes at `dest` stay whatever the heap held.  One game-side site
+ * reads such a copy back: m415dll (Stamp Out!) memcpys the shadow map --
+ * 192x192, one byte a texel, the stamps drawn by the shadow pass -- into its
+ * canvas bitmap (an I8 ANIMDATA), then textures the paper with the canvas.
+ * patches.txt turns those two memcpys into this: the copy's GL texture is
+ * read back and encoded as GX would have written it at `dest`, one byte a
+ * texel in 8x4 tiles.  The game copies the shadow map as GX_CTF_R8 (the red
+ * channel) and binds it as GX_TF_I8; the tiles are the same, so the byte is
+ * the copy format's channel (R8/G8/B8/A8) or GX's intensity for I8.  On a
+ * consumed frame the texture holds the last drawn copy, which is what the
+ * console's MEM1 would hold too.  A destination nothing was copied to (or
+ * not in a one-byte format) is answered with zeros and one line in the log. */
+void port_gx_copy_read(const void* dest, void* out, unsigned long nbytes) {
+    int slot, is_efb = 0, w, h, pw, ph, x, y, chan;
+    u8* rgba;
+    u8* o = (u8*)out;
+    GLuint name;
+
+    slot = find_slot(dest, 0, 0, 0, NULL, GX_SWAP_IDENTITY, &is_efb);
+    if (slot < 0 || !is_efb || !cache[slot].gl_name || !gl13_have_context()) {
+        memset(out, 0, nbytes);
+        if (!stat_copy_read_miss++) {
+            port_log("port> copy-read: nothing was copied to %p (slot %d); the game "
+                     "reads zeros (m415's canvas)\n", dest, slot);
+        }
+        return;
+    }
+    w = cache[slot].w;
+    h = cache[slot].h;
+    switch (cache[slot].format) {
+        case GX_TF_I8: chan = -1; break;
+        case GX_CTF_R8: chan = 0; break;
+        case GX_CTF_G8: chan = 1; break;
+        case GX_CTF_B8: chan = 2; break;
+        case GX_CTF_A8: chan = 3; break;
+        default: chan = -2; break;
+    }
+    if (chan == -2 || (unsigned long)w * (unsigned long)h != nbytes || (w & 7) || (h & 3)) {
+        memset(out, 0, nbytes);
+        if (!stat_copy_read_miss++) {
+            port_log("port> copy-read: the copy at %p is format %u, %dx%d, but the game "
+                     "reads %lu bytes as one-byte tiles; zeros\n", dest,
+                     (unsigned)cache[slot].format, w, h, nbytes);
+        }
+        return;
+    }
+    pw = pot_up(w);
+    ph = pot_up(h);
+    rgba = (u8*)malloc((size_t)pw * ph * 4);
+    if (!rgba) {
+        memset(out, 0, nbytes);
+        return;
+    }
+    name = cache[slot].gl_name;
+    glc_active_texture(0);
+    GL(glBindTexture)(GL_TEXTURE_2D, name);
+    glc_note_bind(0, name);
+    GL(glPixelStorei)(GL_PACK_ALIGNMENT, 1);
+    GL(glGetTexImage)(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+    /* gx_tex_copy wrote the region into the bottom-left of the padded
+     * texture, GL row 0 = the bottom of the copied region, so GX row y is GL
+     * row h-1-y.  For I8, intensity as the copy unit computes it (BT.601 luma
+     * with the 16 offset, the same as Dolphin's I8 copy). */
+    for (y = 0; y < h; y++) {
+        const u8* row = rgba + ((size_t)(h - 1 - y) * pw) * 4;
+        u8* tile_row = o + (size_t)(y >> 2) * (w >> 3) * 32 + (y & 3) * 8;
+        for (x = 0; x < w; x++) {
+            const u8* p = row + (size_t)x * 4;
+            unsigned v;
+            if (chan >= 0) {
+                v = p[chan];
+            } else {
+                v = ((66u * p[0] + 129u * p[1] + 25u * p[2] + 128u) >> 8) + 16u;
+            }
+            tile_row[(size_t)(x >> 3) * 32 + (x & 7)] = (u8)(v > 255u ? 255u : v);
+        }
+    }
+    free(rgba);
+    stat_copy_read++;
+}
 
 /* ---- indirect tiling, composed on the CPU --------------------------------- */
 

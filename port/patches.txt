@@ -72,6 +72,25 @@ include/dolphin/os.h	#define OSRoundDownPtr(x, align) ((void*)(((u32)(x)) & (~((
 # port/src/os/os_misc.c owns the one definition.
 include/dolphin/os.h	u32 __OSBusClock AT_ADDRESS(OS_BASE_CACHED | 0x00F8); // sync with OSLoMem.h\nu32 __OSCoreClock AT_ADDRESS(OS_BASE_CACHED | 0x00FC); // sync with OSLoMem.h	extern u32 __OSBusClock;\nextern u32 __OSCoreClock;
 
+# OSCachedToUncached adds the console's 0x40000000 alias offset to a MEM1
+# pointer.  The M1 inventory (PLAN.md §1) listed its one game-side use --
+# m415Dll/main.c:429, Stamp Out! copying the shadow map into its canvas --
+# and said "make it identity"; nothing did, and no soak dealt m415 until M20
+# (`signal 11 at address 0x425cc050` = 0x025cc050 + 0x40000000, pc in the
+# commpage bcopy, frame 46,532 of the first M20 witness).  Both directions
+# are the identity here: the port has one address space.
+include/dolphin/os.h	#define OSCachedToUncached(caddr) ((void *)((u8 *)(caddr) + (OS_BASE_UNCACHED - OS_BASE_CACHED)))\n#define OSUncachedToCached(ucaddr) ((void *)((u8 *)(ucaddr) - (OS_BASE_UNCACHED - OS_BASE_CACHED)))	#define OSCachedToUncached(caddr) ((void *)(caddr))\n#define OSUncachedToCached(ucaddr) ((void *)(ucaddr))
+
+# ------------------------------------------------------------ REL/m415Dll/main.c
+# Stamp Out! reads the shadow map back with the CPU -- the copy's bytes in
+# MEM1 -- to paint its canvas.  The port's GXCopyTex never writes MEM1 (the
+# copy is a GL texture keyed on the destination), so the two memcpys become a
+# readback of that texture, tiled as GX would have written it (gx_tex.c,
+# port_gx_copy_read; PLAN.md 35.3).  Game behaviour is unchanged.
+src/REL/m415Dll/main.c	#include "game/wipe.h"	#include "game/wipe.h"\n\n/* port: the shadow map read back from the GL copy (gx_tex.c) */\nvoid port_gx_copy_read(const void *dest, void *out, unsigned long nbytes);
+src/REL/m415Dll/main.c	            memcpy((*temp_r3)->bmp->data, OSCachedToUncached(Hu3DShadowData.buf), temp_r29);	            port_gx_copy_read(Hu3DShadowData.buf, (*temp_r3)->bmp->data, temp_r29);
+src/REL/m415Dll/main.c	    memcpy(temp_r31->data, Hu3DShadowData.buf, var_r28);	    port_gx_copy_read(Hu3DShadowData.buf, temp_r31->data, var_r28);
+
 # --------------------------------------------------- include/dolphin/gx/GXGeometry.h
 # The decomp's TARGET_PC build of GXSetArray takes an extra `size` argument
 # that the game's own 159 call sites do not pass.  The port defines TARGET_PC
