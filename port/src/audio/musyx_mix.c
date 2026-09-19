@@ -351,6 +351,32 @@ static s32 apply_gain(s32 sample, s32 gain) {
     return (s32)(((s64)sample * gain) >> 15);
 }
 
+/* The voice path's gain and accumulate, in 32 bits (M18, PLAN.md 33.4).
+ *
+ * A 64-bit multiply and a 64-bit compare are each half a dozen instructions
+ * on a 32-bit PowerPC, and render_voice did five of the one and four of the
+ * other per sample per voice; M17's profile put the mixer at 22% of a
+ * consumed frame.  In the voice path every operand is bounded: the resampler
+ * hands back an s16 (the linear blend cannot leave [hist1, hist2], the 4-tap
+ * is clamped), the envelope is 0..0x8000, so |e| <= 32768; a bus volume is
+ * `(s16)lastVol` plus at most 160 steps of a delta that was `(vol - last) /
+ * 160`, so it stays within s16 -- |e * vol| <= 2^30 and the product fits an
+ * s32, where the arithmetic right shift gives the very same bits the 64-bit
+ * one did.  The bus holds at most +-0x7fffff and the addend at most 2^30, so
+ * the sum fits an s32 too and the clamp is the same clamp.  Nothing in the
+ * output can differ: port/tools/audio_ab.sh checks the .wav byte for byte.
+ * The studio-input path keeps the 64-bit form -- its gain is a widened u16
+ * and its sample a bus value. */
+static s32 apply_gain32(s32 sample, s32 gain) {
+    return (sample * gain) >> 15;
+}
+
+static s32 clamp_accum32(s32 v) {
+    if (v > 0x7fffff) return 0x7fffff;
+    if (v < -0x7fffff) return -0x7fffff;
+    return v;
+}
+
 /* ---- ADSR-style linear volume ramp (sal_setup_dspvol, hw_dspctrl.c:597) ---
  *
  * The console ramps from lastVol* to vol* linearly over all 160 samples of
@@ -1038,39 +1064,39 @@ static void render_voice(DSPvoice* dv, MixVoice* mv, DSPstudioinfo* stp) {
              * touched -- see the flags computed above render_voice's ramp
              * setup. */
             if (raw != 0 && (main_live || auxa_live || auxb_live)) {
-                s32 e = apply_gain(raw, env);
+                s32 e = apply_gain32(raw, env);
                 last_idx = idx;
                 dpop_l = dpop_r = dpop_s = 0;
                 dpop_la = dpop_ra = dpop_sa = 0;
                 dpop_lb = dpop_rb = dpop_sb = 0;
                 if (main_live) {
-                    dpop_l = apply_gain(e, volL);
-                    dpop_r = apply_gain(e, volR);
-                    main_buf[BUS_L_OFF + idx] = clamp_accum((s64)main_buf[BUS_L_OFF + idx] + dpop_l);
-                    main_buf[BUS_R_OFF + idx] = clamp_accum((s64)main_buf[BUS_R_OFF + idx] + dpop_r);
+                    dpop_l = apply_gain32(e, volL);
+                    dpop_r = apply_gain32(e, volR);
+                    main_buf[BUS_L_OFF + idx] = clamp_accum32(main_buf[BUS_L_OFF + idx] + dpop_l);
+                    main_buf[BUS_R_OFF + idx] = clamp_accum32(main_buf[BUS_R_OFF + idx] + dpop_r);
                     if (surround_live) {
-                        dpop_s = apply_gain(e, volS);
-                        main_buf[BUS_S_OFF + idx] = clamp_accum((s64)main_buf[BUS_S_OFF + idx] + dpop_s);
+                        dpop_s = apply_gain32(e, volS);
+                        main_buf[BUS_S_OFF + idx] = clamp_accum32(main_buf[BUS_S_OFF + idx] + dpop_s);
                     }
                 }
                 if (auxa_live) {
-                    dpop_la = apply_gain(e, volLa);
-                    dpop_ra = apply_gain(e, volRa);
-                    auxa_buf[BUS_L_OFF + idx] = clamp_accum((s64)auxa_buf[BUS_L_OFF + idx] + dpop_la);
-                    auxa_buf[BUS_R_OFF + idx] = clamp_accum((s64)auxa_buf[BUS_R_OFF + idx] + dpop_ra);
+                    dpop_la = apply_gain32(e, volLa);
+                    dpop_ra = apply_gain32(e, volRa);
+                    auxa_buf[BUS_L_OFF + idx] = clamp_accum32(auxa_buf[BUS_L_OFF + idx] + dpop_la);
+                    auxa_buf[BUS_R_OFF + idx] = clamp_accum32(auxa_buf[BUS_R_OFF + idx] + dpop_ra);
                     if (surround_live) {
-                        dpop_sa = apply_gain(e, volSa);
-                        auxa_buf[BUS_S_OFF + idx] = clamp_accum((s64)auxa_buf[BUS_S_OFF + idx] + dpop_sa);
+                        dpop_sa = apply_gain32(e, volSa);
+                        auxa_buf[BUS_S_OFF + idx] = clamp_accum32(auxa_buf[BUS_S_OFF + idx] + dpop_sa);
                     }
                 }
                 if (auxb_live) {
-                    dpop_lb = apply_gain(e, volLb);
-                    dpop_rb = apply_gain(e, volRb);
-                    auxb_buf[BUS_L_OFF + idx] = clamp_accum((s64)auxb_buf[BUS_L_OFF + idx] + dpop_lb);
-                    auxb_buf[BUS_R_OFF + idx] = clamp_accum((s64)auxb_buf[BUS_R_OFF + idx] + dpop_rb);
+                    dpop_lb = apply_gain32(e, volLb);
+                    dpop_rb = apply_gain32(e, volRb);
+                    auxb_buf[BUS_L_OFF + idx] = clamp_accum32(auxb_buf[BUS_L_OFF + idx] + dpop_lb);
+                    auxb_buf[BUS_R_OFF + idx] = clamp_accum32(auxb_buf[BUS_R_OFF + idx] + dpop_rb);
                     if (surround_live) {
-                        dpop_sb = apply_gain(e, volSb);
-                        auxb_buf[BUS_S_OFF + idx] = clamp_accum((s64)auxb_buf[BUS_S_OFF + idx] + dpop_sb);
+                        dpop_sb = apply_gain32(e, volSb);
+                        auxb_buf[BUS_S_OFF + idx] = clamp_accum32(auxb_buf[BUS_S_OFF + idx] + dpop_sb);
                     }
                 }
             }
