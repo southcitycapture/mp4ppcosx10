@@ -266,6 +266,20 @@ $(BUILD)/port/src/gx/gx_draw.o: src/gx/gx_draw.c $(MIRROR_STAMP)
 	@mkdir -p $(dir $@)
 	$(CC) $(PORT_CFLAGS) $(GX_DRAW_CFLAGS) -MMD -MP -c -o $@ $<
 
+# M17: the matrix library's AltiVec bodies (PSMTXROMultVecArray), behind
+# --noaltivec at run time.  -maltivec here only lets the intrinsics compile;
+# GCC's own vectoriser is not turned on by it (that needs -ftree-vectorize,
+# which -O2 has with the very-cheap model -- and the scalar bodies in this
+# file are plain loops it does not touch; the md5s say so).
+ifeq ($(TARGET),ppc-darwin)
+PSMTX_CFLAGS := -maltivec -mabi=altivec
+else
+PSMTX_CFLAGS :=
+endif
+$(BUILD)/port/src/os/psmtx_c.o: src/os/psmtx_c.c $(MIRROR_STAMP)
+	@mkdir -p $(dir $@)
+	$(CC) $(PORT_CFLAGS) $(PSMTX_CFLAGS) -MMD -MP -c -o $@ $<
+
 $(BUILD)/port/%.o: %.c $(MIRROR_STAMP)
 	@mkdir -p $(dir $@)
 	$(CC) $(PORT_CFLAGS) -MMD -MP -c -o $@ $<

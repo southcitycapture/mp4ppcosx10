@@ -60,6 +60,9 @@ static void usage(const char* argv0) {
             "                    work on the second CPU (kCGLCEMPEngine)\n"
             "  --olddecode2      convert 8-bit vertex components in the loop instead\n"
             "                    of through the byte tables (pre-M17), for the A/B\n"
+            "  --altivec         the AltiVec PSMTXROMultVecArray: bit-exact with the\n"
+            "                    scalar body and measured 3.5%% slower, so off (PLAN.md 32)\n"
+            "  --noprefetch      no dcbt of the next vertex's arrays in those loops\n"
             "  --olddecode3      the general plan walker for every primitive instead\n"
             "                    of the specialised loops for the common shapes\n"
             "  --decodestats     per decoded vertex: do its indexed attributes share\n"
@@ -341,6 +344,12 @@ int port_parse_args(int argc, char** argv) {
             port_opt.lockstep = 1;
         } else if (!strcmp(a, "--mpgl")) {
             port_opt.mpgl = 1;
+        } else if (!strcmp(a, "--altivec")) {
+            port_opt.altivec = 1;
+        } else if (!strcmp(a, "--noaltivec")) {
+            port_opt.altivec = 0;
+        } else if (!strcmp(a, "--noprefetch")) {
+            port_opt.noprefetch = 1;
         } else if (!strcmp(a, "--olddecode3")) {
             port_opt.olddecode3 = 1;
         } else if (!strcmp(a, "--olddecode2")) {
@@ -604,6 +613,10 @@ int port_parse_args(int argc, char** argv) {
     }
     if (port_opt.snap_keep <= 0) {
         port_opt.snap_keep = 3;
+    }
+    {
+        extern int port_mtx_noaltivec;
+        port_mtx_noaltivec = !port_opt.altivec;
     }
     /* M17: frame mode is the default; --lockstep, --turbo, --nodraw and
      * --headless are the measurements it would distort (framemode.c). */

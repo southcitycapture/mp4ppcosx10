@@ -2732,6 +2732,7 @@ DECODE_RUN(decode_run_tracked, 1)
  * stored it).  TEX: 0 none, 1 f32 s/t into slot 0.  Every step GX_INDEX16. */
 #define DECODE_FAST(NAME, NRM, CLR, TEX)                                                 \
     static const u8* NAME(const u8* p, const u8* end, u32 count) {                       \
+        const int PREFETCH = !port_opt.noprefetch;                                       \
         const u8* pb = plan[0].base;                                                     \
         const u32 ps = plan[0].stride;                                                   \
         const u8* nb = NRM ? plan[1].base : NULL;                                        \
@@ -2765,6 +2766,20 @@ DECODE_RUN(decode_run_tracked, 1)
             }                                                                            \
             if (plan_clr_const) {                                                        \
                 *(u32*)(v + off_clr) = plan_clr.u;                                       \
+            }                                                                            \
+            if (PREFETCH && p + 2 * per <= end) {                                         \
+                /* the next vertex's array entries: the indices are right     \
+                 * there in the list, and the arrays are the random reads     \
+                 * this loop waits on (dcbt on the 7450) */                   \
+                const u8* pn = p + per;                                                  \
+                __builtin_prefetch(pb + (size_t)(((u32)pn[0] << 8) | pn[1]) * ps);       \
+                if (NRM) {                                                               \
+                    __builtin_prefetch(nb + (size_t)(((u32)pn[2] << 8) | pn[3]) * ns);   \
+                }                                                                        \
+                if (TEX) {                                                               \
+                    __builtin_prefetch(tb + (size_t)(((u32)pn[per - 2] << 8) |           \
+                                                     pn[per - 1]) * ts);                 \
+                }                                                                        \
             }                                                                            \
             ix = ((u32)p[0] << 8) | p[1];                                                \
             q = pb + (size_t)ix * ps;                                                    \

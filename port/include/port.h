@@ -222,6 +222,11 @@ typedef struct PortOptions {
                              *   the arithmetic in the loop instead of the
                              *   byte tables (the pre-M17 decode); the A/B
                              *   lever (PLAN.md 32)                           */
+    int altivec;            /* --altivec  the AltiVec PSMTXROMultVecArray.
+                             *   Exact (tests/mtx_test.c) and 3.5% slower on
+                             *   consumed board frames, so off (PLAN.md 32) */
+    int noprefetch;         /* --noprefetch  no dcbt of the next vertex's
+                             *   array entries in the specialised loops     */
     int olddecode3;         /* --olddecode3  never take the specialised loops
                              *   for the common plan shapes; the A/B lever  */
     int decodestats;        /* --decodestats  shared-index and repeated-tuple

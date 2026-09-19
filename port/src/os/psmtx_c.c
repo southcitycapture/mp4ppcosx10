@@ -136,8 +136,83 @@ void PSMTXReorder(const Mtx src, ROMtx dest) {
     }
 }
 
+/* The AltiVec form (M17, PLAN.md 32).  The board's consumed frame spends
+ * 9.5% of itself in this loop (the CPU skinning's vertex pass), and it is
+ * a vector op by construction: one output vertex is three dot products of
+ * the same (x, y, z, 1) against the four ROMtx rows, which is exactly one
+ * lane each.
+ *
+ * Bit-exact with the scalar body, deliberately: GCC contracts
+ * `m0*x + m1*y + m2*z + m3` as fmuls(m1, y), fmadds(m0, x, .),
+ * fmadds(m2, z, .), fadds(m3, .) (the middle product first, then the two
+ * fused terms, then the plain add -- read off build-ppc-darwin/psmtx.s),
+ * and vmaddfp is a fused multiply-add with the same single rounding, so the
+ * same four operations in the same order give the same bits.  The first
+ * product is a vmaddfp with -0.0 as the addend, which is the multiply's
+ * rounded value with its sign intact.  port/tests/mtx_test.c checks the two
+ * bodies agree bit for bit on 540,000 random vertices (0 differ, on the G4).
+ * `--altivec` runs it; see port_mtx_noaltivec below for why it is not the
+ * default. */
+#ifdef __ALTIVEC__
+#include <altivec.h>
+#undef vector
+#undef pixel
+#undef bool
+
+static void romult_altivec(const ROMtx m, const Vec* srcBase, Vec* dstBase, u32 count) {
+    const __vector float nzero = (__vector float){ -0.0f, -0.0f, -0.0f, -0.0f };
+    const u8* mp = (const u8*)m;
+    __vector float M0, M1, M2, M3;
+    u32 i;
+    /* the four rows, unaligned: lvx reads the two aligned blocks either side
+     * and vperm picks the sixteen bytes that start at the row.  The fourth
+     * lane of each is whatever follows and is never stored. */
+#define LDROW(off) ((__vector float)vec_perm(vec_ld(off, mp), vec_ld((off) + 15, mp), \
+                                             vec_lvsl(off, mp)))
+    M0 = LDROW(0);
+    M1 = LDROW(12);
+    M2 = LDROW(24);
+    M3 = LDROW(36);
+#undef LDROW
+    for (i = 0; i < count; i++) {
+        const u8* s = (const u8*)&srcBase[i];
+        u8* d = (u8*)&dstBase[i];
+        __vector float v = (__vector float)vec_perm(vec_ld(0, s), vec_ld(15, s), vec_lvsl(0, s));
+        __vector float xs = vec_splat(v, 0);
+        __vector float ys = vec_splat(v, 1);
+        __vector float zs = vec_splat(v, 2);
+        __vector float t = vec_madd(M1, ys, nzero);
+        __vector float r;
+        t = vec_madd(M0, xs, t);
+        t = vec_madd(M2, zs, t);
+        r = vec_add(M3, t);
+        /* three element stores; the rotate puts element j in the lane that
+         * (d + 4j) selects */
+        r = vec_perm(r, r, vec_lvsr(0, d));
+        vec_ste(r, 0, (float*)d);
+        vec_ste(r, 4, (float*)d);
+        vec_ste(r, 8, (float*)d);
+    }
+}
+#endif
+
+/* Off unless --altivec: measured on the G4 (PLAN.md 32), the consumed board
+ * frame is 10.46 ms with the scalar loop and 10.82 with this one.  The
+ * unaligned loads, the permutes and the three element stores per vertex
+ * cost more than the FPU pipeline GCC builds for the scalar body -- the same
+ * verdict M5 reached for the vertex path (PLAN.md 15.6).  Kept because it is
+ * exact and the test proves it, and because the next AltiVec attempt should
+ * start from a measured baseline rather than from a belief. */
+int port_mtx_noaltivec = 1;
+
 void PSMTXROMultVecArray(const ROMtx m, const Vec* srcBase, Vec* dstBase, u32 count) {
     u32 i;
+#ifdef __ALTIVEC__
+    if (!port_mtx_noaltivec) {
+        romult_altivec(m, srcBase, dstBase, count);
+        return;
+    }
+#endif
     for (i = 0; i < count; i++) {
         f32 x = srcBase[i].x, y = srcBase[i].y, z = srcBase[i].z;
         dstBase[i].x = m[0][0] * x + m[1][0] * y + m[2][0] * z + m[3][0];

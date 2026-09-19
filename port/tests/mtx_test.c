@@ -307,6 +307,74 @@ static void test_reorder(void) {
     }
 }
 
+/* ---- 4b. the AltiVec PSMTXROMultVecArray against the scalar body, bit for
+ * bit (M17, PLAN.md 32).  A million random vertices through both, including
+ * every alignment a 12-byte stride visits and the in-place form; a single
+ * differing bit is a failure, because the port's reference frames are md5s
+ * and the skinning writes every character's vertices through this loop. */
+extern int port_mtx_noaltivec;
+
+static void test_romult_altivec(void) {
+    int trial, ndiff = 0, ntested = 0;
+    unsigned worst = 0;
+    printf("PSMTXROMultVecArray AltiVec == scalar, bit for bit:\n");
+    for (trial = 0; trial < 20000; trial++) {
+        Mtx m;
+        ROMtx ro;
+        Vec src[64], a[64], b[64];
+        u32 count = 1 + (u32)(trial % 53);
+        u32 i;
+        fill(m);
+        if (trial % 7 == 0) {
+            /* large and tiny magnitudes, negative zeros, the rounding edges */
+            m[0][3] = frand() * 1e6f;
+            m[1][1] = -0.0f;
+            m[2][2] = frand() * 1e-6f;
+        }
+        for (i = 0; i < count; i++) {
+            src[i].x = frand() * (trial & 1 ? 1000.0f : 1.0f);
+            src[i].y = frand() * (trial & 2 ? 1e-3f : 1.0f);
+            src[i].z = (trial % 11 == 0) ? -0.0f : frand();
+        }
+        PSMTXReorder(m, ro);
+        port_mtx_noaltivec = 1;
+        PSMTXROMultVecArray(ro, src, a, count);
+        port_mtx_noaltivec = 0;
+        PSMTXROMultVecArray(ro, src, b, count);
+        for (i = 0; i < count; i++) {
+            unsigned d = (memcmp(&a[i].x, &b[i].x, 4) != 0) + (memcmp(&a[i].y, &b[i].y, 4) != 0) +
+                         (memcmp(&a[i].z, &b[i].z, 4) != 0);
+            ntested++;
+            if (d) {
+                if (ndiff < 5) {
+                    char buf[160];
+                    snprintf(buf, sizeof(buf),
+                             "vector %u of %u: scalar %.9g %.9g %.9g  altivec %.9g %.9g %.9g", i,
+                             count, a[i].x, a[i].y, a[i].z, b[i].x, b[i].y, b[i].z);
+                    fail("PSMTXROMultVecArray(altivec)", buf);
+                }
+                ndiff++;
+                if (d > worst) {
+                    worst = d;
+                }
+            }
+        }
+        /* in place, both ways */
+        memcpy(a, src, sizeof(Vec) * count);
+        port_mtx_noaltivec = 1;
+        PSMTXROMultVecArray(ro, a, a, count);
+        memcpy(b, src, sizeof(Vec) * count);
+        port_mtx_noaltivec = 0;
+        PSMTXROMultVecArray(ro, b, b, count);
+        if (memcmp(a, b, sizeof(Vec) * count) != 0) {
+            fail("PSMTXROMultVecArray(altivec, src==dst)", "differs from the scalar in-place answer");
+            ndiff++;
+        }
+    }
+    port_mtx_noaltivec = 0;
+    printf("  %d vertices, %d differ\n", ntested, ndiff);
+}
+
 /* ---- 5. the VEC family against arithmetic written out by hand ------------ */
 /* The `PS*` vector functions the game calls are paired-single assembly the
  * mirror drops, so what actually runs is either a `C_VEC*` body or a port
@@ -386,6 +454,7 @@ int main(void) {
     test_aliasing();
     test_forwarders();
     test_reorder();
+    test_romult_altivec();
     test_vec();
     printf("---- %d failure(s) ----\n", failures);
     return failures ? 1 : 0;
