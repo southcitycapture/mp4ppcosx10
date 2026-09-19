@@ -459,6 +459,8 @@ int gx_skin_mode(void) {
 }
 int gx_skin_on(void) { return gx_skin_mode() == 2; }
 
+static void hsf_mtx_sync(SkinHsf* h);
+
 /* EnvelopeProc's head.  1 = handled here (the game's body must not run). */
 int port_envelope_proc(HSFDATA* hsf) {
     SkinHsf* h;
@@ -477,6 +479,16 @@ int port_envelope_proc(HSFDATA* hsf) {
     h->mtx_dirty = 1;
     h->last_frame = frame;
     stat_proc_deferred++;
+    if (gx_skin_mode() == 1 && !port_opt.skindeferall) {
+        /* The bone walk runs now, on every frame, as the game does it: the
+         * draw walk's matrix stack (hsfdraw.c MTXBuf) is built from these
+         * matrices, and the game's own Hu3DModelObjMtxGet family walks the
+         * same stack, so a stale bone matrix on a consumed frame reaches game
+         * logic through positions (found by the .wav of the walk: a 3D sound
+         * placed a rounding step away at retrace 8,108).  Only the vertex
+         * skinning -- read by nothing but GXSetArray -- is deferred. */
+        hsf_mtx_sync(h);
+    }
     return 1;
 }
 
@@ -496,6 +508,7 @@ static void hsf_mtx_sync(SkinHsf* h) {
     PSMTXIdentity(id);
     SetEnvelopMtx(h->hsf->object, h->hsf->root, id);
     h->mtx_dirty = 0;
+    h->skin_dirty = 1;
     stat_sync_runs++;
 }
 
@@ -507,10 +520,13 @@ static void hsf_run_body(SkinHsf* h) {
     MtxTop = mx->data;
     nObj = mx->count;
     nMesh = mx->base_idx;
-    PSMTXIdentity(id);
-    SetEnvelopMtx(h->hsf->object, h->hsf->root, id);
+    if (h->mtx_dirty) {
+        PSMTXIdentity(id);
+        SetEnvelopMtx(h->hsf->object, h->hsf->root, id);
+        h->mtx_dirty = 0;
+    }
     SetEnvelopMain(h->hsf);
-    h->mtx_dirty = 0;
+    h->skin_dirty = 0;
     stat_body_runs++;
 }
 
@@ -534,14 +550,15 @@ void port_envelope_sync(HSFDATA* hsf) {
         }
         h->serial++;
         h->mtx_dirty = 1;
+        h->skin_dirty = 1;
     }
     h->last_frame = gl13_frame_number();
-    if (h->cpu || !h->mtx_dirty) {
+    if (h->cpu || !(h->mtx_dirty || h->skin_dirty)) {
         return;
     }
     if (gl13_draw_off()) {
-        /* a consumed frame: the matrix this feeds goes into a GXLoadPosMtxImm
-         * the frame mode drops, and the next drawn frame syncs again */
+        /* a consumed frame: what this feeds goes into GX calls the frame
+         * mode drops, and the next drawn frame syncs again */
         stat_sync_skipped_consumed++;
         return;
     }
@@ -564,7 +581,7 @@ void gx_skin_array_bound(const void* p) {
     for (m = mesh_hash[hash_ptr(p)]; m; m = m->hnext) {
         if (m->vtxenv == p) {
             SkinHsf* h = m->owner;
-            if (h->mtx_dirty && !h->cpu && m->obj->mesh.vertex &&
+            if ((h->mtx_dirty || h->skin_dirty) && !h->cpu && m->obj->mesh.vertex &&
                 m->obj->mesh.vertex->data == p) {
                 hsf_run_body(h);
                 stat_body_at_bind++;

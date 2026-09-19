@@ -22,9 +22,56 @@
  * hottest SDK family after GX.
  */
 #include <math.h>
+#include <string.h>
 
 #include <dolphin/types.h>
 #include <dolphin/mtx.h>
+#include "port.h"
+
+/* ---- the sin/cos memo (M18 item 2, PLAN.md 33.4) ---------------------------
+ *
+ * SetEnvelopMtx builds T.Rz.Ry.Rx per bone per skinned model, three
+ * PSMTXRotRad each, and libm's sinf/cosf on a 7450 are a few hundred cycles
+ * the pair.  Motion curves hold many bones still for many frames and the
+ * game's own mtxRot calls repeat the same angles, so a direct-mapped memo on
+ * the angle's bits answers most calls from a table and the rest from libm --
+ * the very same values either way, which is what makes it exact.
+ * `--nosincos` is the A/B; the hit rate is in the shutdown report. */
+#define SINCOS_SLOTS 1024
+static struct {
+    u32 bits;
+    f32 s, c;
+    u8 valid;
+} sincos_memo[SINCOS_SLOTS];
+static unsigned long sincos_hits, sincos_misses;
+
+void port_sincosf(f32 rad, f32* s, f32* c) {
+    union { f32 f; u32 u; } k;
+    unsigned i;
+    k.f = rad;
+    i = ((k.u >> 3) ^ (k.u >> 13) ^ (k.u >> 23)) & (SINCOS_SLOTS - 1);
+    if (!port_opt.nosincos && sincos_memo[i].valid && sincos_memo[i].bits == k.u) {
+        *s = sincos_memo[i].s;
+        *c = sincos_memo[i].c;
+        sincos_hits++;
+        return;
+    }
+    *s = sinf(rad);
+    *c = cosf(rad);
+    sincos_memo[i].bits = k.u;
+    sincos_memo[i].s = *s;
+    sincos_memo[i].c = *c;
+    sincos_memo[i].valid = 1;
+    sincos_misses++;
+}
+
+void port_sincos_report(void) {
+    if (sincos_hits + sincos_misses) {
+        port_log("port> sincos memo: %lu hits, %lu misses (%.1f%% hit)%s\n", sincos_hits,
+                 sincos_misses, 100.0 * sincos_hits / (sincos_hits + sincos_misses),
+                 port_opt.nosincos ? " (--nosincos: every call to libm)" : "");
+    }
+}
 
 /* ---- the C_ bodies the SDK sources never spelled out --------------------- */
 

@@ -367,8 +367,37 @@ static s32 apply_gain(s32 sample, s32 gain) {
  * output can differ: port/tools/audio_ab.sh checks the .wav byte for byte.
  * The studio-input path keeps the 64-bit form -- its gain is a widened u16
  * and its sample a bus value. */
+static unsigned long stat_mixcheck_samples, stat_mixcheck_bad;
+
+/* bus + addend, clamped, in 32 bits; under --mixcheck compared with the
+ * 64-bit sum and clamp */
+static s32 mixcheck_acc(s32 bus, s32 add) {
+    s32 r = bus + add;
+    if (r > 0x7fffff) r = 0x7fffff;
+    if (r < -0x7fffff) r = -0x7fffff;
+    if (port_opt.mixcheck) {
+        s64 v = (s64)bus + add;
+        if (v > 0x7fffff) v = 0x7fffff;
+        if (v < -0x7fffff) v = -0x7fffff;
+        if ((s32)v != r) {
+            stat_mixcheck_bad++;
+        }
+    }
+    return r;
+}
+
 static s32 apply_gain32(s32 sample, s32 gain) {
-    return (sample * gain) >> 15;
+    s32 r = (sample * gain) >> 15;
+    if (port_opt.mixcheck) {
+        /* --mixcheck: the 64-bit form alongside, every sample, and a count of
+         * disagreements -- the proof of the bound above on the real data
+         * rather than on paper */
+        stat_mixcheck_samples++;
+        if (r != (s32)(((s64)sample * gain) >> 15)) {
+            stat_mixcheck_bad++;
+        }
+    }
+    return r;
 }
 
 static s32 clamp_accum32(s32 v) {
@@ -1072,31 +1101,31 @@ static void render_voice(DSPvoice* dv, MixVoice* mv, DSPstudioinfo* stp) {
                 if (main_live) {
                     dpop_l = apply_gain32(e, volL);
                     dpop_r = apply_gain32(e, volR);
-                    main_buf[BUS_L_OFF + idx] = clamp_accum32(main_buf[BUS_L_OFF + idx] + dpop_l);
-                    main_buf[BUS_R_OFF + idx] = clamp_accum32(main_buf[BUS_R_OFF + idx] + dpop_r);
+                    main_buf[BUS_L_OFF + idx] = mixcheck_acc(main_buf[BUS_L_OFF + idx], dpop_l);
+                    main_buf[BUS_R_OFF + idx] = mixcheck_acc(main_buf[BUS_R_OFF + idx], dpop_r);
                     if (surround_live) {
                         dpop_s = apply_gain32(e, volS);
-                        main_buf[BUS_S_OFF + idx] = clamp_accum32(main_buf[BUS_S_OFF + idx] + dpop_s);
+                        main_buf[BUS_S_OFF + idx] = mixcheck_acc(main_buf[BUS_S_OFF + idx], dpop_s);
                     }
                 }
                 if (auxa_live) {
                     dpop_la = apply_gain32(e, volLa);
                     dpop_ra = apply_gain32(e, volRa);
-                    auxa_buf[BUS_L_OFF + idx] = clamp_accum32(auxa_buf[BUS_L_OFF + idx] + dpop_la);
-                    auxa_buf[BUS_R_OFF + idx] = clamp_accum32(auxa_buf[BUS_R_OFF + idx] + dpop_ra);
+                    auxa_buf[BUS_L_OFF + idx] = mixcheck_acc(auxa_buf[BUS_L_OFF + idx], dpop_la);
+                    auxa_buf[BUS_R_OFF + idx] = mixcheck_acc(auxa_buf[BUS_R_OFF + idx], dpop_ra);
                     if (surround_live) {
                         dpop_sa = apply_gain32(e, volSa);
-                        auxa_buf[BUS_S_OFF + idx] = clamp_accum32(auxa_buf[BUS_S_OFF + idx] + dpop_sa);
+                        auxa_buf[BUS_S_OFF + idx] = mixcheck_acc(auxa_buf[BUS_S_OFF + idx], dpop_sa);
                     }
                 }
                 if (auxb_live) {
                     dpop_lb = apply_gain32(e, volLb);
                     dpop_rb = apply_gain32(e, volRb);
-                    auxb_buf[BUS_L_OFF + idx] = clamp_accum32(auxb_buf[BUS_L_OFF + idx] + dpop_lb);
-                    auxb_buf[BUS_R_OFF + idx] = clamp_accum32(auxb_buf[BUS_R_OFF + idx] + dpop_rb);
+                    auxb_buf[BUS_L_OFF + idx] = mixcheck_acc(auxb_buf[BUS_L_OFF + idx], dpop_lb);
+                    auxb_buf[BUS_R_OFF + idx] = mixcheck_acc(auxb_buf[BUS_R_OFF + idx], dpop_rb);
                     if (surround_live) {
                         dpop_sb = apply_gain32(e, volSb);
-                        auxb_buf[BUS_S_OFF + idx] = clamp_accum32(auxb_buf[BUS_S_OFF + idx] + dpop_sb);
+                        auxb_buf[BUS_S_OFF + idx] = mixcheck_acc(auxb_buf[BUS_S_OFF + idx], dpop_sb);
                     }
                 }
             }
@@ -1534,6 +1563,11 @@ void port_musyx_mix_report(void) {
              stat_frames_mixed, stat_voices_started, stat_voices_ended,
              (unsigned long)stat_peak_abs, stat_peak_abs > 32000 ? " (near full scale)" : "",
              stat_aram_clamped, stat_max_concurrent_voices, num_voices);
+    if (port_opt.mixcheck) {
+        port_log("port> musyx_mix: --mixcheck: %lu gains and their accumulates checked against "
+                 "the 64-bit form, %lu disagreed\n",
+                 stat_mixcheck_samples, stat_mixcheck_bad);
+    }
     port_log("port> musyx_mix: resampler %s, depop %s; %lu voice(s) cut mid-frame\n",
              port_opt.resample4 ? "4-tap Catmull-Rom" : "linear",
              port_opt.depop ? "on" : "off", stat_depop_cuts);

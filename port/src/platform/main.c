@@ -48,6 +48,7 @@ void port_crash_handler_install(void);
 void port_watchdog_arm(int seconds);
 void gx_tex_set_validate_every_bind(int v);
 void gx_tex_set_budget_mb(int mb);
+void port_sincos_report(void);
 
 static void usage(const char* argv0) {
     fprintf(stderr,
@@ -89,6 +90,13 @@ static void usage(const char* argv0) {
             "                    this driver, so opt-in (PLAN.md 33.2)\n"
             "  --palsize N       palette slots per batch (default: what fits, 24)\n"
             "  --skinstats       per-mesh envelope shapes and per-frame skin counts\n"
+            "  --skindeferall    defer the bone walk as well as the vertex skinning\n"
+            "                    (not exact: the draw walk's matrix stack reaches game\n"
+            "                    logic; PLAN.md 33.3)\n"
+            "  --mixcheck        check the mixer's 32-bit arithmetic against the 64-bit\n"
+            "                    form on every sample (M18 item 3)\n"
+            "  --nosincos        PSMTXRotRad's sinf/cosf straight to libm instead of\n"
+            "                    through the exact memo (M18 A/B)\n"
             "  --snapsync        write snapshots synchronously on the game thread\n"
             "                    (default: copied at the retrace, written by a worker)\n"
             "  --texbudget MB    GL texture bytes the cache may hold before it evicts\n"
@@ -395,6 +403,12 @@ int port_parse_args(int argc, char** argv) {
             port_opt.palnoarl = 1;
         } else if (!strcmp(a, "--palnofog")) {
             port_opt.palnofog = 1;
+        } else if (!strcmp(a, "--skindeferall")) {
+            port_opt.skindeferall = 1;
+        } else if (!strcmp(a, "--mixcheck")) {
+            port_opt.mixcheck = 1;
+        } else if (!strcmp(a, "--nosincos")) {
+            port_opt.nosincos = 1;
         } else if (!strcmp(a, "--snapsync")) {
             port_opt.snapsync = 1;
         } else if (!strcmp(a, "--texbudget") && i + 1 < argc) {
@@ -710,6 +724,7 @@ void port_shutdown(int code) {
     port_card_report();
     port_dll_report();
     port_snap_report();
+    port_sincos_report();
     port_reset_report();
     port_stub_report();
     exit(code);

@@ -255,6 +255,13 @@ typedef struct PortOptions {
     int palnofog;           /* --palnofog  diagnostic: no fog-coordinate array
                              *   bound (every vertex reads slot 0) -- wrong
                              *   picture, times the array                     */
+    int skindeferall;       /* --skindeferall  defer the bone walk too, not just
+                             *   the vertex skinning: +2 fps on the board and a
+                             *   rounding-level game-state divergence through
+                             *   hsfdraw.c's MTXBuf (PLAN.md 33.3); off      */
+    int mixcheck;           /* --mixcheck  the mixer's 32-bit gain/accumulate
+                             *   checked against the 64-bit form per sample */
+    int nosincos;           /* --nosincos  PSMTXRotRad straight to libm (M18) */
     int snapsync;           /* --snapsync   write snapshots on the game thread
                              *   (pre-M18: a 3 s stall each) instead of on a
                              *   worker from a copy taken at the retrace     */

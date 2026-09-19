@@ -61,6 +61,7 @@ typedef struct SkinHsf {
     u32 signature;
     unsigned serial;                  /* bumped by every EnvelopeProc        */
     int mtx_dirty;                    /* SetEnvelopMtx owed for `serial`     */
+    int skin_dirty;                   /* SetEnvelopMain owed (deferred CPU)  */
     int cpu;                          /* this HSF skins on the CPU           */
     unsigned last_frame;
     int nmesh;

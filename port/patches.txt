@@ -694,3 +694,10 @@ src/game/EnvelopeExec.c	    PSMTXIdentity(sp8);\n    SetEnvelopMtx(arg0->object,
 # does nothing, since the value feeds a GXLoadPosMtxImm that is dropped.
 src/game/hsfdraw.c	#include "ext_math.h"\n#include <string.h>\n	#include "ext_math.h"\n#include <string.h>\n\nvoid port_envelope_sync(HSFDATA *hsf);\n
 src/game/hsfdraw.c	                i = objPtr - hsf->object;\n                MTXConcat(MTXBuf[0], hsf->matrix->data[i + hsf->matrix->base_idx], MTXBuf[MTXIdx]);	                i = objPtr - hsf->object;\n                port_envelope_sync(hsf);\n                MTXConcat(MTXBuf[0], hsf->matrix->data[i + hsf->matrix->base_idx], MTXBuf[MTXIdx]);
+
+# ------------------------------------------------------------ dolphin/mtx/mtx.c
+# M18 item 2 (PLAN.md 33.4): PSMTXRotRad's sinf/cosf pair goes through a memo
+# keyed on the angle's bits (port/src/os/psmtx_c.c port_sincosf) -- the same
+# libm values for the same input, so exact; --nosincos bypasses it.
+src/dolphin/mtx/mtx.c	extern f32 tanf(f32);\n	extern f32 tanf(f32);\nvoid port_sincosf(f32 rad, f32 *s, f32 *c);\n
+src/dolphin/mtx/mtx.c	    sinA = sinf(rad);\n    cosA = cosf(rad);\n\n    PSMTXRotTrig(m, axis, sinA, cosA);	    port_sincosf(rad, &sinA, &cosA);\n\n    PSMTXRotTrig(m, axis, sinA, cosA);

@@ -11,7 +11,7 @@ boot log prints for the heaps.
 Runs on the G4 as well as on the Mac: Python 2.5 compatible on purpose, so the
 comparison can happen next to the 40 MB files instead of over ssh.
 
-    python snapdiff.py A.snap B.snap [--bytes 64]
+    python snapdiff.py A.snap B.snap [--bytes 64] [--spans 40]
 """
 import struct
 import sys
@@ -85,9 +85,12 @@ def sections(path):
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     nbytes = 32
+    max_spans = 40
     for a in sys.argv[1:]:
         if a.startswith("--bytes"):
             nbytes = int(a.split("=")[-1])
+        if a.startswith("--spans"):
+            max_spans = int(a.split("=")[-1])
     if len(args) != 2:
         sys.stderr.write(__doc__)
         return 2
@@ -107,6 +110,11 @@ def main():
         first = None
         ndiff = 0
         pos = 0
+        # every differing span (M18): a run of differing bytes with gaps under
+        # 16 bytes merged, so a struct that changed reads as one line
+        spans = []
+        span_start = None
+        span_last = None
         while pos < length:
             n = min(CHUNK, length - pos)
             fa.seek(off + pos)
@@ -116,18 +124,37 @@ def main():
                 for i in range(n):
                     if da[i] != db[i]:
                         ndiff += 1
+                        at = pos + i
                         if first is None:
-                            first = pos + i
+                            first = at
+                        if span_start is not None and at - span_last <= 16:
+                            span_last = at
+                        else:
+                            if span_start is not None:
+                                spans.append((span_start, span_last))
+                            span_start = at
+                            span_last = at
             pos += n
+        if span_start is not None:
+            spans.append((span_start, span_last))
         if ndiff:
             where = "" if base is None else " (addr %08x)" % (base + first)
-            print("%-28s %8d bytes differ, first at +%08x%s"
-                  % (name, ndiff, first, where))
+            print("%-28s %8d bytes differ in %d spans, first at +%08x%s"
+                  % (name, ndiff, len(spans), first, where))
             fa.seek(off + first)
             fb.seek(offb + first)
             ra, rb = fa.read(nbytes), fb.read(nbytes)
             print("    A: " + " ".join(["%02x" % ord(c) for c in ra]))
             print("    B: " + " ".join(["%02x" % ord(c) for c in rb]))
+            shown = 0
+            for (s0, s1) in spans:
+                if shown >= max_spans:
+                    print("    ... %d more spans" % (len(spans) - shown))
+                    break
+                w = "" if base is None else " addr %08x" % (base + s0)
+                print("    span +%08x..+%08x (%d bytes)%s"
+                      % (s0, s1, s1 - s0 + 1, w))
+                shown += 1
     print("done")
     return 0
 
