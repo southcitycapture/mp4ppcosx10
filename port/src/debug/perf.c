@@ -28,6 +28,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+unsigned gl13_frame_number(void);
+
 static double t_gx, t_present, t_audio, t_frame_start, t_sleep;
 static double win_audio, win_t0;
 static int win_frames;
@@ -42,6 +44,7 @@ static float s_audio[PERF_MAX];
 static float s_wall[PERF_MAX];      /* with the sleep: real elapsed time */
 static unsigned char s_drawn[PERF_MAX];
 static int n_samples;
+static unsigned long n_frames_seen; /* every frame, past the sample cap too */
 static double t_first;
 
 void port_perf_gx_begin(void) {
@@ -139,6 +142,7 @@ void port_perf_frame(int drawn) {
         t_gx = t_present = t_audio = t_sleep = 0.0;
         return;
     }
+    n_frames_seen++;
     wall = now - t_frame_start - t_sleep;
     game = wall - t_gx - t_present - t_audio;
     if (game < 0.0) {
@@ -147,8 +151,8 @@ void port_perf_frame(int drawn) {
     if (wall > 0.1 && port_opt.realtime) {
         /* A stall the frame mode cannot hide: named, so the log says which
          * frame and which scene (--ovllog) it belongs to. */
-        port_log("port> stall: frame %d took %.0f ms (game %.0f gx %.0f present %.0f aud %.0f)%s\n",
-                 n_samples, wall * 1000.0, game * 1000.0, t_gx * 1000.0, t_present * 1000.0,
+        port_log("port> stall: frame %u took %.0f ms (game %.0f gx %.0f present %.0f aud %.0f)%s\n",
+                 gl13_frame_number(), wall * 1000.0, game * 1000.0, t_gx * 1000.0, t_present * 1000.0,
                  t_audio * 1000.0, drawn ? "" : " [consumed]");
     }
     if (n_samples < PERF_MAX) {
@@ -307,7 +311,9 @@ void port_perf_report(void) {
         return;
     }
     wall = port_now_seconds() - t_first;
-    gameclock = n_samples / 59.94;
+    /* the retrace count, not the sample count: a long run overflows the
+     * sample buffer and --realtime's speed reading must not depend on it */
+    gameclock = (double)n_frames_seen / 59.94;
     for (i = 0; i < n_samples; i++) {
         if (s_frame[i] > 1000.0f / 59.94f) {
             over++;

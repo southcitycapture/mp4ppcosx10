@@ -30,6 +30,9 @@
 #ifndef PORT_NO_SDL
 #include <SDL.h>
 #include <SDL_opengl.h>
+#if defined(__APPLE__) && defined(__ppc__)
+#include <OpenGL/OpenGL.h>
+#endif
 #endif
 
 int gl13_have_combine3 = 1;
@@ -898,6 +901,21 @@ int gl13_init(void) {
     gl_on = 1;
     glc_invalidate();
     report_caps();
+#if defined(__APPLE__) && defined(__ppc__)
+    /* --mpgl (M17): Apple's multithreaded GL engine, which moves the driver's
+     * own command processing -- the copy into the command buffer and the
+     * page-off to the kernel that were 28-35% of a drawn frame in the M16
+     * profile (PLAN.md 31.1) -- onto a second thread.  This G4 is a dual
+     * 1 GHz (PowerMac3,5), so that thread has a CPU of its own.  Whether
+     * Leopard's ATI driver honours it on a Radeon 9000 is what the return
+     * value says; kCGLCEMPEngine is 313 and is not in the 10.4u SDK. */
+    if (port_opt.mpgl) {
+        CGLContextObj cgl = CGLGetCurrentContext();
+        CGLError err = cgl ? CGLEnable(cgl, (CGLContextEnable)313) : (CGLError)-1;
+        port_log("port> --mpgl: CGLEnable(kCGLCEMPEngine) = %d (%s)\n", (int)err,
+                 err == 0 ? "on: the driver runs on its own thread" : "refused");
+    }
+#endif
     /* The vertex-program probe needs a live context, so it runs here and not
      * in report_caps: it compiles and loads a program. */
     if (port_opt.vprobe || port_opt.glinfo || !port_opt.cpuxf) {

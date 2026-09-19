@@ -56,6 +56,14 @@ static void usage(const char* argv0) {
             "                    renderer: the gate every build before M17 had\n"
             "  --maxskip N       at most N consumed frames between drawn ones (5)\n"
             "  --perfdump FILE   every per-frame --perf sample as CSV\n"
+            "  --mpgl            Apple's multithreaded GL engine: the driver's own\n"
+            "                    work on the second CPU (kCGLCEMPEngine)\n"
+            "  --olddecode2      convert 8-bit vertex components in the loop instead\n"
+            "                    of through the byte tables (pre-M17), for the A/B\n"
+            "  --olddecode3      the general plan walker for every primitive instead\n"
+            "                    of the specialised loops for the common shapes\n"
+            "  --decodestats     per decoded vertex: do its indexed attributes share\n"
+            "                    one index, and was its tuple already decoded this frame\n"
             "  --audiolead MS    silence queued ahead of the mix when pacing\n"
             "                    starts, so an overrunning frame does not starve\n"
             "                    the device (100 under --realtime)\n"
@@ -331,6 +339,14 @@ int port_parse_args(int argc, char** argv) {
             port_opt.lockstep = 0;
         } else if (!strcmp(a, "--lockstep")) {
             port_opt.lockstep = 1;
+        } else if (!strcmp(a, "--mpgl")) {
+            port_opt.mpgl = 1;
+        } else if (!strcmp(a, "--olddecode3")) {
+            port_opt.olddecode3 = 1;
+        } else if (!strcmp(a, "--olddecode2")) {
+            port_opt.olddecode2 = 1;
+        } else if (!strcmp(a, "--decodestats")) {
+            port_opt.decodestats = 1;
         } else if (!strcmp(a, "--perfdump") && i + 1 < argc) {
             port_opt.perfdump = argv[++i];
             port_opt.perf = 1;

@@ -215,6 +215,17 @@ typedef struct PortOptions {
                              *   two drawn ones (default 5: a present at
                              *   least every 6th retrace)                     */
     const char* perfdump;   /* --perfdump FILE  every --perf sample as CSV  */
+    int mpgl;               /* --mpgl  Apple's multithreaded GL engine
+                             *   (kCGLCEMPEngine): the driver on the second
+                             *   CPU.  Off until measured (PLAN.md 32)       */
+    int olddecode2;         /* --olddecode2  convert 8-bit components with
+                             *   the arithmetic in the loop instead of the
+                             *   byte tables (the pre-M17 decode); the A/B
+                             *   lever (PLAN.md 32)                           */
+    int olddecode3;         /* --olddecode3  never take the specialised loops
+                             *   for the common plan shapes; the A/B lever  */
+    int decodestats;        /* --decodestats  shared-index and repeated-tuple
+                             *   counts per decoded vertex (PLAN.md 32)     */
     int audiolead_set;
     int audiolead;          /* --audiolead MS  silence queued ahead of the mix
                              *   at the first paced retrace, so a drawn frame

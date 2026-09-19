@@ -206,6 +206,7 @@ static u16 want_verts;
 static float byte_scale[256];
 
 static unsigned stat_prims, stat_verts, stat_draws, stat_dls;
+static unsigned long stat_fast_verts; /* through the specialised loops (M17) */
 /* --submitstats (M16): what the batching actually found in the lists */
 static unsigned stat_batches, stat_merged, stat_multi_calls, stat_multi_prims,
     stat_wraps, stat_lists_drawn;
@@ -251,6 +252,9 @@ void gx_draw_report(void) {
     port_log("port> GX draw: %u primitives, %u vertices, %u glDrawArrays, "
              "%u display lists replayed\n",
              stat_prims, stat_verts, stat_draws, stat_dls);
+    port_log("port> GX draw: %lu vertices through the specialised decode loops "
+             "(%.1f%%)\n",
+             stat_fast_verts, stat_verts ? 100.0 * (double)stat_fast_verts / stat_verts : 0.0);
     port_log("port> GX draw: %u primitive(s) off-world (|position matrix "
              "translation| over %.0f)\n",
              stat_offworld, (double)GX_OFFWORLD_LIMIT);
@@ -628,12 +632,16 @@ enum {
     DEC_S8_2_3,  DEC_S8_3_3,  DEC_S8_1_2,  DEC_S8_2_2,
     DEC_U8_2_3,  DEC_U8_3_3,  DEC_U8_1_2,  DEC_U8_2_2,
     DEC_CLR_RGBA8, DEC_CLR_RGBX8, DEC_CLR_RGB8,
-    DEC_CLR_RGB565, DEC_CLR_RGBA4, DEC_CLR_RGBA6
+    DEC_CLR_RGB565, DEC_CLR_RGBA4, DEC_CLR_RGBA6,
+    /* the table forms of the four 8-bit ops (byte_table) */
+    DEC_TS8_2_3, DEC_TS8_3_3, DEC_TS8_1_2, DEC_TS8_2_2,
+    DEC_TU8_2_3, DEC_TU8_3_3, DEC_TU8_1_2, DEC_TU8_2_2
 };
 
 typedef struct DecStep {
     const u8* base;   /* indexed: the array; direct: NULL                     */
     f32 scale;        /* the VAT's fractional scale, folded in once           */
+    const f32* tbl;   /* S8/U8: (f32)(s8)b * scale for every byte (M17)       */
     u16 dstoff;       /* byte offset into the vertex, or into `pending`       */
     u8 stride;        /* indexed: the array's stride                          */
     u8 idx;           /* 0 direct, 1 GX_INDEX8, 2 GX_INDEX16                  */
@@ -645,6 +653,42 @@ typedef struct DecStep {
 
 static DecStep plan[GX_MAX_ATTR];
 static int nplan;
+
+/* An 8-bit component's conversion, as a table (M17, PLAN.md 32).  A 32-bit
+ * PowerPC has no integer-to-float instruction: `(f32)(s8)b` is two stores, a
+ * doubleword load that hits both of them (a load-hit-store stall the 7450
+ * pays in full), a subtract and a round -- per component, three per S8
+ * normal, on every vertex the board draws.  A 1 KB table per (type, scale)
+ * turns that into one load, and it is exact by construction: every entry is
+ * the very expression it replaces, evaluated once.  The game's HSF normals
+ * are S8 (hsfdraw.c:511), so this is most of the decode's conversions.
+ * `--olddecode2` keeps the arithmetic in the loop. */
+#define BYTE_TBL_MAX 8
+static struct {
+    f32 scale;
+    int is_signed;
+    f32 tbl[256];
+} byte_tbl[BYTE_TBL_MAX];
+static int byte_tbl_n;
+
+static const f32* byte_table(int is_signed, f32 scale) {
+    int i;
+    for (i = 0; i < byte_tbl_n; i++) {
+        if (byte_tbl[i].scale == scale && byte_tbl[i].is_signed == is_signed) {
+            return byte_tbl[i].tbl;
+        }
+    }
+    if (byte_tbl_n == BYTE_TBL_MAX) {
+        return NULL; /* the loop falls back to the arithmetic */
+    }
+    for (i = 0; i < 256; i++) {
+        byte_tbl[byte_tbl_n].tbl[i] =
+            is_signed ? (f32)(s8)(u8)i * scale : (f32)(u8)i * scale;
+    }
+    byte_tbl[byte_tbl_n].scale = scale;
+    byte_tbl[byte_tbl_n].is_signed = is_signed;
+    return byte_tbl[byte_tbl_n++].tbl;
+}
 static int plan_ok;          /* every step decodable: the fast loop may run   */
 static union { u32 u; u8 b[4]; } plan_clr; /* the register material, when it wins */
 static int plan_clr_const;
@@ -694,6 +738,10 @@ static int dec_clr_op_of(u8 type) {
 
 /* Called at the end of begin_attr_order(), once everything it settles is in
  * hand: the layout, the texgen sources, and which colour wins. */
+typedef const u8* (*DecodeFast)(const u8*, const u8*, u32);
+static DecodeFast pick_fast(void);
+static DecodeFast plan_fast;
+
 static void build_decode_plan(void) {
     int i, k;
     int supplied[GX_TEXCOORDS];
@@ -724,6 +772,7 @@ static void build_decode_plan(void) {
         s->base = NULL;
         s->stride = 0;
         s->scale = gx_frac_scale[f->frac & 31];
+        s->tbl = NULL;
         s->to_pending = 0;
         s->dstoff = 0;
         s->op = DEC_NONE;
@@ -799,6 +848,23 @@ static void build_decode_plan(void) {
         }
     }
 
+    if (!port_opt.olddecode2) {
+        for (i = 0; i < nplan; i++) {
+            DecStep* s = &plan[i];
+            if (s->op >= DEC_S8_2_3 && s->op <= DEC_S8_2_2) {
+                s->tbl = byte_table(1, s->scale);
+                if (s->tbl) {
+                    s->op = (u8)(s->op - DEC_S8_2_3 + DEC_TS8_2_3);
+                }
+            } else if (s->op >= DEC_U8_2_3 && s->op <= DEC_U8_2_2) {
+                s->tbl = byte_table(0, s->scale);
+                if (s->tbl) {
+                    s->op = (u8)(s->op - DEC_U8_2_3 + DEC_TU8_2_3);
+                }
+            }
+        }
+    }
+
     for (k = 0; k < sl.ntex; k++) {
         if (!supplied[k]) {
             plan_fill[plan_nfill].dstoff = (u16)(sl.off_tex + 8 * k);
@@ -807,6 +873,7 @@ static void build_decode_plan(void) {
             plan_nfill++;
         }
     }
+    plan_fast = pick_fast();
 }
 
 static void transform_and_store(void);
@@ -2289,7 +2356,141 @@ static void dlc_store(const void* list, u32 nbytes, u32 lh, u32 sh, u32 total,
 
 /* The display-list cache needs the range of each array a list actually read.
  * It is only reached from the tracked instantiation of the decode loop. */
+/* --decodestats (M17, PLAN.md 32): what an indexed submit could skip.  Per
+ * vertex of the tracked decode: do all of its indexed attributes carry the
+ * same index (then the game's own arrays could be bound as they stand), and
+ * has this exact (arrays, indices) tuple been decoded already this frame
+ * (then a vertex cache could hand back a GL index instead of decoding it
+ * again)?  A 64K-entry stamp table keyed on the frame answers the second
+ * without a clear per frame. */
+static u32 ds_ix[GX_MAX_ATTR];
+static int ds_n;
+static unsigned long ds_verts, ds_same, ds_unique, ds_multi;
+#define DS_HASH 65536
+static u32 ds_tab[DS_HASH];
+static u32 ds_stamp[DS_HASH];
+/* the same question scoped to the batch (M16's unit of submit): what a cache
+ * that lives as long as the batch could skip */
+static u32 ds_btab[DS_HASH];
+static u32 ds_bstamp[DS_HASH];
+static unsigned long ds_unique_batch;
+
+static void ds_vertex(void) {
+    u32 h = 2166136261u, epoch;
+    int i, same = 1;
+    ds_verts++;
+    if (ds_n < 2) {
+        return;
+    }
+    ds_multi++;
+    for (i = 1; i < ds_n; i++) {
+        if (ds_ix[i] != ds_ix[0]) {
+            same = 0;
+            break;
+        }
+    }
+    ds_same += same;
+    for (i = 0; i < nplan; i++) {
+        h = (h ^ (u32)(uintptr_t)plan[i].base) * 16777619u;
+    }
+    for (i = 0; i < ds_n; i++) {
+        h = (h ^ ds_ix[i]) * 16777619u;
+    }
+    i = (int)((h ^ (h >> 16)) & (DS_HASH - 1));
+    epoch = stat_batches + 1;
+    if (!(ds_bstamp[i] == epoch && ds_btab[i] == h)) {
+        ds_bstamp[i] = epoch;
+        ds_btab[i] = h;
+        ds_unique_batch++;
+    }
+    epoch = gl13_frame_number() + 1;
+    if (ds_stamp[i] == epoch && ds_tab[i] == h) {
+        return; /* seen this frame */
+    }
+    ds_stamp[i] = epoch;
+    ds_tab[i] = h;
+    ds_unique++;
+}
+
+/* --decodestats, part two: which decode plans (attribute, index width, op)
+ * the vertices actually go through, so a specialised loop is written for the
+ * shapes that matter and not the 28 the sources declare. */
+#define DS_PLANS 32
+static struct {
+    u32 key;
+    unsigned long verts, prims;
+    char desc[96];
+} ds_plan[DS_PLANS];
+static int ds_nplan;
+static int ds_cur_plan = -1;
+
+static const char* ds_opname(int op) {
+    static const char* n[] = { "none", "f32x2", "f32x3", "f32x1", "f32x2",
+                               "s16x2", "s16x3", "s16x1", "s16x2", "u16x2", "u16x3",
+                               "u16x1", "u16x2", "s8x2",  "s8x3",  "s8x1",  "s8x2",
+                               "u8x2",  "u8x3",  "u8x1",  "u8x2",  "rgba8", "rgbx8",
+                               "rgb8",  "rgb565", "rgba4", "rgba6", "s8x2t", "s8x3t",
+                               "s8x1t", "s8x2t", "u8x2t", "u8x3t", "u8x1t", "u8x2t" };
+    return (op >= 0 && op < (int)(sizeof(n) / sizeof(n[0]))) ? n[op] : "?";
+}
+
+static void ds_plan_note(u32 count) {
+    u32 h = 2166136261u;
+    int i;
+    for (i = 0; i < nplan; i++) {
+        h = (h ^ ((u32)plan[i].attr << 16 | (u32)plan[i].idx << 8 | plan[i].op)) * 16777619u;
+    }
+    h = (h ^ (u32)prim) * 16777619u;
+    if (ds_cur_plan < 0 || ds_plan[ds_cur_plan].key != h) {
+        for (i = 0; i < ds_nplan; i++) {
+            if (ds_plan[i].key == h) {
+                break;
+            }
+        }
+        if (i == ds_nplan) {
+            if (ds_nplan == DS_PLANS) {
+                return;
+            }
+            ds_nplan++;
+            ds_plan[i].key = h;
+            ds_plan[i].verts = ds_plan[i].prims = 0;
+            {
+                int n = snprintf(ds_plan[i].desc, sizeof(ds_plan[i].desc), "prim %02x:", prim);
+                int j;
+                for (j = 0; j < nplan && n < (int)sizeof(ds_plan[i].desc) - 12; j++) {
+                    n += snprintf(ds_plan[i].desc + n, sizeof(ds_plan[i].desc) - (size_t)n,
+                                  " %d%s%s", plan[j].attr,
+                                  plan[j].idx == 2 ? "/i16 " : plan[j].idx == 1 ? "/i8 " : "/d ",
+                                  ds_opname(plan[j].op));
+                }
+            }
+        }
+        ds_cur_plan = i;
+    }
+    ds_plan[ds_cur_plan].verts += count;
+    ds_plan[ds_cur_plan].prims++;
+}
+
+void gx_decodestats_report(void) {
+    int i;
+    if (!ds_verts) {
+        return;
+    }
+    for (i = 0; i < ds_nplan; i++) {
+        port_log("port> decodestats: %10lu verts %8lu prims  %s\n", ds_plan[i].verts,
+                 ds_plan[i].prims, ds_plan[i].desc);
+    }
+    port_log("port> decodestats: %lu vertices decoded, %lu with 2+ indexed attributes, "
+             "of which %lu (%.1f%%) share one index; %lu (%.1f%%) were the first "
+             "occurrence of their (arrays, indices) tuple in their frame, "
+             "%lu (%.1f%%) in their batch\n",
+             ds_verts, ds_multi, ds_same, ds_multi ? 100.0 * ds_same / ds_multi : 0.0,
+             ds_unique, ds_multi ? 100.0 * ds_unique / ds_multi : 0.0,
+             ds_unique_batch, ds_multi ? 100.0 * ds_unique_batch / ds_multi : 0.0);
+}
+
 static void dl_track_index(u8 attr, u32 ix) {
+    ds_ix[ds_n++] = ix;
     if (dl_maxidx[attr] == 0xFFFFFFFFu) {
         dl_maxidx[attr] = dl_minidx[attr] = ix;
     } else if (ix > dl_maxidx[attr]) {
@@ -2364,6 +2565,28 @@ static f32 dec_f32_portable(const u8* q) {
         dp[1] = DEC_F32(q, 1);                                                           \
         break;
 
+/* The table form: one load per component, no multiply (the scale is in the
+ * table), no integer-to-float dance. */
+#define DEC_CASE_TBL(TAG)                                                                \
+    case DEC_##TAG##_2_3:                                                                \
+        dp[0] = tb[q[0]];                                                                \
+        dp[1] = tb[q[1]];                                                                \
+        dp[2] = 0.0f;                                                                    \
+        break;                                                                           \
+    case DEC_##TAG##_3_3:                                                                \
+        dp[0] = tb[q[0]];                                                                \
+        dp[1] = tb[q[1]];                                                                \
+        dp[2] = tb[q[2]];                                                                \
+        break;                                                                           \
+    case DEC_##TAG##_1_2:                                                                \
+        dp[0] = tb[q[0]];                                                                \
+        dp[1] = 0.0f;                                                                    \
+        break;                                                                           \
+    case DEC_##TAG##_2_2:                                                                \
+        dp[0] = tb[q[0]];                                                                \
+        dp[1] = tb[q[1]];                                                                \
+        break;
+
 #define DEC_CASE_COLOUR                                                                  \
     case DEC_CLR_RGBA8:                                                                  \
         memcpy(d, q, 4);                                                                 \
@@ -2421,6 +2644,9 @@ static f32 dec_f32_portable(const u8* q) {
                 nverts++;                                                                \
                 lastv = v;                                                               \
             }                                                                            \
+            if (TRACK) {                                                                 \
+                ds_n = 0;                                                                \
+            }                                                                            \
             if (plan_clr_const) {                                                        \
                 *(u32*)(v + sl.off_clr) = plan_clr.u;                                    \
             }                                                                            \
@@ -2434,6 +2660,7 @@ static f32 dec_f32_portable(const u8* q) {
                 u8* d;                                                                   \
                 f32* dp;                                                                 \
                 f32 sc;                                                                  \
+                const f32* tb;                                                           \
                 if (st->idx == 2) {                                                      \
                     u32 ix = ((u32)p[0] << 8) | p[1];                                     \
                     q = st->base + (size_t)ix * st->stride;                              \
@@ -2455,15 +2682,21 @@ static f32 dec_f32_portable(const u8* q) {
                 d = st->to_pending ? (u8*)&pending + st->dstoff : v + st->dstoff;        \
                 dp = (f32*)d;                                                            \
                 sc = st->scale;                                                          \
+                tb = st->tbl;                                                            \
                 switch (st->op) {                                                        \
                     DEC_CASE_F32                                                         \
                     DEC_CASE_TYPE(S16, DEC_S16)                                          \
                     DEC_CASE_TYPE(U16, DEC_U16)                                          \
                     DEC_CASE_TYPE(S8, DEC_S8)                                            \
                     DEC_CASE_TYPE(U8, DEC_U8)                                            \
+                    DEC_CASE_TBL(TS8)                                                    \
+                    DEC_CASE_TBL(TU8)                                                    \
                     DEC_CASE_COLOUR                                                      \
                     default: break; /* DEC_NONE: a null array, as before */              \
                 }                                                                        \
+            }                                                                            \
+            if (TRACK && port_opt.decodestats) {                                         \
+                ds_vertex();                                                             \
             }                                                                            \
         }                                                                                \
         /* Leave `pending` holding the last vertex's texcoords, which is what the        \
@@ -2480,6 +2713,193 @@ static f32 dec_f32_portable(const u8* q) {
 
 DECODE_RUN(decode_run, 0)
 DECODE_RUN(decode_run_tracked, 1)
+
+/* ---- the specialised loops (M17, PLAN.md 32) -------------------------------
+ *
+ * The plan walker above pays, per attribute of every vertex, a switch on the
+ * op (an indirect branch the 7450 predicts badly) and a load of every step
+ * field.  --decodestats says the game's display lists go through a handful
+ * of plan shapes -- HSF models are POS f32 / NRM s8 / CLR0 rgba8 / TEX0 f32,
+ * all GX_INDEX16 (hsfdraw.c:506-600), with the colour or the texcoord
+ * absent for some materials -- so those shapes get a loop of their own with
+ * the sequence fixed at compile time: four index loads, the loads and
+ * stores, nothing else.  The stores are the same bytes in the same places
+ * as the general loop's, which is why the md5s hold.
+ *
+ * NRM: 0 none, 1 s8 through the byte table, 2 f32.  CLR: 0 not in the
+ * descriptor, 1 rgba8 into the vertex, 2 rgba8 into `pending` (the register
+ * material wins, but the index is still consumed and the old path still
+ * stored it).  TEX: 0 none, 1 f32 s/t into slot 0.  Every step GX_INDEX16. */
+#define DECODE_FAST(NAME, NRM, CLR, TEX)                                                 \
+    static const u8* NAME(const u8* p, const u8* end, u32 count) {                       \
+        const u8* pb = plan[0].base;                                                     \
+        const u32 ps = plan[0].stride;                                                   \
+        const u8* nb = NRM ? plan[1].base : NULL;                                        \
+        const u32 ns = NRM ? plan[1].stride : 0;                                         \
+        const f32* nt = (NRM == 1) ? plan[1].tbl : NULL;                                 \
+        const int ci = NRM ? 2 : 1;                                                      \
+        const u8* cb = CLR ? plan[ci].base : NULL;                                       \
+        const u32 cs = CLR ? plan[ci].stride : 0;                                        \
+        const int ti = ci + (CLR ? 1 : 0);                                               \
+        const u8* tb = TEX ? plan[ti].base : NULL;                                       \
+        const u32 ts = TEX ? plan[ti].stride : 0;                                        \
+        const int off_nrm = sl.off_nrm, off_clr = sl.off_clr, off_tex = sl.off_tex;      \
+        const int per = 2 * (1 + (NRM ? 1 : 0) + (CLR ? 1 : 0) + (TEX ? 1 : 0));         \
+        u8* lastv = NULL;                                                                \
+        u32 i;                                                                           \
+        if (plan_clr_const) {                                                            \
+            /* the register material, splatted once per vertex below */                 \
+        }                                                                                \
+        for (i = 0; i < count && p + per <= end; i++) {                                  \
+            u8* v;                                                                       \
+            const u8* q;                                                                 \
+            u32 ix;                                                                      \
+            if (nverts >= MAX_VERTS ||                                                   \
+                run_pos + (size_t)(nverts + 1) * sl.stride > src_cap) {                  \
+                gx_warn("GXBegin: more than 65536 vertices in one primitive; truncated");\
+                v = sink_vtx;                                                            \
+            } else {                                                                     \
+                v = src_buf + run_pos + (size_t)nverts * sl.stride;                      \
+                nverts++;                                                                \
+                lastv = v;                                                               \
+            }                                                                            \
+            if (plan_clr_const) {                                                        \
+                *(u32*)(v + off_clr) = plan_clr.u;                                       \
+            }                                                                            \
+            ix = ((u32)p[0] << 8) | p[1];                                                \
+            q = pb + (size_t)ix * ps;                                                    \
+            ((f32*)v)[0] = DEC_F32(q, 0);                                                \
+            ((f32*)v)[1] = DEC_F32(q, 1);                                                \
+            ((f32*)v)[2] = DEC_F32(q, 2);                                                \
+            p += 2;                                                                      \
+            if (NRM) {                                                                   \
+                f32* dp = (f32*)(v + off_nrm);                                           \
+                ix = ((u32)p[0] << 8) | p[1];                                            \
+                q = nb + (size_t)ix * ns;                                                \
+                if (NRM == 1) {                                                          \
+                    dp[0] = nt[q[0]];                                                    \
+                    dp[1] = nt[q[1]];                                                    \
+                    dp[2] = nt[q[2]];                                                    \
+                } else {                                                                 \
+                    dp[0] = DEC_F32(q, 0);                                               \
+                    dp[1] = DEC_F32(q, 1);                                               \
+                    dp[2] = DEC_F32(q, 2);                                               \
+                }                                                                        \
+                p += 2;                                                                  \
+            }                                                                            \
+            if (CLR) {                                                                   \
+                u8* d = (CLR == 1) ? v + off_clr : pending.clr[0];                       \
+                ix = ((u32)p[0] << 8) | p[1];                                            \
+                q = cb + (size_t)ix * cs;                                                \
+                memcpy(d, q, 4);                                                         \
+                p += 2;                                                                  \
+            }                                                                            \
+            if (TEX) {                                                                   \
+                f32* dp = (f32*)(v + off_tex);                                           \
+                ix = ((u32)p[0] << 8) | p[1];                                            \
+                q = tb + (size_t)ix * ts;                                                \
+                dp[0] = DEC_F32(q, 0);                                                   \
+                dp[1] = DEC_F32(q, 1);                                                   \
+                p += 2;                                                                  \
+            }                                                                            \
+        }                                                                                \
+        if (lastv && TEX) {                                                              \
+            const f32* t = (const f32*)(lastv + off_tex);                                \
+            pending.tex[0][0] = t[0];                                                    \
+            pending.tex[0][1] = t[1];                                                    \
+        }                                                                                \
+        return p;                                                                        \
+    }
+
+/* The eight shapes --decodestats found on the 9,000-frame walk (PLAN.md 32):
+ * 49% of all vertices are POS/NRM f32/TEX0, 39% POS/NRM s8/TEX0, 7% and 1%
+ * the same two without a texcoord, and the four with a vertex colour share
+ * the last 4%.  No shape stores a colour in `pending` (the register
+ * material wins with no CLR0 in the descriptor), so CLR 2 is not built. */
+DECODE_FAST(decode_fast_n2c0t1, 2, 0, 1)
+DECODE_FAST(decode_fast_n1c0t1, 1, 0, 1)
+DECODE_FAST(decode_fast_n1c0t0, 1, 0, 0)
+DECODE_FAST(decode_fast_n2c0t0, 2, 0, 0)
+DECODE_FAST(decode_fast_n1c1t1, 1, 1, 1)
+DECODE_FAST(decode_fast_n2c1t1, 2, 1, 1)
+DECODE_FAST(decode_fast_n0c1t1, 0, 1, 1)
+DECODE_FAST(decode_fast_n1c1t0, 1, 1, 0)
+
+/* Match the plan against the shapes above; NULL when none fits and the
+ * general walker runs.  Called once per primitive from build_decode_plan. */
+static DecodeFast pick_fast(void) {
+    int i = 0, nrm = 0, clr = 0, tex = 0;
+    if (port_opt.olddecode3 || !plan_ok || plan_nfill != 0 || nplan < 2 || nplan > 4) {
+        return NULL;
+    }
+    for (i = 0; i < nplan; i++) {
+        if (plan[i].idx != 2 || !plan[i].base) {
+            return NULL;
+        }
+    }
+    i = 0;
+    if (plan[i].attr != GX_VA_POS || plan[i].op != DEC_F32_3_3 || plan[i].to_pending ||
+        plan[i].dstoff != 0) {
+        return NULL;
+    }
+    i++;
+    if (i < nplan && plan[i].attr == GX_VA_NRM) {
+        if (plan[i].to_pending || (int)plan[i].dstoff != sl.off_nrm) {
+            return NULL;
+        }
+        if (plan[i].op == DEC_TS8_3_3 && plan[i].tbl) {
+            nrm = 1;
+        } else if (plan[i].op == DEC_F32_3_3) {
+            nrm = 2;
+        } else {
+            return NULL;
+        }
+        i++;
+    }
+    if (i < nplan && plan[i].attr == GX_VA_CLR0) {
+        if (plan[i].op != DEC_CLR_RGBA8) {
+            return NULL;
+        }
+        if (plan[i].to_pending) {
+            if (plan[i].dstoff != (u16)offsetof(Pending, clr)) {
+                return NULL;
+            }
+            clr = 2;
+        } else {
+            if ((int)plan[i].dstoff != sl.off_clr) {
+                return NULL;
+            }
+            clr = 1;
+        }
+        i++;
+    }
+    if (i < nplan && plan[i].attr == GX_VA_TEX0) {
+        if (plan[i].op != DEC_F32_2_2 || plan[i].to_pending ||
+            (int)plan[i].dstoff != sl.off_tex || sl.ntex != 1) {
+            return NULL;
+        }
+        tex = 1;
+        i++;
+    }
+    if (i != nplan) {
+        return NULL;
+    }
+    if (tex && plan_nback != 1) {
+        return NULL;
+    }
+    if (!tex && (plan_nback != 0 || sl.ntex != 0)) {
+        return NULL;
+    }
+    if (nrm == 2 && clr == 0 && tex == 1) return decode_fast_n2c0t1;
+    if (nrm == 1 && clr == 0 && tex == 1) return decode_fast_n1c0t1;
+    if (nrm == 1 && clr == 0 && tex == 0) return decode_fast_n1c0t0;
+    if (nrm == 2 && clr == 0 && tex == 0) return decode_fast_n2c0t0;
+    if (nrm == 1 && clr == 1 && tex == 1) return decode_fast_n1c1t1;
+    if (nrm == 2 && clr == 1 && tex == 1) return decode_fast_n2c1t1;
+    if (nrm == 0 && clr == 1 && tex == 1) return decode_fast_n0c1t1;
+    if (nrm == 1 && clr == 1 && tex == 0) return decode_fast_n1c1t0;
+    return NULL;
+}
 
 void GXCallDisplayList(const void* list, u32 nbytes) {
     const u8* p = (const u8*)list;
@@ -2686,8 +3106,16 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
          * attribute the port does not decode, which it also warns about; the
          * old cursor path is still what GXBegin/GXEnd immediate mode uses. */
         if (plan_ok && !port_opt.olddecode) {
-            p = caching ? decode_run_tracked(p, end, count)
-                        : decode_run(p, end, count);
+            if (port_opt.decodestats) {
+                ds_plan_note(count);
+            }
+            if (plan_fast && !caching && !port_opt.decodestats) {
+                stat_fast_verts += count;
+                p = plan_fast(p, end, count);
+            } else {
+                p = (caching || port_opt.decodestats) ? decode_run_tracked(p, end, count)
+                                                      : decode_run(p, end, count);
+            }
         } else {
             for (i = 0; i < count && p < end; i++) {
                 for (k = 0; k < nactive; k++) {
@@ -2822,6 +3250,7 @@ void gl13_state_report(void);
 
 void port_gx_shutdown(void) {
     gx_draw_report();
+    gx_decodestats_report();
     if (port_opt.vprogstats) {
         gx_vprog_report();
     }

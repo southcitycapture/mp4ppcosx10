@@ -31,6 +31,11 @@ ifeq ($(TARGET),ppc-darwin)
                     -mone-byte-bool
   TARGET_LDFLAGS := -isysroot $(SYSROOT) -mmacosx-version-min=10.4 -static-libgcc
   GAME_UBSAFE := -fno-aggressive-loop-optimizations
+  # M17: schedule for the G4's own core.  -mcpu=7450 would also switch AltiVec
+  # on for GCC's vectoriser, whose fused multiply-adds round differently from
+  # the scalar FPU's, so it is named off; the port's AltiVec is opt-in per
+  # object (GX_DRAW_CFLAGS, PSMTX_CFLAGS).  `TUNE=` builds the pre-M17 way.
+  TUNE ?= -mcpu=7450 -mtune=7450 -mno-altivec
   CTX_ASM  := src/os/jmp_ppc_darwin.s
   MIRROR_TARGET := ppc
   REL_EXT  := bundle
@@ -171,10 +176,10 @@ GAME_WARN := -w -Wno-implicit-function-declaration -Wno-return-mismatch \
 # has been allocated", backtrace ends at two frames inside draw_run).
 DEBUG_G = -gdwarf-2 -gstrict-dwarf -fno-shrink-wrap
 GAME_CFLAGS = -std=gnu11 -O2 $(DEBUG_G) -fno-strict-aliasing -fwrapv -fcommon \
-              $(GAME_UBSAFE) \
+              $(GAME_UBSAFE) $(TUNE) \
               $(GAME_WARN) $(GAME_DEFS) $(GAME_INC) $(TARGET_CFLAGS)
 PORT_CFLAGS = -std=gnu11 -O2 $(DEBUG_G) -fno-strict-aliasing -fcommon \
-              -Wall -Wno-unused-parameter -Wno-unknown-pragmas \
+              -Wall -Wno-unused-parameter -Wno-unknown-pragmas $(TUNE) \
               $(GAME_DEFS) $(GAME_INC) $(SDL_CFLAGS) $(TARGET_CFLAGS)
 LDFLAGS   = $(TARGET_LDFLAGS) -lm $(SDL_LIBS) \
             -Wl,-exported_symbols_list,$(BUILD)/exports.txt
@@ -269,7 +274,7 @@ $(BUILD)/port/%.o: %.c $(MIRROR_STAMP)
 # dependency and no $(GEN)/include on the path.  `-w` for the same reason the
 # game's own sources get it: this is upstream code compiled as it is written,
 # and the port's -Wall is a statement about the port's own files.
-MUSYX_CFLAGS = -std=gnu11 -O2 $(DEBUG_G) -fno-strict-aliasing -fwrapv -fcommon -w \
+MUSYX_CFLAGS = -std=gnu11 -O2 $(DEBUG_G) -fno-strict-aliasing -fwrapv -fcommon -w $(TUNE) \
                $(GAME_DEFS) -I$(ROOT)/extern/musyx/include -Iinclude $(TARGET_CFLAGS)
 $(BUILD)/musyx/%.o: $(MUSYX_DIR)/%.c
 	@mkdir -p $(dir $@)
