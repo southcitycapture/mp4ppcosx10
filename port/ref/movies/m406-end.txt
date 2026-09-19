@@ -1,0 +1,40 @@
+# m406-end -- boot to m406 (Mr. Blizzard? snow minigame), all four players CPU.
+#
+# board-start.txt's walk, plus the two things the port's own harness does from
+# inside the game (port/src/debug/selfplay.c): --com4 (GWPlayerCfg[i].iscom = 1)
+# and --minigame m444 (GWSystem.mg_next = 43, mgInfoTbl index of DLL_m444dll).
+# Both are plain memory writes, and a Gecko write lands at the VI hook, which is
+# the same point in the frame where port_selfplay_tick() parks them.
+#
+# The START metronome of board-start.txt is DROPPED: with four CPU players
+# instDll auto-starts (src/REL/instDll/main.c:294) and a stray START opens the
+# board pause menu instead (see board-start-com4.play's header).
+
+at 10 320 START
+at 380 6 START
+at 430 6 START
+at 480 6 START
+every 64 4 560 A
+
+# --com4: GWPlayerCfg[4] at 0x8018FC10, stride 0x0A, {character, pad_idx, diff,
+# group, iscom} as s16.  character = i and group = i are park_players() /
+# park_minigame()'s default-type assignment.
+poke 8018FC10 2 0
+poke 8018FC12 2 0
+poke 8018FC16 2 0
+poke 8018FC18 2 1
+poke 8018FC1A 2 1
+poke 8018FC1C 2 1
+poke 8018FC20 2 1
+poke 8018FC22 2 1
+poke 8018FC24 2 2
+poke 8018FC26 2 2
+poke 8018FC2A 2 2
+poke 8018FC2C 2 1
+poke 8018FC2E 2 3
+poke 8018FC30 2 3
+poke 8018FC34 2 3
+poke 8018FC36 2 1
+
+# --minigame m444: GWSystem.mg_next (0x8018FCF8 + 0x34), from the board onwards.
+poke 8018FD2C 2 5 9000   # --minigame m406 (mgInfoTbl index 5, type 0)
