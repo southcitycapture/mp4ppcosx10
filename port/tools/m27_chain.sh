@@ -11,7 +11,8 @@
 #   ~/m27/index.txt (one line per run: exit code, wall seconds, the md5s)
 #
 # M27_APP / M27_DIR / M27_RUNS override the bundle, the output dir and the
-# run list ("T0 T1 T2 T3 R0 R3a R3b R3c R1 R2").
+# run list ("T0 T1 T2 T3 R0 R3a R3b R3c R1 R2"); `g4 run T3 R0 R3a` is the
+# same list as arguments.
 cd "$HOME"
 APP="${M27_APP:-$HOME/MarioParty4.app}/Contents/MacOS/isle"
 D="${M27_DIR:-$HOME/m27}"; mkdir -p "$D"
@@ -56,14 +57,15 @@ run() {
     sleep 2; killall -9 isle 2>/dev/null; sleep 3
 }
 
+[ $# -gt 0 ] && M27_RUNS="$*"   # the run list may also come as the runner's arguments
 for r in ${M27_RUNS:-T0 T1 T2 T3 R0 R3a R3b R3c R1 R2}; do
     case $r in
         T0)  run T0 700 $TURBO --renderthread 0 ;;
         T1)  run T1 700 $TURBO --renderthread 1 ;;
         T2)  run T2 700 $TURBO --renderthread 2 ;;
         T3)  run T3 700 $TURBO --renderthread 3 ;;
-        R0)  run R0 480 $REAL --renderthread 0 ;;
-        R1)  run R1 480 $REAL --renderthread 1 ;;
+        R0*) run $r 480 $REAL --renderthread 0 ;;
+        R1*) run $r 480 $REAL --renderthread 1 ;;
         R2)  run R2 480 $REAL --renderthread 2 ;;
         R3*) run $r 480 $REAL --renderthread 3 ;;
         *)   echo "chain: unknown run $r" ;;

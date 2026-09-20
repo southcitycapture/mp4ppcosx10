@@ -310,6 +310,7 @@ static void wait_pos(u32 pos, const char* why, double* acc_s, double* acc_max) {
     }
 }
 
+static u32 last_op; /* the op of the record being built (done() publishes by it) */
 static void* rec(u32 op, size_t argbytes) {
     u32 len = (u32)((sizeof(Hdr) + argbytes + RT_ALIGN - 1) & ~(RT_ALIGN - 1));
     u32 off = wr & RT_MASK;
@@ -343,6 +344,7 @@ static void* rec(u32 op, size_t argbytes) {
     h->op = op;
     h->len = len;
     wr += len;
+    last_op = op;
     st_records++;
     st_bytes += len;
     st_frame_bytes += len;
@@ -350,14 +352,35 @@ static void* rec(u32 op, size_t argbytes) {
     return h + 1;
 }
 
-/* every twin ends here: the record is complete, publish it (and in inline
- * mode replay it now) */
-static void done(void) {
-    publish();
+/* every twin ends here: the record is complete.  A draw, an upload, a
+ * present, a call or a read publishes at once (the reader's next unit of
+ * work is behind it); a state record waits for the next one of those, or
+ * for the 32nd state record, so the two barriers of a publish are paid a few
+ * times per batch rather than ~2,900 times a frame.  In inline mode the
+ * record is replayed now. */
+static u32 unpublished;
+static void done_op(u32 op) {
     if (mode == 1) {
         replay_upto(wr);
+        return;
+    }
+    switch (op) {
+        case OP_DRAW_ARRAYS: case OP_MULTI_DRAW: case OP_DRAW_RANGE: case OP_PRESENT:
+        case OP_CALL: case OP_READ_PIXELS: case OP_GET_TEX_IMAGE: case OP_GET_ERROR:
+        case OP_TEXIMAGE: case OP_COPY_TEX_SUB: case OP_CLEAR: case OP_FINISH:
+        case OP_BEGIN: case OP_END: case OP_WAIT_FENCE: case OP_SET_FENCE:
+            unpublished = 0;
+            publish();
+            return;
+        default:
+            if (++unpublished >= 32) {
+                unpublished = 0;
+                publish();
+            }
+            return;
     }
 }
+static void done(void) { done_op(last_op); }
 
 #define REC(op, T) T* a = (T*)rec(op, sizeof(T))
 
@@ -1205,9 +1228,21 @@ static void replay_one(const Hdr* h) {
 }
 
 /* replay [rd, to) -- on the render thread, or on the game thread inline */
-static unsigned replayed_since_test;
+static unsigned replayed_since_test, handshakes;
 static void replay_upto(u32 to) {
-    double t0 = now();
+    double t0;
+    if (mode == 1) {
+        /* the inline twin: one thread, so no barriers, no handshake, and the
+         * per-frame timing from the present records alone */
+        while ((s32)(to - rd) > 0) {
+            const Hdr* h = (const Hdr*)(buf + (rd & RT_MASK));
+            u32 len = h->len;
+            replay_one(h);
+            rd += len;
+        }
+        return;
+    }
+    t0 = now();
     RT_ACQ_REL(); /* acquire: the records behind `to` after the position itself */
     while ((s32)(to - rd) > 0) {
         const Hdr* h = (const Hdr*)(buf + (rd & RT_MASK));
@@ -1232,12 +1267,22 @@ static void replay_upto(u32 to) {
         }
         RT_ACQ_REL(); /* release: a read-back's pixels before the position */
         rd += len;
-        RT_FULL();    /* the store above before the load below (Dekker) */
-        if (writer_waiting) {
-            pthread_mutex_lock(&mu);
-            pthread_cond_broadcast(&cv_done);
-            pthread_mutex_unlock(&mu);
+        if ((++handshakes & 15u) == 0) {
+            RT_FULL(); /* the store above before the load below (Dekker) */
+            if (writer_waiting) {
+                pthread_mutex_lock(&mu);
+                pthread_cond_broadcast(&cv_done);
+                pthread_mutex_unlock(&mu);
+            }
         }
+    }
+    /* the drain is over: a writer that went to sleep on a position inside it
+     * must be told now, whatever the count above says */
+    RT_FULL();
+    if (writer_waiting) {
+        pthread_mutex_lock(&mu);
+        pthread_cond_broadcast(&cv_done);
+        pthread_mutex_unlock(&mu);
     }
     {
         double d = now() - t0;
@@ -1260,11 +1305,12 @@ static void* thread_main(void* arg) {
             if ((s32)(w - rd) > 0 || quit) {
                 break;
             }
-            if (++spins < 20000) {
+            if (++spins < 4000) {
                 if ((spins & 1023) == 0) {
                     reader_test_fences(); /* a fence finishing while idle */
                 }
-                continue; /* ~100 us of spinning covers the gaps inside a drawn frame */
+                continue; /* a short spin covers the gaps inside a drawn frame; then the
+                           * core is the mixer worker's until the next publish */
             }
             reader_test_fences();
             pthread_mutex_lock(&mu);
@@ -1444,7 +1490,14 @@ void rt_report(void) {
                      joins[i].s * 1000.0, joins[i].max * 1000.0);
         }
     }
-    port_log("  fences   %lu waits (%lu blocked) on the replaying side\n", st_fence_waits, st_fence_blocked);
+    if (mode >= 2) {
+        port_log("  fences   the ring's chunks by epoch: the writer waited %lu time(s) for the GPU "
+                 "(the `ring' line above); the reader tests pending fences after every present, "
+                 "every 256 records and while idle\n", st_ring_gpu_waits);
+    } else {
+        port_log("  fences   %lu waits (%lu blocked) on the replaying side\n", st_fence_waits,
+                 st_fence_blocked);
+    }
 }
 
 double rt_last_frame_ms(void) { return st_last_frame_ms; }
