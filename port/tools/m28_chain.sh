@@ -87,6 +87,14 @@ for r in ${M28_RUNS:-N0 N5 T0 T5 R0 R5 S0 S5 Na Nb Nc Ta Tb Tc Td Ra Rb Rc Rd O3
                     --dumpframe 800,1500,2500,3000,4000,5000,6500,7000,7500,8500,9500,10500,11500,12500,13500,14500,15500 ;;
         S[05])  a=${r#S}; run $r MarioParty4.app 400 --nodraw --turbo --play board-start-com4.play \
                     --frames 8101 --snap-at 8100 --snap-dir "$D/$r" --wav "$D/$r/walk.wav" $(arm_flags $a) ;;
+        Rm*)    # (f): M22's batch merge (the same-state neighbours joined) with the
+                # render thread on -- does fewer batches move the game thread now?
+                run $r MarioParty4.app 480 $REAL --lazyflush --premerge-max 256 --submitstats ;;
+        Tm)     run Tm MarioParty4.app 700 $TURBO --lazyflush --premerge-max 256 --submitstats ;;
+        K)      # the results-screen stall's teleport point (PLAN.md 43.1): a snapshot
+                # 50 frames before the walk's first minigame results (retrace 14,203)
+                run K MarioParty4.app 400 --soak --realtime --ffto 14100 --frames 14400 \
+                    --snap-at 14150 --snap-dir "$D/K" ;;
         O3T)    run O3T MarioParty4-o3.app 700 $TURBO ;;
         O3R*)   run $r MarioParty4-o3.app 480 $REAL ;;
         FT)     run FT MarioParty4-fast.app 700 $TURBO ;;
@@ -95,10 +103,11 @@ for r in ${M28_RUNS:-N0 N5 T0 T5 R0 R5 S0 S5 Na Nb Nc Ta Tb Tc Td Ra Rb Rc Rd O3
                 # the profile (PLAN.md 43.1): teleport to the board and `sample`
                 # ten seconds of it; PN = --nodraw (a consumed frame), PT = drawn
                 app=MarioParty4.app; case $r in *-old) app=MarioParty4-m27.app ;; esac
-                nd=""; [ "${r#PN}" != "$r" ] && nd="--nodraw"
+                # PN walks there under --nodraw (a --nodraw --ffto run drew past N until M28)
+                nd="--ffto 6500"; [ "${r#PN}" != "$r" ] && nd="--nodraw"
                 echo "chain: $r start $(date)"; t0=$(date +%s); mkdir -p "$D/$r"
                 "$HOME/$app/Contents/MacOS/isle" --com4 --rtc dolphin --freshcard --noconfig --status --ovllog \
-                    --play board-start-com4.play --ffto 6500 --turbo $nd > "$D/$r.log" 2>&1 &
+                    --play board-start-com4.play --turbo $nd > "$D/$r.log" 2>&1 &
                 pid=$!
                 while kill -0 $pid 2>/dev/null; do
                     sleep 3
@@ -110,10 +119,11 @@ for r in ${M28_RUNS:-N0 N5 T0 T5 R0 R5 S0 S5 Na Nb Nc Ta Tb Tc Td Ra Rb Rc Rd O3
                 kill $pid 2>/dev/null; sleep 3; kill -9 $pid 2>/dev/null; wait $pid 2>/dev/null
                 echo "$r EXIT=? wall=$(( $(date +%s) - t0 ))s sample=$D/$r/board.sample" >> "$IDX"
                 echo "chain: $r done $(date)"; killall -9 isle 2>/dev/null; sleep 3 ;;
-        Q)      echo "chain: Q start $(date)"; t0=$(date +%s)
-                "$HOME/mtx_test_m28" --sqrt-all > "$D/Q.log" 2>&1; e=$?
-                echo "Q EXIT=$e wall=$(( $(date +%s) - t0 ))s" >> "$IDX"
-                echo "chain: Q done EXIT=$e $(date)" ;;
+        Q*)     stride=${r#Q}; stride=${stride:-1}   # Q = every float, Q3 = every third
+                echo "chain: $r start $(date)"; t0=$(date +%s)
+                "$HOME/mtx_test_m28" --sqrt-all $stride > "$D/$r.log" 2>&1; e=$?
+                echo "$r EXIT=$e wall=$(( $(date +%s) - t0 ))s" >> "$IDX"
+                echo "chain: $r done EXIT=$e $(date)" ;;
         *)      echo "chain: unknown run $r" ;;
     esac
 done

@@ -928,6 +928,7 @@ int port_parse_args(int argc, char** argv) {
      * --ffto *is* --nodraw with an end: one frame of warm-up before N, because
      * the texture cache is flushed when drawing comes back on and the first
      * drawn frame has to re-upload what it binds (PLAN.md 24.1). */
+    port_opt.nodraw_user = port_opt.nodraw; /* M28: --nodraw --ffto N stays off past N */
     if (port_opt.ffto) {
         port_opt.nodraw = 1;
     }

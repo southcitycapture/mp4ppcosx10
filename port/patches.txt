@@ -19,9 +19,13 @@
 x4:src/game/malloc.c	    register u32 retaddr;\n    asm {\n        mflr retaddr\n    }\n	    u32 retaddr = (u32)(uintptr_t)__builtin_return_address(0);\n
 
 # ------------------------------------------------------------- game/hsfmotion.c
-# `__declspec(weak)` is Metrowerks/clang-only; GCC spells it __attribute__.
-src/game/hsfmotion.c	__declspec(weak) float *GetObjTRXPtr	__attribute__((weak)) float *GetObjTRXPtr
-src/game/hsfmotion.c	__declspec(weak) float GetBezier	__attribute__((weak)) float GetBezier
+# `__declspec(weak)` is Metrowerks/clang-only.  Until M28 it became GCC's
+# __attribute__((weak)), and on Darwin a weak definition is called through
+# the dyld stub even from its own file: `dyld_stub_GetObjTRXPtr` was 1.4% of
+# a consumed board frame on its own (PLAN.md 43.2).  Nothing in src/ defines
+# either name a second time, so the attribute goes and the calls are direct.
+src/game/hsfmotion.c	__declspec(weak) float *GetObjTRXPtr	float *GetObjTRXPtr
+src/game/hsfmotion.c	__declspec(weak) float GetBezier	float GetBezier
 
 # --------------------------------------------------------------- game/process.c
 # HUPROCESS coroutine stacks.  The default is 2,048 bytes and `base_sp` leaves

@@ -101,10 +101,14 @@ void port_ffto_tick(void) {
      * for everything it binds and comes out byte-identical to a straight run
      * (gx_tex.c: gx_tex_flush_all). */
     gx_tex_flush_all();
-    gl13_set_draw_off(0);
+    /* M28: --nodraw --ffto N stays undrawn past N (the consumed-frame profile
+     * teleported to the board); before, the end of the fast-forward switched
+     * the renderer on whatever --nodraw said */
+    gl13_set_draw_off(port_opt.nodraw_user ? 1 : 0);
     port_opt.turbo = saved_turbo;
     port_log("port> ffto: reached frame %d in %.1f s (%u frames, %.1f fps, "
-             "drawing back on at frame %u)\n",
+             "drawing %s at frame %u)\n",
              port_opt.ffto, dt, now - f0,
-             dt > 0.0 ? (double)(now - f0) / dt : 0.0, now + 2);
+             dt > 0.0 ? (double)(now - f0) / dt : 0.0,
+             port_opt.nodraw_user ? "still off (--nodraw)" : "back on", now + 2);
 }

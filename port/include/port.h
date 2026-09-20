@@ -395,6 +395,9 @@ typedef struct PortOptions {
                              *   PSMTXRotRad + PSMTXConcat (psmtx_c.c)       */
     int nofastsqrt;         /* --nofastsqrt  VECMag/VECNormalize/VECDistance's
                              *   sqrtf through libm (psmtx_c.c port_sqrtf)   */
+    int nodraw_user;        /* --nodraw was on the command line (--ffto sets
+                             *   nodraw itself and used to switch drawing back
+                             *   on at its end whatever the user asked)     */
 } PortOptions;
 
 extern PortOptions port_opt;

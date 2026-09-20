@@ -13679,3 +13679,115 @@ position at the retrace and §39.5's in-place-rewrite argument re-checked
 against the sprite path and `EnvelopeProc` before a line is written; the
 M26 gallery (`gallery_chain.sh`) on the final build as the picture-level
 witness of the stream across all 63 games.
+
+## 43. M28 log: the experiments *(2026-09-20, littlejelly)*
+
+M28's brief is the game side of the wall §42.5 measured: the board
+presents 26.6 fps because the game thread's drawn frame (28.5 ms) plus
+the consumed frame that pays for it (6.7 ms) is 1.9 ms over two retraces.
+Six experiments, each a flag, each A/B'd on the same walk at `--turbo`
+(md5s) and `--realtime` (presented fps), kept only if it pays: (a) the
+material walk with nothing drawn, (b) the motion curves memoised, (c) the
+bone walk's four concats made sparse, (d) the six square roots of
+`Hu3DMtxScaleGet` without libm, (e) the compiler on the port's own GX
+sources, (f) the sprites' draws with the render thread on, (g) the text
+fragment shader. Before any of them, today's profile (§43.2), which is not
+§32.4's: the mixer is on the second core, the skinning runs at the draw,
+and the consumed frame's shape is the object walk, the motion curves and
+the bone walk, in that order.
+
+### 43.1 The soak, read
+
+§42.7's leave-behind — `g4 run --soak --com4 --rtc dolphin --freshcard
+--realtime --snap-every 5000 --snap-keep 3 --status --ovllog --stuckwatch
+200 --perf` on the M27 build (`44152d1f…`), 12:58 to 14:03 G4 time, ended
+through Escape at turn 19's minigame (m418) to free the G4: **65 minutes,
+235,140 frames, 3,919 status lines** (`docs/soak/m28-soak18-m27-leave.log.gz`),
+the first soak of the stream and the first with `--perf` on.
+
+| | |
+|---|---|
+| speed / presented fps | **100.1%** mean over 3,919 lines (`cpu 2`, `machine ok` on every one); **26.6 fps** overall, **28.4 on the board** (1,955 board lines; M27's walk measured 26.6 on turn 1) |
+| where it got | turn 19 of 20, 26 minigames dealt, **the first 24 the same modules in the same order** as soaks 13–17, then m414, m418 |
+| `rt` on the status lines | median **15.5 ms**, p95 26.1, worst 259 (a load); per module: m431 29.9, m444 25.3, the menus 24.3, m401 23.4, m412 23.0, m436 22.8, m414 22.8 — seven games whose replay is over a retrace, the board 15.5 |
+| the `render thread:` block | 333M records, 104,481 frames presented, replay mean 15.6 ms; gate: 95,629 drained, **7,752 waited (3.6 s in all, worst 18 ms)**, 167 consumed for a busy thread; ring waits 0; joins: 134 compiles (1.9 s), 1,102 forced frames (1.2 s), 47 snapshots (9 ms); present tail 0.4 ms mean |
+| `split frames` / `worker mixer` | 784,721 halves each side, 235,271 joins, **0 position mismatches**; 6 late jobs (10 ms), 164 waited for (73 ms, worst 2.1 ms) |
+| resyncs / faults / STUCK / guard hits | **1 / 0 / 0 / 0** — and this time the resync has its `stall:` line (below) |
+| audio | 159 underruns / 2.48 s over the hour (soak 17: 159 / 2.45 s), `aud` 0.1–0.4 ms |
+| `tex` / `rss` at the end | 794 KB / 40,933 KB budget; **184 MB** (soak 17 ended at 130 MB after 72 min; 184 is a minigame's peak — the line before the results screens reads 138–140 MB through turn 12, so not a leak, but the watch) |
+| `REL .data` / `skin: lifetime` / `EFB copies` | 72 re-opens, 52 reset / 624 dropped, 0 guard hits / 94,260 |
+
+**The resync, with its line at last.** `realtime: resync at retrace
+89285, 1693 ms behind` — and under it `stall: frame 89280 took 1710 ms
+(game 1710 gx 0 present 0 aud 0) [consumed] tex: 0 decoded … frees 0,
+dll 0 ms`. It is the results-screen stall of §38.3 / §39.4 / §40.8 (there
+at retrace 14,203 on the walk, the first minigame's results; here after
+m406, turn 7's game), and the line says what M24 wanted said: **1.71 s of
+the game's own logic on one consumed frame** — no texture decode, no free,
+no module load, no disc read over 100 ms (`DVD: 0 over 100 ms`), the
+mixer idle, at `resultdll`'s exit (`Ovl Return`, the module's unlink
+follows). Not the card and not the disc (§39.4 had said so); a loop in
+`resultdll` or in the board's return that runs long once in a while. The
+named snapshot for it is the chain's `K` run below
+(`snaps/lib/m28-results-stall-f014150.snap`, 50 frames before the walk's
+retrace 14,203). Next to it, nothing outranks the experiments.
+
+One dip is the lab's, not the port's: frames 139,200–139,320 read 18.7 /
+12.2 / 9.5 fps and `speed 87%` — the moment a `cp -R` of the 20 MB bundle
+ran on the G4 to keep the M27 build under its own name (g4-witness.md 0q).
+
+### 43.2 Today's profile, before any experiment
+
+Two `sample isle 10` profiles of the M27 build (`44152d1f…`) on the board
+at turn 1 (`docs/soak/m28-board-{consumed,drawn}-profile.txt.gz`,
+`port/tools/sample_tree.py` reads them: inclusive counts once per sample,
+self counts, `--under SYM` for a subtree). The consumed frame is the walk
+under `--nodraw --turbo` sampled at frames 8,220–9,060 (6,283 game-thread
+samples); the drawn one is a `--ffto 6500 --turbo` teleport sampled at
+7,260–7,620 (5,996), the render thread on and replaying on its own thread
+(4,751 of its 5,996 samples busy: 3,606 in `replay_upto`, the rest the
+waits). A `--nodraw --ffto` run drew past N until this milestone
+(fastfwd.c switched the renderer back on whatever `--nodraw` said; fixed,
+`nodraw_user`), which is why the consumed profile walks there.
+
+**A consumed board frame** (everything is game; the share is of the
+thread's samples):
+
+| | samples | % | inside |
+|---|---:|---:|---|
+| `Hu3DDraw` — the object walk and the material walk | 1,668 | **26.5%** | `objCall`/`objNull` recursion 142 + 68 self, `ObjCullCheck` 408 (its `C_MTXConcat` 104, `sqrtf` 78), **`FaceDraw` 616** (self 214; `GXSetTevKAlphaSel` 60, `Hu3DLightSet` 56, `GXCallDisplayList` 44, `SetTevStageNoTex` 41, `GXSetChanCtrl` 31, `LoadTexture` 31, `GXSetArray` 21…), the matrix stack's `C_MTXConcat` 184 |
+| `Hu3DMotionExec` — the motion curves | 1,307 | **20.8%** | self 648 (the per-object reset loop and the track switch), `GetObjTRXPtr` 231 **+ its dyld stub 91**, `GetCurve` 184 + `GetBezier` 69, `__memcpy` 121 |
+| `EnvelopeProc` → the bone walk (`hsf_mtx_sync` → `SetEnvelopMtx`) | 1,002 | **15.9%** | `C_MTXConcat` **316**, `PSMTXRotRad` 359 (`port_sincosf` 339: libm's `sinf`/`cosf` through `cexpf` 240 on the misses, the memo's own 97), `C_MTXRotTrig` 75, `C_MTXTrans` 58, self 76; `hsf_register` 82 (the M19 registry's lookup) |
+| `Hu3DDrawPost` | 706 | 11.2% | `particleFunc` 314, `DrawSpaces` 249 |
+| `HuSysDoneRender` → `VIWaitForRetrace` | 698 | 11.1% | `port_audio_tick` 566: the mixer's control half 265 (`port_musyx_mix_frame_ctl` 228 self), `snd_handle_irq` 427 |
+| `HuSprExec` | 313 | 5.0% | |
+| `C_MTXConcat`, all callers | 526 | 8.4% | `SetEnvelopMtx` ~60%, `objCall`'s stack ~18%, `ObjCullCheck` ~10%, `DrawSpaces`, `mtxRotCat` |
+
+**A drawn board frame** (the game thread; the render thread is
+elsewhere):
+
+| | samples | % | inside |
+|---|---:|---:|---|
+| `GXCallDisplayList` — the decode into the ring | 1,994 | **33.3%** | `decode_fast_n2c0t1s0` 750, `n1c0t1s0` 536, `n1c0t0s0` 203, `n1c1t1s0` 106 (26.6% in the four loops), `batch_flush` from inside it 366 |
+| `batch_flush` — the state walk, the binds, the records | 1,377 | **23.0%** | `gx_tev_apply` 565, `gx_tex_bind_swapped` 308 (`tex_bind_content_hash_body` 178, the sampled revalidation), `issue_segments` 325 (`gx_vprog_bind` 219; the records), `semaphore_signal_trap` 171 (waking the reader) |
+| `SetEnvelopMain` — the skinning, at the draw | 646 | **10.8%** | `PSMTXROMultVecArray` 245, **`Hu3DMtxScaleGet` 216** (`__sqrt` 105 + `sqrtf` 72 → libm's `sqrt` in software, `C_VECNormalize` 94), `C_MTXConcat` 73 |
+| `FaceDraw` minus the display list — the material setup | 674 | 11.2% | `LoadTexture` 109 (`GXLoadTexObj` 101), `begin_attr_order` 143, `GXSetChanAmbColor` 82 |
+| `Hu3DDrawPost` | 668 | 11.1% | its own `FaceDraw` 351 |
+| `Hu3DMotionExec` | 328 | 5.5% | |
+| the bone walk (`port_envelope_proc`) | 249 | 4.2% | |
+| `HuSprExec` | 271 | 4.5% | |
+| `Hu3DExec` self, `port_audio_tick`, the rest | ~500 | 8% | |
+
+**What the two tables order.** On the consumed frame the material walk
+(a) is `FaceDraw`'s 616 less the two calls it must keep (`Hu3DLightSet`
+56) — up to ~9%; the bone walk's concats and rotation matrices (c) are
+`C_MTXConcat` 316 + `C_MTXTrans` 58 + `C_MTXRotTrig` 75 ≈ 7%, of which a
+sparse body keeps the arithmetic and drops the loads and stores; the
+curves (b) are `GetCurve` + `GetBezier` ≈ 4% plus the 1.4% that is a dyld
+stub on a function nobody overrides (`__declspec(weak)` had become
+`__attribute__((weak))`; the attribute is gone). On the drawn frame the
+game's share is 11.5 ms of 28.5 and the levers in it are the square roots
+(d) at 2.4% of the frame (~0.7 ms), the concats at ~3%, the curves at
+~1.5%; the decode (33%) and the state walk (23%) are the port's, which
+is where (e) aims. So: (a), (c), (b), (d), then (e); (f) and (g) by
+reading first (§43.8).
