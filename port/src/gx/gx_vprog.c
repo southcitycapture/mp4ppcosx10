@@ -46,6 +46,7 @@
 #ifndef PORT_NO_SDL
 #include <SDL.h>
 #include <SDL_opengl.h>
+#include "gx_rt.h" /* M27: every gl* below is the render thread's twin */
 #endif
 
 /* ---- the extension, declared here rather than trusted to a header ---------
@@ -394,7 +395,7 @@ static void env4(int i, float x, float y, float z, float w) {
     env_valid[i] = 1;
     memcpy(env_shadow[i], v, sizeof(v));
     stat_env_set++;
-    vp_ProgramEnvParameter4fvARB(VP_VERTEX_PROGRAM_ARB, (GLuint)i, v);
+    rt_ext_env_param4fv(VP_VERTEX_PROGRAM_ARB, (GLuint)i, v);
 }
 #endif
 
@@ -835,31 +836,35 @@ static VpVariant* vp_lookup(const VpKey* k) {
         return v;
     }
 
-    vp_GenProgramsARB(1, &id);
-    vp_BindProgramARB(VP_VERTEX_PROGRAM_ARB, id);
-    vp_ProgramStringARB(VP_VERTEX_PROGRAM_ARB, VP_PROGRAM_FORMAT_ASCII_ARB,
-                        (GLsizei)b.len, b.s);
-    glGetIntegerv(VP_PROGRAM_ERROR_POSITION_ARB, &errpos);
-    if (errpos != -1) {
-        const char* msg = (const char*)glGetString(VP_PROGRAM_ERROR_STRING_ARB);
-        port_log("port> vprog: variant %d REJECTED at char %d: %s\n", vp_nvariants,
-                 (int)errpos, msg ? msg : "(no message)");
-        port_log("%s", b.s);
-        v->why = "the driver rejected the program text";
-        stat_dead++;
-        vp_BindProgramARB(VP_VERTEX_PROGRAM_ARB, 0);
-        vp_DeleteProgramsARB(1, &id);
-        free(b.s);
-        return v;
-    }
-    v->native = vp_geti(VP_PROGRAM_NATIVE_INSTRUCTIONS_ARB);
-    if (!vp_geti(VP_PROGRAM_UNDER_NATIVE_LIMITS_ARB)) {
-        v->why = "the driver would run it in software";
-        stat_dead++;
-        vp_BindProgramARB(VP_VERTEX_PROGRAM_ARB, 0);
-        vp_DeleteProgramsARB(1, &id);
-        free(b.s);
-        return v;
+    /* M27: the compile runs on the GL thread (rt.c compile_fn: gen, bind,
+     * load, the error position, the native count, the under-native-limits
+     * query, and bind 0 + delete on a refusal -- the same sequence this
+     * block was), joined; with the render thread off it is the same
+     * function called directly. */
+    {
+        RtCompile c;
+        memset(&c, 0, sizeof(c));
+        c.text = b.s;
+        c.len = (int)b.len;
+        rt_compile_vprog(&c);
+        errpos = c.errpos;
+        id = (GLuint)c.id;
+        if (errpos != -1) {
+            port_log("port> vprog: variant %d REJECTED at char %d: %s\n", vp_nvariants,
+                     (int)errpos, c.msg[0] ? c.msg : "(no message)");
+            port_log("%s", b.s);
+            v->why = "the driver rejected the program text";
+            stat_dead++;
+            free(b.s);
+            return v;
+        }
+        v->native = c.native;
+        if (!c.under_native) {
+            v->why = "the driver would run it in software";
+            stat_dead++;
+            free(b.s);
+            return v;
+        }
     }
     v->id = id;
     v->ok = 1;
@@ -1053,7 +1058,7 @@ void gx_vprog_bind(const GxXfDesc* d) {
     }
     if (vp_bound != v->id) {
         vp_bound = v->id;
-        vp_BindProgramARB(VP_VERTEX_PROGRAM_ARB, v->id);
+        rt_ext_bind_program(VP_VERTEX_PROGRAM_ARB, v->id);
     }
     if (vp_enabled != 1) {
         vp_enabled = 1;
@@ -1072,14 +1077,14 @@ void gx_vprog_bind(const GxXfDesc* d) {
             int lo = d->pal_dirty_lo, n = d->pal_dirty_hi - d->pal_dirty_lo + 1;
             const f32* rows = &d->pal[lo][0];
             if (vp_ProgramEnvParameters4fvEXT) {
-                vp_ProgramEnvParameters4fvEXT(VP_VERTEX_PROGRAM_ARB, (GLuint)(VPE_PAL + lo),
-                                              (GLsizei)n, rows);
+                rt_ext_env_params4fv(VP_VERTEX_PROGRAM_ARB, (GLuint)(VPE_PAL + lo),
+                                     (GLsizei)n, rows);
                 stat_env_set++;
             } else {
                 int r;
                 for (r = 0; r < n; r++) {
-                    vp_ProgramEnvParameter4fvARB(VP_VERTEX_PROGRAM_ARB, (GLuint)(VPE_PAL + lo + r),
-                                                 rows + 4 * r);
+                    rt_ext_env_param4fv(VP_VERTEX_PROGRAM_ARB, (GLuint)(VPE_PAL + lo + r),
+                                        rows + 4 * r);
                     stat_env_set++;
                 }
             }
@@ -1120,8 +1125,8 @@ void gx_vprog_bind(const GxXfDesc* d) {
                 env_valid[VPE_POSMTX + r] = 1;
                 memcpy(env_shadow[VPE_POSMTX + r], rows[r], sizeof(rows[r]));
             }
-            vp_ProgramEnvParameters4fvEXT(VP_VERTEX_PROGRAM_ARB, (GLuint)VPE_POSMTX, (GLsizei)n,
-                                          &rows[0][0]);
+            rt_ext_env_params4fv(VP_VERTEX_PROGRAM_ARB, (GLuint)VPE_POSMTX, (GLsizei)n,
+                                 &rows[0][0]);
             stat_env_set++;
             stat_env_bulk++;
         }

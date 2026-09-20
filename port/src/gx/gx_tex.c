@@ -29,6 +29,7 @@
 
 #ifndef PORT_NO_SDL
 #include <SDL_opengl.h>
+#include "gx_rt.h" /* M27: every gl* below is the render thread's twin */
 #endif
 
 #define GL(fn) (port_opt.glcheck ? gl13_check(#fn) : 0, fn)
@@ -915,8 +916,15 @@ static void tex_bind_decode_and_upload(int slot, int unit, const GXTexObjPort* o
             }
             GL(glBindTexture)(GL_TEXTURE_2D, name);
             glc_note_bind(unit, name);
-            GL(glTexImage2D)(GL_TEXTURE_2D, 0, GL_RGBA8, pw, ph, 0, GL_RGBA,
-                             GL_UNSIGNED_BYTE, up);
+            /* M27: the upload owns the texels from here -- the render thread
+             * frees them after the call (direct mode: the call, then free) */
+            (port_opt.glcheck ? gl13_check("glTexImage2D") : 0);
+            rt_teximage2d_owned(GL_TEXTURE_2D, 0, GL_RGBA8, pw, ph, 0, GL_RGBA,
+                                GL_UNSIGNED_BYTE, up);
+            if (up == rgba) {
+                rgba = NULL;
+            }
+            up = NULL;
             /* A fresh name has the GL default filter state, which is
              * mipmapped and therefore incomplete here; force the
              * parameters to be re-emitted for it. */
@@ -926,7 +934,7 @@ static void tex_bind_decode_and_upload(int slot, int unit, const GXTexObjPort* o
             cache_gl_bytes += cache[slot].gl_bytes;
             frame_upload_s += port_now_seconds() - t1;
         }
-        if (up != rgba) {
+        if (up && up != rgba) {
             free(up);
         }
         free(rgba);
@@ -1624,9 +1632,9 @@ void gx_tex_copy(void* dest, int clear) {
              * two-pixel border its scissor leaves), so a clamped sample
              * past the region reads what the console's would. */
             u8* zero = (u8*)calloc((size_t)pw * ph, 4);
-            GL(glTexImage2D)(GL_TEXTURE_2D, 0, GL_RGBA8, pw, ph, 0, GL_RGBA,
-                             GL_UNSIGNED_BYTE, zero);
-            free(zero);
+            (port_opt.glcheck ? gl13_check("glTexImage2D") : 0);
+            rt_teximage2d_owned(GL_TEXTURE_2D, 0, GL_RGBA8, pw, ph, 0, GL_RGBA,
+                                GL_UNSIGNED_BYTE, zero); /* M27: freed after the call */
             cache[slot].param_wrap_s = 0;
             cache_gl_bytes -= cache[slot].gl_bytes;
             cache[slot].gl_bytes = (unsigned)(pw * ph * 4);
@@ -2148,10 +2156,11 @@ int gx_tex_bind_tiled(int unit, GXTexObjPort* sheet, GXTexObjPort* map,
             glc_active_texture(unit);
             GL(glBindTexture)(GL_TEXTURE_2D, name);
             glc_note_bind(unit, name);
-            GL(glTexImage2D)(GL_TEXTURE_2D, 0, GL_RGBA8, tiles[slot].pw,
-                             tiles[slot].ph, 0, GL_RGBA, GL_UNSIGNED_BYTE, up);
-            if (up != out) {
-                free(up);
+            (port_opt.glcheck ? gl13_check("glTexImage2D") : 0);
+            rt_teximage2d_owned(GL_TEXTURE_2D, 0, GL_RGBA8, tiles[slot].pw,
+                                tiles[slot].ph, 0, GL_RGBA, GL_UNSIGNED_BYTE, up);
+            if (up == out) {
+                out = NULL; /* M27: the upload owns it now */
             }
         }
         free(out);
@@ -2703,7 +2712,9 @@ static void tex_bind_upload_staged(int slot, int unit, const GXTexObjPort* o, St
         }
         GL(glBindTexture)(GL_TEXTURE_2D, name);
         glc_note_bind(unit, name);
-        GL(glTexImage2D)(GL_TEXTURE_2D, 0, GL_RGBA8, pw, ph, 0, GL_RGBA, GL_UNSIGNED_BYTE, up);
+        (port_opt.glcheck ? gl13_check("glTexImage2D") : 0);
+        rt_teximage2d_owned(GL_TEXTURE_2D, 0, GL_RGBA8, pw, ph, 0, GL_RGBA, GL_UNSIGNED_BYTE, up);
+        up = NULL; /* M27: the upload owns it now */
         cache[slot].param_wrap_s = -1;
         cache_gl_bytes -= cache[slot].gl_bytes;
         cache[slot].gl_bytes = (unsigned)(pw * ph * 4);

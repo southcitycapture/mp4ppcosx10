@@ -74,6 +74,7 @@ static int next_drawn = 1;   /* what the gate decided for the frame the game
 
 /* the whole-run tally, printed at shutdown */
 static unsigned long n_retraces, n_drawn, n_forced, n_dump_forced, n_resync;
+static unsigned long n_rt_busy; /* M27: would have been drawn, the render thread was busy */
 static double lost_seconds, max_late, t_pace0;
 static unsigned long r_pace0;
 
@@ -172,6 +173,20 @@ void port_framemode_decide(double late, double now) {
     } else {
         draw = late <= 0.5 * PERIOD; /* rule 2 */
     }
+    /* M27, rule 5: a drawn frame needs the render thread free -- the previous
+     * drawn frame's stream drained, or drained within --rtgate ms; a forced
+     * frame (rules 3 and 4) waits for it however long.  Otherwise the frame is
+     * consumed and counted (rt_report: `busy`). */
+    if (draw && rt_on()) {
+        int forced = since_draw >= (unsigned)port_opt.maxskip || gl13_frame_wanted(next) ||
+                     gl13_shot_pending();
+        if (forced) {
+            rt_join("gate (forced frame)");
+        } else if (!rt_gate(port_opt.rtgate_ms * 1e-3)) {
+            draw = 0;
+            n_rt_busy++;
+        }
+    }
 
     if (draw) {
         since_draw = 0;
@@ -249,4 +264,8 @@ void port_framemode_report(void) {
     port_log("  late     worst %.1f ms behind the schedule; %lu resync(s) dropping %.2f s "
              "of game time\n",
              max_late * 1000.0, n_resync, lost_seconds);
+    if (rt_on()) {
+        port_log("  rt       %lu frame(s) consumed because the render thread was still busy "
+                 "past --rtgate %d ms\n", n_rt_busy, port_opt.rtgate_ms);
+    }
 }

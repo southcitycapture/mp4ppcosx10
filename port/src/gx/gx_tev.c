@@ -39,6 +39,7 @@
 
 #ifndef PORT_NO_SDL
 #include <SDL_opengl.h>
+#include "gx_rt.h" /* M27: every gl* below is the render thread's twin */
 #endif
 
 #define GL(fn) (port_opt.glcheck ? gl13_check(#fn) : 0, fn)

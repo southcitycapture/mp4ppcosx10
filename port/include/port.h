@@ -250,6 +250,16 @@ typedef struct PortOptions {
                              *   any machine, for measurement                 */
     int nomixthread;        /* --nomixthread  M24: the mixer stays on the game
                              *   thread even with the workers on               */
+    /* ---- M27: the render thread (PLAN.md 42) ---- */
+    int renderthread;       /* --renderthread N  -1: 3 with the workers on, 1
+                             *   without (the default); 0: the direct GL path
+                             *   (--norenderthread); 1: the stream replayed inline
+                             *   on the game thread; 2: the thread, joined at every
+                             *   frame's end; 3: overlapped                    */
+    int rtsplit;            /* --rtsplit  the replay timed by record class (state /
+                             *   draw / tex / present); two timer reads a record */
+    int rtgate_ms;          /* --rtgate MS  how long the gate waits for the render
+                             *   thread to drain before the frame is consumed (4) */
     /* ---- M25: the machine check (src/platform/machine.c, PLAN.md 40) ---- */
     const char* fake_machine; /* --fake-machine FILE  key=value overrides of the
                              *   probes: argue another machine on this one   */
@@ -579,6 +589,34 @@ enum { PORT_JOB_IDLE = 0, PORT_JOB_QUEUED, PORT_JOB_RUNNING, PORT_JOB_DONE };
 typedef struct PortWorker PortWorker;
 int port_ncpu(void);
 int port_threads_on(void);          /* the workers are up */
+
+/* ---- M27: the render thread (src/gx/rt.c, PLAN.md 42) ----
+ * One GL thread; the game thread records every GL call into a stream the
+ * render thread replays in order.  --renderthread 0 = the direct path, 1 =
+ * the same stream replayed inline (the single-core twin), 2 = the thread
+ * joined at every frame's end, 3 = overlapped (the default on two cores). */
+typedef struct {
+    const char* text;
+    int len;
+    unsigned id;       /* 0 = refused (errpos != -1, or not under the native limits) */
+    int errpos;
+    int native;        /* GL_PROGRAM_NATIVE_INSTRUCTIONS_ARB */
+    int under_native;
+    char msg[200];
+} RtCompile;
+void rt_compile_vprog(RtCompile* c);  /* a join */
+void rt_start(void* sdl_window, void* sdl_glcontext);
+void rt_stop(void);
+int rt_on(void);                      /* a render thread exists (mode >= 2) */
+int rt_mode(void);
+void rt_present(unsigned frame);
+void rt_join(const char* why);        /* drain the stream; counted by name */
+int rt_gate(double max_s);            /* drained, or drained within max_s */
+void rt_ring_enter(int chunk);      /* the ring writer reuses a chunk: the join at reuse */
+void rt_report(void);
+void rt_status(char* buf, size_t n);
+double rt_last_frame_ms(void);
+extern int rt_recording;
 void port_workers_init(void);       /* after the options: reads --threads and hw.ncpu */
 void port_workers_shutdown(void);
 void port_workers_report(void);

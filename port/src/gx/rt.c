@@ -1,0 +1,1471 @@
+/* The render thread (M27, PLAN.md 42).
+ *
+ * §32.1's arithmetic: presented fps = 60/(k+1), k consumed frames paying for
+ * one drawn frame inside (k+1)·16.7 ms.  The board's drawn frame was ~39 ms
+ * -- 21 of them the game thread's (game 11, decode 7, state/tex 3.5) and 13
+ * the GL driver's (the issue: gldUpdateDispatch, the copying path, the
+ * command-buffer traffic, §36.3) -- so k = 2 and the cap was 20.  Overlapped
+ * on the two cores the frame costs max(21, 13) plus what the overlap costs,
+ * and the 30 cap needs drawn + consumed under 33 ms.
+ *
+ * The seam is the GL call.  Everything the port decides -- the batching, the
+ * shadow's elision, the TEV mapping, the vertex program's variant and
+ * parameters, the texture cache's hash/decode/bind -- stays on the game
+ * thread; what moves is the *emission*.  gx_rt.h gives every GL entry point
+ * the port calls a twin that appends {op, args} to the stream below, and
+ * this thread replays the stream in order with the real GL.  The same calls
+ * in the same order under the same arguments: the md5s hold by construction,
+ * and every stage of the build was witnessed by them (PLAN.md 42.2).
+ *
+ * The rules (§39, restated):
+ *   - no GL call from any thread but this one once it is up; the twins are
+ *     the one door and rt.c the one file that calls the real functions;
+ *   - the replay reads nothing of the game's: the records carry their
+ *     arguments by value (matrices, parameters, multi-draw arrays), the
+ *     vertex arrays point into the ring (fixed, fenced: rt_ring_*), a
+ *     texture upload owns its malloc'd texels and frees them here, an
+ *     RT_CALL target takes its inputs in the record;
+ *   - the inline twin: --renderthread 1 records the same stream and runs the
+ *     same replay switch on the game thread, at every publish;
+ *   - anything that returns data is a join (counted by name, timed).
+ *
+ * The stream is one ring of bytes.  Positions are monotonic u32 (differences,
+ * never comparisons); a record is {op, len} + args, 8-byte aligned, and never
+ * straddles the end (an OP_WRAP pads to it).  The writer publishes `wr_pub`
+ * after every record (a store and a barrier; the reader spins briefly before
+ * sleeping, so the common case wakes nobody); the reader publishes `rd` after
+ * every record.  Waiting is rare and named: the gate, the ring's reuse, a
+ * full stream, a read-back, a compile, a snapshot.
+ */
+#include "port.h"
+
+#include "gx_internal.h"
+
+#include <pthread.h>
+#include <sched.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+#include <sys/time.h>
+
+#ifndef PORT_NO_SDL
+#include <SDL.h>
+#include <SDL_opengl.h>
+#endif
+
+int rt_recording;
+
+#ifndef PORT_NO_SDL
+
+/* The barriers.  `sync` (what __sync_synchronize emits) orders everything,
+ * including a store before a later load, and costs the 7450 a pipeline
+ * drain; `lwsync` orders load-load, load-store and store-store, which is all
+ * an acquire (a position, then the records behind it) or a release (the
+ * records, then the position) needs.  The two Dekker handshakes -- the
+ * writer's publish against the reader's `asleep`, the reader's `rd` against
+ * the writer's `waiting` -- are store-then-load and keep the full sync. */
+#if defined(__ppc__) || defined(__powerpc__)
+#define RT_ACQ_REL() __asm__ volatile("lwsync" ::: "memory")
+#else
+#define RT_ACQ_REL() __sync_synchronize()
+#endif
+#define RT_FULL() __sync_synchronize()
+
+/* ---- the records ---------------------------------------------------------- */
+
+enum {
+    OP_NOP = 0,
+    OP_WRAP,
+    OP_ENABLE, OP_DISABLE, OP_ENABLE_CS, OP_DISABLE_CS,
+    OP_ACTIVE_TEX, OP_CLIENT_ACTIVE_TEX, OP_BIND_TEX,
+    OP_TEXPARAM_I, OP_TEXPARAM_F, OP_TEXENV_I, OP_TEXENV_F, OP_TEXENV_FV,
+    OP_MATRIX_MODE, OP_LOAD_IDENTITY, OP_LOAD_MATRIX, OP_PUSH, OP_POP, OP_ORTHO,
+    OP_DEPTH_MASK, OP_DEPTH_FUNC, OP_DEPTH_RANGE, OP_COLOR_MASK, OP_CULL, OP_FRONT,
+    OP_SHADE, OP_POLYMODE, OP_HINT, OP_BLEND_FUNC, OP_BLEND_EQ, OP_ALPHA_FUNC,
+    OP_FOG_I, OP_FOG_F, OP_FOG_FV, OP_LIGHT_F, OP_LIGHT_FV, OP_LIGHTMODEL_I, OP_LIGHTMODEL_FV,
+    OP_MATERIAL_FV, OP_COLOR_MATERIAL,
+    OP_CLEAR_COLOR, OP_CLEAR_DEPTH, OP_CLEAR, OP_VIEWPORT, OP_SCISSOR, OP_PIXELSTORE,
+    OP_READ_BUFFER, OP_FINISH,
+    OP_BEGIN, OP_END, OP_TEXCOORD2F, OP_VERTEX2F,
+    OP_VERTEX_PTR, OP_COLOR_PTR, OP_NORMAL_PTR, OP_TEXCOORD_PTR, OP_FOGCOORD_PTR,
+    OP_DRAW_ARRAYS, OP_MULTI_DRAW, OP_DRAW_RANGE,
+    OP_DELETE_TEX, OP_TEXIMAGE, OP_COPY_TEX_SUB,
+    OP_READ_PIXELS, OP_GET_TEX_IMAGE, OP_GET_ERROR,
+    OP_FLUSH_VAR, OP_SET_FENCE, OP_WAIT_FENCE,
+    OP_BIND_PROG, OP_ENV4, OP_ENVN,
+    OP_CALL, OP_PRESENT,
+    OP_N
+};
+
+static const char* const op_name[OP_N] = {
+    "nop", "wrap", "Enable", "Disable", "EnableClientState", "DisableClientState",
+    "ActiveTexture", "ClientActiveTexture", "BindTexture",
+    "TexParameteri", "TexParameterf", "TexEnvi", "TexEnvf", "TexEnvfv",
+    "MatrixMode", "LoadIdentity", "LoadMatrixf", "PushMatrix", "PopMatrix", "Ortho",
+    "DepthMask", "DepthFunc", "DepthRange", "ColorMask", "CullFace", "FrontFace",
+    "ShadeModel", "PolygonMode", "Hint", "BlendFunc", "BlendEquation", "AlphaFunc",
+    "Fogi", "Fogf", "Fogfv", "Lightf", "Lightfv", "LightModeli", "LightModelfv",
+    "Materialfv", "ColorMaterial",
+    "ClearColor", "ClearDepth", "Clear", "Viewport", "Scissor", "PixelStorei",
+    "ReadBuffer", "Finish",
+    "Begin", "End", "TexCoord2f", "Vertex2f",
+    "VertexPointer", "ColorPointer", "NormalPointer", "TexCoordPointer", "FogCoordPointerEXT",
+    "DrawArrays", "MultiDrawArraysEXT", "DrawRangeElements",
+    "DeleteTextures", "TexImage2D", "CopyTexSubImage2D",
+    "ReadPixels", "GetTexImage", "GetError",
+    "FlushVertexArrayRangeAPPLE", "SetFenceAPPLE", "wait fence",
+    "BindProgramARB", "ProgramEnvParameter4fvARB", "ProgramEnvParameters4fvEXT",
+    "call", "present",
+};
+
+typedef struct { u32 op, len; } Hdr;
+
+typedef struct { GLenum a; } A1e;
+typedef struct { GLenum a; GLuint b; } A_eu;
+typedef struct { GLenum a, b; GLint v; } A_eei;
+typedef struct { GLenum a, b; GLfloat v; } A_eef;
+typedef struct { GLenum a, b; GLfloat v[4]; } A_eef4;
+typedef struct { GLenum a; GLint v; } A_ei;
+typedef struct { GLenum a; GLfloat v; } A_ef;
+typedef struct { GLenum a; GLfloat v[4]; } A_ef4;
+typedef struct { GLenum a, b; } A_ee;
+typedef struct { GLfloat m[16]; } A_m16;
+typedef struct { GLdouble v[6]; } A_d6;
+typedef struct { GLdouble a, b; } A_d2;
+typedef struct { GLboolean r, g, b, a; } A_b4;
+typedef struct { GLenum f; GLclampf ref; } A_alpha;
+typedef struct { GLclampf v[4]; } A_f4;
+typedef struct { GLdouble d; } A_d;
+typedef struct { GLbitfield m; } A_bits;
+typedef struct { GLint x, y; GLsizei w, h; } A_rect;
+typedef struct { GLfloat x, y; } A_f2;
+typedef struct { GLint size; GLenum type; GLsizei stride; const GLvoid* p; } A_ptr;
+typedef struct { GLenum type; GLsizei stride; const GLvoid* p; } A_ptr2;
+typedef struct { GLenum mode; GLint first; GLsizei count; } A_draw;
+typedef struct { GLenum mode; GLsizei n; /* GLint first[n]; GLsizei count[n] follow */ } A_multi;
+typedef struct { GLenum mode; GLuint lo, hi; GLsizei n; GLenum type; u32 bytes; /* indices follow */ } A_range;
+typedef struct { GLsizei n; /* GLuint names[n] follow */ } A_del;
+typedef struct {
+    GLenum target; GLint level, ifmt; GLsizei w, h; GLint border; GLenum fmt, type;
+    void* px; u32 owned; /* owned: free(px) after the call; else px is in the stream or NULL */
+} A_teximg;
+typedef struct { GLenum target; GLint level, xo, yo, x, y; GLsizei w, h; } A_copysub;
+typedef struct { GLint x, y; GLsizei w, h; GLenum fmt, type; GLvoid* out; } A_readpx;
+typedef struct { GLenum target; GLint level; GLenum fmt, type; GLvoid* out; } A_gettex;
+typedef struct { GLenum* out; } A_geterr;
+typedef struct { GLsizei len; const GLvoid* p; } A_flushvar;
+typedef struct { GLuint f; int chunk; u32 epoch; } A_fence;
+typedef struct { GLenum target; GLuint idx; GLfloat v[4]; } A_env4;
+typedef struct { GLenum target; GLuint idx; GLsizei n; /* n*4 floats follow */ } A_envn;
+typedef struct { void (*fn)(void*); u32 n; /* args follow */ } A_call;
+typedef struct { unsigned frame; double t_rec; } A_present;
+
+/* ---- the stream ------------------------------------------------------------ */
+
+#define RT_BYTES (16u << 20) /* 16 MB: a drawn frame is ~300 KB of records; a CPU-path
+                              * draw stashes up to MAX_VERTS x OUT_MAX_STRIDE (5 MB) */
+#define RT_MASK (RT_BYTES - 1)
+#define RT_ALIGN 8u
+
+static u8* buf;
+static u32 wr;                /* the writer's private position */
+static volatile u32 wr_pub;   /* published to the reader */
+static volatile u32 rd;       /* published by the reader */
+static int mode;              /* 0 direct, 1 inline, 2 join per frame, 3 overlap */
+static pthread_t thread;
+static int thread_up, quit;
+static pthread_mutex_t mu = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t cv_work = PTHREAD_COND_INITIALIZER; /* writer -> reader */
+static pthread_cond_t cv_done = PTHREAD_COND_INITIALIZER; /* reader -> writer */
+static volatile int reader_asleep;
+static volatile int writer_waiting;
+static SDL_Window* win;
+static SDL_GLContext ctx;
+
+/* the extensions, resolved here for the replay (the writers keep their own) */
+typedef void (*fn_multidraw_t)(GLenum, const GLint*, const GLsizei*, GLsizei);
+typedef void (*fn_range_t)(GLsizei, const GLvoid*);
+typedef void (*fn_fence_t)(GLuint);
+typedef GLboolean (*fn_fence_test_t)(GLuint);
+typedef void (*fn_bindprog_t)(GLenum, GLuint);
+typedef void (*fn_env4_t)(GLenum, GLuint, const GLfloat*);
+typedef void (*fn_envn_t)(GLenum, GLuint, GLsizei, const GLfloat*);
+typedef void (*fn_fogptr_t)(GLenum, GLsizei, const void*);
+static fn_multidraw_t x_MultiDrawArraysEXT;
+static fn_range_t x_FlushVertexArrayRangeAPPLE;
+static fn_fence_t x_SetFenceAPPLE, x_FinishFenceAPPLE;
+static fn_fence_test_t x_TestFenceAPPLE;
+static fn_bindprog_t x_BindProgramARB;
+static fn_env4_t x_ProgramEnvParameter4fvARB;
+static fn_envn_t x_ProgramEnvParameters4fvEXT;
+static fn_fogptr_t x_FogCoordPointerEXT;
+
+/* ---- the statistics ---------------------------------------------------------- */
+
+static unsigned long st_records, st_bytes, st_frames;
+static u32 st_frame_bytes, st_frame_bytes_peak, st_frame_records;
+static double st_replay_s;         /* time the reader spent replaying */
+static double st_frame_replay_s;   /* ... in the frame being replayed */
+static double st_last_frame_ms;    /* the last presented frame's replay */
+static double st_frame_ms_sum; static unsigned long st_frame_ms_n; static double st_frame_ms_max;
+static double st_tail_s, st_tail_max; /* present executed - present recorded */
+static unsigned long st_fence_waits, st_fence_blocked;
+static unsigned long st_gate_ok, st_gate_waited, st_gate_busy;
+static double st_gate_wait_s, st_gate_wait_max;
+static unsigned long st_ring_waits; static double st_ring_wait_s, st_ring_wait_max;
+static unsigned long st_full_waits; static double st_full_wait_s;
+static unsigned long st_reader_sleeps, st_writer_wakes;
+static unsigned long st_names;
+static unsigned long st_owned_frees, st_stash_bytes;
+#define JOIN_KINDS 12
+static struct { const char* why; unsigned long n; double s, max; } joins[JOIN_KINDS];
+static int njoins;
+/* --rtsplit: the replay timed by class of record (two timer reads a record,
+ * ~2,800 records a frame: an instrument, not a default) */
+enum { RC_STATE, RC_DRAW, RC_TEX, RC_PRESENT, RC_OTHER, RC_N };
+static double st_class_s[RC_N];
+static const char* const class_name[RC_N] = { "state", "draw", "tex", "present", "other" };
+
+/* The vertex ring's chunks (gl13.c VAR_CHUNKS), two fences each (PLAN.md
+ * 42.1c).  The writer leaving chunk c records a SET_FENCE carrying c and an
+ * epoch; re-entering it a lap later it must know (1) the render thread has
+ * *issued* every draw that read the chunk -- rd past `left_pos[c]`, the
+ * stream position of that SET_FENCE -- and (2) the GPU has *finished* them
+ * -- the reader tested that fence and published `gpu_epoch[c]`.  The reader
+ * tests its pending fences after every present, every 256 records, and
+ * while idle, so the common case (a chunk left three frames ago) never
+ * waits.  The direct path finished the fence before writing; the inline
+ * twin replays the WAIT_FENCE record at once, which is the same thing. */
+#define RING_CHUNKS 64
+static u32 ring_left_pos[RING_CHUNKS];
+static u32 ring_set_epoch[RING_CHUNKS];        /* the writer's */
+static volatile u32 ring_gpu_epoch[RING_CHUNKS]; /* the reader's: this epoch's fence finished */
+static struct { GLuint f; u32 epoch; int pending; } ring_fence[RING_CHUNKS]; /* the reader's */
+static unsigned long st_ring_gpu_waits;
+
+static double now(void) { return port_now_seconds(); }
+
+/* ---- the writer ------------------------------------------------------------ */
+
+static void reader_wake(void) {
+    if (reader_asleep) {
+        pthread_mutex_lock(&mu);
+        if (reader_asleep) { /* still: it has not woken and cleared the flag */
+            pthread_cond_signal(&cv_work);
+            st_writer_wakes++;
+        }
+        pthread_mutex_unlock(&mu);
+    }
+}
+
+static void publish(void) {
+    RT_ACQ_REL(); /* release: the record's bytes before the position */
+    wr_pub = wr;
+    if (mode >= 2) {
+        RT_FULL(); /* the store above before the load in reader_wake (Dekker) */
+        reader_wake();
+    }
+}
+
+static void replay_upto(u32 to);
+
+/* wait until the reader has passed `pos` (rd - pos >= 0 in difference arithmetic) */
+static void wait_pos(u32 pos, const char* why, double* acc_s, double* acc_max) {
+    double t0;
+    int spins = 0;
+    if ((s32)(rd - pos) >= 0) {
+        return;
+    }
+    if (mode == 1) {
+        replay_upto(pos);
+        return;
+    }
+    t0 = now();
+    publish();
+    while ((s32)(rd - pos) < 0) {
+        if (spins++ < 4000) {
+            RT_ACQ_REL();
+            continue;
+        }
+        pthread_mutex_lock(&mu);
+        writer_waiting = 1;
+        RT_FULL(); /* the store above before the load below (Dekker) */
+        while ((s32)(rd - pos) < 0) {
+            pthread_cond_wait(&cv_done, &mu);
+        }
+        writer_waiting = 0;
+        pthread_mutex_unlock(&mu);
+    }
+    RT_ACQ_REL(); /* acquire: what the reader wrote (a read-back's pixels) after rd */
+    {
+        double d = now() - t0;
+        if (acc_s) {
+            *acc_s += d;
+        }
+        if (acc_max && d > *acc_max) {
+            *acc_max = d;
+        }
+        (void)why;
+    }
+}
+
+static void* rec(u32 op, size_t argbytes) {
+    u32 len = (u32)((sizeof(Hdr) + argbytes + RT_ALIGN - 1) & ~(RT_ALIGN - 1));
+    u32 off = wr & RT_MASK;
+    Hdr* h;
+    if (len > RT_BYTES / 2) {
+        port_fatal("render thread: a %u-byte record does not fit the stream", len);
+    }
+    if (off + len > RT_BYTES) {
+        /* pad to the end with a WRAP so the record is contiguous */
+        u32 pad = RT_BYTES - off;
+        if ((u32)(wr + pad - rd) > RT_BYTES) {
+            double t0 = now();
+            st_full_waits++;
+            wait_pos(wr + pad - RT_BYTES, "full", NULL, NULL);
+            st_full_wait_s += now() - t0;
+        }
+        h = (Hdr*)(buf + off);
+        h->op = OP_WRAP;
+        h->len = pad;
+        wr += pad;
+        off = 0;
+    }
+    if ((u32)(wr + len - rd) > RT_BYTES) {
+        /* the stream is full: the reader has this much left to consume */
+        double t0 = now();
+        st_full_waits++;
+        wait_pos(wr + len - RT_BYTES, "full", NULL, NULL);
+        st_full_wait_s += now() - t0;
+    }
+    h = (Hdr*)(buf + off);
+    h->op = op;
+    h->len = len;
+    wr += len;
+    st_records++;
+    st_bytes += len;
+    st_frame_bytes += len;
+    st_frame_records++;
+    return h + 1;
+}
+
+/* every twin ends here: the record is complete, publish it (and in inline
+ * mode replay it now) */
+static void done(void) {
+    publish();
+    if (mode == 1) {
+        replay_upto(wr);
+    }
+}
+
+#define REC(op, T) T* a = (T*)rec(op, sizeof(T))
+
+/* ---- the twins ---------------------------------------------------------------- */
+
+#define TWIN1(name, glfn, T, e1)                                               \
+    void rt_##name(GLenum x) {                                                 \
+        if (!rt_recording) { glfn(x); return; }                                \
+        { REC(e1, T); a->a = x; }                                              \
+        done();                                                                \
+    }
+TWIN1(glEnable, glEnable, A1e, OP_ENABLE)
+TWIN1(glDisable, glDisable, A1e, OP_DISABLE)
+TWIN1(glEnableClientState, glEnableClientState, A1e, OP_ENABLE_CS)
+TWIN1(glDisableClientState, glDisableClientState, A1e, OP_DISABLE_CS)
+TWIN1(glActiveTexture, glActiveTexture, A1e, OP_ACTIVE_TEX)
+TWIN1(glClientActiveTexture, glClientActiveTexture, A1e, OP_CLIENT_ACTIVE_TEX)
+TWIN1(glMatrixMode, glMatrixMode, A1e, OP_MATRIX_MODE)
+TWIN1(glDepthFunc, glDepthFunc, A1e, OP_DEPTH_FUNC)
+TWIN1(glCullFace, glCullFace, A1e, OP_CULL)
+TWIN1(glFrontFace, glFrontFace, A1e, OP_FRONT)
+TWIN1(glShadeModel, glShadeModel, A1e, OP_SHADE)
+TWIN1(glBlendEquation, glBlendEquation, A1e, OP_BLEND_EQ)
+TWIN1(glReadBuffer, glReadBuffer, A1e, OP_READ_BUFFER)
+TWIN1(glBegin, glBegin, A1e, OP_BEGIN)
+
+void rt_glBindTexture(GLenum t, GLuint n) {
+    if (!rt_recording) { glBindTexture(t, n); return; }
+    { REC(OP_BIND_TEX, A_eu); a->a = t; a->b = n; }
+    done();
+}
+void rt_glTexParameteri(GLenum t, GLenum p, GLint v) {
+    if (!rt_recording) { glTexParameteri(t, p, v); return; }
+    { REC(OP_TEXPARAM_I, A_eei); a->a = t; a->b = p; a->v = v; }
+    done();
+}
+void rt_glTexParameterf(GLenum t, GLenum p, GLfloat v) {
+    if (!rt_recording) { glTexParameterf(t, p, v); return; }
+    { REC(OP_TEXPARAM_F, A_eef); a->a = t; a->b = p; a->v = v; }
+    done();
+}
+void rt_glTexEnvi(GLenum t, GLenum p, GLint v) {
+    if (!rt_recording) { glTexEnvi(t, p, v); return; }
+    { REC(OP_TEXENV_I, A_eei); a->a = t; a->b = p; a->v = v; }
+    done();
+}
+void rt_glTexEnvf(GLenum t, GLenum p, GLfloat v) {
+    if (!rt_recording) { glTexEnvf(t, p, v); return; }
+    { REC(OP_TEXENV_F, A_eef); a->a = t; a->b = p; a->v = v; }
+    done();
+}
+void rt_glTexEnvfv(GLenum t, GLenum p, const GLfloat* v) {
+    if (!rt_recording) { glTexEnvfv(t, p, v); return; }
+    { REC(OP_TEXENV_FV, A_eef4); a->a = t; a->b = p; memcpy(a->v, v, sizeof(a->v)); }
+    done();
+}
+void rt_glLoadIdentity(void) {
+    if (!rt_recording) { glLoadIdentity(); return; }
+    rec(OP_LOAD_IDENTITY, 0);
+    done();
+}
+void rt_glLoadMatrixf(const GLfloat* m) {
+    if (!rt_recording) { glLoadMatrixf(m); return; }
+    { REC(OP_LOAD_MATRIX, A_m16); memcpy(a->m, m, sizeof(a->m)); }
+    done();
+}
+void rt_glPushMatrix(void) {
+    if (!rt_recording) { glPushMatrix(); return; }
+    rec(OP_PUSH, 0);
+    done();
+}
+void rt_glPopMatrix(void) {
+    if (!rt_recording) { glPopMatrix(); return; }
+    rec(OP_POP, 0);
+    done();
+}
+void rt_glOrtho(GLdouble l, GLdouble r, GLdouble b, GLdouble t, GLdouble n, GLdouble f) {
+    if (!rt_recording) { glOrtho(l, r, b, t, n, f); return; }
+    { REC(OP_ORTHO, A_d6); a->v[0] = l; a->v[1] = r; a->v[2] = b; a->v[3] = t; a->v[4] = n; a->v[5] = f; }
+    done();
+}
+void rt_glDepthMask(GLboolean b) {
+    if (!rt_recording) { glDepthMask(b); return; }
+    { REC(OP_DEPTH_MASK, A_b4); a->r = b; }
+    done();
+}
+void rt_glDepthRange(GLclampd n, GLclampd f) {
+    if (!rt_recording) { glDepthRange(n, f); return; }
+    { REC(OP_DEPTH_RANGE, A_d2); a->a = n; a->b = f; }
+    done();
+}
+void rt_glColorMask(GLboolean r, GLboolean g, GLboolean b, GLboolean al) {
+    if (!rt_recording) { glColorMask(r, g, b, al); return; }
+    { REC(OP_COLOR_MASK, A_b4); a->r = r; a->g = g; a->b = b; a->a = al; }
+    done();
+}
+void rt_glPolygonMode(GLenum f, GLenum m) {
+    if (!rt_recording) { glPolygonMode(f, m); return; }
+    { REC(OP_POLYMODE, A_ee); a->a = f; a->b = m; }
+    done();
+}
+void rt_glHint(GLenum t, GLenum m) {
+    if (!rt_recording) { glHint(t, m); return; }
+    { REC(OP_HINT, A_ee); a->a = t; a->b = m; }
+    done();
+}
+void rt_glBlendFunc(GLenum s, GLenum d) {
+    if (!rt_recording) { glBlendFunc(s, d); return; }
+    { REC(OP_BLEND_FUNC, A_ee); a->a = s; a->b = d; }
+    done();
+}
+void rt_glAlphaFunc(GLenum f, GLclampf ref) {
+    if (!rt_recording) { glAlphaFunc(f, ref); return; }
+    { REC(OP_ALPHA_FUNC, A_alpha); a->f = f; a->ref = ref; }
+    done();
+}
+void rt_glFogi(GLenum p, GLint v) {
+    if (!rt_recording) { glFogi(p, v); return; }
+    { REC(OP_FOG_I, A_ei); a->a = p; a->v = v; }
+    done();
+}
+void rt_glFogf(GLenum p, GLfloat v) {
+    if (!rt_recording) { glFogf(p, v); return; }
+    { REC(OP_FOG_F, A_ef); a->a = p; a->v = v; }
+    done();
+}
+void rt_glFogfv(GLenum p, const GLfloat* v) {
+    if (!rt_recording) { glFogfv(p, v); return; }
+    { REC(OP_FOG_FV, A_ef4); a->a = p; memcpy(a->v, v, p == GL_FOG_COLOR ? 16 : 4); }
+    done();
+}
+void rt_glLightf(GLenum l, GLenum p, GLfloat v) {
+    if (!rt_recording) { glLightf(l, p, v); return; }
+    { REC(OP_LIGHT_F, A_eef); a->a = l; a->b = p; a->v = v; }
+    done();
+}
+void rt_glLightfv(GLenum l, GLenum p, const GLfloat* v) {
+    if (!rt_recording) { glLightfv(l, p, v); return; }
+    { REC(OP_LIGHT_FV, A_eef4); a->a = l; a->b = p; memcpy(a->v, v, sizeof(a->v)); }
+    done();
+}
+void rt_glLightModeli(GLenum p, GLint v) {
+    if (!rt_recording) { glLightModeli(p, v); return; }
+    { REC(OP_LIGHTMODEL_I, A_ei); a->a = p; a->v = v; }
+    done();
+}
+void rt_glLightModelfv(GLenum p, const GLfloat* v) {
+    if (!rt_recording) { glLightModelfv(p, v); return; }
+    { REC(OP_LIGHTMODEL_FV, A_ef4); a->a = p; memcpy(a->v, v, sizeof(a->v)); }
+    done();
+}
+void rt_glMaterialfv(GLenum face, GLenum p, const GLfloat* v) {
+    if (!rt_recording) { glMaterialfv(face, p, v); return; }
+    { REC(OP_MATERIAL_FV, A_eef4); a->a = face; a->b = p; memcpy(a->v, v, sizeof(a->v)); }
+    done();
+}
+void rt_glColorMaterial(GLenum face, GLenum m) {
+    if (!rt_recording) { glColorMaterial(face, m); return; }
+    { REC(OP_COLOR_MATERIAL, A_ee); a->a = face; a->b = m; }
+    done();
+}
+void rt_glClearColor(GLclampf r, GLclampf g, GLclampf b, GLclampf al) {
+    if (!rt_recording) { glClearColor(r, g, b, al); return; }
+    { REC(OP_CLEAR_COLOR, A_f4); a->v[0] = r; a->v[1] = g; a->v[2] = b; a->v[3] = al; }
+    done();
+}
+void rt_glClearDepth(GLclampd d) {
+    if (!rt_recording) { glClearDepth(d); return; }
+    { REC(OP_CLEAR_DEPTH, A_d); a->d = d; }
+    done();
+}
+void rt_glClear(GLbitfield m) {
+    if (!rt_recording) { glClear(m); return; }
+    { REC(OP_CLEAR, A_bits); a->m = m; }
+    done();
+}
+void rt_glViewport(GLint x, GLint y, GLsizei w, GLsizei h) {
+    if (!rt_recording) { glViewport(x, y, w, h); return; }
+    { REC(OP_VIEWPORT, A_rect); a->x = x; a->y = y; a->w = w; a->h = h; }
+    done();
+}
+void rt_glScissor(GLint x, GLint y, GLsizei w, GLsizei h) {
+    if (!rt_recording) { glScissor(x, y, w, h); return; }
+    { REC(OP_SCISSOR, A_rect); a->x = x; a->y = y; a->w = w; a->h = h; }
+    done();
+}
+void rt_glPixelStorei(GLenum p, GLint v) {
+    if (!rt_recording) { glPixelStorei(p, v); return; }
+    { REC(OP_PIXELSTORE, A_ei); a->a = p; a->v = v; }
+    done();
+}
+void rt_glFinish(void) {
+    if (!rt_recording) { glFinish(); return; }
+    rec(OP_FINISH, 0);
+    done();
+}
+void rt_glEnd(void) {
+    if (!rt_recording) { glEnd(); return; }
+    rec(OP_END, 0);
+    done();
+}
+void rt_glTexCoord2f(GLfloat s, GLfloat t) {
+    if (!rt_recording) { glTexCoord2f(s, t); return; }
+    { REC(OP_TEXCOORD2F, A_f2); a->x = s; a->y = t; }
+    done();
+}
+void rt_glVertex2f(GLfloat x, GLfloat y) {
+    if (!rt_recording) { glVertex2f(x, y); return; }
+    { REC(OP_VERTEX2F, A_f2); a->x = x; a->y = y; }
+    done();
+}
+void rt_glVertexPointer(GLint size, GLenum type, GLsizei stride, const GLvoid* p) {
+    if (!rt_recording) { glVertexPointer(size, type, stride, p); return; }
+    { REC(OP_VERTEX_PTR, A_ptr); a->size = size; a->type = type; a->stride = stride; a->p = p; }
+    done();
+}
+void rt_glColorPointer(GLint size, GLenum type, GLsizei stride, const GLvoid* p) {
+    if (!rt_recording) { glColorPointer(size, type, stride, p); return; }
+    { REC(OP_COLOR_PTR, A_ptr); a->size = size; a->type = type; a->stride = stride; a->p = p; }
+    done();
+}
+void rt_glNormalPointer(GLenum type, GLsizei stride, const GLvoid* p) {
+    if (!rt_recording) { glNormalPointer(type, stride, p); return; }
+    { REC(OP_NORMAL_PTR, A_ptr2); a->type = type; a->stride = stride; a->p = p; }
+    done();
+}
+void rt_glTexCoordPointer(GLint size, GLenum type, GLsizei stride, const GLvoid* p) {
+    if (!rt_recording) { glTexCoordPointer(size, type, stride, p); return; }
+    { REC(OP_TEXCOORD_PTR, A_ptr); a->size = size; a->type = type; a->stride = stride; a->p = p; }
+    done();
+}
+void rt_ext_fogcoord_pointer(GLenum type, GLsizei stride, const GLvoid* p) {
+    if (!rt_recording) {
+        if (x_FogCoordPointerEXT) { x_FogCoordPointerEXT(type, stride, p); }
+        return;
+    }
+    { REC(OP_FOGCOORD_PTR, A_ptr2); a->type = type; a->stride = stride; a->p = p; }
+    done();
+}
+void rt_glDrawArrays(GLenum mode_, GLint first, GLsizei count) {
+    if (!rt_recording) { glDrawArrays(mode_, first, count); return; }
+    { REC(OP_DRAW_ARRAYS, A_draw); a->mode = mode_; a->first = first; a->count = count; }
+    done();
+}
+void rt_ext_multi_draw_arrays(GLenum mode_, const GLint* first, const GLsizei* count, GLsizei n) {
+    if (!rt_recording) { x_MultiDrawArraysEXT(mode_, first, count, n); return; }
+    {
+        A_multi* a = (A_multi*)rec(OP_MULTI_DRAW, sizeof(A_multi) + (size_t)n * 8);
+        GLint* f = (GLint*)(a + 1);
+        GLsizei* c = (GLsizei*)(f + n);
+        a->mode = mode_;
+        a->n = n;
+        memcpy(f, first, (size_t)n * sizeof(GLint));
+        memcpy(c, count, (size_t)n * sizeof(GLsizei));
+    }
+    done();
+}
+void rt_glDrawRangeElements(GLenum mode_, GLuint lo, GLuint hi, GLsizei n, GLenum type,
+                            const GLvoid* idx) {
+    if (!rt_recording) { glDrawRangeElements(mode_, lo, hi, n, type, idx); return; }
+    {
+        u32 bytes = (u32)n * (type == GL_UNSIGNED_INT ? 4u : type == GL_UNSIGNED_SHORT ? 2u : 1u);
+        A_range* a = (A_range*)rec(OP_DRAW_RANGE, sizeof(A_range) + bytes);
+        a->mode = mode_; a->lo = lo; a->hi = hi; a->n = n; a->type = type; a->bytes = bytes;
+        memcpy(a + 1, idx, bytes);
+        st_stash_bytes += bytes;
+    }
+    done();
+}
+/* GL names: an unused name bound with glBindTexture is a new object (GL 1.3
+ * §3.8.11), so once the stream owns GL the game thread hands out names from
+ * a counter well past anything the driver generated at init, and a cold
+ * scene's hundreds of new slots cost no join. */
+void rt_glGenTextures(GLsizei n, GLuint* out) {
+    static GLuint next_name = 0x100000u;
+    GLsizei i;
+    if (!rt_recording) { glGenTextures(n, out); return; }
+    for (i = 0; i < n; i++) {
+        out[i] = next_name++;
+        st_names++;
+    }
+}
+void rt_glDeleteTextures(GLsizei n, const GLuint* names) {
+    if (!rt_recording) { glDeleteTextures(n, names); return; }
+    {
+        A_del* a = (A_del*)rec(OP_DELETE_TEX, sizeof(A_del) + (size_t)n * sizeof(GLuint));
+        a->n = n;
+        memcpy(a + 1, names, (size_t)n * sizeof(GLuint));
+    }
+    done();
+}
+static u32 pixel_bytes(GLenum fmt, GLenum type, GLsizei w, GLsizei h) {
+    u32 bpp = (fmt == GL_RGBA || fmt == GL_BGRA) ? 4 : fmt == GL_RGB ? 3 : 1;
+    if (type != GL_UNSIGNED_BYTE) {
+        port_fatal("render thread: glTexImage2D with a pixel type the stream does not size (0x%x)",
+                   (unsigned)type);
+    }
+    return (u32)w * (u32)h * bpp;
+}
+void rt_glTexImage2D(GLenum target, GLint level, GLint ifmt, GLsizei w, GLsizei h, GLint border,
+                     GLenum fmt, GLenum type, const GLvoid* px) {
+    if (!rt_recording) { glTexImage2D(target, level, ifmt, w, h, border, fmt, type, px); return; }
+    {
+        u32 bytes = px ? pixel_bytes(fmt, type, w, h) : 0;
+        A_teximg* a = (A_teximg*)rec(OP_TEXIMAGE, sizeof(A_teximg) + bytes);
+        a->target = target; a->level = level; a->ifmt = ifmt; a->w = w; a->h = h;
+        a->border = border; a->fmt = fmt; a->type = type; a->owned = 0;
+        if (px) {
+            memcpy(a + 1, px, bytes);
+            a->px = (void*)(a + 1);
+            st_stash_bytes += bytes;
+        } else {
+            a->px = NULL;
+        }
+    }
+    done();
+}
+void rt_teximage2d_owned(GLenum target, GLint level, GLint ifmt, GLsizei w, GLsizei h,
+                         GLint border, GLenum fmt, GLenum type, void* px) {
+    if (!rt_recording) {
+        glTexImage2D(target, level, ifmt, w, h, border, fmt, type, px);
+        free(px);
+        return;
+    }
+    {
+        REC(OP_TEXIMAGE, A_teximg);
+        a->target = target; a->level = level; a->ifmt = ifmt; a->w = w; a->h = h;
+        a->border = border; a->fmt = fmt; a->type = type; a->px = px; a->owned = 1;
+    }
+    done();
+}
+void rt_glCopyTexSubImage2D(GLenum target, GLint level, GLint xo, GLint yo, GLint x, GLint y,
+                            GLsizei w, GLsizei h) {
+    if (!rt_recording) { glCopyTexSubImage2D(target, level, xo, yo, x, y, w, h); return; }
+    { REC(OP_COPY_TEX_SUB, A_copysub); a->target = target; a->level = level; a->xo = xo; a->yo = yo; a->x = x; a->y = y; a->w = w; a->h = h; }
+    done();
+}
+
+/* the joins the game thread asks for, by name */
+static void join_count(const char* why, double d) {
+    int i;
+    for (i = 0; i < njoins; i++) {
+        if (joins[i].why == why || strcmp(joins[i].why, why) == 0) {
+            break;
+        }
+    }
+    if (i == njoins) {
+        if (njoins == JOIN_KINDS) {
+            i = JOIN_KINDS - 1;
+        } else {
+            joins[njoins++].why = why;
+        }
+    }
+    joins[i].n++;
+    joins[i].s += d;
+    if (d > joins[i].max) {
+        joins[i].max = d;
+    }
+}
+
+void rt_join(const char* why) {
+    double t0;
+    if (!rt_recording || mode < 2) {
+        if (mode == 1) {
+            replay_upto(wr);
+        }
+        return;
+    }
+    if ((s32)(rd - wr) >= 0) {
+        join_count(why, 0.0);
+        return;
+    }
+    t0 = now();
+    wait_pos(wr, why, NULL, NULL);
+    join_count(why, now() - t0);
+}
+
+void rt_glReadPixels(GLint x, GLint y, GLsizei w, GLsizei h, GLenum fmt, GLenum type, GLvoid* out) {
+    if (!rt_recording) { glReadPixels(x, y, w, h, fmt, type, out); return; }
+    { REC(OP_READ_PIXELS, A_readpx); a->x = x; a->y = y; a->w = w; a->h = h; a->fmt = fmt; a->type = type; a->out = out; }
+    done();
+    rt_join("glReadPixels");
+}
+void rt_glGetTexImage(GLenum target, GLint level, GLenum fmt, GLenum type, GLvoid* out) {
+    if (!rt_recording) { glGetTexImage(target, level, fmt, type, out); return; }
+    { REC(OP_GET_TEX_IMAGE, A_gettex); a->target = target; a->level = level; a->fmt = fmt; a->type = type; a->out = out; }
+    done();
+    rt_join("glGetTexImage");
+}
+GLenum rt_glGetError(void) {
+    GLenum e = GL_NO_ERROR;
+    if (!rt_recording) { return glGetError(); }
+    { REC(OP_GET_ERROR, A_geterr); a->out = &e; }
+    done();
+    rt_join("glGetError");
+    return e;
+}
+const GLubyte* rt_glGetString(GLenum name) {
+    if (rt_recording) {
+        static int said;
+        if (!said++) {
+            port_log("port> render thread: glGetString(0x%x) while recording -- an init-time "
+                     "probe reached at run time; answered directly (a bug to fix)\n", (unsigned)name);
+        }
+        rt_join("glGetString");
+    }
+    return glGetString(name);
+}
+void rt_glGetIntegerv(GLenum p, GLint* v) {
+    if (rt_recording) {
+        static int said;
+        if (!said++) {
+            port_log("port> render thread: glGetIntegerv(0x%x) while recording -- answered "
+                     "directly after a join (a bug to fix)\n", (unsigned)p);
+        }
+        rt_join("glGetIntegerv");
+    }
+    glGetIntegerv(p, v);
+}
+void rt_ext_flush_var(GLsizei len, const GLvoid* p) {
+    if (!rt_recording) { x_FlushVertexArrayRangeAPPLE(len, p); return; }
+    { REC(OP_FLUSH_VAR, A_flushvar); a->len = len; a->p = p; }
+    done();
+}
+void rt_ext_set_fence(GLuint f, int chunk) {
+    if (!rt_recording) { x_SetFenceAPPLE(f); return; }
+    if (chunk >= 0 && chunk < RING_CHUNKS) {
+        ring_set_epoch[chunk]++;
+    }
+    {
+        REC(OP_SET_FENCE, A_fence);
+        a->f = f;
+        a->chunk = chunk;
+        a->epoch = chunk >= 0 && chunk < RING_CHUNKS ? ring_set_epoch[chunk] : 0;
+    }
+    if (chunk >= 0 && chunk < RING_CHUNKS) {
+        ring_left_pos[chunk] = wr; /* every draw reading the chunk is before this */
+    }
+    done();
+}
+void rt_ext_wait_fence(GLuint f, int chunk) {
+    if (!rt_recording) {
+        st_fence_waits++;
+        if (!x_TestFenceAPPLE(f)) {
+            st_fence_blocked++;
+            x_FinishFenceAPPLE(f);
+        }
+        return;
+    }
+    if (mode == 1) {
+        /* the inline twin: the same test-then-finish, replayed at once */
+        REC(OP_WAIT_FENCE, A_fence);
+        a->f = f;
+        a->chunk = chunk;
+        a->epoch = 0;
+        done();
+        return;
+    }
+    /* mode >= 2: rt_ring_enter has already waited for the reader to see the
+     * fence finished; nothing to record */
+    (void)f;
+    (void)chunk;
+}
+void rt_ext_bind_program(GLenum target, GLuint id) {
+    if (!rt_recording) { x_BindProgramARB(target, id); return; }
+    { REC(OP_BIND_PROG, A_eu); a->a = target; a->b = id; }
+    done();
+}
+void rt_ext_env_param4fv(GLenum target, GLuint idx, const GLfloat* v) {
+    if (!rt_recording) { x_ProgramEnvParameter4fvARB(target, idx, v); return; }
+    { REC(OP_ENV4, A_env4); a->target = target; a->idx = idx; memcpy(a->v, v, sizeof(a->v)); }
+    done();
+}
+void rt_ext_env_params4fv(GLenum target, GLuint idx, GLsizei n, const GLfloat* v) {
+    if (!rt_recording) { x_ProgramEnvParameters4fvEXT(target, idx, n, v); return; }
+    {
+        A_envn* a = (A_envn*)rec(OP_ENVN, sizeof(A_envn) + (size_t)n * 16);
+        a->target = target; a->idx = idx; a->n = n;
+        memcpy(a + 1, v, (size_t)n * 16);
+    }
+    done();
+}
+
+const void* rt_stash(const void* p, size_t n) {
+    if (!rt_recording) {
+        return p;
+    }
+    {
+        void* a = rec(OP_NOP, n);
+        memcpy(a, p, n);
+        st_stash_bytes += n;
+        done();
+        return a;
+    }
+}
+
+void rt_call(void (*fn)(void*), const void* args, size_t n, int sync) {
+    if (!rt_recording) {
+        void* copy = malloc(n ? n : 1);
+        if (copy) {
+            memcpy(copy, args, n);
+            fn(copy);
+            free(copy);
+        }
+        return;
+    }
+    {
+        A_call* a = (A_call*)rec(OP_CALL, sizeof(A_call) + n);
+        a->fn = fn;
+        a->n = (u32)n;
+        memcpy(a + 1, args, n);
+    }
+    done();
+    if (sync) {
+        rt_join("call");
+    }
+}
+
+/* The vertex program compile, on the GL thread (gx_vprog.c's vp_compile):
+ * the text in, the id and the driver's verdicts out.  Written here because a
+ * call target must use the real GL -- gx_vprog.c's `gl*` are the twins, and
+ * a twin reached from the replaying side would record into the stream it is
+ * replaying.  Same sequence as the M11 code it replaces: gen, bind, load,
+ * error position; native count and the under-native-limits query; on any
+ * refusal bind 0 and delete. */
+typedef void (*fn_genprog_t)(GLsizei, GLuint*);
+typedef void (*fn_delprog_t)(GLsizei, const GLuint*);
+typedef void (*fn_progstr_t)(GLenum, GLenum, GLsizei, const void*);
+typedef void (*fn_getprogiv_t)(GLenum, GLenum, GLint*);
+static fn_genprog_t x_GenProgramsARB;
+static fn_delprog_t x_DeleteProgramsARB;
+static fn_progstr_t x_ProgramStringARB;
+static fn_getprogiv_t x_GetProgramivARB;
+#define RT_VP 0x8620u          /* GL_VERTEX_PROGRAM_ARB */
+#define RT_VP_ASCII 0x8875u    /* GL_PROGRAM_FORMAT_ASCII_ARB */
+#define RT_VP_ERRPOS 0x864Bu   /* GL_PROGRAM_ERROR_POSITION_ARB */
+#define RT_VP_ERRSTR 0x8874u   /* GL_PROGRAM_ERROR_STRING_ARB */
+#define RT_VP_NATIVE 0x88A2u   /* GL_PROGRAM_NATIVE_INSTRUCTIONS_ARB */
+#define RT_VP_UNDER 0x88B6u    /* GL_PROGRAM_UNDER_NATIVE_LIMITS_ARB */
+static void compile_fn(void* args) {
+    RtCompile* c = *(RtCompile**)args;
+    GLuint id = 0;
+    GLint errpos = -1;
+    if (!x_GenProgramsARB) {
+        x_GenProgramsARB = (fn_genprog_t)SDL_GL_GetProcAddress("glGenProgramsARB");
+        x_DeleteProgramsARB = (fn_delprog_t)SDL_GL_GetProcAddress("glDeleteProgramsARB");
+        x_ProgramStringARB = (fn_progstr_t)SDL_GL_GetProcAddress("glProgramStringARB");
+        x_GetProgramivARB = (fn_getprogiv_t)SDL_GL_GetProcAddress("glGetProgramivARB");
+        if (!x_BindProgramARB) {
+            x_BindProgramARB = (fn_bindprog_t)SDL_GL_GetProcAddress("glBindProgramARB");
+        }
+    }
+    c->id = 0;
+    c->errpos = -1;
+    c->native = 0;
+    c->under_native = 0;
+    c->msg[0] = '\0';
+    x_GenProgramsARB(1, &id);
+    x_BindProgramARB(RT_VP, id);
+    x_ProgramStringARB(RT_VP, RT_VP_ASCII, (GLsizei)c->len, c->text);
+    glGetIntegerv(RT_VP_ERRPOS, &errpos);
+    c->errpos = (int)errpos;
+    if (errpos != -1) {
+        const char* m = (const char*)glGetString(RT_VP_ERRSTR);
+        if (m) {
+            strncpy(c->msg, m, sizeof(c->msg) - 1);
+            c->msg[sizeof(c->msg) - 1] = '\0';
+        }
+        x_BindProgramARB(RT_VP, 0);
+        x_DeleteProgramsARB(1, &id);
+        return;
+    }
+    {
+        GLint nat = 0, under = 0;
+        x_GetProgramivARB(RT_VP, RT_VP_NATIVE, &nat);
+        x_GetProgramivARB(RT_VP, RT_VP_UNDER, &under);
+        c->native = (int)nat;
+        c->under_native = (int)under;
+    }
+    if (!c->under_native) {
+        x_BindProgramARB(RT_VP, 0);
+        x_DeleteProgramsARB(1, &id);
+        return;
+    }
+    c->id = id; /* and it stays bound, as before */
+}
+void rt_compile_vprog(RtCompile* c) {
+    RtCompile* p = c;
+    rt_call(compile_fn, &p, sizeof(p), 1);
+}
+
+void rt_present(unsigned frame) {
+    if (!rt_recording) {
+        SDL_GL_SwapWindow(win);
+        return;
+    }
+    { REC(OP_PRESENT, A_present); a->frame = frame; a->t_rec = now(); }
+    st_frames++;
+    if (st_frame_bytes > st_frame_bytes_peak) {
+        st_frame_bytes_peak = st_frame_bytes;
+    }
+    st_frame_bytes = 0;
+    st_frame_records = 0;
+    done();
+    if (mode == 2) {
+        rt_join("frame end (mode 2)");
+    }
+}
+
+void rt_frame_end(void) {
+    if (mode == 2) {
+        rt_join("frame end (mode 2)");
+    }
+}
+
+/* the gate: is the reader drained, or does it drain within max_s */
+int rt_gate(double max_s) {
+    double t0, d;
+    int spins = 0;
+    if (!rt_recording || mode < 2) {
+        return 1;
+    }
+    publish();
+    if ((s32)(rd - wr) >= 0) {
+        st_gate_ok++;
+        return 1;
+    }
+    t0 = now();
+    for (;;) {
+        RT_ACQ_REL();
+        if ((s32)(rd - wr) >= 0) {
+            d = now() - t0;
+            st_gate_waited++;
+            st_gate_wait_s += d;
+            if (d > st_gate_wait_max) {
+                st_gate_wait_max = d;
+            }
+            return 1;
+        }
+        if (++spins >= 64) {
+            spins = 0;
+            d = now() - t0;
+            if (d >= max_s) {
+                st_gate_busy++;
+                return 0;
+            }
+            sched_yield();
+        }
+    }
+}
+
+/* the writer is about to reuse chunk c: issued, then finished (above) */
+void rt_ring_enter(int chunk) {
+    double t0;
+    if (!rt_recording || mode < 2 || chunk < 0 || chunk >= RING_CHUNKS) {
+        return;
+    }
+    if ((s32)(rd - ring_left_pos[chunk]) < 0) {
+        st_ring_waits++;
+        wait_pos(ring_left_pos[chunk], "ring", &st_ring_wait_s, &st_ring_wait_max);
+    }
+    if (ring_gpu_epoch[chunk] != ring_set_epoch[chunk]) {
+        int spins = 0;
+        t0 = now();
+        st_ring_gpu_waits++;
+        while (ring_gpu_epoch[chunk] != ring_set_epoch[chunk]) {
+            RT_ACQ_REL();
+            if (++spins >= 64) {
+                spins = 0;
+                sched_yield();
+            }
+        }
+        RT_ACQ_REL();
+        {
+            double d = now() - t0;
+            st_ring_wait_s += d;
+            if (d > st_ring_wait_max) {
+                st_ring_wait_max = d;
+            }
+        }
+    }
+}
+
+/* the reader: test the fences it has set and publish the finished ones */
+static void reader_test_fences(void) {
+    int c;
+    for (c = 0; c < RING_CHUNKS; c++) {
+        if (ring_fence[c].pending) {
+            if (x_TestFenceAPPLE(ring_fence[c].f)) {
+                ring_fence[c].pending = 0;
+                RT_ACQ_REL();
+                ring_gpu_epoch[c] = ring_fence[c].epoch;
+            }
+        }
+    }
+}
+
+/* ---- the reader ---------------------------------------------------------------- */
+
+static double t_class0;
+static void class_begin(void) {
+    if (port_opt.rtsplit) {
+        t_class0 = now();
+    }
+}
+static void class_end(int c) {
+    if (port_opt.rtsplit) {
+        st_class_s[c] += now() - t_class0;
+    }
+}
+
+/* replay one record; returns its class for the split */
+static void replay_one(const Hdr* h) {
+    const void* p = h + 1;
+    int cls = RC_STATE;
+    class_begin();
+    switch (h->op) {
+        case OP_NOP: case OP_WRAP: cls = RC_OTHER; break;
+        case OP_ENABLE: glEnable(((const A1e*)p)->a); break;
+        case OP_DISABLE: glDisable(((const A1e*)p)->a); break;
+        case OP_ENABLE_CS: glEnableClientState(((const A1e*)p)->a); break;
+        case OP_DISABLE_CS: glDisableClientState(((const A1e*)p)->a); break;
+        case OP_ACTIVE_TEX: glActiveTexture(((const A1e*)p)->a); break;
+        case OP_CLIENT_ACTIVE_TEX: glClientActiveTexture(((const A1e*)p)->a); break;
+        case OP_BIND_TEX: { const A_eu* a = p; glBindTexture(a->a, a->b); cls = RC_TEX; break; }
+        case OP_TEXPARAM_I: { const A_eei* a = p; glTexParameteri(a->a, a->b, a->v); cls = RC_TEX; break; }
+        case OP_TEXPARAM_F: { const A_eef* a = p; glTexParameterf(a->a, a->b, a->v); cls = RC_TEX; break; }
+        case OP_TEXENV_I: { const A_eei* a = p; glTexEnvi(a->a, a->b, a->v); break; }
+        case OP_TEXENV_F: { const A_eef* a = p; glTexEnvf(a->a, a->b, a->v); break; }
+        case OP_TEXENV_FV: { const A_eef4* a = p; glTexEnvfv(a->a, a->b, a->v); break; }
+        case OP_MATRIX_MODE: glMatrixMode(((const A1e*)p)->a); break;
+        case OP_LOAD_IDENTITY: glLoadIdentity(); break;
+        case OP_LOAD_MATRIX: glLoadMatrixf(((const A_m16*)p)->m); break;
+        case OP_PUSH: glPushMatrix(); break;
+        case OP_POP: glPopMatrix(); break;
+        case OP_ORTHO: { const A_d6* a = p; glOrtho(a->v[0], a->v[1], a->v[2], a->v[3], a->v[4], a->v[5]); break; }
+        case OP_DEPTH_MASK: glDepthMask(((const A_b4*)p)->r); break;
+        case OP_DEPTH_FUNC: glDepthFunc(((const A1e*)p)->a); break;
+        case OP_DEPTH_RANGE: { const A_d2* a = p; glDepthRange(a->a, a->b); break; }
+        case OP_COLOR_MASK: { const A_b4* a = p; glColorMask(a->r, a->g, a->b, a->a); break; }
+        case OP_CULL: glCullFace(((const A1e*)p)->a); break;
+        case OP_FRONT: glFrontFace(((const A1e*)p)->a); break;
+        case OP_SHADE: glShadeModel(((const A1e*)p)->a); break;
+        case OP_POLYMODE: { const A_ee* a = p; glPolygonMode(a->a, a->b); break; }
+        case OP_HINT: { const A_ee* a = p; glHint(a->a, a->b); break; }
+        case OP_BLEND_FUNC: { const A_ee* a = p; glBlendFunc(a->a, a->b); break; }
+        case OP_BLEND_EQ: glBlendEquation(((const A1e*)p)->a); break;
+        case OP_ALPHA_FUNC: { const A_alpha* a = p; glAlphaFunc(a->f, a->ref); break; }
+        case OP_FOG_I: { const A_ei* a = p; glFogi(a->a, a->v); break; }
+        case OP_FOG_F: { const A_ef* a = p; glFogf(a->a, a->v); break; }
+        case OP_FOG_FV: { const A_ef4* a = p; glFogfv(a->a, a->v); break; }
+        case OP_LIGHT_F: { const A_eef* a = p; glLightf(a->a, a->b, a->v); break; }
+        case OP_LIGHT_FV: { const A_eef4* a = p; glLightfv(a->a, a->b, a->v); break; }
+        case OP_LIGHTMODEL_I: { const A_ei* a = p; glLightModeli(a->a, a->v); break; }
+        case OP_LIGHTMODEL_FV: { const A_ef4* a = p; glLightModelfv(a->a, a->v); break; }
+        case OP_MATERIAL_FV: { const A_eef4* a = p; glMaterialfv(a->a, a->b, a->v); break; }
+        case OP_COLOR_MATERIAL: { const A_ee* a = p; glColorMaterial(a->a, a->b); break; }
+        case OP_CLEAR_COLOR: { const A_f4* a = p; glClearColor(a->v[0], a->v[1], a->v[2], a->v[3]); break; }
+        case OP_CLEAR_DEPTH: glClearDepth(((const A_d*)p)->d); break;
+        case OP_CLEAR: glClear(((const A_bits*)p)->m); cls = RC_DRAW; break;
+        case OP_VIEWPORT: { const A_rect* a = p; glViewport(a->x, a->y, a->w, a->h); break; }
+        case OP_SCISSOR: { const A_rect* a = p; glScissor(a->x, a->y, a->w, a->h); break; }
+        case OP_PIXELSTORE: { const A_ei* a = p; glPixelStorei(a->a, a->v); break; }
+        case OP_READ_BUFFER: glReadBuffer(((const A1e*)p)->a); break;
+        case OP_FINISH: glFinish(); cls = RC_DRAW; break;
+        case OP_BEGIN: glBegin(((const A1e*)p)->a); cls = RC_DRAW; break;
+        case OP_END: glEnd(); cls = RC_DRAW; break;
+        case OP_TEXCOORD2F: { const A_f2* a = p; glTexCoord2f(a->x, a->y); cls = RC_DRAW; break; }
+        case OP_VERTEX2F: { const A_f2* a = p; glVertex2f(a->x, a->y); cls = RC_DRAW; break; }
+        case OP_VERTEX_PTR: { const A_ptr* a = p; glVertexPointer(a->size, a->type, a->stride, a->p); cls = RC_DRAW; break; }
+        case OP_COLOR_PTR: { const A_ptr* a = p; glColorPointer(a->size, a->type, a->stride, a->p); cls = RC_DRAW; break; }
+        case OP_NORMAL_PTR: { const A_ptr2* a = p; glNormalPointer(a->type, a->stride, a->p); cls = RC_DRAW; break; }
+        case OP_TEXCOORD_PTR: { const A_ptr* a = p; glTexCoordPointer(a->size, a->type, a->stride, a->p); cls = RC_DRAW; break; }
+        case OP_FOGCOORD_PTR: { const A_ptr2* a = p; if (x_FogCoordPointerEXT) { x_FogCoordPointerEXT(a->type, a->stride, a->p); } cls = RC_DRAW; break; }
+        case OP_DRAW_ARRAYS: { const A_draw* a = p; glDrawArrays(a->mode, a->first, a->count); cls = RC_DRAW; break; }
+        case OP_MULTI_DRAW: {
+            const A_multi* a = p;
+            const GLint* f = (const GLint*)(a + 1);
+            const GLsizei* c = (const GLsizei*)(f + a->n);
+            x_MultiDrawArraysEXT(a->mode, f, c, a->n);
+            cls = RC_DRAW;
+            break;
+        }
+        case OP_DRAW_RANGE: { const A_range* a = p; glDrawRangeElements(a->mode, a->lo, a->hi, a->n, a->type, a + 1); cls = RC_DRAW; break; }
+        case OP_DELETE_TEX: { const A_del* a = p; glDeleteTextures(a->n, (const GLuint*)(a + 1)); cls = RC_TEX; break; }
+        case OP_TEXIMAGE: {
+            const A_teximg* a = p;
+            glTexImage2D(a->target, a->level, a->ifmt, a->w, a->h, a->border, a->fmt, a->type, a->px);
+            if (a->owned) {
+                free(a->px);
+                st_owned_frees++;
+            }
+            cls = RC_TEX;
+            break;
+        }
+        case OP_COPY_TEX_SUB: { const A_copysub* a = p; glCopyTexSubImage2D(a->target, a->level, a->xo, a->yo, a->x, a->y, a->w, a->h); cls = RC_TEX; break; }
+        case OP_READ_PIXELS: { const A_readpx* a = p; glReadPixels(a->x, a->y, a->w, a->h, a->fmt, a->type, a->out); cls = RC_OTHER; break; }
+        case OP_GET_TEX_IMAGE: { const A_gettex* a = p; glGetTexImage(a->target, a->level, a->fmt, a->type, a->out); cls = RC_OTHER; break; }
+        case OP_GET_ERROR: { const A_geterr* a = p; *a->out = glGetError(); cls = RC_OTHER; break; }
+        case OP_FLUSH_VAR: { const A_flushvar* a = p; x_FlushVertexArrayRangeAPPLE(a->len, a->p); cls = RC_DRAW; break; }
+        case OP_SET_FENCE: {
+            const A_fence* a = p;
+            x_SetFenceAPPLE(a->f);
+            if (a->chunk >= 0 && a->chunk < RING_CHUNKS && mode >= 2) {
+                /* a fence set on a chunk still pending from the last lap
+                 * cannot happen: the writer waited for that epoch on entry */
+                ring_fence[a->chunk].f = a->f;
+                ring_fence[a->chunk].epoch = a->epoch;
+                ring_fence[a->chunk].pending = 1;
+            }
+            cls = RC_DRAW;
+            break;
+        }
+        case OP_WAIT_FENCE: {
+            const A_fence* a = p;
+            st_fence_waits++;
+            if (!x_TestFenceAPPLE(a->f)) {
+                st_fence_blocked++;
+                x_FinishFenceAPPLE(a->f);
+            }
+            cls = RC_DRAW;
+            break;
+        }
+        case OP_BIND_PROG: { const A_eu* a = p; x_BindProgramARB(a->a, a->b); cls = RC_DRAW; break; }
+        case OP_ENV4: { const A_env4* a = p; x_ProgramEnvParameter4fvARB(a->target, a->idx, a->v); cls = RC_DRAW; break; }
+        case OP_ENVN: { const A_envn* a = p; x_ProgramEnvParameters4fvEXT(a->target, a->idx, a->n, (const GLfloat*)(a + 1)); cls = RC_DRAW; break; }
+        case OP_CALL: { const A_call* a = p; a->fn((void*)(a + 1)); cls = RC_OTHER; break; }
+        case OP_PRESENT: {
+            const A_present* a = p;
+            double t = now();
+            double tail = t - a->t_rec;
+            SDL_GL_SwapWindow(win);
+            st_tail_s += tail;
+            if (tail > st_tail_max) {
+                st_tail_max = tail;
+            }
+            cls = RC_PRESENT;
+            break;
+        }
+        default:
+            port_fatal("render thread: unknown record %u (%s) at %u", h->op,
+                       h->op < OP_N ? op_name[h->op] : "?", rd);
+    }
+    class_end(cls);
+}
+
+/* replay [rd, to) -- on the render thread, or on the game thread inline */
+static unsigned replayed_since_test;
+static void replay_upto(u32 to) {
+    double t0 = now();
+    RT_ACQ_REL(); /* acquire: the records behind `to` after the position itself */
+    while ((s32)(to - rd) > 0) {
+        const Hdr* h = (const Hdr*)(buf + (rd & RT_MASK));
+        u32 len = h->len;
+        int present = h->op == OP_PRESENT;
+        replay_one(h);
+        if (present || ((++replayed_since_test & 255u) == 0 && mode >= 2)) {
+            reader_test_fences();
+        }
+        if (present) {
+            double t = now();
+            st_frame_replay_s += t - t0;
+            st_replay_s += t - t0;
+            t0 = t;
+            st_last_frame_ms = st_frame_replay_s * 1000.0;
+            st_frame_ms_sum += st_last_frame_ms;
+            st_frame_ms_n++;
+            if (st_last_frame_ms > st_frame_ms_max) {
+                st_frame_ms_max = st_last_frame_ms;
+            }
+            st_frame_replay_s = 0.0;
+        }
+        RT_ACQ_REL(); /* release: a read-back's pixels before the position */
+        rd += len;
+        RT_FULL();    /* the store above before the load below (Dekker) */
+        if (writer_waiting) {
+            pthread_mutex_lock(&mu);
+            pthread_cond_broadcast(&cv_done);
+            pthread_mutex_unlock(&mu);
+        }
+    }
+    {
+        double d = now() - t0;
+        st_replay_s += d;
+        st_frame_replay_s += d;
+    }
+}
+
+static void* thread_main(void* arg) {
+    (void)arg;
+    if (SDL_GL_MakeCurrent(win, ctx) != 0) {
+        port_log("port> render thread: SDL_GL_MakeCurrent failed (%s)\n", SDL_GetError());
+    }
+    for (;;) {
+        u32 w;
+        int spins = 0;
+        for (;;) {
+            RT_ACQ_REL();
+            w = wr_pub;
+            if ((s32)(w - rd) > 0 || quit) {
+                break;
+            }
+            if (++spins < 20000) {
+                if ((spins & 1023) == 0) {
+                    reader_test_fences(); /* a fence finishing while idle */
+                }
+                continue; /* ~100 us of spinning covers the gaps inside a drawn frame */
+            }
+            reader_test_fences();
+            pthread_mutex_lock(&mu);
+            reader_asleep = 1;
+            RT_FULL(); /* the store above before the load below (Dekker) */
+            w = wr_pub;
+            if ((s32)(w - rd) <= 0 && !quit) {
+                int c, pending = 0;
+                for (c = 0; c < RING_CHUNKS; c++) {
+                    pending |= ring_fence[c].pending;
+                }
+                st_reader_sleeps++;
+                if (pending) {
+                    /* a writer may be waiting on one of these: doze, re-test */
+                    struct timespec ts;
+                    struct timeval tv;
+                    gettimeofday(&tv, NULL); /* the condvar's clock is the epoch's, not port_now's */
+                    ts.tv_sec = tv.tv_sec;
+                    ts.tv_nsec = (tv.tv_usec + 500) * 1000L;
+                    if (ts.tv_nsec >= 1000000000L) {
+                        ts.tv_sec++;
+                        ts.tv_nsec -= 1000000000L;
+                    }
+                    pthread_cond_timedwait(&cv_work, &mu, &ts);
+                } else {
+                    pthread_cond_wait(&cv_work, &mu);
+                }
+            }
+            reader_asleep = 0;
+            pthread_mutex_unlock(&mu);
+            spins = 0;
+        }
+        if ((s32)(w - rd) <= 0 && quit) {
+            break;
+        }
+        replay_upto(w);
+    }
+    glFinish();
+    SDL_GL_MakeCurrent(win, NULL);
+    return NULL;
+}
+
+/* ---- lifecycle -------------------------------------------------------------------- */
+
+int rt_mode(void) { return mode; }
+int rt_on(void) { return mode >= 2 && thread_up; }
+
+void rt_start(void* sdl_window, void* sdl_glcontext) {
+    const char* ext;
+    win = (SDL_Window*)sdl_window;
+    ctx = (SDL_GLContext)sdl_glcontext;
+    mode = port_opt.renderthread;
+    if (mode < 0) {
+        mode = port_threads_on() ? 3 : 1;
+    }
+    if (mode >= 2 && !port_threads_on()) {
+        port_log("port> render thread: --renderthread %d asks for a thread on one core; "
+                 "the inline replay instead\n", mode);
+        mode = 1;
+    }
+    if (!win || !ctx) {
+        mode = 0;
+    }
+    /* the extension pointers the twins call in every mode */
+    ext = (win && ctx) ? (const char*)glGetString(GL_EXTENSIONS) : NULL;
+    if (ext) {
+        if (strstr(ext, "GL_EXT_multi_draw_arrays")) {
+            x_MultiDrawArraysEXT = (fn_multidraw_t)SDL_GL_GetProcAddress("glMultiDrawArraysEXT");
+        }
+        if (strstr(ext, "GL_APPLE_vertex_array_range") && strstr(ext, "GL_APPLE_fence")) {
+            x_FlushVertexArrayRangeAPPLE = (fn_range_t)SDL_GL_GetProcAddress("glFlushVertexArrayRangeAPPLE");
+            x_SetFenceAPPLE = (fn_fence_t)SDL_GL_GetProcAddress("glSetFenceAPPLE");
+            x_FinishFenceAPPLE = (fn_fence_t)SDL_GL_GetProcAddress("glFinishFenceAPPLE");
+            x_TestFenceAPPLE = (fn_fence_test_t)SDL_GL_GetProcAddress("glTestFenceAPPLE");
+        }
+        if (strstr(ext, "GL_ARB_vertex_program")) {
+            x_BindProgramARB = (fn_bindprog_t)SDL_GL_GetProcAddress("glBindProgramARB");
+            x_ProgramEnvParameter4fvARB = (fn_env4_t)SDL_GL_GetProcAddress("glProgramEnvParameter4fvARB");
+        }
+        if (strstr(ext, "GL_EXT_gpu_program_parameters")) {
+            x_ProgramEnvParameters4fvEXT = (fn_envn_t)SDL_GL_GetProcAddress("glProgramEnvParameters4fvEXT");
+        }
+        if (strstr(ext, "GL_EXT_fog_coord")) {
+            x_FogCoordPointerEXT = (fn_fogptr_t)SDL_GL_GetProcAddress("glFogCoordPointerEXT");
+        }
+    }
+    if (mode == 0) {
+        port_log("port> render thread: off (the direct GL path)\n");
+        return;
+    }
+    buf = (u8*)valloc(RT_BYTES);
+    if (!buf) {
+        port_fatal("render thread: cannot allocate the %u KB stream", RT_BYTES / 1024);
+    }
+    memset(buf, 0, RT_BYTES);
+    /* everything GL that happened so far was the main thread's; from here
+     * the stream owns it */
+    glFinish();
+    if (mode >= 2) {
+        SDL_GL_MakeCurrent(win, NULL);
+        if (pthread_create(&thread, NULL, thread_main, NULL) != 0) {
+            port_log("port> render thread: pthread_create failed; the inline replay instead\n");
+            SDL_GL_MakeCurrent(win, ctx);
+            mode = 1;
+        } else {
+            thread_up = 1;
+        }
+    }
+    rt_recording = 1;
+    port_log("port> render thread: %s (--renderthread %d); stream %u KB\n",
+             mode == 1 ? "the inline replay on the game thread (the single-core twin)"
+             : mode == 2 ? "on, joined at every frame's end (no overlap)"
+                         : "on, overlapped (the join at the gate)",
+             mode, RT_BYTES / 1024);
+}
+
+void rt_stop(void) {
+    if (!rt_recording) {
+        return;
+    }
+    if (mode == 1) {
+        replay_upto(wr);
+    } else if (thread_up) {
+        rt_join("shutdown");
+        pthread_mutex_lock(&mu);
+        quit = 1;
+        pthread_cond_broadcast(&cv_work);
+        pthread_mutex_unlock(&mu);
+        pthread_join(thread, NULL);
+        thread_up = 0;
+        SDL_GL_MakeCurrent(win, ctx);
+    }
+    rt_recording = 0;
+}
+
+void rt_status(char* out, size_t n) {
+    if (!rt_recording || mode < 2) {
+        out[0] = '\0';
+        return;
+    }
+    snprintf(out, n, "  rt %.1f ms", st_last_frame_ms);
+}
+
+void rt_report(void) {
+    int i;
+    if (mode == 0) {
+        return;
+    }
+    port_log("\nport> render thread: mode %d (%s)\n", mode,
+             mode == 1 ? "inline replay" : mode == 2 ? "thread, joined per frame" : "thread, overlapped");
+    port_log("  stream   %lu records, %lu KB (%.0f B/record); %lu frames presented, peak %u KB a "
+             "frame; %lu KB of payload copies; %lu names handed out; %lu owned uploads freed\n",
+             st_records, st_bytes / 1024, st_records ? (double)st_bytes / (double)st_records : 0.0,
+             st_frames, st_frame_bytes_peak / 1024, st_stash_bytes / 1024, st_names, st_owned_frees);
+    port_log("  replay   %.0f ms in all; per presented frame mean %.2f ms, worst %.1f ms (%lu frames); "
+             "present tail (swap executed - swap recorded) mean %.1f ms, worst %.1f ms\n",
+             st_replay_s * 1000.0, st_frame_ms_n ? st_frame_ms_sum / (double)st_frame_ms_n : 0.0,
+             st_frame_ms_max, st_frame_ms_n,
+             st_frames ? st_tail_s / (double)st_frames * 1000.0 : 0.0, st_tail_max * 1000.0);
+    if (port_opt.rtsplit) {
+        port_log("  split    ");
+        for (i = 0; i < RC_N; i++) {
+            port_log("%s %.0f ms%s", class_name[i], st_class_s[i] * 1000.0, i + 1 < RC_N ? ", " : "\n");
+        }
+    }
+    if (mode >= 2) {
+        port_log("  gate     %lu drained, %lu waited (%.0f ms, worst %.1f ms), %lu busy (the frame "
+                 "was consumed instead)\n",
+                 st_gate_ok, st_gate_waited, st_gate_wait_s * 1000.0, st_gate_wait_max * 1000.0,
+                 st_gate_busy);
+        port_log("  ring     %lu reuse waits for the issue, %lu for the GPU (%.0f ms, worst %.1f ms); "
+                 "stream full %lu times (%.0f ms); reader slept %lu times, woken %lu\n",
+                 st_ring_waits, st_ring_gpu_waits, st_ring_wait_s * 1000.0, st_ring_wait_max * 1000.0, st_full_waits,
+                 st_full_wait_s * 1000.0, st_reader_sleeps, st_writer_wakes);
+        for (i = 0; i < njoins; i++) {
+            port_log("  join     %-24s %lu (%.0f ms, worst %.1f ms)\n", joins[i].why, joins[i].n,
+                     joins[i].s * 1000.0, joins[i].max * 1000.0);
+        }
+    }
+    port_log("  fences   %lu waits (%lu blocked) on the replaying side\n", st_fence_waits, st_fence_blocked);
+}
+
+double rt_last_frame_ms(void) { return st_last_frame_ms; }
+
+#else /* PORT_NO_SDL */
+
+void rt_start(void* w, void* c) { (void)w; (void)c; }
+void rt_stop(void) {}
+int rt_on(void) { return 0; }
+int rt_mode(void) { return 0; }
+void rt_frame_end(void) {}
+void rt_report(void) {}
+void rt_status(char* buf, size_t n) { (void)n; buf[0] = '\0'; }
+void rt_join(const char* why) { (void)why; }
+int rt_gate(double s) { (void)s; return 1; }
+void rt_ring_enter(int c) { (void)c; }
+void rt_call(void (*fn)(void*), const void* args, size_t n, int sync) {
+    void* copy = malloc(n ? n : 1);
+    (void)sync;
+    if (copy) { memcpy(copy, args, n); fn(copy); free(copy); }
+}
+const void* rt_stash(const void* p, size_t n) { (void)n; return p; }
+
+#endif

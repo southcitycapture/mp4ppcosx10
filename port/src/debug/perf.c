@@ -40,6 +40,7 @@ static int gx_depth;
  * than only a mean -- a port's stutter lives in the tail. */
 #define PERF_MAX 20000
 static float s_frame[PERF_MAX], s_gx[PERF_MAX], s_present[PERF_MAX], s_game[PERF_MAX];
+static float s_rt[PERF_MAX]; /* M27: the render thread's replay of the last presented frame */
 static float s_audio[PERF_MAX];
 static float s_wall[PERF_MAX];      /* with the sleep: real elapsed time */
 static unsigned char s_drawn[PERF_MAX];
@@ -236,6 +237,7 @@ void port_perf_frame(int drawn) {
         s_present[n_samples] = (float)(t_present * 1000.0);
         s_audio[n_samples] = (float)(t_audio * 1000.0);
         s_game[n_samples] = (float)(game * 1000.0);
+        s_rt[n_samples] = (float)rt_last_frame_ms();
         n_samples++;
     }
     t_frame_start = now;
@@ -294,7 +296,7 @@ static void perf_windows(void) {
         char name[32];
         long a = 0, b = 0;
         int i, n = 0;
-        double sum = 0.0, gx = 0.0, pres = 0.0, game = 0.0, aud = 0.0;
+        double sum = 0.0, gx = 0.0, pres = 0.0, game = 0.0, aud = 0.0, rt = 0.0;
         double wall = 0.0;
         int drawn = 0;
         char* e;
@@ -329,13 +331,21 @@ static void perf_windows(void) {
             aud += s_audio[i];
             wall += s_wall[i];
             drawn += s_drawn[i];
+            if (s_drawn[i]) {
+                rt += s_rt[i];
+            }
             n++;
         }
         if (n > 0 && sum > 0.0) {
             port_log("  %-14s frames %ld-%ld (%d)  %6.2f ms/frame  %5.2f fps  "
-                     "[game %5.2f gx %5.2f present %5.2f aud %5.2f]\n",
+                     "[game %5.2f gx %5.2f present %5.2f aud %5.2f%s]\n",
                      name[0] ? name : "window", a, b, n, sum / n, n * 1000.0 / sum,
-                     game / n, gx / n, pres / n, aud / n);
+                     game / n, gx / n, pres / n, aud / n, "");
+            if (rt_on() && drawn > 0) {
+                /* M27: the render thread's frame, mean over the window's drawn frames */
+                port_log("  %-14s   render thread: %.2f ms per drawn frame (replay of the stream)\n",
+                         "", rt / drawn);
+            }
             /* The real-time reading of the same window (PLAN.md 32): game
              * seconds against wall seconds including the pacing sleep, the
              * frames that reached the screen, and the share that did not.
@@ -373,10 +383,10 @@ static void perf_dump(void) {
         port_log("port> --perfdump: cannot write %s\n", port_opt.perfdump);
         return;
     }
-    fprintf(f, "frame,wall_ms,work_ms,game_ms,gx_ms,present_ms,aud_ms,drawn\n");
+    fprintf(f, "frame,wall_ms,work_ms,game_ms,gx_ms,present_ms,aud_ms,drawn,rt_ms\n");
     for (i = 0; i < n_samples; i++) {
-        fprintf(f, "%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%d\n", i, s_wall[i], s_frame[i],
-                s_game[i], s_gx[i], s_present[i], s_audio[i], s_drawn[i]);
+        fprintf(f, "%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%d,%.3f\n", i, s_wall[i], s_frame[i],
+                s_game[i], s_gx[i], s_present[i], s_audio[i], s_drawn[i], s_rt[i]);
     }
     fclose(f);
     port_log("port> --perfdump: %d frames written to %s\n", n_samples, port_opt.perfdump);

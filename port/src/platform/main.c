@@ -115,6 +115,12 @@ static void usage(const char* argv0) {
             "                    single-core path, today's code); 1 = the workers on,\n"
             "                    on any machine; default: on when hw.ncpu > 1\n"
             "  --nomixthread     M24: the mixer stays on the game thread\n"
+            "  --renderthread N  M27: 0 = the direct GL path; 1 = the GL stream replayed\n"
+            "                    inline (the single-core twin); 2 = the render thread,\n"
+            "                    joined every frame; 3 = overlapped (default with cpu 2)\n"
+            "  --norenderthread  M27: --renderthread 0\n"
+            "  --rtgate MS       M27: the gate waits this long for the render thread (4)\n"
+            "  --rtsplit         M27: the replay timed by record class (an instrument)\n"
             "  --predecode       M24: the texture decode staged on the worker from\n"
             "                    consumed frames (measured, off: PLAN.md 39.3)\n"
             "  --predecodelog    M24: a line per drawn frame that took a staged decode\n"
@@ -474,6 +480,8 @@ int port_parse_args(int argc, char** argv) {
      * exercises them, and an A/B is one word on the command line. */
     port_opt.depop = 1;
     port_opt.threads = -1; /* M24: the workers when the machine has the cores */
+    port_opt.renderthread = -1; /* M27: overlapped with the workers on, inline without */
+    port_opt.rtgate_ms = 4;
     /* Linear, since the G4 measured both on the same walk (PLAN.md §20.5):
      * 1.75 ms mean against the 4-tap's 2.00, a worst frame of 10.92 ms against
      * 28.30, and fewer discontinuities, not more -- 33,002 against 36,328.
@@ -546,6 +554,14 @@ int port_parse_args(int argc, char** argv) {
             port_opt.threads = atoi(argv[++i]);
         } else if (!strcmp(a, "--nomixthread")) {
             port_opt.nomixthread = 1;
+        } else if (!strcmp(a, "--renderthread") && i + 1 < argc) {
+            port_opt.renderthread = atoi(argv[++i]);
+        } else if (!strcmp(a, "--norenderthread")) {
+            port_opt.renderthread = 0;
+        } else if (!strcmp(a, "--rtsplit")) {
+            port_opt.rtsplit = 1;
+        } else if (!strcmp(a, "--rtgate") && i + 1 < argc) {
+            port_opt.rtgate_ms = atoi(argv[++i]);
         } else if (!strcmp(a, "--predecode")) {
             port_opt.predecode = 1;
         } else if (!strcmp(a, "--predecodelog")) {
@@ -916,6 +932,7 @@ int port_parse_args(int argc, char** argv) {
 }
 
 void port_gx_shutdown(void);
+void gl13_rt_start(void);
 void port_gx_demo(void);
 void gl13_write_ppm(const char* path);
 void GXInit_demo_bootstrap(void);
@@ -1026,6 +1043,7 @@ int main(int argc, char** argv) {
     port_dvd_init();
     port_gx_init();
     port_workers_init(); /* M24: the second core, if there is one */
+    gl13_rt_start();     /* M27: GL to the render thread (or the inline replay) */
     /* After port_gx_init, which is what brings SDL up.  --noaudio keeps the
      * whole path switched off, including the tick, so the boot behaves exactly
      * as it did before M6 -- which is what makes an audio regression bisectable

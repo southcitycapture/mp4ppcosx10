@@ -598,6 +598,7 @@ static void snap_write(const char* path) {
  * this function, on a stack that has just been restored byte for byte. */
 static void snap_take(unsigned frame) {
     char path[1100];
+    rt_join("snapshot"); /* M27: the stream drained before the game's memory is serialised */
     if (gcsetjmp(snap_ctx) != 0) {
         port_log("port> snapshot: resumed\n");
         return;

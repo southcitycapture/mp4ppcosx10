@@ -52,6 +52,7 @@ unsigned gl13_frame_number(void);
 
 #ifndef PORT_NO_SDL
 #include <SDL_opengl.h>
+#include "gx_rt.h" /* M27: the render thread's twins */
 #endif
 
 #define GL(fn) (port_opt.glcheck ? gl13_check(#fn) : 0, fn)
@@ -2657,6 +2658,9 @@ static void ring_ensure(void) {
         src_cap = VRING_BYTES;
     }
 }
+/* M27: the ring before the render thread owns GL (gl13_var_setup probes
+ * extensions and generates the fences on the main thread) */
+void gx_draw_ring_ensure(void) { ring_ensure(); }
 
 /* M21 (--submitstats): how many batches differ from the one before them in
  * nothing but the matrices -- the same layout, TEV config, textures, raster
@@ -3178,8 +3182,13 @@ static int draw_apply(const u8* s, int n, int in_ring) {
          * needs have happened: gx_vprog.c says why that ordering matters */
         gx_vprog_bind(xfd);
     } else {
-        glc_vertex_array(out_buf, out_stride);
-        glc_color_array(out_buf + out_off_clr, out_stride);
+        /* M27: out_buf is rewritten by the next CPU-path draw, so under the
+         * render thread this draw's bytes go into the stream as a payload and
+         * the arrays point at the copy (rt_stash returns out_buf itself when
+         * the stream is off) */
+        const u8* ob = (const u8*)rt_stash(out_buf, (size_t)n * (size_t)out_stride);
+        glc_vertex_array(ob, out_stride);
+        glc_color_array(ob + out_off_clr, out_stride);
         glc_normal_array(NULL, 0);
         {
             int i;
@@ -3188,7 +3197,7 @@ static int draw_apply(const u8* s, int n, int in_ring) {
                 if (stage >= 0 && gx.tev[stage].coord < out_ntex &&
                     gx_bound_tex(gx.tev[stage].map) != NULL) {
                     glc_coord_array(i,
-                                    out_buf + out_off_tex + 8 * gx.tev[stage].coord,
+                                    ob + out_off_tex + 8 * gx.tev[stage].coord,
                                     out_stride);
                 } else {
                     glc_coord_array(i, NULL, 0);
@@ -4680,6 +4689,7 @@ void port_gx_shutdown(void) {
     gx_tex_tile_report();
     gx_warn_report();
     gl13_shutdown();
+    rt_report(); /* M27: after the stream is drained and the context taken back */
 }
 
 void port_gx_frame_number(unsigned n) { (void)n; }

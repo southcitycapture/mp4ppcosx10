@@ -34,6 +34,7 @@
 #if defined(__APPLE__) && defined(__ppc__)
 #include <OpenGL/OpenGL.h>
 #endif
+#include "gx_rt.h" /* M27: every gl* below is the render thread's twin */
 #endif
 
 int gl13_have_combine3 = 1;
@@ -592,7 +593,7 @@ void glc_fogcoord_array(const void* p, int stride) {
     glc.fog_ptr = p;
     glc.fog_stride = stride;
     if (p) {
-        glc_FogCoordPointerEXT(GL_FLOAT, (GLsizei)stride, p);
+        rt_ext_fogcoord_pointer(GL_FLOAT, (GLsizei)stride, p);
     }
 }
 
@@ -787,10 +788,13 @@ void gl13_var_enter(size_t off, size_t len) {
     for (c = c0; c <= c1; c++) {
         if (var_fence_valid[c]) {
             var_waits++;
-            if (!var_TestFenceAPPLE(var_fences[c])) {
-                var_waits_blocked++;
-                var_FinishFenceAPPLE(var_fences[c]);
-            }
+            /* M27: first the render thread must have *issued* the draws that
+             * read the chunk's last contents (rt_ring_enter waits for the
+             * stream position rt_ring_left recorded), then the GPU must have
+             * finished them (the fence, tested and finished on the replaying
+             * side, counted there) */
+            rt_ring_enter(c);
+            rt_ext_wait_fence(var_fences[c], c);
             var_fence_valid[c] = 0;
         }
     }
@@ -810,7 +814,7 @@ void gl13_var_flush(const void* p, size_t len) {
         return;
     }
     var_flushes++;
-    var_FlushVertexArrayRangeAPPLE((GLsizei)len, p);
+    rt_ext_flush_var((GLsizei)len, p);
 #else
     (void)p;
     (void)len;
@@ -829,14 +833,14 @@ void gl13_var_left(size_t from, size_t cursor, int wrapped) {
         /* the writer wrapped: every chunk from `from`'s to the end is done,
          * and so is every chunk before the one the cursor now stands in */
         for (c = c0; c < VAR_CHUNKS; c++) {
-            var_SetFenceAPPLE(var_fences[c]);
+            rt_ext_set_fence(var_fences[c], c);
             var_fence_valid[c] = 1;
             var_sets++;
         }
         c0 = 0;
     }
     for (c = c0; c < c1; c++) {
-        var_SetFenceAPPLE(var_fences[c]);
+        rt_ext_set_fence(var_fences[c], c);
         var_fence_valid[c] = 1;
         var_sets++;
     }
@@ -866,8 +870,8 @@ void gl13_draw_range_elements(unsigned mode, unsigned lo, unsigned hi, int n, in
 void gl13_multi_draw_arrays(unsigned mode, const int* first, const int* count, int n) {
 #ifndef PORT_NO_SDL
     (port_opt.glcheck ? gl13_check("glMultiDrawArraysEXT") : 0);
-    var_MultiDrawArraysEXT((GLenum)mode, (const GLint*)first, (const GLsizei*)count,
-                           (GLsizei)n);
+    rt_ext_multi_draw_arrays((GLenum)mode, (const GLint*)first, (const GLsizei*)count,
+                             (GLsizei)n);
 #else
     (void)mode;
     (void)first;
@@ -1041,7 +1045,26 @@ int gl13_init(void) {
 #endif
 }
 
+/* M27: hand GL to the render thread (or to the inline replay).  After
+ * gl13_init and port_workers_init, before the game: everything GL that had
+ * to happen on the main thread has (the probes, the fences, the ring's VAR
+ * setup, the white texture is lazy and goes through the door), and the two
+ * lazy probes that would call glGetString at run time are answered now. */
+void gx_draw_ring_ensure(void);
+void gl13_rt_start(void) {
+#ifndef PORT_NO_SDL
+    if (!gl_on) {
+        return;
+    }
+    gx_draw_ring_ensure();
+    glc_fogcoord_available();
+    glc_white_texture();
+    rt_start(window, ctx);
+#endif
+}
+
 void gl13_shutdown(void) {
+    rt_stop(); /* M27: drain the stream, take the context back */
     glc_white_name = 0; /* dies with the context */
 #ifndef PORT_NO_SDL
     if (ctx) {
@@ -1725,7 +1748,7 @@ void gl13_present(void) {
     if (fs_on) {
         fs_blit_out();
     }
-    SDL_GL_SwapWindow(window);
+    rt_present(frame_no); /* M27: SDL_GL_SwapWindow on the GL thread */
     if (fs_on) {
         fs_blit_back();
     }
