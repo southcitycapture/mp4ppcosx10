@@ -719,6 +719,77 @@ static void module_trace(u32 frame) {
     last = cur;
 }
 
+/* ---- --mgdump / --mgend: the gallery's frames (M26, PLAN.md 41) ---------------
+ *
+ * A --minigame run enters its module at a frame that depends on the game's
+ * type (types 3/5/6/8 skip the instruction card, src/REL/instDll/main.c:107)
+ * and on the card's own length, so a gallery of every minigame cannot name
+ * absolute frames in advance.  `--mgdump 60,400,1200,2300` waits for the
+ * first m4xx module (`omMgIndexGet`, the same watch as module_trace, which
+ * only runs under --soak) and appends entry+60, entry+400, ... to the
+ * --dumpframe set; `--mgend N` sets --frames to entry+N at the same moment.
+ * Both are logged with the entry and exit frames, which is what the
+ * gallery's index reads. */
+static u32 mgdump_entry;   /* the frame the minigame module was entered, 0 = not yet */
+static int mgdump_last_ovl = -2;
+static char mgdump_spec[256];
+
+static void gallery_watch(u32 frame) {
+    int cur;
+    if (!port_opt.mgdump && !port_opt.mgend) {
+        return;
+    }
+    cur = (int)omcurovl;
+    if (cur == mgdump_last_ovl) {
+        return;
+    }
+    if (mgdump_entry && mgdump_last_ovl >= 0 && omMgIndexGet((s16)mgdump_last_ovl) >= 0 &&
+        !(cur >= 0 && omMgIndexGet((s16)cur) >= 0)) {
+        port_log("port> mgdump: left minigame %s at frame %u (entry +%u)\n",
+                 screen_name(mgdump_last_ovl), frame, frame - mgdump_entry);
+        /* A game that ends before the last offset gets its results screen
+         * instead: one more frame, 40 in, once. */
+        if (port_opt.mgdump && mgdump_spec[0] && strlen(mgdump_spec) < sizeof(mgdump_spec) - 16) {
+            size_t n = strlen(mgdump_spec);
+            snprintf(mgdump_spec + n, sizeof(mgdump_spec) - n, ",%lu",
+                     (unsigned long)(frame + 40));
+            port_log("port> mgdump: results frame %u added\n", frame + 40);
+        }
+    }
+    if (!mgdump_entry && cur >= 0 && omMgIndexGet((s16)cur) >= 0) {
+        mgdump_entry = frame;
+        if (port_opt.mgdump) {
+            const char* p = port_opt.mgdump;
+            size_t n = 0;
+            if (port_opt.dumpframe && *port_opt.dumpframe) {
+                n = (size_t)snprintf(mgdump_spec, sizeof(mgdump_spec), "%s", port_opt.dumpframe);
+            }
+            while (*p && n < sizeof(mgdump_spec) - 16) {
+                char* e;
+                long off = strtol(p, &e, 10);
+                if (e == p) {
+                    break;
+                }
+                p = e;
+                n += (size_t)snprintf(mgdump_spec + n, sizeof(mgdump_spec) - n, "%s%lu",
+                                      n ? "," : "", (unsigned long)(frame + (u32)off));
+                while (*p == ',' || *p == ' ') {
+                    p++;
+                }
+            }
+            port_opt.dumpframe = mgdump_spec;
+        }
+        if (port_opt.mgend) {
+            port_opt.max_frames = (int)frame + port_opt.mgend;
+        }
+        port_log("port> mgdump: entered minigame %s (mg %d) at frame %u; dumping %s; "
+                 "the run ends at %d\n",
+                 screen_name(cur), omMgIndexGet((s16)cur) + 0x191, frame,
+                 port_opt.dumpframe ? port_opt.dumpframe : "(nothing)", port_opt.max_frames);
+    }
+    mgdump_last_ovl = cur;
+}
+
 /* ---- entry points ------------------------------------------------------------ */
 
 void port_selfplay_init(void) {
@@ -825,12 +896,14 @@ static void title_guard(u32 frame) {
  * frame the game is about to run. */
 void port_selfplay_tick(u32 frame) {
     if (!port_opt.com4 && !port_opt.turns && !port_opt.minigame &&
-        !port_opt.status && !port_opt.stuckwatch && !port_opt.soak) {
+        !port_opt.status && !port_opt.stuckwatch && !port_opt.soak &&
+        !port_opt.mgdump && !port_opt.mgend) {
         return;
     }
     park_players();
     watch_roulette(frame);
     park_minigame();
+    gallery_watch(frame);
     if (port_opt.soak) {
         module_trace(frame);
         title_guard(frame);

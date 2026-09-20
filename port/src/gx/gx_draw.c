@@ -1436,13 +1436,20 @@ static void finish_vertices(const u8* s, int n) {
                     in[1] = r[1];
                     in[2] = 1.0f;
                 } else if (pi.tg[t].src_kind == 1) {
-                    in[0] = op[0];
-                    in[1] = op[1];
-                    in[2] = op[2];
-                } else {
+                    /* the RAW position (M26, PLAN.md 41; `--viewtexgen` is
+                     * the M3..M25 view-space input): see gx_vprog.c */
+                    in[0] = port_opt.viewtexgen ? op[0] : px;
+                    in[1] = port_opt.viewtexgen ? op[1] : py;
+                    in[2] = port_opt.viewtexgen ? op[2] : pz;
+                } else if (port_opt.viewtexgen || sl.off_nrm < 0) {
                     in[0] = nrm[0];
                     in[1] = nrm[1];
                     in[2] = nrm[2];
+                } else {
+                    const f32* sn = (const f32*)(s + sl.off_nrm);
+                    in[0] = sn[0];
+                    in[1] = sn[1];
+                    in[2] = sn[2];
                 }
                 if (!tm) {
                     sc = in[0];

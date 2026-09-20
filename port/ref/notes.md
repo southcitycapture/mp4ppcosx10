@@ -407,3 +407,35 @@ What they settle for the port:
    1-vs-3 ranking (the three water-gun players 1st, the candle holder
    4th) — the port's portraits have been drawn since M22 (PLAN.md
    §37.3); the witness compares this frame.
+
+## The M26 gallery oracles (2026-09-20, capture on littlejelly, PLAN.md §41)
+
+Schedule per game: `~/mp4-oracle-m26/oracle.sh mNNN` — `m406-end.txt` with the
+`mg_next` poke set to the game's `mgInfoTbl` index and the four `group` pokes
+from its type (1 → 0,1,1,1; 2 → 0,0,1,1; else 0,1,2,3); frames from 12,000 on
+kept (Dolphin frame-dump indices; the port's walk enters the module at ~14,477,
+the console's at ~12,150 on this schedule).
+
+* **m408 Paratrooper Plunge** (`m408-console-12400/12800/13200.png`): the
+  players fall past a sea with islands, a coastline and a beach below the
+  ring targets; the sky above is blue with clouds. The port draws **white**
+  where the sea and the land are (the ring targets and the HUD are there):
+  the whole scene below the players is missing.
+* **m405 Mario Medley** (`m405-console-15600/16500/17400.png`): the pool's
+  water is translucent — the swimmers are seen through it with the lane
+  ropes and the tiled floor; the port's water is opaque (the same family as
+  m434 Cheep Cheep Sweep's black pond) and a black wedge covers the pool's
+  lower-left at entry+2300.
+* **m407 Domination** (`m407-console-12000/12300.png`): the Whomps are grey
+  stone blocks lying face-down with their faces on the underside on the
+  console too — the port's flat dark blocks are right. Verified `ok`.
+* **m404 Trace Race**: the oracle run with `mg_next` = 3 dealt **Order Up**
+  (m431) instead — a Battle-type game (type 4) forced outside a battle
+  space is not taken by the console's board flow the way the port's
+  harness takes it; not chased. Trace Race stays unverified.
+* **m402 Slime Time**: the console **panicked** (`OSPanic dvd.c:75`, the
+  `HuDvdDataReadWait` allocation error: `HEAP_DVD` exhausted) at the
+  minigame's load — the roulette's own choice is preloaded before the poke
+  replaces it, and m402's directory on top of it does not fit. The port's
+  harness moves `mg_next` before the preload (PLAN.md 28.4). Unverified.
+* **m427 Right Oar Left?**: captured after the others (see §41.3).

@@ -256,6 +256,16 @@ typedef struct PortOptions {
     int machinecheck;       /* --machinecheck  print the inventory and the
                              *   verdict, exit 0 ok / 1 degraded / 2 unsupported */
     int force;              /* --force  run on an `unsupported' verdict        */
+    const char* mgdump;     /* --mgdump A,B,..  M26: --dumpframe offsets from the
+                             *   frame the minigame module is entered (the
+                             *   gallery's card / +400 / +1200 / +2300)        */
+    int mgend;              /* --mgend N  M26: quit N frames after that entry  */
+    int viewtexgen;         /* --viewtexgen  M26: GX_TG_POS/GX_TG_NRM texgens read
+                             *   the view-space position/normal (the M3..M25
+                             *   picture) instead of the raw input row       */
+    int vtxdivide;          /* --vtxdivide  M26: GX_TG_MTX3x4's q divided at the
+                             *   vertex (the M3..M25 picture) instead of per
+                             *   pixel by the rasteriser                     */
     int mghold;             /* --mghold  inside a minigame all four players are
                              *   human with idle pads: they hold still (M25)  */
     int fullscreen;         /* --fullscreen  the desktop's size, the 640x480

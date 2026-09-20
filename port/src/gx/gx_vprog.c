@@ -337,6 +337,8 @@ typedef struct VpKey {
     u8 tg_kind[GX_TEXCOORDS];  /* 0 texcoord, 1 position, 2 normal         */
     u8 tg_k[GX_TEXCOORDS];
     u8 tg_div[GX_TEXCOORDS];
+    u8 vtxdiv;                 /* --vtxdivide: q divided at the vertex (pre-M26) */
+    u8 viewtg;                 /* --viewtexgen: POS/NRM texgens read view space (pre-M26) */
     u8 tg_mtx[GX_TEXCOORDS];   /* 1 = a real matrix, 0 = identity          */
     u8 fog;
     u8 pal;            /* M18: the matrices come from the palette, indexed
@@ -470,7 +472,7 @@ static void vp_gen(const VpKey* k, VpBuf* b) {
     /* the normal is computed when lighting wants it or a texgen reads it */
     need_nrm = k->lit;
     for (t = 0; t < GX_TEXCOORDS; t++) {
-        if (k->tg_kind[t] == 2) {
+        if (k->tg_kind[t] == 2 && k->viewtg) {
             need_nrm = 1;
         }
     }
@@ -662,7 +664,22 @@ static void vp_gen(const VpKey* k, VpBuf* b) {
             continue;
         }
         tt = k->unit_tg[u];
-        if (k->tg_kind[tt] == 1) {
+        if (k->tg_kind[tt] == 1 && !k->viewtg) {
+            /* GX_TG_POS is the RAW position (M26, PLAN.md 41): the XF unit
+             * multiplies the texgen matrix into the *input* row, and the
+             * game's shadow and projection matrices are built object->texture
+             * (hsfdraw.c FaceDrawShadow: shadowCam * invCamera * model).
+             * Every M3..M25 build fed the view-space position here
+             * (`--viewtexgen`), so every projected shadow map landed where
+             * the view-space point would have been in the world. */
+            in = "vertex.position"; /* w is 1 for the 3-float arrays */
+        } else if (k->tg_kind[tt] == 2 && !k->viewtg) {
+            /* GX_TG_NRM likewise: the raw normal; hsfdraw's reflection and
+             * hilite matrices carry the object->view rotation themselves. */
+            vpi(b, "MOV t0, vertex.normal;\n");
+            vpi(b, "MOV t0.w, 1.0;\n");
+            in = "t0";
+        } else if (k->tg_kind[tt] == 1) {
             in = "vp"; /* the view-space position, w already 1 */
         } else if (k->tg_kind[tt] == 2) {
             in = "nr"; /* w set to 1 above */
@@ -677,6 +694,24 @@ static void vp_gen(const VpKey* k, VpBuf* b) {
             int tm = VPE_TEXMTX + 3 * tt;
             vpi(b, "DP4 t1.x, program.env[%d], %s;\n", tm + 0, in);
             vpi(b, "DP4 t1.y, program.env[%d], %s;\n", tm + 1, in);
+            if (k->tg_div[tt] && !k->vtxdiv) {
+                /* GX_TG_MTX3x4 (M26, PLAN.md 41): the third row is q, and the
+                 * hardware divides by it PER PIXEL.  Hand GL (s*su + q*0,
+                 * t*sv + q*tv, 0, q) and let the rasteriser divide: the
+                 * fold's offset rides on q so that (t*sv + q*tv)/q is the
+                 * flipped coordinate.  Dividing at the vertex (the M3..M25
+                 * path, `--vtxdivide`) interpolates s/q linearly across a
+                 * polygon, which for a floor under a perspective shadow
+                 * camera puts every shadow between the vertices in the
+                 * wrong place. */
+                vpi(b, "DP4 t1.w, program.env[%d], %s;\n", tm + 2, in);
+                vpi(b, "MUL t0.xy, t1, program.env[%d];\n", VPE_TEXSCL + u);
+                vpi(b, "MAD t0.xy, t1.w, program.env[%d].zwzw, t0;\n", VPE_TEXSCL + u);
+                vpi(b, "MOV t0.z, 0.0;\n");
+                vpi(b, "MOV t0.w, t1.w;\n");
+                vpi(b, "MOV result.texcoord[%d], t0;\n", u);
+                continue;
+            }
             if (k->tg_div[tt]) {
                 vpi(b, "DP4 t1.w, program.env[%d], %s;\n", tm + 2, in);
                 vpi(b, "MAX t1.w, t1.w, 1.0e-30;\n");
@@ -925,6 +960,8 @@ static void vp_build_key(const GxXfDesc* d, VpKey* k, int* nlights_out,
         k->tg_kind[i] = d->tg[i].src_kind;
         k->tg_k[i] = d->tg[i].src_k;
         k->tg_div[i] = d->tg[i].divide;
+        k->vtxdiv = (u8)port_opt.vtxdivide;
+        k->viewtg = (u8)port_opt.viewtexgen;
         k->tg_mtx[i] = (u8)(d->tg[i].mtx != NULL);
     }
     /* exactly draw_run's own unit -> texgen mapping, so the two paths bind

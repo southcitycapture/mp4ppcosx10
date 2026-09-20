@@ -275,6 +275,14 @@ static void usage(const char* argv0) {
             "                    on when the one in force has been played, and\n"
             "                    releasing the roulette when the list is done\n"
             "  --com4            all four players are CPU\n"
+            "  --mgdump A,B,..   M26: dump the frames A,B,.. counted from the frame the\n"
+            "                    minigame module is entered (the gallery's four)\n"
+            "  --mgend N         M26: quit N frames after that entry\n"
+            "  --viewtexgen      M26: GX_TG_POS/NRM texgens read the view-space position\n"
+            "                    and normal, as before M26 (every shadow map and\n"
+            "                    reflection map was projected from the wrong space)\n"
+            "  --vtxdivide       M26: projected texgens (GX_TG_MTX3x4: every shadow map)\n"
+            "                    divided by q at the vertex, as before M26\n"
             "  --mghold          M25: inside a minigame's own overlay all four players\n"
             "                    are human with idle controllers (they hold still):\n"
             "                    a four-way DRAW on demand (Avalanche!, PLAN.md 35.2)\n"
@@ -549,6 +557,14 @@ int port_parse_args(int argc, char** argv) {
             port_opt.machinecheck = 1;
         } else if (!strcmp(a, "--force")) {
             port_opt.force = 1;
+        } else if (!strcmp(a, "--mgdump") && i + 1 < argc) {
+            port_opt.mgdump = argv[++i];
+        } else if (!strcmp(a, "--mgend") && i + 1 < argc) {
+            port_opt.mgend = atoi(argv[++i]);
+        } else if (!strcmp(a, "--viewtexgen")) {
+            port_opt.viewtexgen = 1;
+        } else if (!strcmp(a, "--vtxdivide")) {
+            port_opt.vtxdivide = 1;
         } else if (!strcmp(a, "--mghold")) {
             port_opt.mghold = 1;
         } else if (!strcmp(a, "--fullscreen")) {
