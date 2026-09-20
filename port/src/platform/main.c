@@ -116,13 +116,15 @@ static void usage(const char* argv0) {
             "  --nomatwalk       M28 (a): hsfdraw's material setup decided on consumed\n"
             "                    frames as written (default: skipped, its two game-\n"
             "                    visible side effects kept; PLAN.md 43)\n"
-            "  --nocurvememo     M28 (b): GetCurve to the game's body on every call\n"
+            "  --curvememo       M28 (b): GetCurve memoised on (track, time, start);\n"
+            "                    exact, measured slower, off (--nocurvememo)\n"
             "  --nosparsemtx     M28 (c): SetEnvelopMtx's four concats through the\n"
-            "                    general PSMTXRotRad + PSMTXConcat\n"
-            "  --nofastsqrt      M28 (d): VECMag/VECNormalize/VECDistance through\n"
-            "                    libm's sqrtf instead of frsqrte + Newton, exactly\n"
-            "                    rounded (--matwalk/--curvememo/--sparsemtx/--fastsqrt\n"
-            "                    turn each back on)\n"
+            "                    general PSMTXRotRad + PSMTXConcat (default: sparse)\n"
+            "  --fastsqrt        M28 (d): VECMag/VECNormalize/VECDistance's sqrtf\n"
+            "                    through frsqrte + Newton, correctly rounded (every\n"
+            "                    float checked against libm); as fast as libm, so\n"
+            "                    off (--nofastsqrt); --matwalk/--sparsemtx turn (a)\n"
+            "                    and (c) back on\n"
             "  --snapsync        write snapshots synchronously on the game thread\n"
             "                    (default: copied at the retrace, written by a worker)\n"
             "  --threads N       M24: 0 = every job inline on the game thread (the\n"
@@ -495,6 +497,12 @@ int port_parse_args(int argc, char** argv) {
     port_opt.depop = 1;
     port_opt.threads = -1; /* M24: the workers when the machine has the cores */
     port_opt.renderthread = -1; /* M27: overlapped with the workers on, inline without */
+    /* M28 (PLAN.md 43.9): the material walk (a) and the sparse concats (c)
+     * pay and are on; the curve memo (b) lost 0.1-0.4 ms a frame and the
+     * frsqrte sqrtf (d) is exact and exactly as fast as libm's -- both off,
+     * --curvememo / --fastsqrt turn them on */
+    port_opt.nocurvememo = 1;
+    port_opt.nofastsqrt = 1;
     port_opt.rtgate_ms = 4;
     /* Linear, since the G4 measured both on the same walk (PLAN.md §20.5):
      * 1.75 ms mean against the 4-tap's 2.00, a worst frame of 10.92 ms against

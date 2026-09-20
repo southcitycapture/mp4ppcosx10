@@ -81,12 +81,12 @@ for r in ${M28_RUNS:-N0 N5 T0 T5 R0 R5 S0 S5 Na Nb Nc Ta Tb Tc Td Ra Rb Rc Rd O3
         N[0abcd5]) a=${r#N}; run $r MarioParty4.app 400 $NODRAW $(arm_flags $a) ;;
         T[0abcd5]) a=${r#T}; run $r MarioParty4.app 700 $TURBO $(arm_flags $a) ;;
         R[0abcd5]*) a=$(echo "$r" | cut -c2); run $r MarioParty4.app 480 $REAL $(arm_flags $a) ;;
-        W[05])  # the picture-history witness for (a): 17 frames forced drawn at
+        W[0abcd5]*) # the picture-history witness for (a): 17 frames forced drawn at
                 # real time, each after a different run of consumed frames
-                a=${r#W}; run $r MarioParty4.app 480 $REAL $(arm_flags $a) \
+                a=$(echo "$r" | cut -c2); run $r MarioParty4.app 480 $REAL $(arm_flags $a) \
                     --dumpframe 800,1500,2500,3000,4000,5000,6500,7000,7500,8500,9500,10500,11500,12500,13500,14500,15500 ;;
-        S[05])  a=${r#S}; run $r MarioParty4.app 400 --nodraw --turbo --play board-start-com4.play \
-                    --frames 8101 --snap-at 8100 --snap-dir "$D/$r" --wav "$D/$r/walk.wav" $(arm_flags $a) ;;
+        S[05]*) a=$(echo "$r" | cut -c2); run $r MarioParty4.app 400 --nodraw --turbo --play board-start-com4.play \
+                    --frames 8200 --snap-at 8100 --snap-dir "$D/$r" --wav "$D/$r/walk.wav" $(arm_flags $a) ;;
         Rm*)    # (f): M22's batch merge (the same-state neighbours joined) with the
                 # render thread on -- does fewer batches move the game thread now?
                 run $r MarioParty4.app 480 $REAL --lazyflush --premerge-max 256 --submitstats ;;

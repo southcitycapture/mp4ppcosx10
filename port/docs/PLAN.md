@@ -13971,3 +13971,265 @@ PREV`; soak 18's, over 26 minigames, reads 16,526 of 3.6M unit emissions
 stage (`the first wins`) 895,574 of 22.4M draws in 139,945 configs. No
 game in the gallery's fault list is waiting on either; not built, the
 count kept for the day one is.
+
+### 43.9 The A/B, every experiment on the same walk
+
+`port/tools/m28_chain.sh` on the G4 as the console runner's job: one
+binary (`0f5b2935…`, every experiment behind a flag), the M27 chain's
+`COMMON` (`--gxsplit`, the three `--dumpframe`s, the three `--perfwin`s),
+three modes — **N** the 9,000-frame walk under `--nodraw --turbo` (the
+consumed frame's own cost, nothing else in it), **T** the same walk drawn
+at `--turbo` (the three md5s, the drawn frame), **R** the 16,000-frame
+`--soak --realtime` walk (presented fps; `consumed` and `drawn` are the
+game thread's medians by `m27_perfstat.py`) — and six arms: `0` every
+experiment off (the control: the M27 code plus the weak-attribute fix),
+`a` `b` `c` `d` one on, `5` all on. Every run 90 s or more after the
+install, one after another (`docs/soak/m28-walk-*.log.gz`,
+`~/m28/index.txt`).
+
+**Exactness first.** Frames 800 / 3000 / 7000 are `0b58c5ee` /
+`c58a046d` / `021d58fb` — M27's three references — in **every** T and R
+arm, all twelve. The `.wav` of the walk under `--nodraw` (the S arms, one
+binary, the runtime flags) is `4e7e3e29…` with everything on and with
+everything off. And the picture-history witness for (a), the W arms —
+seventeen frames forced drawn at real time, each after a different run of
+consumed frames (`--dumpframe 800,1500,…,15500`) — gives sixteen of
+seventeen byte-identical between the arms; the seventeenth, frame 9,500,
+differs by 8.5% of its pixels along the edges of a *ghost*
+(`screenshots/m28-f9500-crossfade-W0-W5-diff.png`): it is inside the
+board turn's 30-frame crossfade, whose source is an EFB copy taken on a
+consumed frame from the front buffer — "one drawn frame stale, and what
+the player is looking at" (gx_tex.c, §39b) — so which drawn frame it
+shows depends on the gate's timing in that run, not on any flag. The
+same arm run twice differs there the same way (`W0b`, below).
+
+**The consumed board frame** (N arms, `--nodraw --turbo`, ms per frame,
+the board window; `game` in brackets):
+
+| arm | title (700–870) | character select (2600–3600) | **board (6000–8900)** | vs control |
+|---|---:|---:|---:|---:|
+| `0` control | 1.43 (1.37) | 4.35 (3.95) | **6.21 (5.84)** | |
+| `a` the material walk skipped | **0.94 (0.87)** | **3.76 (3.36)** | **5.64 (5.26)** | **−0.57 ms, −9.2%** |
+| `b` the curve memo | 1.42 (1.35) | 4.35 (3.95) | 6.34 (5.96) | **+0.13 ms** (58.0% hit, 139 stale) |
+| `c` the sparse concats | 1.39 (1.32) | 4.29 (3.88) | 6.11 (5.74) | −0.10 ms, −1.6% |
+| `5` all four | 1.09 (1.02) | 3.83 (3.41) | 5.70 (5.32) | −0.51 ms |
+
+**The drawn board frame at `--turbo`** (T arms, the game thread's `game` /
+`gx` ms per frame; `rt` the render thread's replay):
+
+| arm | title | character select | **board** | frame 800 / 3000 / 7000 |
+|---|---:|---:|---:|---|
+| `0` | 33.56 (3.74 / 28.97) | 40.31 (10.37 / 29.16) | **28.86 (12.06 / 16.08)**, rt 14.9 | identical |
+| `a` | 33.26 (3.84 / 28.56) | 38.86 (10.17 / 27.92) | 28.31 (11.93 / 15.67) | identical |
+| `b` | 33.09 (3.73 / 28.47) | 38.93 (10.20 / 27.95) | 28.91 (**12.48** / 15.71) | identical |
+| `c` | 33.04 (3.71 / 28.44) | 38.98 (10.14 / 28.06) | 28.14 (**11.77** / 15.66) | identical |
+| `d` | 34.53 (3.73 / 29.91) | 38.72 (10.08 / 27.86) | 28.27 (**11.86** / 15.70) | identical |
+| `5` | 33.53 (3.84 / 28.83) | 39.26 (10.23 / 28.24) | 28.77 (11.99 / 16.06) | identical |
+
+**Real time, the table the milestone is judged by** (R arms, medians;
+`presented` is the number):
+
+| arm | board: consumed (game) | drawn (game / gx / rt) | **presented** | character select: consumed | drawn | **presented** | title: presented |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `0` control | 6.72 (6.34) | 28.5 (11.5 / 16.4 / 15.4) | **26.72** | 4.60 (4.20) | 39.5 (12.1 / 26.6 / 25.3) | 19.76 | 25.24 |
+| `a` | **6.11 (5.72)** | 28.5 (11.5 / 16.4 / 15.3) | **27.17** | **4.13 (3.72)** | 39.7 | 19.97 | 24.06 |
+| `b` | 6.85 (6.47) | 28.7 (11.6 / 16.4 / 15.4) | 26.45 | 4.70 (4.29) | 40.0 | 19.40 | 25.45 |
+| `c` | 6.64 (6.26) | 28.5 (11.4 / 16.4 / 15.5) | 26.90 | 4.64 (4.24) | 39.6 | 19.77 | 25.45 |
+| `d` | 6.75 (6.35) | **28.3 (11.3** / 16.2 / 15.3) | 26.37 | 4.65 (4.22) | 39.8 | 19.76 | 25.24 |
+| **`5` all four** | **6.08 (5.69)** | 28.6 (11.5 / 16.4 / 15.4) | **27.01** | **4.11 (3.69)** | 39.6 | **19.97** | 25.48 |
+
+(M27's three render-thread runs read 26.64 / 26.68 / 26.54 on the board,
+so a run is good to ±0.1 fps there; the title's window is 72 drawn frames
+and swings ±1.)
+
+**Reading it.**
+
+* **(a) pays, and it is the whole gain**: the consumed board frame loses
+  0.6 ms (9%), the character select's 0.5 (11%), the title's a third; the
+  board presents 27.2 against 26.7. Its side effects are counted
+  (`1,092,846 Hu3DLightSet, 1,898 Hu3DAnimSet kept` over the walk) and its
+  exactness is the twelve md5s, the `.wav` and the seventeen frames.
+* **(b) loses**: +0.13 ms on the consumed frame, +0.4 on the drawn one
+  at `--turbo`, 26.45 presented. The memo hits 58–65% of the calls, and
+  `GetCurve` + `GetBezier` were 4% of the frame — a hit saves a few
+  dozen cycles of segment search and a miss pays the probe, the page
+  lookup and the store on top of the search, and the `Hu3DMotionExec`
+  cost that the profile put at 21% is the function's own loop and
+  `GetObjTRXPtr`, not the curves. Off (`--curvememo` turns it on), with
+  the numbers; the direct calls it found on the way stay.
+* **(c) pays a little**, exactly: −0.1 ms consumed, −0.3 ms on the drawn
+  frame's game at `--turbo`, 26.9 presented. On.
+* **(d)**: −0.2 ms on the drawn frame's game (11.5 → 11.3); the presented
+  number (26.37) is one run against 26.72 and the all-on arm (27.01)
+  carries it. On, once §43.10's test says libm's value is its value.
+* The drawn frame's `gx` (16.4) and `rt` (15.4) do not move in any arm —
+  none of the four touches the port's own cost, which is what (e) is for.
+* Speed 99.9%, **0 resyncs** and 69–72 underruns (~1.05 s, the scene
+  loads) on every one of the eight real-time arms — the results-screen
+  lottery did not fire in any of them today (the `K` run's frame-14,198
+  stall was 505 ms, under the resync line).
+
+### 43.10 (d), (e), (f): the tests and the verdicts
+
+**(d) is exact and exactly as fast as libm.** `~/mtx_test_m28 --sqrt-all 3`
+on the G4 (the chain's `Q3`, 322 s): every third positive normal float,
+**710,235,489 inputs, 0 differ** between `port_sqrtf` and Leopard's
+`sqrtf` — so Apple's is correctly rounded and the frsqrte path lands on
+its value (littlejelly had said the same of glibc over all 2.13 billion,
+§43.6). And the ten-million-call chained bench in the same binary:
+`port_sqrtf` 2,370 ms, libm 2,360 ms — **237 ns a call either way**.
+Leopard's `sqrtf` on a 7450 is already a reciprocal-estimate-and-Newton
+routine of the same depth; the port's version does not get a shorter
+chain, only a proof. The walk agreed to within its noise (Td −0.2 ms on
+the drawn frame's game, Rd 26.37 presented against 26.72). Off by
+default, kept as `--fastsqrt` with its test; the sparse-concat bench in
+the same run says (c) is worth 8% of a bone walk (2M bones: 3,340 ms
+sparse, 3,620 general), which is the −0.1 ms above.
+
+**(e) The compiler buys nothing on the GX sources.** Both trees hold the
+three md5s at `--turbo` and `--realtime` — `-ffast-math` included, which
+says the port's CPU float paths are not on those three frames' pixels
+(the vertex program does the transform; the decode is integer) — and
+neither moves the frame:
+
+| bundle | T: board (game / gx) | charsel | R: board consumed / drawn (gx) / **presented** | charsel presented |
+|---|---:|---:|---:|---:|
+| default `-O2` (T5 / R5) | 28.77 (11.99 / 16.06) | 39.26 | 6.08 / 28.6 (16.4) / **27.01** | 19.97 |
+| `-O3` (O3T / O3R) | 28.53 (11.92 / 15.91) | 39.70 | 6.06 / 28.7 (16.6) / 27.10 | 19.24 |
+| `-O3 -ffast-math` (FT / FR) | 28.70 (11.97 / 16.02) | 38.85 | 6.06 / 28.8 (16.6) / 27.07 | 19.59 |
+
+`--gxsplit`'s decode region: 8.88 / 8.76 / 8.73 ms a drawn frame. The
+decode loops are load-bound (§32.3's byte tables), and a compiler flag
+does not move a load. The trees stay buildable (`GX_OPT=`), the default
+stays `-O2`.
+
+**(f) Fewer batches do not move the render thread either.** `Rm` / `Tm`
+(`--lazyflush --premerge-max 256 --submitstats`, §37.2's lever, the
+render thread on): 1,761,383 batches for the walk against 1,941,408
+(158,123 objects merged, 9% fewer batches, 2.4% fewer GL draws), and the
+character select's replay is **25.3 ms in both** (Rm 25.3, R5 25.2), its
+presented fps 19.35 against 19.97, the board 26.82 against 27.01, the
+turbo board frame 29.43 against 28.77 — slower, as in M22, and frame 7000
+moves (`1d5ef538`, the merged board objects' rounding, as §37.2 found).
+So with the thread on, the per-batch cost it pays is not the count of
+batches but the driver's per-draw work inside them (§36.3's
+`gldUpdateDispatch`, unchanged by a merge that keeps the draw calls), and
+a sprite batcher of the brief's shape — consecutive same-texture quads
+into one draw — would have to cut *draw calls*, which is what M22's merge
+does for contiguous same-type segments and what bought 2.4% here. Off;
+the numbers are the record.
+
+### 43.11 The snapdiff, and the seventeenth frame
+
+The S arms (`--nodraw --turbo --frames 8200 --snap-at 8100 --wav`, one
+binary, the four flags off against on): the `.wav` of the 8,200 frames is
+`4532b0ff…` both ways (and `4e7e3e29…` both ways for the 8,101-frame
+first attempt, whose snapshot the `--frames` exit pre-empted: `--snap-at
+N` wants `--frames` past N + the write). The status lines' game state —
+module, board, turn, minigame, the four players' coins and stars, every
+60 frames — is byte-identical between the arms in all three modes
+(`md5` of the lines with the timing columns stripped: N, S and R alike).
+`snapdiff.py --spans=80` on the two frame-8,100 snapshots, every span
+named (`nm` for hsfdraw.c's statics, the new `port/tools/heapwho.py` for
+the heap — it walks the five HuMem heaps' block chains in the snapshot
+and names the block under every differing byte):
+
+| section | bytes | what |
+|---|---:|---|
+| gdata `0014ff0b..17` | 13 | `totalTexCnt`, `totalTexCnted`, `totalTexCacheCnt(ed)` — the two texture counters the walk no longer increments (§43.3: a debug-print value) |
+| gdata `001c4938..4d`, `001c4db8` | 22 + 7 | `kColor`, `projectionMapNo`, `toonMapNo`, `shadowMapNo`, `hiliteMapNo`, `reflectionMapNo`, `texCol[]` — hsfdraw.c's own material-walk statics, each reset before its next read |
+| `reg gx.state` | 165 | the port's GX shadow: the setters the last consumed frame did not run (the next drawn frame's walk sets every one before a draw — the twelve md5s) |
+| `reg card.slot-a` | 6 | the save's directory time stamps and their checksums (wall clock) |
+| MEM1 | 3,294 in 253 spans | **every one inside a HuPrc process block** (9 live, 4 freed: the `HuMemHeapInit` sub-heap and the `FAKE_RETADDR` process header at each block's start say so), in the stack area below `base_sp` and in the jump buffer's saved registers — no model, no HSF, no track, no game global outside hsfdraw.c |
+| stack (the host's) | 911 in 49 spans | `FaceDraw`'s frames, not written |
+
+Two control runs of the *same* arm (`S0` against `S0b`) differ in 72
+bytes in 7 of those same 13 process blocks and in `card.slot-a`: the
+residue class §33.3 met (coroutine stacks below their live frames, saved
+registers), which the mixer's worker join moves even with nothing else
+changed. So the material walk's absence reaches nothing the game reads:
+that is the `.wav` (the 3D sounds' positions), the state trace, the
+twelve md5s, and sixteen of the seventeen real-time frames.
+
+**The seventeenth.** `W0b` (the control arm again) reproduces `W0` at all
+seventeen frames, 9,500 included (`3b4c611d`); `W5b` reproduces `W5`
+(`c66ef240`). So the ghost is not noise: it is a function of the arm.
+What it is a function of is the gate's schedule — the crossfade's source
+is an EFB copy taken on a consumed frame from the front buffer, i.e.
+from whichever frame the gate last drew, and a consumed frame 0.6 ms
+cheaper moves that choice (§32.1's rule 2 draws a late frame or not by
+the millisecond). `Wb` — the curve memo alone, which changes no picture
+(every T frame identical) and no game state, only the consumed frame's
+cost by +0.13 ms — reads `3b4c611d`, the control's; and the perf CSVs
+say why the two ghosts differ where they do: in the forty frames before
+9,500 the control arm's gate falls off its cadence (drawn 9457, 9460,
+9464, 9468, 9473, 9475, 9477, 9481, 9483, 9486, 9488, 9490, 9492, 9497,
+9499 — every third or fourth frame through the turn's start, the heavy
+stretch) while the all-on arm holds every second frame (9457, 9459,
+9461, … 9499). The crossfade's copy lands in that stretch and takes
+whichever frame was drawn last; the 0.6 ms is what keeps the gate on its
+two-cadence there. Not a picture fault: the schedule's, by design (§39.3's
+copy from the front buffer on a consumed frame), and the very thing the
+milestone is for.
+
+### 43.12 What M28 shipped, and what it did not
+
+The final build (`04a6764f…`) has (a) and (c) on, (b) and (d) off, the
+direct calls, `--nodraw` surviving `--ffto`; its own turbo walk holds
+the three md5s (`0b58c5ee` / `c58a046d` / `021d58fb`; board 28.65 ms,
+game 11.93 / gx 16.01) and its real-time walk reads board consumed
+**6.06** ms, drawn 28.6 (11.5 / 16.4 / rt 15.4), **27.01 presented**;
+character select 4.10 / 39.9 / **19.56**; title **25.46**
+(`docs/soak/m28-walk-{T5,R5}.log.gz` are these final-build runs, the
+last two lines of `m28-chain-index.txt.gz`; §43.9's `5` arm was the same
+flags on the flag build an hour earlier and reads the same to a tenth).
+
+| shipped, with a witness | |
+|---|---|
+| **(a) the material walk skipped on consumed frames** (§43.3, gx_matwalk.c, `--nomatwalk`), with `Hu3DLightSet` and `Hu3DAnimSet` kept under the game's gates | consumed board frame 6.72 → 6.11 ms at real time, the character select's 4.60 → 4.13, the title's 2.07 → 1.49; board **26.7 → 27.2 presented**; twelve md5s, the `.wav`, the state trace, the snapshot's spans named (§43.11), sixteen of seventeen real-time frames and the seventeenth explained |
+| **(c) the bone walk's four concats sparse** (§43.5, psmtx_c.c, `--nosparsemtx`) | 1.6M concats bit-exact against `C_MTXConcat` on the G4; 8% of a bone walk; −0.1 ms consumed, −0.3 ms drawn game at `--turbo` |
+| the direct `GetObjTRXPtr` / `GetBezier` (§43.4) | 1.4% of a consumed frame was a dyld stub |
+| **(b) the curve memo**, built, exact, **off** (§43.4, curve_memo.c, `--curvememo`) | +0.13 ms consumed, +0.4 drawn; 58–65% hit; the page-generation lifetime (1,018 stale hits refused over a walk) |
+| **(d) `port_sqrtf`**, built, **proven exact**, as fast as libm, **off** (§43.6, §43.10, `--fastsqrt`) | 710,235,489 floats on the G4, 2.13 billion on littlejelly, 0 differ; 237 ns a call both ways |
+| **(e)** `GX_OPT` (§43.7, §43.10): `-O3` and `-O3 -ffast-math` on the GX sources, both md5-exact on the walk, neither faster | the two trees; default `-O2` |
+| **(f)** the batch merge with the render thread on (§43.10): 9% fewer batches, the character select's replay 25.3 ms either way; **(g)** not built, by the gallery's list (§43.8) | `Rm`/`Tm`; the `tev:` counts |
+| the profile of the consumed and drawn board frames on the M27 build (§43.2), `port/tools/sample_tree.py`, `port/tools/heapwho.py`, `port/tools/m28_chain.sh`, `port/tests/mtx_test.c`'s bit-for-bit checks and benches, `--nodraw --ffto` fixed | |
+| soak 18 read (§43.1), the results-screen stall's `stall:` line at last, its teleport `snaps/lib/m28-results-stall-f014150.snap` (the final build), `docs/soak/m28-*`, `docs/screenshots/m28-*`, witness 0q | |
+
+**Not done, and why:**
+
+* **The 30 cap on the board.** 27.2 presented: the game thread's drawn
+  frame is still 28.5 ms against a budget that (a) widened from 26.6 to
+  27.2 (33.3 − 6.1). The game's own share of the drawn frame is 11.5 ms
+  and the four experiments moved it 0.2–0.3; the rest of that frame is
+  the port's decode (8.9 ms, §43.2's 33%) and state walk (23%), which no
+  compiler flag touched (§43.10) — §42.5's decode-on-the-render-thread is
+  still the lever of that size, and it is still on paper.
+* **The results-screen stall** (§43.1): 1.71 s of game logic on one
+  consumed frame at `resultdll`'s exit, no disc, no free, no module load;
+  the teleport is a `--restore` of the snapshot above with `--realtime
+  --perf` and a `sample` armed for frame 14,198 (it fired at 505 ms in
+  the `K` run, 1.7 s in the soak: the lottery is in the game's own loop).
+* **`Hu3DMotionExec`'s 21%** of the consumed frame is the function's own
+  per-object reset loop and track switch, not the curves — a memo cannot
+  touch it; only a patch that skips the reset for objects no track moves
+  could, and that is a game-behaviour question for a snapdiff of its own.
+* **`hsf_register`** (M19's registry lookup) is 82 samples (1.3%) of a
+  consumed frame — a linear scan per `EnvelopeProc`; a hash would take it
+  to nothing.
+* The M24–M27 leftovers stand: the two mixer timers, the selected box's
+  specular, the launcher, causes B–F of §41.8.
+
+### 43.13 What M29 starts with
+
+Left running: `g4 run --soak --com4 --rtc dolphin --freshcard --realtime
+--snap-every 5000 --snap-keep 3 --status --ovllog --stuckwatch 200 --perf`
+on the final build (`04a6764f…`), (a) and (c) on. Read it as §42.7 says
+(the `render thread:` block, `rt` through the minigames, `stall:` under
+any resync, `tex`/`rss` past turn 12 — soak 18 ended at 184 MB in a
+minigame against soak 17's 130 at the mode select; a leak would show as
+a monotone `rss` on the board lines). Then the decode on the render
+thread (§42.5), with §39.5's in-place-rewrite argument re-checked against
+the sprite path and `EnvelopeProc` before a line is written; the
+results-screen stall from its snapshot; and the gallery on the final
+build as the picture witness of (a) across all 63 games (`gallery_chain.sh`).
