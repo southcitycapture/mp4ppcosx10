@@ -667,3 +667,37 @@ is either ready to offer upstream or has a case to remove.
   `worker mixer` line, the `split frames … position mismatches` line
   (M25's finding, PLAN.md 40.1) and the texture-cache totals. Check `ps`
   afterwards anyway.
+
+## 0p. Five things M27 paid for *(2026-09-20)*
+
+* **A GL context can live on a pthread under SDL 2.0.3 on 10.5 and 10.6.**
+  The Cocoa backend's `SDLOpenGLContext` keeps an atomic dirty flag so
+  that `SDL_GL_MakeCurrent` / `SDL_GL_SwapWindow` run the deferred
+  `update` on the thread that uses the context while the main thread
+  only schedules one; `SDL_GL_MakeCurrent(window, NULL)` on the main
+  thread, `SDL_GL_MakeCurrent(window, ctx)` on the render thread, and the
+  swap's `SDL_GL_GetCurrentWindow` check is per-thread TLS.  The main
+  thread keeps `SDL_PollEvent` and the window title.  Witnessed on the
+  Radeon 9000 (frame 800 `0b58c5ee` in `--renderthread 3`) and on the
+  MacBook's Intel driver.
+* **The ring's reuse has two fences, not one.**  The direct path finished
+  the GPU fence before writing a chunk again; with a render thread the
+  writer must also wait for the *issue* (the replay past the position the
+  chunk was left at) — and the GPU fence still has to be *finished* before
+  the CPU writes, which the replaying side can only report back (a per-
+  chunk epoch the reader publishes when its test passes).  The first
+  build waited for the issue alone and would have let the writer overwrite
+  vertices the GPU was still DMAing; the fix is `rt_ring_enter` (PLAN.md
+  42.1c).
+* **A record-per-call instrument is not free on the replaying side.**
+  `--gxsplit`'s class timing on the replay — two `mach_absolute_time`
+  reads per record, ~2,800 records a frame — inflated the MacBook's inline
+  walk from 355 to 447 s before it was moved behind `--rtsplit`.  Anything
+  timed per record needs its own flag.
+* **`--frames N` ends before frame N is presented.**  `--frames 7001` wrote
+  frames 800 and 3000 and not 7000 (the present is at the top of the next
+  retrace); the walk that wants 7000 is `--frames 9000`, as §31.2's was.
+* **`pthread_cond_timedwait` wants the epoch clock.**  `port_now_seconds`
+  starts at zero for the run (clock.c); a timespec built from it is 1970
+  and the wait returns at once — a busy loop where a doze was meant.
+  `gettimeofday` for the condvar, `port_now` for everything else.
