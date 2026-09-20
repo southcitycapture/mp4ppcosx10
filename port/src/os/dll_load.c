@@ -605,7 +605,13 @@ static void* dll_open(const char* relpath, int fresh) {
     return m->image;
 }
 
-void* portDLLOpen(const char* relpath) { return dll_open(relpath, 1); }
+double port_frame_dll_s; /* M24: time in portDLLOpen/Reenter this frame (perf.c's stall line) */
+void* portDLLOpen(const char* relpath) {
+    double t0 = port_now_seconds();
+    void* h = dll_open(relpath, 1);
+    port_frame_dll_s += port_now_seconds() - t0;
+    return h;
+}
 
 s32 portDLLProlog(void* token) {
     DllModule* m = by_token(token);

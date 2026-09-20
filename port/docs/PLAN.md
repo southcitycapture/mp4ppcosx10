@@ -11767,3 +11767,411 @@ the `texture decode (M23):` and `copy-read:` report lines if it ends
 cleanly, `tex`/`rss` past turn 12, and whether m415 or a second m406 is
 dealt. Then the results-save stall if the soak names it, the first drawn
 frame's remaining cost, and the selected box's specular.
+
+## 39. M24 log — the second core *(2026-09-19, littlejelly)*
+
+M24's brief was the second core: the G4 is a dual 1 GHz (`hw.ncpu 2`,
+found in M17 and unused since), and until now the port ran the game, the
+GX interpreter, the mixer and the texture decode on one of them, the
+snapshot writer (§33.5) being the only thread. The brief's constraints
+were the design: the game stays single-threaded; a worker takes only work
+that has no dependency on the game's frame, exactly, from a copy of its
+inputs published at the retrace; a single-core G4 (every iMac G4, eMac
+and PowerBook, most towers) runs today's code at today's cost; both modes
+give byte-identical frames and byte-identical `.wav`. What shipped: the
+mixer's value half on a worker (§39.2), the texture decode staged from
+consumed frames (§39.3), and — found on the way, a correctness bug that
+outranks both — **the mixer had been reading its options through a packed
+struct since M20**: `depop` was `--stuckwatch`, `resample4` was `--soak`,
+so every `--soak` run since M20 — every soak and every A/B walk — mixed
+with the 4-tap resampler §20.5 had rejected, and every other run (the
+`--minigame` reproductions, the `--play` walks without `--soak`) with the
+linear one and no depop (§39.1).
+
+### 39.1 The soak, read; and the mixer's options, read wrong since M20
+
+`g4 run --soak --com4 --rtc dolphin --freshcard --realtime --snap-every
+5000 --snap-keep 3 --status --ovllog --stuckwatch 200` on the M23 build
+(`fd48f0df…`), 19:38 to 20:51 G4 time — **73 minutes, 262,140 frames,
+4,369 status lines** (`docs/soak/m24-soak13-m23-leave-73min.log.gz`),
+stopped by hand after the results screen so the G4 could take the day's
+A/B:
+
+| | |
+|---|---|
+| mean speed | **100.1%**; board turns 1–20 at 99.8–100.5%, every one |
+| presented fps | 18.7 overall; board turns 16.1–19.8 (mean 17.9); minigames 9.9 (`m414`) to 26.7 (`m421`) |
+| where it got | **board 1, all 20 turns** → results (`mstory3dll` at 250,380) → `modeseldll` (the chain's 200 s wait, where it was stopped) |
+| minigames dealt | 28 plays of 25 modules, **M23's list in M23's order** (m412 m428 m420 m444 m423 m438 m429 m444 m430 m406 m416 m405 m438 m431 m422 m410 m407 m421 m424 m436 m404 m427 m455 m401 m414 m418 m404 m402): `--rtc dolphin --freshcard` replays; m415 not dealt |
+| the results screen's save (§38.3's 1.7–2.9 s stall) | **did not happen**: 22 card writes, 46 image flushes, none over the 50 ms the `CARD: image flush took` line prints at; 0 resyncs anywhere near the results |
+| resyncs | 2, both ~1.0 s, both inside minigames: `m401` (217,837; 99.1%) and `m414` (226,571; 98.9%, 9.9 fps) — M23's two |
+| STUCK / faults / MEM1-top fault (§36.5) | **0 / 0 / did not recur** |
+| `REL .data:` | 83 re-opens, 60 reset — every re-entry |
+| audio | 315 underruns / 2.8 s over 73 minutes; 874,674 frames mixed, 36 voices at most; **`resampler 4-tap Catmull-Rom, depop on`** — see below |
+| `tex` / `rss` | 555 entries at turn 1, 626 from turn 2 to 11, 800 at the end (40.9 MB, M21's budget); rss 114–126 MB on the board, peak 171 MB |
+
+Nothing to act on; the M23 bundle is kept as `~/MarioParty4-m23.app`.
+
+**The mixer's options.** The first threaded run on the MacBook bench
+wrote no `--mixtrace` file, and the reason was older than M24: the port's
+`PortOptions` has `long long seed` and `long long rtc` in it, 8-aligned
+under the build's `-malign-natural` — except in `musyx_mix.c`, which
+included `musyx/synth.h` before `port.h`, and `synth.h` opens
+`#pragma pack(4)` and never closes it (its `#pragma push` is Metrowerks',
+which GCC ignores). Under pack(4) `seed` sits 4 bytes earlier, and so does
+every field after it. The two layouts had agreed until M20 added an `int`
+before `seed` (commit `8aa5f485`); from then on the mixer read
+
+| the mixer asked for | it got | so |
+|---|---|---|
+| `depop` (on by default) | `stuckwatch` | the voice cut-off ramp ran only under `--stuckwatch` — which `--soak` sets to 90 when unset, so in every soak and every `--soak` walk, and in no reproduction |
+| `resample4` (off by default) | `soak` | every `--soak` run mixed with the 4-tap resampler §20.5 had measured and rejected; the reproductions with the linear one |
+| `clickstat` | `depop` (1) | the click count always on: harmless |
+| `mixcheck` | `skindeferall` | `--mixcheck` checked nothing since M20 |
+| `mixtrace` | `restore_lax` | `--mixtrace FILE` wrote nothing since M20 |
+| `perf` | a neighbour | the mixer's `--perf` line came and went |
+
+The 73-minute soak above says so in its own report (`resampler 4-tap
+Catmull-Rom, depop on`), as did M23's, M22's and M21's, and the M23
+bundle's walks of this session say the same; nobody read the line
+against the command. The fix is the include order (`musyx_mix.h`
+includes `port.h` first, with the reason), and it changes the `.wav` of
+every run: a `--soak` run's audio now has the linear resampler and the
+depop as designed since M7 and M20, a reproduction's has the depop it
+never had. So the `.wav` of any milestone after M19 is not comparable
+with M24's — the identity proof below is between M24's two modes, on
+M24's build, which is what the brief asks — and the M20–M23 walks'
+`aud` figures (1.66 ms) were the 4-tap's, which §39.4b re-measures.
+
+### 39.2 The mixer's value half on the second core
+
+**The shape of the work.** `port_audio_tick` runs at every retrace, before
+the game's frame: 3.34 simulated AI interrupts, each of which queues the
+buffer the hardware has finished, mixes one 160-sample frame
+(`salCtrlDsp` → `port_musyx_mix_frame`), runs the aux effects on the bus
+the previous frame filled (`salHandleAuxProcessing`: the game's reverb,
+msmsys.c:51), and then MusyX's five sequencer passes, which start and
+stop voices on what the mix just left behind. The mix is 1.2–1.7 ms of
+the retrace on the game thread (§32.4, §33.4: `aud`), sixty times a
+second, and it is not one thing: the frame is entangled with MusyX at
+every voice — a start reads the sample directory and calls the synth,
+the ADSR runs per sub-frame and its state is the sequencer's, a voice
+that ends sends a message and unlinks itself from the studio's list,
+and the sample position is written back for the streaming layer to read
+— and the sequencer passes *between* the interrupts of one tick read
+all of it. Nothing of that can move a retrace later without changing
+what the sequencer sees, so the whole frame cannot move.
+
+**The seam.** What can move is the arithmetic. The frame is split into
+a **control half** and a **value half** (`musyx_mix.c`, one body, three
+instantiations of a `mode` constant GCC folds: `MIX_BOTH` is the fused
+frame every run before M24 ran, `MIX_CTL` and `MIX_VAL` the two halves):
+
+* the control half runs on the game thread exactly where the fused
+  frame ran: the voice starts (every MusyX call, the sample-directory
+  reads, the heap walk), `adsrHandle` per sub-frame, the volume ramps'
+  bookkeeping (`setup_ramp` mutates `lastVol*`), the play-info and the
+  `currentAddr` write-back, the voice-done message and the unlink — and
+  the **same per-sample loop with the value arithmetic elided**, so it
+  advances every voice's position (`phase`, `curSample`, `frameOffset`,
+  the loop wrap, `ended`) exactly as the fused loop does and ends the
+  voice at the same sample. It leaves the value half a plan: per voice,
+  the `DSPvoice` as the mixer read it at that voice's turn in the walk
+  (after the voices before it ran — a voice-done message can deactivate
+  a later one), the action (skip / run / start), and for a start the
+  `MixVoice` as the control half initialised it;
+* the value half runs on the worker from the plan and its own copy of
+  the voice table: the ADPCM decode, the resampler, the gains, the bus
+  accumulates, the depop, the studio inputs, the aux return, the output,
+  the peak and click statistics, `--mixcheck`, `--mixtrace` — on the
+  plan's copy of each `DSPvoice` (its `adsrHandle` gives the same
+  envelope, its `setup_ramp` the same deltas, and its writes are
+  discarded), never on the real one, with `salSynthSendMessage` and
+  `salDeactivateVoice` compiled out. The bus buffers and the depop sums
+  are `dspStudio`'s own: nothing but the mixer touches them;
+* the tick's job is the ordered list of the tick's steps — queue, mix,
+  aux, queue, mix, aux, … — exactly the fused order. The aux effects
+  are a step because `snd_handle_irq` calls them on the bus the worker
+  fills: the Makefile renames that one call site to `port_sal_aux_hook`
+  (the `hwSaveSample` trick of §34.4; `extern/` untouched), which runs
+  hw_dspctrl.c:2112's loop from a capture of the handlers, inline or as
+  a step. The effects' state is touched by nothing but the callback at
+  runtime (the game sets it once at `msmSysInit`; `grep` for
+  `UpdateSettings` finds no call);
+* the job is submitted at the end of the tick and **joined at the top
+  of the next retrace** (`port_workers_retrace_join`, the first thing
+  `VIWaitForRetrace` does, before the snapshot and the next tick),
+  where the value half's voice table is compared with the control
+  half's on every live voice's position and taken over whole — so the
+  snapshot registry's `voices` is the complete state at every retrace
+  boundary, as before. A job the worker has not started by then is run
+  by the game thread (`late`), one it is in the middle of is waited for
+  (`waited`, timed); both counted in the report.
+
+**What makes it exact.** The value half of retrace N reads: the plan
+(copied at the tick), its own table (equal to the game's at the tick),
+the sample bytes in the port's ARAM heap, the effect state, and
+constants. ARAM is the one input it shares with the game, and every
+write to it — `aramUploadData` (a group push, a stream's refill),
+`ARStartDMA` — finishes the pending job first; a write from inside the
+tick (a stream refill from the sequencer's own `streamHandle`) finishes
+the job built so far on the game thread and the tick carries on split
+from a fresh one. A MEM1 sample (the game's heap, free to change under
+the value half; none since M19) or a virtual sample (compType 5, whose
+start is a synth message; unused by this game) makes the tick run fused,
+counted. The **proofs**: `--mixtrace` of a 4,000-frame `--nodraw --turbo`
+run and `--wav` of the 16,000-frame real-time walk, `--threads 0` against
+`--threads 1`, byte for byte (§39.4); `--mixcheck` on both; 0 position
+mismatches at 16,011 joins on the walk; the three frame md5s.
+
+**Two things found while making it exact.** The value half's copy of a
+starting voice is taken at entry, before the control half's init sets
+its envelope up and writes its play-info — the first threaded run on
+the MacBook rendered every new voice silent; the value half now redoes
+`adsrSetup` (a function of the ADSR struct alone) and the play-info on
+its copy. And the fused path leaves a refused voice's half-initialised
+`MixVoice` behind (live 0, pitch set), which the value half never
+touches: the join's check compares live voices only.
+
+### 39.3 The texture decode, staged from consumed frames
+
+A decode is pure — source bytes and a palette in, RGBA texels out — and
+on a scene's first drawn frame it was 100–150 ms of the frame's 250–350
+(§38.3: `dec` and `up` on the `stall:` line; the upload is GL and stays).
+The drawn frame cannot show a placeholder (the md5s), so the only decode
+that can move is one that can start **early**, and the brief's case (a)
+is where that is: frame mode drops the GL work of a consumed frame, but
+the setters still run, and a `GXLoadTexObj` on a consumed frame names a
+texture the next drawn frame will very probably bind — a scene's load is
+a consumed frame (348 ms, §38.3), and so are the frames right after it.
+Case (b), the loaders (`HuDvdDataRead`, `HuSprLoad`), turned out to be
+the same hook: the port learns of a texture only at `GXInitTexObj` /
+`GXLoadTexObj`, which hsfdraw and the sprite path call per draw, on
+consumed frames too.
+
+The design (`gx_tex.c`, "M24"):
+
+* `GXLoadTexObj` on a consumed frame notes the texture if the cache holds
+  nothing at that address under any swap table (the bind's key carries
+  the TEV stage's swap, which a setter cannot know; a staged decode
+  serves every swap, the swizzle being applied at the upload). One
+  hash-table probe and a dedupe on the consumed frame, nothing else;
+* at the retrace (`port_gx_predecode_join`, in `port_workers_retrace_join`)
+  the game thread copies each request's source bytes and palette into a
+  staging entry — **the worker reads nothing of the game's** — and
+  hands the batch to the decode worker, which computes the exhaustive
+  content hash of the copies and decodes and pads them while the game
+  runs on. It never waits for that worker: a decode that is not done
+  is not done;
+* a miss on a drawn frame computes the exhaustive hash of the live bytes
+  as it always did (§38.3) and, if a staged entry carries the same key
+  and the same hash, uploads the staged texels: the same function on
+  the same bytes, so the upload is the one the inline decode would have
+  made (the collision risk is the cache's own, unchanged). An entry the
+  worker has not reached is claimed and decoded inline as before (the
+  worker skips it); one nobody binds within 30 frames is dropped, and
+  its address is not asked for again for 30 s — the indirect tiling's
+  sheets and maps live in the tile cache, keyed by content, and were
+  otherwise staged every retrace and dropped every time (1,856 requests
+  in 1,500 frames of the menus, 71 taken). `--nopredecode` is the
+  pre-M24 miss; `--predecodelog` names every drawn frame that took one.
+
+### 39.4 The A/B on the walk, both modes
+
+**The walk**: `--soak --com4 --rtc dolphin --freshcard --realtime --frames
+16000 --perf --status --ovllog --perfwin … --dumpframe 800,3000,7000`,
+§38.3's 16,000-frame real-time walk (the title, the mode select, the
+character select, the board's load and first turns, `m412`, the results,
+the board's return), every arm ninety seconds or more after any install,
+each M24 arm twice (`docs/soak/m24-walk-*.log.gz`). Medians of the
+`--perfdump` samples in the three windows; `aud` is the mixer's share of
+the game thread's frame.
+
+| arm | board: consumed frame (aud) | drawn | **presented** | character select: consumed (aud) | drawn | **presented** | title presented | underruns / resyncs |
+|---|---:|---:|---:|---:|---:|---:|---:|---|
+| **M23 bundle** (`fd48f0df`), twice | 7.93 / 7.91 ms (1.99) | 39.6 | **16.94 / 17.02** | 6.08 / 6.02 (2.00) | 52.8 / 52.2 | **13.40 / 13.60** | 21.2 / 21.2 | 155 / 160, 1 / 1 |
+| M24 `--threads 0` (the single-core path), twice | 7.44 / 7.41 (1.42) | 39.7 | **17.73 / 17.78** | 5.50 / 5.39 (1.43) | 52.1 / 51.7 | **14.06 / 14.30** | 21.4 / 21.2 | 154 / 80, 1 / 0 |
+| M24 `--threads 1` (the mixer's worker, the predecode on), twice | **6.61 / 6.57 (0.28)** | 39.0 / 38.8 | **19.30 / 19.33** | **4.53 / 4.54 (0.27)** | 51.4 | **14.92 / 14.92** | 21.4 / 21.4 | 80 / 157, 0 / 1 |
+| M24 `--threads 1 --nomixthread` (the predecode alone) | 7.57 (1.44) | 39.4 | 17.61 | 5.65 (1.43) | 52.2 | 13.94 | 21.0 | 158, 1 |
+| M24 `--threads 1 --nopredecode` (the mixer's worker alone) | **6.39 (0.27)** | 38.6 | **19.76** | **4.32 (0.27)** | 51.0 | **15.24** | 22.0 | 154, 1 |
+| M24 `--threads 1` / `--threads 0` with `--wav` (the identity pair) | 6.62 / 7.52 | 38.9 / 39.4 | 18.91 / 17.47 | 4.51 / 5.54 | | 14.47 / 13.53 | | 153 / 203, 1 / 2 |
+| **M24 final, the defaults** (the mixer's worker on, the predecode off), three times | **6.46 / 6.41 / 6.43 (0.28)** | 38.8 / 38.8 / 38.5 | **19.50 / 19.60 / 19.71** | **4.40 / 4.36 / 4.41 (0.27)** | 51.1 / 51.4 / 51.2 | **15.15 / 15.08 / 15.15** | 21.9 / 22.1 / 21.7 | 154 / 155 / 80, 1 / 1 / 0 |
+
+**What the table says.**
+
+* **The mixer's worker takes 1.15 ms off the board's consumed frame**
+  (7.44 → 6.39 with the predecode off; `aud` 1.42 → 0.27, the control
+  half) and 1.2 ms off the character select's, and the presented rate
+  follows §32.1's arithmetic: the board **17.7 → 19.8 fps** (+12%), the
+  character select **14.1 → 15.2** (+8%), the title unchanged (its frame
+  is the drawn one). The worker did 19.8 s of value halves over the
+  267 s walk — 7.4% of the second core — and the game thread waited for
+  it at 17–26 of 15,986 joins, 6–8 ms in all (worst 0.8–1.4 ms); one job
+  in each walk was run inline at the join. 0 position mismatches at
+  16,011 joins; 0 ticks fused; 25 jobs finished mid-tick for a stream's
+  refill.
+* **The single-core path is cheaper than M23's, by the option fix, not
+  by M24's code**: M23's mixer read `resample4` from `--soak` (on for the
+  walk) and `depop` from `--stuckwatch` (off), so the M23 arm mixed with
+  the 4-tap resampler and no depop; M24's `--threads 0` mixes with the
+  linear one and the depop, as every run was meant to (1.99 → 1.42 ms).
+  The like-for-like cost of M24's fused frame — `--threads 0 --resample4
+  --nodepop` against the M23 bundle — is §39.4b below.
+* **The predecode does not move the cold frame** (§39.3): alone it is
+  17.61 fps on the board against 17.73–17.78 without it, and with the
+  mixer's worker 19.30 against 19.76 without it — the copies on the game
+  thread (285–323 ms over the walk, on the consumed frames after a load)
+  cost what the decode saved (`dec` 447 → 177 ms over the walk) and the
+  upload of memory-cold texels gave a third of that back (`up` 540 →
+  596). Off by default; `--predecode`.
+* **The underruns are the loads', in every arm**: 80 / 1.2 s when the
+  results screen's last frame does not stall, 154–160 / 2.4 s when it
+  does (frame 14,198, 1.75 s, `game`, in 10 of the day's 17 walks and in
+  neither of the two soaks; **not the card flush**, which is timed and
+  never printed — the disc image's reads are timed now, §39.7). The
+  `--wav` pair is not a speed measurement: a queue step's `fwrite` on
+  the worker at a scene load waits behind the disc image's reads (73
+  waits, 4.0 s, worst 593 ms; the game thread's own `fwrite` in the
+  fused arm is inside its load frames).
+
+**The identity proofs**, on the G4:
+
+| | `--threads 0` | `--threads 1` |
+|---|---|---|
+| frame 800 / 3000 / 7000, every arm above (10 walks) | `1df90661` / `8762d432` / `f5b52130` | identical — the M23 references |
+| `--wav` of the 16,000-frame real-time walk | `f63e9096…` (and the same bytes in a third fused walk of the day) | `f63e9096…` |
+| `--mixtrace` of 4,000 frames `--nodraw --turbo --headless` (92,239 lines) | `4531c71c…` `.wav` | identical trace, identical `.wav` |
+| `--mixcheck` on those | 5,793,408 gains checked, 0 disagreed | 5,793,408, 0 |
+| positions at the joins | | 0 mismatches in 16,011 joins (the walk), 0 in 4,000 (the trace run) |
+
+
+The board at real time on the final build, the mixer's worker on
+(`screenshots/m24-board-realtime-cpu2.png`), and its status line:
+
+```
+port> status f7920    w01dll       board 0 turn 1/20  mg 65936 ((none))  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.30 ms  speed 101%  20.1 fps presented  tex 541/40935 KB  rss 115 MB  cpu 2
+```
+
+![the board at real time, the mixer on the second core](screenshots/m24-board-realtime-cpu2.png)
+
+**39.4b The single-core cost, like for like.** `--threads 0` is today's
+code with the option fix, so its cost against the M23 bundle is the fix's
+as much as M24's. With M23's effective options given back to it
+(`--threads 0 --resample4`; the depop is on in both, `--soak` having set
+`--stuckwatch`), twice, against the M23 bundle's two walks:
+
+| | board consumed (aud) | presented | character select consumed (aud) | presented | `aud` mean over the walk |
+|---|---:|---:|---:|---:|---:|
+| M23 bundle | 7.93 / 7.91 (1.99 / 1.99) | 16.94 / 17.02 | 6.08 / 6.02 (2.00) | 13.40 / 13.60 | 1.66 / 1.65 |
+| M24 `--threads 0 --resample4` (the depop off in these two by a slip: `--nodepop`) | 7.50 / 7.57 (1.49 / 1.50) | 17.71 / 17.58 | 5.44 / 5.52 (1.47 / 1.50) | 14.28 / 14.16 | 1.25 / 1.25 |
+| M24 `--threads 0` (linear, depop) | 7.44 / 7.41 (1.42) | 17.73 / 17.78 | 5.50 / 5.39 (1.43) | 14.06 / 14.30 | 1.20 |
+
+The single-core path costs nothing over M23's — it is 0.4 ms a retrace
+cheaper by the retrace bracket, with the same resampler, and the
+presented rate says the same (17.6–17.8 against 16.9–17.0). One number
+disagrees and is recorded rather than explained: the mixer's own `--perf`
+mean per DSP frame reads 353 µs in the M23 bundle and 491 µs in M24's
+fused frame with the 4-tap (368 µs with the linear), the opposite order
+from the bracket that encloses it (`aud`, perf.c, the same code in both
+builds); M23's mixer read `perf` through the packed layout as the low
+word of `seed`, and which of the two timers is wrong is an open question
+for an instrument, not for the audio.
+
+### 39.5 Item 3, the display-list decode: the argument, and why it is not built
+
+The decode of the display lists into the vertex ring is 7 ms of the
+board's 24 ms drawn frame (§36.3: `decode`, 26%), and the brief allowed
+it onto the second core one frame behind, with a proven ordering
+argument first. The argument is short and it is against.
+
+What the decode reads is the game's: the display lists themselves and
+the vertex, normal, colour and texcoord arrays they index (`GX_INDEX16`
+into per-attribute streams, §32.2). What the game does to them between
+two frames is rewrite them **in place**: the skinning writes every
+skinned model's vertex array each frame (`EnvelopeProc`, §33.3, on the
+game thread), the sprite path rebuilds its lists, hsfdraw's material
+walk writes the same scratch. So a worker decoding frame N's lists while
+the game builds frame N+1 reads memory the game is writing, and the
+only two ways out are a fence — the game thread must not write until
+the worker is done, which is a block mid-frame, forbidden by the brief
+and by §32.1's whole design — or a copy. The copy is of the decode's
+*inputs*: per vertex three 16-bit indices plus the three array entries
+they name (12 + 3 + 8 bytes for the commonest shape), i.e. the same
+gather the decode itself performs, minus the float conversion — the
+decode *is* a copy of its inputs into another layout. A copy of whole
+arrays instead of gathered entries costs the models' full size per
+frame (the skinned arrays are rewritten every frame regardless of what
+the lists reference). Either way the copy costs at least what it saves,
+and the brief's own rule ("do not build it if the copy costs more than
+the decode") says stop. There is a second cost for the record: a
+decode one frame behind draws frame N's geometry on frame N+1's
+retrace, which is a frame of latency in the picture and a different
+`--dumpframe` for every frame number — the reference md5s would need
+re-basing for a change that is not a picture change. Not built.
+
+### 39.6 Three things found on the way
+
+* **A `#pragma` that never closes leaks into every struct after it.**
+  `musyx/synth.h`'s `pack(4)` reached `PortOptions` in the one file
+  that included it before `port.h`, and the fault was silent for four
+  milestones because the two layouts happened to agree until a field
+  was added before `seed` (§39.1). Include `port.h` first in any file
+  that touches MusyX's headers; the report's own lines (`resampler
+  4-tap`, `depop on`) were the witness nobody read.
+* **A Makefile `-D` rename is only as good as the object's rebuild.**
+  `hardware.o` is compiled with three renames and did not depend on the
+  Makefile, so the aux hook M24 added was never linked in until the
+  real-time walk's `.wav` differed between the modes (the effects ran
+  on the game thread at the tick, on buffers the worker filled later)
+  and `nm` on the object said why; the rule lists the Makefile now.
+* **The value half's inputs include the effects' state, and the game
+  swaps its effects at every scene change** (`audio.c` "Change AUX":
+  callbacks cleared, delay lines freed, new effects prepared). The one
+  writer of the studio's handlers is `hwSetAUXProcessingCallbacks`,
+  renamed to the port's, which finishes the pending job first (§39.2).
+  The FPSCR was a wrong guess on the way (the reverb is floating point
+  and a new thread's FPU mode is the default) — the game thread's is the
+  default too, checked; the job carries it regardless, for the record.
+
+### 39.7 What M24 shipped, and what it did not
+
+| shipped, with a witness | |
+|---|---|
+| the workers (`workers.c`): `port_ncpu()`, `--threads N`, `cpu N` on the status line, the per-worker report (jobs, late, waited, ms on the second core) | `cpu 2` on every status line of the walks; the reports in §39.4 |
+| the mixer's value half on the second core (§39.2), on by default on a dual, `--nomixthread` | board consumed frame 7.44 → 6.39 ms, **17.7 → 19.8 presented fps**, character select 14.1 → 15.2; the game thread's `aud` 1.42 → 0.27 ms; `.wav` of the 16,000-frame real-time walk and `--mixtrace` of 4,000 frames identical between the modes, `--mixcheck` 0, 0 position mismatches, the three md5s |
+| the single-core path (`--threads 0`, or one CPU): today's code, no job ever built | 7.44 ms / 17.7 fps on the board against the M23 bundle's 7.93 / 17.0 (§39.4b) |
+| the mixer's options read right (§39.1) | `resampler linear, depop on` in every run's report; a `--soak` walk's `aud` 1.99 → 1.42 ms |
+| the texture decode staged from consumed frames (§39.3): built, exact, measured, **off** (`--predecode`, `--predecodelog`) | 624 of 790 cold decodes taken on the walk, the cold frame unmoved (§39.4) |
+| the results-screen stall named as neither the card nor the disc; the disc image's reads timed, the stall line's `frees` and `dll` fields (§39.4, §39.8) | `CARD: image flush took` never printed at it; `DVD: … 0 over 100 ms` on the walks it happened in |
+| the soak's read (§39.1), `docs/soak/m24-*`, `docs/screenshots/m24-*`, witness §0l | |
+
+**Not done, and why:**
+
+* **Item 3, the display-list decode one frame behind** (§39.5): the
+  argument is against — the copy is the decode.
+* **The predecode as a default**: it reaches the decodes and not the
+  stall (§39.3, §39.4); off.
+* **The results screen's 1.75 s stall** at frame 14,198 of the walk:
+  in 10 of the day's 17 walks, in neither soak, not the card flush, not
+  a disc read; `frees` and `dll` on the stall line are the next
+  instrument, in the leave-behind build.
+* **The two mixer timers** that disagree (§39.4b): an instrument
+  question.
+* The M23 leftovers stand: the selected file box's specular, the fresh
+  process DRAW in Avalanche!, `m414` at 9.9 fps and `m401` at 99% (the
+  soak's two resyncs, §39.1).
+
+### 39.8 What M25 starts with
+
+Left running: `g4 run --soak --com4 --rtc dolphin --freshcard --realtime
+--snap-every 5000 --snap-keep 3 --status --ovllog --stuckwatch 200` on
+the final build (`isle` md5 `dc9c1385…`), the mixer's worker on (the
+default on the dual; `cpu 2` on the status line), the predecode off —
+the first soak with the mixer on the second core, the linear resampler
+and the depop as designed, and the disc image's reads timed. Read it
+first: the `cpu 2` lines' `aud` (0.2–0.3 ms where M23's read 0.8–3.6),
+the `worker mixer` report line if it ends cleanly (late and waited
+counts), `tex`/`rss` past turn 12, `DVD: read of … took` and `stall:
+… frees N, dll M ms` lines around the results screens (frame ~250,000),
+and whether m415 or a second m406 is dealt. Then the results-screen
+stall with its new fields, the two mixer timers, and M23's specular.

@@ -202,14 +202,19 @@ void port_perf_frame(int drawn) {
         gx_tex_predecode_frame_take(&pd_taken, &pd_claimed, &pd_unstaged, &pd_saved);
         if (wall > 0.1 && port_opt.realtime) {
             /* A stall the frame mode cannot hide: named, so the log says which
-             * frame and which scene (--ovllog) it belongs to. */
+             * frame and which scene (--ovllog) it belongs to.  M24: the frame's
+             * heap frees and module-load time too (the results screen's 1.7 s,
+             * PLAN.md 39.4, is neither the card nor the disc). */
+            extern unsigned port_frame_frees;
+            extern double port_frame_dll_s;
             port_log("port> stall: frame %u took %.0f ms (game %.0f gx %.0f present %.0f aud %.0f)%s"
                      " tex: %u decoded (%u KB -> %u KB) dec %.0f up %.0f hash %.0f ms, %u re-keyed"
-                     "; staged %u (%.0f ms saved) claimed %u unstaged %u\n",
+                     "; staged %u (%.0f ms saved) claimed %u unstaged %u; frees %u, dll %.0f ms\n",
                      gl13_frame_number(), wall * 1000.0, game * 1000.0, t_gx * 1000.0, t_present * 1000.0,
                      t_audio * 1000.0, drawn ? "" : " [consumed]",
                      td_n, td_src, td_rgba, td_dec, td_up, td_hash, td_rekey,
-                     pd_taken, pd_saved, pd_claimed, pd_unstaged);
+                     pd_taken, pd_saved, pd_claimed, pd_unstaged, port_frame_frees,
+                     port_frame_dll_s * 1000.0);
         } else if (port_opt.texdecodelog && td_dec + td_up > 20.0) {
             port_log("port> texdecode: frame %u: %u decoded (%u KB -> %u KB) dec %.0f up %.0f hash %.0f ms, "
                      "%u re-keyed; staged %u (%.0f ms saved) claimed %u unstaged %u; frame %.0f ms%s\n",
@@ -235,6 +240,12 @@ void port_perf_frame(int drawn) {
     }
     t_frame_start = now;
     t_gx = t_present = t_audio = t_sleep = 0.0;
+    {
+        extern unsigned port_frame_frees;
+        extern double port_frame_dll_s;
+        port_frame_frees = 0;
+        port_frame_dll_s = 0.0;
+    }
 }
 
 static int cmpf(const void* a, const void* b) {
