@@ -420,6 +420,12 @@ on the Mac. What is different there:
 * **`--mgdump` / `--mgend` make the entry frame the harness's problem.**
   Every game entered at 14,477 or 14,478 on the `board-start-com4.play`
   walk, but the levers cost nothing and the chain never had to know.
+* **Kill by exact name.** A `kill` of every PID whose arguments matched
+  "queue.sh" — aimed at the oracle's own `queue.sh` — also took
+  littlejelly's `~/bin/agent-queue.sh`, the brief runner this very
+  session is a child of; the session survived (re-parented to init) and
+  a resumer was armed to finish the runner's bookkeeping and restart it.
+  `pgrep -x`, or the full path, never a substring.
 
 ## 1. m425 to its result screen — the M8 crash, witnessed
 
