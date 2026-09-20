@@ -1,0 +1,2526 @@
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mario Party 4 PowerPC port: the port beside the console, every minigame (M26b)</title>
+<style>body{font:13px/1.35 -apple-system,Helvetica,Arial,sans-serif;margin:8px;background:#fafafa}
+.g{border-top:2px solid #ccc;padding:8px 0}.h{font-weight:bold;font-size:16px}.m{color:#555;font-size:12px}
+.f{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}.f figure{margin:0;width:240px;background:#fff;border:1px solid #ddd;padding:3px}
+.f img{width:240px;height:180px;display:block}.f figcaption{font-size:11px;color:#444}.f .lab{font-weight:bold;color:#222}
+.n{background:#fff;border:1px solid #ddd;padding:6px;font-size:13px;margin-top:4px}.miss{width:240px;height:180px;background:#eee;color:#888;display:flex;align-items:center;justify-content:center;font-size:11px}
+.match{color:#2a7}.minor{color:#c80}.major{color:#c22}.port-faulted{color:#808}.oracle-failed{color:#777}
+table{border-collapse:collapse;font-size:12px}td,th{border:1px solid #ccc;padding:2px 5px;text-align:left}
+@media(max-width:700px){.f figure{width:48%}.f img{width:100%;height:auto}}</style>
+<h1>The port beside the console: every minigame, seven positions (M26b, the oracle sweep)</h1>
+<p>Each row: the port's frame (top, the M26 fix build on the G4, <code>gallery_chain.sh</code>) over the console's (bottom, Dolphin on littlejelly, the same schedule: board-start walk, four COMs, <code>mg_next</code> and <code>mgNext</code> poked, groups by type) at the same <em>event</em>: the instruction card at instDll +64/+164/+264, the module at entry +60/+400/+1200/+2300, and the results screen 40 frames after the module is left. The console frame's number is Dolphin's dump index. Under each pair: <b>sim</b> = 100·(1 − mean |Δ| / 255) over RGB at 320×240, <b>&gt;8</b> = % of pixels whose worst channel differs by more than 8 levels (ppmdiff's count). The two runs do not share their RNG (the board seeds from the clock at board setup, which the two walks reach at different frames), so play frames differ by the play itself; the card and the intro frames are the frame-exact pairs. PLAN.md §41b has the calibration and the verdicts' reasoning.</p>
+<p><span class="?">?: 50</span>, <span class="major">major: 6</span>, <span class="match">match: 4</span>, <span class="minor">minor: 1</span>, <span class="port-faulted">port-faulted: 2</span> &mdash; 63 games</p>
+<div class="g" id="m401"><div class="h">m401 &mdash; Manta Rings <span class="m">(4-player, type 0)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="m">console: card 10267 (first yellow frame None, delta None), module first frame 10605, entry gc 10958, left gc None; stop: entry +3400</div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m401-fix-f014200.jpg" alt="m401 port card1"><figcaption>port f014200</figcaption>
+<img loading="lazy" src="oracle/m401-c010331.jpg" alt="m401 console card1"><figcaption>console c010331</figcaption>
+<figcaption>sim 99% &middot; &gt;8: 8%</figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m401-fix-f014300.jpg" alt="m401 port card2"><figcaption>port f014300</figcaption>
+<img loading="lazy" src="oracle/m401-c010431.jpg" alt="m401 console card2"><figcaption>console c010431</figcaption>
+<figcaption>sim 97% &middot; &gt;8: 33%</figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m401-fix-f014400.jpg" alt="m401 port card3"><figcaption>port f014400</figcaption>
+<img loading="lazy" src="oracle/m401-c010531.jpg" alt="m401 console card3"><figcaption>console c010531</figcaption>
+<figcaption>sim 98% &middot; &gt;8: 23%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<div class="miss">port: none (the game ran on)</div>
+<img loading="lazy" src="oracle/m401-c010669.jpg" alt="m401 console e60"><figcaption>console c010669</figcaption>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<div class="miss">port: none (the game ran on)</div>
+<img loading="lazy" src="oracle/m401-c011009.jpg" alt="m401 console e400"><figcaption>console c011009</figcaption>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<div class="miss">port: none (the game ran on)</div>
+<img loading="lazy" src="oracle/m401-c011809.jpg" alt="m401 console e1200"><figcaption>console c011809</figcaption>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<div class="miss">port: none (the game ran on)</div>
+<img loading="lazy" src="oracle/m401-c012909.jpg" alt="m401 console e2300"><figcaption>console c012909</figcaption>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m402"><div class="h">m402 &mdash; Slime Time <span class="m">(4-player, type 0)</span> <span class="m">§41: minor? &rarr;</span> <span class="major">major</span></div>
+<div class="m">console: card 11813 (first yellow frame None, delta None), module first frame 12151, entry gc 12504, left gc 15252; stop: results done</div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m402-fix-f014200.jpg" alt="m402 port card1"><figcaption>port f014200</figcaption>
+<img loading="lazy" src="oracle/m402-c011877.jpg" alt="m402 console card1"><figcaption>console c011877</figcaption>
+<figcaption>sim 99% &middot; &gt;8: 8%</figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m402-fix-f014300.jpg" alt="m402 port card2"><figcaption>port f014300</figcaption>
+<img loading="lazy" src="oracle/m402-c011977.jpg" alt="m402 console card2"><figcaption>console c011977</figcaption>
+<figcaption>sim 97% &middot; &gt;8: 35%</figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m402-fix-f014400.jpg" alt="m402 port card3"><figcaption>port f014400</figcaption>
+<img loading="lazy" src="oracle/m402-c012077.jpg" alt="m402 console card3"><figcaption>console c012077</figcaption>
+<figcaption>sim 97% &middot; &gt;8: 28%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<div class="miss">port: none (the game ran on)</div>
+<img loading="lazy" src="oracle/m402-c012215.jpg" alt="m402 console e60"><figcaption>console c012215</figcaption>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<div class="miss">port: none (the game ran on)</div>
+<img loading="lazy" src="oracle/m402-c012555.jpg" alt="m402 console e400"><figcaption>console c012555</figcaption>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<div class="miss">port: none (the game ran on)</div>
+<img loading="lazy" src="oracle/m402-c013355.jpg" alt="m402 console e1200"><figcaption>console c013355</figcaption>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<div class="miss">port: none (the game ran on)</div>
+<img loading="lazy" src="oracle/m402-c014455.jpg" alt="m402 console e2300"><figcaption>console c014455</figcaption>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">results</figcaption>
+<div class="miss">port: none (the game ran on)</div>
+<img loading="lazy" src="oracle/m402-c014938.jpg" alt="m402 console results"><figcaption>console c014938</figcaption>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="major">major</b>: OVERTURNED (minor? → major), and the console now runs it (the mgNext poke — one directory image, no HEAP_DVD panic): the console's arena has a dark dome with the "SLIME POWER" sign at the centre and NO column; the port stands a tall yellow hexagonal prism through the middle of the arena in every play frame, from +60 on, hiding the sign — a piece of geometry the console does not draw at that size (new cause G); everything else lines up: the checkered cross, the four coloured slime blobs, the outer floor's dark green, the timer (24 / 06); the card matches; the console's game ended at the timer and its results were captured (the port ran on)<br><b>preview box</b>: still on both (console box diff 0.5)</div></div>
+<div class="g" id="m403"><div class="h">m403 &mdash; Booksquirm <span class="m">(4-player, type 0)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="m">console: card 11106 (first yellow frame None, delta None), module first frame 12652, entry gc 11796, left gc 13004; stop: results done</div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m403-fix-f014200.jpg" alt="m403 port card1"><figcaption>port f014200</figcaption>
+<img loading="lazy" src="oracle/m403-c011170.jpg" alt="m403 console card1"><figcaption>console c011170</figcaption>
+<figcaption>sim 99% &middot; &gt;8: 8%</figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m403-fix-f014300.jpg" alt="m403 port card2"><figcaption>port f014300</figcaption>
+<img loading="lazy" src="oracle/m403-c011270.jpg" alt="m403 console card2"><figcaption>console c011270</figcaption>
+<figcaption>sim 97% &middot; &gt;8: 36%</figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m403-fix-f014400.jpg" alt="m403 port card3"><figcaption>port f014400</figcaption>
+<img loading="lazy" src="oracle/m403-c011370.jpg" alt="m403 console card3"><figcaption>console c011370</figcaption>
+<figcaption>sim 97% &middot; &gt;8: 26%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m403-fix-f014537.jpg" alt="m403 port e60"><figcaption>port f014537</figcaption>
+<img loading="lazy" src="oracle/m403-c012716.jpg" alt="m403 console e60"><figcaption>console c012716</figcaption>
+<figcaption>sim 67% &middot; &gt;8: 100%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m403-fix-f014877.jpg" alt="m403 port e400"><figcaption>port f014877</figcaption>
+<img loading="lazy" src="oracle/m403-c013056.jpg" alt="m403 console e400"><figcaption>console c013056</figcaption>
+<figcaption>sim 57% &middot; &gt;8: 100%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m403-fix-f015677.jpg" alt="m403 port e1200"><figcaption>port f015677</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m403-fix-f016777.jpg" alt="m403 port e2300"><figcaption>port f016777</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">results</figcaption>
+<img loading="lazy" src="m403-fix-f015725.jpg" alt="m403 port results"><figcaption>port f015725</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m404"><div class="h">m404 &mdash; Trace Race <span class="m">(Battle, type 4)</span> <span class="m">§41: minor? &rarr;</span> <span class="minor">minor</span></div>
+<div class="m">console: card 12604 (first yellow frame None, delta None), module first frame 12942, entry gc 13294, left gc 15911; stop: results done</div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m404-fix-f014200.jpg" alt="m404 port card1"><figcaption>port f014200</figcaption>
+<img loading="lazy" src="oracle/m404-c012668.jpg" alt="m404 console card1"><figcaption>console c012668</figcaption>
+<figcaption>sim 99% &middot; &gt;8: 7%</figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m404-fix-f014300.jpg" alt="m404 port card2"><figcaption>port f014300</figcaption>
+<img loading="lazy" src="oracle/m404-c012768.jpg" alt="m404 console card2"><figcaption>console c012768</figcaption>
+<figcaption>sim 97% &middot; &gt;8: 32%</figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m404-fix-f014400.jpg" alt="m404 port card3"><figcaption>port f014400</figcaption>
+<img loading="lazy" src="oracle/m404-c012868.jpg" alt="m404 console card3"><figcaption>console c012868</figcaption>
+<figcaption>sim 97% &middot; &gt;8: 26%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m404-fix-f014537.jpg" alt="m404 port e60"><figcaption>port f014537</figcaption>
+<img loading="lazy" src="oracle/m404-c013006.jpg" alt="m404 console e60"><figcaption>console c013006</figcaption>
+<figcaption>sim 96% &middot; &gt;8: 48%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m404-fix-f014877.jpg" alt="m404 port e400"><figcaption>port f014877</figcaption>
+<img loading="lazy" src="oracle/m404-c013346.jpg" alt="m404 console e400"><figcaption>console c013346</figcaption>
+<figcaption>sim 94% &middot; &gt;8: 57%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m404-fix-f015677.jpg" alt="m404 port e1200"><figcaption>port f015677</figcaption>
+<img loading="lazy" src="oracle/m404-c014146.jpg" alt="m404 console e1200"><figcaption>console c014146</figcaption>
+<figcaption>sim 91% &middot; &gt;8: 68%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m404-fix-f016777.jpg" alt="m404 port e2300"><figcaption>port f016777</figcaption>
+<img loading="lazy" src="oracle/m404-c015246.jpg" alt="m404 console e2300"><figcaption>console c015246</figcaption>
+<figcaption>sim 82% &middot; &gt;8: 94%</figcaption></figure>
+<figure>
+<figcaption class="lab">results</figcaption>
+<div class="miss">port: none (the game ran on)</div>
+<img loading="lazy" src="oracle/m404-c015597.jpg" alt="m404 console results"><figcaption>console c015597</figcaption>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="minor">minor</b>: CONFIRMED (cause F → a fault of its own): the console dealt Trace Race this time (fresh userdir + the mgNext poke; M26's "Order Up" was the dirty card's walk) and its lanes carry the wavy guide line each player has to trace from +60 on (a dark line on every lane, the coloured trace drawn over it as they go); the port's lanes are blank until the players' own traces appear (+2300) — the guide line, the objective of the game, is not drawn; everything else (the desk, the pencils, the START!, the timers) matches; the console's battle results were captured (the port ran on)<br><b>preview box</b>: still on both (console box diff 0.5)</div></div>
+<div class="g" id="m405"><div class="h">m405 &mdash; Mario Medley <span class="m">(4-player, type 0)</span> <span class="m">§41: major &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m405-fix-f014200.jpg" alt="m405 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m405-fix-f014300.jpg" alt="m405 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m405-fix-f014400.jpg" alt="m405 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m405-fix-f014537.jpg" alt="m405 port e60"><figcaption>port f014537</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m405-fix-f014877.jpg" alt="m405 port e400"><figcaption>port f014877</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m405-fix-f015677.jpg" alt="m405 port e1200"><figcaption>port f015677</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m405-fix-f016777.jpg" alt="m405 port e2300"><figcaption>port f016777</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m406"><div class="h">m406 &mdash; Avalanche! <span class="m">(4-player, type 0)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m406-fix-f014200.jpg" alt="m406 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m406-fix-f014300.jpg" alt="m406 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m406-fix-f014400.jpg" alt="m406 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m406-fix-f014537.jpg" alt="m406 port e60"><figcaption>port f014537</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m406-fix-f014877.jpg" alt="m406 port e400"><figcaption>port f014877</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m406-fix-f015677.jpg" alt="m406 port e1200"><figcaption>port f015677</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m406-fix-f016777.jpg" alt="m406 port e2300"><figcaption>port f016777</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">results</figcaption>
+<img loading="lazy" src="m406-fix-f016952.jpg" alt="m406 port results"><figcaption>port f016952</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m407"><div class="h">m407 &mdash; Domination <span class="m">(4-player, type 0)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m407-fix-f014200.jpg" alt="m407 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m407-fix-f014300.jpg" alt="m407 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m407-fix-f014400.jpg" alt="m407 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m407-fix-f014537.jpg" alt="m407 port e60"><figcaption>port f014537</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m407-fix-f014877.jpg" alt="m407 port e400"><figcaption>port f014877</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m407-fix-f015677.jpg" alt="m407 port e1200"><figcaption>port f015677</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m407-fix-f016777.jpg" alt="m407 port e2300"><figcaption>port f016777</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">results</figcaption>
+<img loading="lazy" src="m407-fix-f016552.jpg" alt="m407 port results"><figcaption>port f016552</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m408"><div class="h">m408 &mdash; Paratrooper Plunge <span class="m">(4-player, type 0)</span> <span class="m">§41: major &rarr;</span> <span class="major">major</span></div>
+<div class="m">console: card 11083 (first yellow frame None, delta None), module first frame 11425, entry gc 11773, left gc 14515; stop: results done</div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m408-fix-f014200.jpg" alt="m408 port card1"><figcaption>port f014200</figcaption>
+<img loading="lazy" src="oracle/m408-c011147.jpg" alt="m408 console card1"><figcaption>console c011147</figcaption>
+<figcaption>sim 99% &middot; &gt;8: 8%</figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m408-fix-f014300.jpg" alt="m408 port card2"><figcaption>port f014300</figcaption>
+<img loading="lazy" src="oracle/m408-c011247.jpg" alt="m408 console card2"><figcaption>console c011247</figcaption>
+<figcaption>sim 97% &middot; &gt;8: 33%</figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m408-fix-f014400.jpg" alt="m408 port card3"><figcaption>port f014400</figcaption>
+<img loading="lazy" src="oracle/m408-c011347.jpg" alt="m408 console card3"><figcaption>console c011347</figcaption>
+<figcaption>sim 97% &middot; &gt;8: 25%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m408-fix-f014537.jpg" alt="m408 port e60"><figcaption>port f014537</figcaption>
+<img loading="lazy" src="oracle/m408-c011489.jpg" alt="m408 console e60"><figcaption>console c011489</figcaption>
+<figcaption>sim 92% &middot; &gt;8: 80%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m408-fix-f014877.jpg" alt="m408 port e400"><figcaption>port f014877</figcaption>
+<img loading="lazy" src="oracle/m408-c011829.jpg" alt="m408 console e400"><figcaption>console c011829</figcaption>
+<figcaption>sim 93% &middot; &gt;8: 99%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m408-fix-f015677.jpg" alt="m408 port e1200"><figcaption>port f015677</figcaption>
+<img loading="lazy" src="oracle/m408-c012629.jpg" alt="m408 console e1200"><figcaption>console c012629</figcaption>
+<figcaption>sim 83% &middot; &gt;8: 94%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m408-fix-f016777.jpg" alt="m408 port e2300"><figcaption>port f016777</figcaption>
+<img loading="lazy" src="oracle/m408-c013729.jpg" alt="m408 console e2300"><figcaption>console c013729</figcaption>
+<figcaption>sim 62% &middot; &gt;8: 100%</figcaption></figure>
+<figure>
+<figcaption class="lab">results</figcaption>
+<img loading="lazy" src="m408-fix-f017010.jpg" alt="m408 port results"><figcaption>port f017010</figcaption>
+<img loading="lazy" src="oracle/m408-c014201.jpg" alt="m408 console results"><figcaption>console c014201</figcaption>
+<figcaption>sim 96% &middot; &gt;8: 33%</figcaption></figure>
+</div>
+<div class="n"><b class="major">major</b>: CONFIRMED (cause C): the console's sky is blue with clouds and the sea, the swirl and the island are under the falling players at +1200/+2300; the port has white where the sky gradient and the sea should be — only the plane, the players, the balloons and the HUD draw; the card and the results match<br><b>preview box</b>: still on both (console box diff 0.5)</div></div>
+<div class="g" id="m409"><div class="h">m409 &mdash; Toad's Quick Draw <span class="m">(4-player, type 0)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m409-fix-f014200.jpg" alt="m409 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m409-fix-f014300.jpg" alt="m409 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m409-fix-f014400.jpg" alt="m409 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m410"><div class="h">m410 &mdash; Three Throw <span class="m">(4-player, type 0)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m410-fix-f014200.jpg" alt="m410 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m410-fix-f014300.jpg" alt="m410 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m410-fix-f014400.jpg" alt="m410 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m410-fix-f014537.jpg" alt="m410 port e60"><figcaption>port f014537</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m410-fix-f014877.jpg" alt="m410 port e400"><figcaption>port f014877</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m410-fix-f015677.jpg" alt="m410 port e1200"><figcaption>port f015677</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m410-fix-f016777.jpg" alt="m410 port e2300"><figcaption>port f016777</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m411"><div class="h">m411 &mdash; Photo Finish <span class="m">(4-player, type 0)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m411-fix-f014200.jpg" alt="m411 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m411-fix-f014300.jpg" alt="m411 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m411-fix-f014400.jpg" alt="m411 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m411-fix-f014537.jpg" alt="m411 port e60"><figcaption>port f014537</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m411-fix-f014877.jpg" alt="m411 port e400"><figcaption>port f014877</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m411-fix-f015677.jpg" alt="m411 port e1200"><figcaption>port f015677</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m411-fix-f016777.jpg" alt="m411 port e2300"><figcaption>port f016777</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m412"><div class="h">m412 &mdash; Mr. Blizzard's Brigade <span class="m">(4-player, type 0)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m412-fix-f014200.jpg" alt="m412 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m412-fix-f014300.jpg" alt="m412 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m412-fix-f014400.jpg" alt="m412 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m412-fix-f014537.jpg" alt="m412 port e60"><figcaption>port f014537</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m412-fix-f014877.jpg" alt="m412 port e400"><figcaption>port f014877</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m412-fix-f015677.jpg" alt="m412 port e1200"><figcaption>port f015677</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m412-fix-f016777.jpg" alt="m412 port e2300"><figcaption>port f016777</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">results</figcaption>
+<img loading="lazy" src="m412-fix-f016398.jpg" alt="m412 port results"><figcaption>port f016398</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m413"><div class="h">m413 &mdash; Bob-omb Breakers <span class="m">(4-player, type 0)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m413-fix-f014200.jpg" alt="m413 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m413-fix-f014300.jpg" alt="m413 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m413-fix-f014400.jpg" alt="m413 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m413-fix-f014537.jpg" alt="m413 port e60"><figcaption>port f014537</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m413-fix-f014877.jpg" alt="m413 port e400"><figcaption>port f014877</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m413-fix-f015677.jpg" alt="m413 port e1200"><figcaption>port f015677</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m413-fix-f016777.jpg" alt="m413 port e2300"><figcaption>port f016777</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m414"><div class="h">m414 &mdash; Long Claw of the Law <span class="m">(4-player, type 0)</span> <span class="m">§41: major &rarr;</span> <span class="?">?</span></div>
+<div class="m">console: card None (first yellow frame None, delta None), module first frame 12087, entry gc 10101, left gc 12082; stop: results done</div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m414-fix-f014200.jpg" alt="m414 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m414-fix-f014300.jpg" alt="m414 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m414-fix-f014400.jpg" alt="m414 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m414-fix-f014537.jpg" alt="m414 port e60"><figcaption>port f014537</figcaption>
+<img loading="lazy" src="oracle/m414-c012151.jpg" alt="m414 console e60"><figcaption>console c012151</figcaption>
+<figcaption>sim 49% &middot; &gt;8: 100%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m414-fix-f014877.jpg" alt="m414 port e400"><figcaption>port f014877</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m414-fix-f015677.jpg" alt="m414 port e1200"><figcaption>port f015677</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m414-fix-f016777.jpg" alt="m414 port e2300"><figcaption>port f016777</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">results</figcaption>
+<img loading="lazy" src="m414-fix-f017015.jpg" alt="m414 port results"><figcaption>port f017015</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m415"><div class="h">m415 &mdash; Stamp Out! <span class="m">(4-player, type 0)</span> <span class="m">§41: minor &rarr;</span> <span class="match">match</span></div>
+<div class="m">console: card 10812 (first yellow frame None, delta None), module first frame 11150, entry gc 11502, left gc 14208; stop: results done</div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m415-fix-f014200.jpg" alt="m415 port card1"><figcaption>port f014200</figcaption>
+<img loading="lazy" src="oracle/m415-c010876.jpg" alt="m415 console card1"><figcaption>console c010876</figcaption>
+<figcaption>sim 99% &middot; &gt;8: 8%</figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m415-fix-f014300.jpg" alt="m415 port card2"><figcaption>port f014300</figcaption>
+<img loading="lazy" src="oracle/m415-c010976.jpg" alt="m415 console card2"><figcaption>console c010976</figcaption>
+<figcaption>sim 97% &middot; &gt;8: 35%</figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m415-fix-f014400.jpg" alt="m415 port card3"><figcaption>port f014400</figcaption>
+<img loading="lazy" src="oracle/m415-c011076.jpg" alt="m415 console card3"><figcaption>console c011076</figcaption>
+<figcaption>sim 97% &middot; &gt;8: 25%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m415-fix-f014537.jpg" alt="m415 port e60"><figcaption>port f014537</figcaption>
+<img loading="lazy" src="oracle/m415-c011214.jpg" alt="m415 console e60"><figcaption>console c011214</figcaption>
+<figcaption>sim 97% &middot; &gt;8: 30%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m415-fix-f014877.jpg" alt="m415 port e400"><figcaption>port f014877</figcaption>
+<img loading="lazy" src="oracle/m415-c011554.jpg" alt="m415 console e400"><figcaption>console c011554</figcaption>
+<figcaption>sim 96% &middot; &gt;8: 39%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m415-fix-f015677.jpg" alt="m415 port e1200"><figcaption>port f015677</figcaption>
+<img loading="lazy" src="oracle/m415-c012354.jpg" alt="m415 console e1200"><figcaption>console c012354</figcaption>
+<figcaption>sim 90% &middot; &gt;8: 55%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m415-fix-f016777.jpg" alt="m415 port e2300"><figcaption>port f016777</figcaption>
+<img loading="lazy" src="oracle/m415-c013454.jpg" alt="m415 console e2300"><figcaption>console c013454</figcaption>
+<figcaption>sim 87% &middot; &gt;8: 68%</figcaption></figure>
+<figure>
+<figcaption class="lab">results</figcaption>
+<div class="miss">port: none (the game ran on)</div>
+<img loading="lazy" src="oracle/m415-c013894.jpg" alt="m415 console results"><figcaption>console c013894</figcaption>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="match">match</b>: CONFIRMED FIXED (the 5th minor of §41, the texgen cause): the paper is white with the faint blue line art, the toys are textured and coloured, and each player has the console's soft shadow on the paper; the stamps, the timer (30 / 17) and the results match. One thing to keep an eye on: at +1200 (timer 17) the console's paper already carries ~30 stamps and the port's none — the port's COMs stamp late (by +2300 both papers are covered); the COMs' timing is the play's (RNG) unless it reads the coverage read-back — not a picture fault<br><b>preview box</b>: still on both (console box diff 0.8)</div></div>
+<div class="g" id="m416"><div class="h">m416 &mdash; Candlelight Flight <span class="m">(1-vs-3, type 1)</span> <span class="m">§41: ok &rarr;</span> <span class="match">match</span></div>
+<div class="m">console: card 10604 (first yellow frame 10610, delta -6), module first frame 10941, entry gc 11294, left gc 13718; stop: left +700</div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m416-fix-f014200.jpg" alt="m416 port card1"><figcaption>port f014200</figcaption>
+<img loading="lazy" src="oracle/m416-c010668.jpg" alt="m416 console card1"><figcaption>console c010668</figcaption>
+<figcaption>sim 99% &middot; &gt;8: 5%</figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m416-fix-f014300.jpg" alt="m416 port card2"><figcaption>port f014300</figcaption>
+<img loading="lazy" src="oracle/m416-c010768.jpg" alt="m416 console card2"><figcaption>console c010768</figcaption>
+<figcaption>sim 97% &middot; &gt;8: 30%</figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m416-fix-f014400.jpg" alt="m416 port card3"><figcaption>port f014400</figcaption>
+<img loading="lazy" src="oracle/m416-c010868.jpg" alt="m416 console card3"><figcaption>console c010868</figcaption>
+<figcaption>sim 98% &middot; &gt;8: 22%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m416-fix-f014537.jpg" alt="m416 port e60"><figcaption>port f014537</figcaption>
+<img loading="lazy" src="oracle/m416-c011005.jpg" alt="m416 console e60"><figcaption>console c011005</figcaption>
+<figcaption>sim 95% &middot; &gt;8: 37%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m416-fix-f014877.jpg" alt="m416 port e400"><figcaption>port f014877</figcaption>
+<img loading="lazy" src="oracle/m416-c011345.jpg" alt="m416 console e400"><figcaption>console c011345</figcaption>
+<figcaption>sim 97% &middot; &gt;8: 65%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m416-fix-f015677.jpg" alt="m416 port e1200"><figcaption>port f015677</figcaption>
+<img loading="lazy" src="oracle/m416-c012145.jpg" alt="m416 console e1200"><figcaption>console c012145</figcaption>
+<figcaption>sim 97% &middot; &gt;8: 59%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m416-fix-f016777.jpg" alt="m416 port e2300"><figcaption>port f016777</figcaption>
+<img loading="lazy" src="oracle/m416-c013245.jpg" alt="m416 console e2300"><figcaption>console c013245</figcaption>
+<figcaption>sim 77% &middot; &gt;8: 86%</figcaption></figure>
+<figure>
+<figcaption class="lab">results</figcaption>
+<div class="miss">port: none (the game ran on)</div>
+<img loading="lazy" src="oracle/m416-c013404.jpg" alt="m416 console results"><figcaption>console c013404</figcaption>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="match">match</b>: card, lit intro, START! and the timer at 19 frame-for-frame with the console (sim 95-99% on the frame-exact pairs); +2300 differs only because the console's candle was out at 08 (LUIGI PEACH YOSHI WON!) while the port's burned to 01 — the play, not the picture; the port's darkness during the play is the console's<br><b>preview box</b>: still on both: the console's box at I_c+150..+200 changes by <1 level (the empty room picture); the port draws the same picture</div></div>
+<div class="g" id="m417"><div class="h">m417 &mdash; Makin' Waves <span class="m">(1-vs-3, type 1)</span> <span class="m">§41: major &rarr;</span> <span class="major">major</span></div>
+<div class="m">console: card 12182 (first yellow frame 12188, delta None), module first frame 12521, entry gc 12872, left gc 15518; stop: results done</div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m417-fix-f014200.jpg" alt="m417 port card1"><figcaption>port f014200</figcaption>
+<img loading="lazy" src="oracle/m417-c012246.jpg" alt="m417 console card1"><figcaption>console c012246</figcaption>
+<figcaption>sim 99% &middot; &gt;8: 5%</figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m417-fix-f014300.jpg" alt="m417 port card2"><figcaption>port f014300</figcaption>
+<img loading="lazy" src="oracle/m417-c012346.jpg" alt="m417 console card2"><figcaption>console c012346</figcaption>
+<figcaption>sim 97% &middot; &gt;8: 34%</figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m417-fix-f014400.jpg" alt="m417 port card3"><figcaption>port f014400</figcaption>
+<img loading="lazy" src="oracle/m417-c012446.jpg" alt="m417 console card3"><figcaption>console c012446</figcaption>
+<figcaption>sim 97% &middot; &gt;8: 25%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m417-fix-f014537.jpg" alt="m417 port e60"><figcaption>port f014537</figcaption>
+<img loading="lazy" src="oracle/m417-c012585.jpg" alt="m417 console e60"><figcaption>console c012585</figcaption>
+<figcaption>sim 78% &middot; &gt;8: 99%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m417-fix-f014877.jpg" alt="m417 port e400"><figcaption>port f014877</figcaption>
+<img loading="lazy" src="oracle/m417-c012925.jpg" alt="m417 console e400"><figcaption>console c012925</figcaption>
+<figcaption>sim 52% &middot; &gt;8: 99%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m417-fix-f015677.jpg" alt="m417 port e1200"><figcaption>port f015677</figcaption>
+<img loading="lazy" src="oracle/m417-c013725.jpg" alt="m417 console e1200"><figcaption>console c013725</figcaption>
+<figcaption>sim 61% &middot; &gt;8: 98%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m417-fix-f016777.jpg" alt="m417 port e2300"><figcaption>port f016777</figcaption>
+<img loading="lazy" src="oracle/m417-c014825.jpg" alt="m417 console e2300"><figcaption>console c014825</figcaption>
+<figcaption>sim 70% &middot; &gt;8: 100%</figcaption></figure>
+<figure>
+<figcaption class="lab">results</figcaption>
+<img loading="lazy" src="m417-fix-f015363.jpg" alt="m417 port results"><figcaption>port f015363</figcaption>
+<img loading="lazy" src="oracle/m417-c015204.jpg" alt="m417 console results"><figcaption>console c015204</figcaption>
+<figcaption>sim 96% &middot; &gt;8: 36%</figcaption></figure>
+</div>
+<div class="n"><b class="major">major</b>: CONFIRMED (cause C) and worse than the first pass: the console's Makin' Waves is a pool with the lone player on a raft in the middle and the three others in inner tubes pounding the deck (+60 the raft, +400 START! over the pool, +1200 the timer at 18, +2300 FINISH!, ~2,600 frames); the port shows a beige stripe at +60, START! over a cream screen at +400, and its game is over at +846 — the scene is not drawn AND the play ends early (the raft rider falls at once?), so the module's logic diverges too, not only its picture; the card and the results match<br><b>preview box</b>: still on both (console box diff 0.7)</div></div>
+<div class="g" id="m418"><div class="h">m418 &mdash; Hide and Go BOOM! <span class="m">(1-vs-3, type 1)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m418-fix-f014200.jpg" alt="m418 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m418-fix-f014300.jpg" alt="m418 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m418-fix-f014400.jpg" alt="m418 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m418-fix-f014537.jpg" alt="m418 port e60"><figcaption>port f014537</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m418-fix-f014877.jpg" alt="m418 port e400"><figcaption>port f014877</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m418-fix-f015677.jpg" alt="m418 port e1200"><figcaption>port f015677</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m418-fix-f016777.jpg" alt="m418 port e2300"><figcaption>port f016777</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m419"><div class="h">m419 &mdash; Tree Stomp <span class="m">(1-vs-3, type 1)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m419-fix-f014200.jpg" alt="m419 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m419-fix-f014300.jpg" alt="m419 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m419-fix-f014400.jpg" alt="m419 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">results</figcaption>
+<img loading="lazy" src="m419-fix-f016438.jpg" alt="m419 port results"><figcaption>port f016438</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m420"><div class="h">m420 &mdash; Fish n' Drips <span class="m">(1-vs-3, type 1)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m420-fix-f014200.jpg" alt="m420 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m420-fix-f014300.jpg" alt="m420 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m420-fix-f014400.jpg" alt="m420 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m420-fix-f014537.jpg" alt="m420 port e60"><figcaption>port f014537</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m420-fix-f014877.jpg" alt="m420 port e400"><figcaption>port f014877</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m420-fix-f015677.jpg" alt="m420 port e1200"><figcaption>port f015677</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m420-fix-f016777.jpg" alt="m420 port e2300"><figcaption>port f016777</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m421"><div class="h">m421 &mdash; Hop or Pop <span class="m">(1-vs-3, type 1)</span> <span class="m">§41: minor? &rarr;</span> <span class="match">match</span></div>
+<div class="m">console: card 9743 (first yellow frame 9749, delta None), module first frame 10082, entry gc 10433, left gc None; stop: entry +3400</div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m421-fix-f014200.jpg" alt="m421 port card1"><figcaption>port f014200</figcaption>
+<img loading="lazy" src="oracle/m421-c009807.jpg" alt="m421 console card1"><figcaption>console c009807</figcaption>
+<figcaption>sim 99% &middot; &gt;8: 5%</figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m421-fix-f014300.jpg" alt="m421 port card2"><figcaption>port f014300</figcaption>
+<img loading="lazy" src="oracle/m421-c009907.jpg" alt="m421 console card2"><figcaption>console c009907</figcaption>
+<figcaption>sim 97% &middot; &gt;8: 35%</figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m421-fix-f014400.jpg" alt="m421 port card3"><figcaption>port f014400</figcaption>
+<img loading="lazy" src="oracle/m421-c010007.jpg" alt="m421 console card3"><figcaption>console c010007</figcaption>
+<figcaption>sim 97% &middot; &gt;8: 26%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m421-fix-f014537.jpg" alt="m421 port e60"><figcaption>port f014537</figcaption>
+<img loading="lazy" src="oracle/m421-c010146.jpg" alt="m421 console e60"><figcaption>console c010146</figcaption>
+<figcaption>sim 97% &middot; &gt;8: 30%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m421-fix-f014877.jpg" alt="m421 port e400"><figcaption>port f014877</figcaption>
+<img loading="lazy" src="oracle/m421-c010486.jpg" alt="m421 console e400"><figcaption>console c010486</figcaption>
+<figcaption>sim 97% &middot; &gt;8: 49%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m421-fix-f015677.jpg" alt="m421 port e1200"><figcaption>port f015677</figcaption>
+<img loading="lazy" src="oracle/m421-c011286.jpg" alt="m421 console e1200"><figcaption>console c011286</figcaption>
+<figcaption>sim 93% &middot; &gt;8: 55%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m421-fix-f016777.jpg" alt="m421 port e2300"><figcaption>port f016777</figcaption>
+<img loading="lazy" src="oracle/m421-c012386.jpg" alt="m421 console e2300"><figcaption>console c012386</figcaption>
+<figcaption>sim 95% &middot; &gt;8: 50%</figcaption></figure>
+</div>
+<div class="n"><b class="match">match</b>: OVERTURNED (minor? → match): the console's star floor is the same washed pale yellow — the arena's floor is lit that way by design (the console's +60 close-up is as near-white as the port's); the cage, the balloon backdrop, the spiky ball, the START! and the timer (33 / 15) line up; the card matches<br><b>preview box</b>: still on both (console box diff 0.7)</div></div>
+<div class="g" id="m422"><div class="h">m422 &mdash; Money Belts <span class="m">(1-vs-3, type 1)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m422-fix-f014200.jpg" alt="m422 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m422-fix-f014300.jpg" alt="m422 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m422-fix-f014400.jpg" alt="m422 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m422-fix-f014537.jpg" alt="m422 port e60"><figcaption>port f014537</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m422-fix-f014877.jpg" alt="m422 port e400"><figcaption>port f014877</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m422-fix-f015677.jpg" alt="m422 port e1200"><figcaption>port f015677</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m422-fix-f016777.jpg" alt="m422 port e2300"><figcaption>port f016777</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m423"><div class="h">m423 &mdash; GOOOOOOOAL!! <span class="m">(1-vs-3, type 1)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m423-fix-f014200.jpg" alt="m423 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m423-fix-f014300.jpg" alt="m423 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m423-fix-f014400.jpg" alt="m423 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m423-fix-f014537.jpg" alt="m423 port e60"><figcaption>port f014537</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m423-fix-f014877.jpg" alt="m423 port e400"><figcaption>port f014877</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m423-fix-f015677.jpg" alt="m423 port e1200"><figcaption>port f015677</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m423-fix-f016777.jpg" alt="m423 port e2300"><figcaption>port f016777</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">results</figcaption>
+<img loading="lazy" src="m423-fix-f016951.jpg" alt="m423 port results"><figcaption>port f016951</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m424"><div class="h">m424 &mdash; Blame it on the Crane <span class="m">(1-vs-3, type 1)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m424-fix-f014200.jpg" alt="m424 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m424-fix-f014300.jpg" alt="m424 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m424-fix-f014400.jpg" alt="m424 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m424-fix-f014537.jpg" alt="m424 port e60"><figcaption>port f014537</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m424-fix-f014877.jpg" alt="m424 port e400"><figcaption>port f014877</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m424-fix-f015677.jpg" alt="m424 port e1200"><figcaption>port f015677</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m424-fix-f016777.jpg" alt="m424 port e2300"><figcaption>port f016777</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m425"><div class="h">m425 &mdash; The Great Deflate <span class="m">(2-vs-2, type 2)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m425-fix-f014200.jpg" alt="m425 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m425-fix-f014300.jpg" alt="m425 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m425-fix-f014400.jpg" alt="m425 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m425-fix-f014537.jpg" alt="m425 port e60"><figcaption>port f014537</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m425-fix-f014877.jpg" alt="m425 port e400"><figcaption>port f014877</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m425-fix-f015677.jpg" alt="m425 port e1200"><figcaption>port f015677</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m425-fix-f016777.jpg" alt="m425 port e2300"><figcaption>port f016777</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m426"><div class="h">m426 &mdash; Revers-a-Bomb <span class="m">(2-vs-2, type 2)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m426-fix-f014200.jpg" alt="m426 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m426-fix-f014300.jpg" alt="m426 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m426-fix-f014400.jpg" alt="m426 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m426-fix-f014537.jpg" alt="m426 port e60"><figcaption>port f014537</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m426-fix-f014877.jpg" alt="m426 port e400"><figcaption>port f014877</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m426-fix-f015677.jpg" alt="m426 port e1200"><figcaption>port f015677</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m426-fix-f016777.jpg" alt="m426 port e2300"><figcaption>port f016777</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">results</figcaption>
+<img loading="lazy" src="m426-fix-f016885.jpg" alt="m426 port results"><figcaption>port f016885</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m427"><div class="h">m427 &mdash; Right Oar Left? <span class="m">(2-vs-2, type 2)</span> <span class="m">§41: major &rarr;</span> <span class="major">major</span></div>
+<div class="m">console: card 9333 (first yellow frame None, delta None), module first frame 9673, entry gc 10023, left gc None; stop: entry +3400</div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m427-fix-f014200.jpg" alt="m427 port card1"><figcaption>port f014200</figcaption>
+<img loading="lazy" src="oracle/m427-c009397.jpg" alt="m427 console card1"><figcaption>console c009397</figcaption>
+<figcaption>sim 99% &middot; &gt;8: 7%</figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m427-fix-f014300.jpg" alt="m427 port card2"><figcaption>port f014300</figcaption>
+<img loading="lazy" src="oracle/m427-c009497.jpg" alt="m427 console card2"><figcaption>console c009497</figcaption>
+<figcaption>sim 97% &middot; &gt;8: 30%</figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m427-fix-f014400.jpg" alt="m427 port card3"><figcaption>port f014400</figcaption>
+<img loading="lazy" src="oracle/m427-c009597.jpg" alt="m427 console card3"><figcaption>console c009597</figcaption>
+<figcaption>sim 97% &middot; &gt;8: 23%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m427-fix-f014537.jpg" alt="m427 port e60"><figcaption>port f014537</figcaption>
+<img loading="lazy" src="oracle/m427-c009737.jpg" alt="m427 console e60"><figcaption>console c009737</figcaption>
+<figcaption>sim 85% &middot; &gt;8: 43%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m427-fix-f014877.jpg" alt="m427 port e400"><figcaption>port f014877</figcaption>
+<img loading="lazy" src="oracle/m427-c010077.jpg" alt="m427 console e400"><figcaption>console c010077</figcaption>
+<figcaption>sim 47% &middot; &gt;8: 89%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m427-fix-f015677.jpg" alt="m427 port e1200"><figcaption>port f015677</figcaption>
+<img loading="lazy" src="oracle/m427-c010877.jpg" alt="m427 console e1200"><figcaption>console c010877</figcaption>
+<figcaption>sim 47% &middot; &gt;8: 93%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m427-fix-f016777.jpg" alt="m427 port e2300"><figcaption>port f016777</figcaption>
+<img loading="lazy" src="oracle/m427-c011977.jpg" alt="m427 console e2300"><figcaption>console c011977</figcaption>
+<figcaption>sim 56% &middot; &gt;8: 94%</figcaption></figure>
+</div>
+<div class="n"><b class="major">major</b>: CONFIRMED (cause B): the console's cave is dark with each boat lit by its own headlamp cone on the water and the walls (the timer, the split and the lane markers match to the frame: 0'29"20 vs 0'29"25 at +2300); the port floods both views white-green from +400 on with the boats as black silhouettes — the lamp's projected texture lands on everything instead of a cone (+60, before the lamps, the port's river is dark green where the console's is near-black: the same texture already over the whole river); the card matches<br><b>preview box</b>: still on both (console box diff 0.7)</div></div>
+<div class="g" id="m428"><div class="h">m428 &mdash; Cliffhangers <span class="m">(2-vs-2, type 2)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m428-fix-f014200.jpg" alt="m428 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m428-fix-f014300.jpg" alt="m428 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m428-fix-f014400.jpg" alt="m428 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m428-fix-f014537.jpg" alt="m428 port e60"><figcaption>port f014537</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m428-fix-f014877.jpg" alt="m428 port e400"><figcaption>port f014877</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m428-fix-f015677.jpg" alt="m428 port e1200"><figcaption>port f015677</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m428-fix-f016777.jpg" alt="m428 port e2300"><figcaption>port f016777</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m429"><div class="h">m429 &mdash; Team Treasure Trek <span class="m">(2-vs-2, type 2)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m429-fix-f014200.jpg" alt="m429 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m429-fix-f014300.jpg" alt="m429 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m429-fix-f014400.jpg" alt="m429 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m429-fix-f014537.jpg" alt="m429 port e60"><figcaption>port f014537</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m429-fix-f014877.jpg" alt="m429 port e400"><figcaption>port f014877</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m429-fix-f015677.jpg" alt="m429 port e1200"><figcaption>port f015677</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m429-fix-f016777.jpg" alt="m429 port e2300"><figcaption>port f016777</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m430"><div class="h">m430 &mdash; Pair-a-sailing <span class="m">(2-vs-2, type 2)</span> <span class="m">§41: major &rarr;</span> <span class="major">major</span></div>
+<div class="m">console: card 10993 (first yellow frame None, delta None), module first frame 11331, entry gc 11683, left gc None; stop: entry +3400</div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m430-fix-f014200.jpg" alt="m430 port card1"><figcaption>port f014200</figcaption>
+<img loading="lazy" src="oracle/m430-c011057.jpg" alt="m430 console card1"><figcaption>console c011057</figcaption>
+<figcaption>sim 99% &middot; &gt;8: 7%</figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m430-fix-f014300.jpg" alt="m430 port card2"><figcaption>port f014300</figcaption>
+<img loading="lazy" src="oracle/m430-c011157.jpg" alt="m430 console card2"><figcaption>console c011157</figcaption>
+<figcaption>sim 97% &middot; &gt;8: 33%</figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m430-fix-f014400.jpg" alt="m430 port card3"><figcaption>port f014400</figcaption>
+<img loading="lazy" src="oracle/m430-c011257.jpg" alt="m430 console card3"><figcaption>console c011257</figcaption>
+<figcaption>sim 98% &middot; &gt;8: 23%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m430-fix-f014537.jpg" alt="m430 port e60"><figcaption>port f014537</figcaption>
+<img loading="lazy" src="oracle/m430-c011395.jpg" alt="m430 console e60"><figcaption>console c011395</figcaption>
+<figcaption>sim 91% &middot; &gt;8: 67%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m430-fix-f014877.jpg" alt="m430 port e400"><figcaption>port f014877</figcaption>
+<img loading="lazy" src="oracle/m430-c011735.jpg" alt="m430 console e400"><figcaption>console c011735</figcaption>
+<figcaption>sim 89% &middot; &gt;8: 73%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m430-fix-f015677.jpg" alt="m430 port e1200"><figcaption>port f015677</figcaption>
+<img loading="lazy" src="oracle/m430-c012535.jpg" alt="m430 console e1200"><figcaption>console c012535</figcaption>
+<figcaption>sim 81% &middot; &gt;8: 88%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m430-fix-f016777.jpg" alt="m430 port e2300"><figcaption>port f016777</figcaption>
+<img loading="lazy" src="oracle/m430-c013635.jpg" alt="m430 console e2300"><figcaption>console c013635</figcaption>
+<figcaption>sim 81% &middot; &gt;8: 86%</figcaption></figure>
+</div>
+<div class="n"><b class="major">major</b>: CONFIRMED (cause D): the tall black rectangle stands in the right-hand view's upper half in every port play frame; the console's right view has the sky, the clouds and the parachute over it; everything else lines up to the frame (the timer at 33 / 14, the coins, the crates, the sea) — the one column is the whole difference; the card matches<br><b>preview box</b>: still on both (console box diff 0.9)</div></div>
+<div class="g" id="m431"><div class="h">m431 &mdash; Order Up <span class="m">(2-vs-2, type 2)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m431-fix-f014200.jpg" alt="m431 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m431-fix-f014300.jpg" alt="m431 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m431-fix-f014400.jpg" alt="m431 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m431-fix-f014537.jpg" alt="m431 port e60"><figcaption>port f014537</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m431-fix-f014877.jpg" alt="m431 port e400"><figcaption>port f014877</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m431-fix-f015677.jpg" alt="m431 port e1200"><figcaption>port f015677</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m431-fix-f016777.jpg" alt="m431 port e2300"><figcaption>port f016777</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m432"><div class="h">m432 &mdash; Dungeon Duos <span class="m">(2-vs-2, type 2)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m432-fix-f014200.jpg" alt="m432 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m432-fix-f014300.jpg" alt="m432 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m432-fix-f014400.jpg" alt="m432 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m432-fix-f014537.jpg" alt="m432 port e60"><figcaption>port f014537</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m432-fix-f014877.jpg" alt="m432 port e400"><figcaption>port f014877</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m432-fix-f015677.jpg" alt="m432 port e1200"><figcaption>port f015677</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m432-fix-f016777.jpg" alt="m432 port e2300"><figcaption>port f016777</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m433"><div class="h">m433 &mdash; Beach Volley Folly <span class="m">(Extra, type 7)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m433-fix-f014200.jpg" alt="m433 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m433-fix-f014300.jpg" alt="m433 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m433-fix-f014400.jpg" alt="m433 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m433-fix-f014537.jpg" alt="m433 port e60"><figcaption>port f014537</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m433-fix-f014877.jpg" alt="m433 port e400"><figcaption>port f014877</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m433-fix-f015677.jpg" alt="m433 port e1200"><figcaption>port f015677</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m433-fix-f016777.jpg" alt="m433 port e2300"><figcaption>port f016777</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m434"><div class="h">m434 &mdash; Cheep Cheep Sweep <span class="m">(2-vs-2, type 2)</span> <span class="m">§41: major &rarr;</span> <span class="major">major</span></div>
+<div class="m">console: card 11270 (first yellow frame None, delta None), module first frame 11608, entry gc 11960, left gc None; stop: entry +3400</div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m434-fix-f014200.jpg" alt="m434 port card1"><figcaption>port f014200</figcaption>
+<img loading="lazy" src="oracle/m434-c011334.jpg" alt="m434 console card1"><figcaption>console c011334</figcaption>
+<figcaption>sim 99% &middot; &gt;8: 7%</figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m434-fix-f014300.jpg" alt="m434 port card2"><figcaption>port f014300</figcaption>
+<img loading="lazy" src="oracle/m434-c011434.jpg" alt="m434 console card2"><figcaption>console c011434</figcaption>
+<figcaption>sim 97% &middot; &gt;8: 31%</figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m434-fix-f014400.jpg" alt="m434 port card3"><figcaption>port f014400</figcaption>
+<img loading="lazy" src="oracle/m434-c011534.jpg" alt="m434 console card3"><figcaption>console c011534</figcaption>
+<figcaption>sim 97% &middot; &gt;8: 22%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m434-fix-f014537.jpg" alt="m434 port e60"><figcaption>port f014537</figcaption>
+<img loading="lazy" src="oracle/m434-c011672.jpg" alt="m434 console e60"><figcaption>console c011672</figcaption>
+<figcaption>sim 88% &middot; &gt;8: 69%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m434-fix-f014877.jpg" alt="m434 port e400"><figcaption>port f014877</figcaption>
+<img loading="lazy" src="oracle/m434-c012012.jpg" alt="m434 console e400"><figcaption>console c012012</figcaption>
+<figcaption>sim 93% &middot; &gt;8: 56%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m434-fix-f015677.jpg" alt="m434 port e1200"><figcaption>port f015677</figcaption>
+<img loading="lazy" src="oracle/m434-c012812.jpg" alt="m434 console e1200"><figcaption>console c012812</figcaption>
+<figcaption>sim 92% &middot; &gt;8: 61%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m434-fix-f016777.jpg" alt="m434 port e2300"><figcaption>port f016777</figcaption>
+<img loading="lazy" src="oracle/m434-c013912.jpg" alt="m434 console e2300"><figcaption>console c013912</figcaption>
+<figcaption>sim 92% &middot; &gt;8: 60%</figcaption></figure>
+</div>
+<div class="n"><b class="major">major</b>: CONFIRMED (cause B, the water surface): the console's pond has a translucent grey-blue water surface over the stone floor with the fish and the wading players seen through it (+60: the water already in the close-up, blue-grey at the bottom of the frame); the port's fix build shows the bare stone floor with the fish on it — the opaque black disc of M25 is gone, the surface is still not drawn; the timer (48 / 29) and the play line up; the card matches<br><b>preview box</b>: still on both (console box diff 0.8)</div></div>
+<div class="g" id="m435"><div class="h">m435 &mdash; Darts of Doom <span class="m">(Bowser, type 3)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m435-fix-f014200.jpg" alt="m435 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m435-fix-f014300.jpg" alt="m435 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m435-fix-f014400.jpg" alt="m435 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m435-fix-f014204.jpg" alt="m435 port e60"><figcaption>port f014204</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m435-fix-f014544.jpg" alt="m435 port e400"><figcaption>port f014544</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m435-fix-f015344.jpg" alt="m435 port e1200"><figcaption>port f015344</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m435-fix-f016444.jpg" alt="m435 port e2300"><figcaption>port f016444</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">results</figcaption>
+<img loading="lazy" src="m435-fix-f015344.jpg" alt="m435 port results"><figcaption>port f015344</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m436"><div class="h">m436 &mdash; Fruits of Doom <span class="m">(Bowser, type 3)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m436-fix-f014200.jpg" alt="m436 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m436-fix-f014300.jpg" alt="m436 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m436-fix-f014400.jpg" alt="m436 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m436-fix-f014204.jpg" alt="m436 port e60"><figcaption>port f014204</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m436-fix-f014544.jpg" alt="m436 port e400"><figcaption>port f014544</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m436-fix-f015344.jpg" alt="m436 port e1200"><figcaption>port f015344</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m436-fix-f016444.jpg" alt="m436 port e2300"><figcaption>port f016444</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">results</figcaption>
+<img loading="lazy" src="m436-fix-f015344.jpg" alt="m436 port results"><figcaption>port f015344</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m437"><div class="h">m437 &mdash; Balloon of Doom <span class="m">(Bowser, type 3)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m437-fix-f014200.jpg" alt="m437 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m437-fix-f014300.jpg" alt="m437 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m437-fix-f014400.jpg" alt="m437 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m437-fix-f014203.jpg" alt="m437 port e60"><figcaption>port f014203</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m437-fix-f014543.jpg" alt="m437 port e400"><figcaption>port f014543</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m437-fix-f015343.jpg" alt="m437 port e1200"><figcaption>port f015343</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m437-fix-f016443.jpg" alt="m437 port e2300"><figcaption>port f016443</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">results</figcaption>
+<img loading="lazy" src="m437-fix-f015343.jpg" alt="m437 port results"><figcaption>port f015343</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m438"><div class="h">m438 &mdash; Chain Chomp Fever <span class="m">(Battle, type 4)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m438-fix-f014200.jpg" alt="m438 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m438-fix-f014300.jpg" alt="m438 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m438-fix-f014400.jpg" alt="m438 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">results</figcaption>
+<img loading="lazy" src="m438-fix-f016679.jpg" alt="m438 port results"><figcaption>port f016679</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m439"><div class="h">m439 &mdash; Paths of Peril <span class="m">(Battle, type 4)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m439-fix-f014200.jpg" alt="m439 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m439-fix-f014300.jpg" alt="m439 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m439-fix-f014400.jpg" alt="m439 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m440"><div class="h">m440 &mdash; Bowser's Bigger Blast <span class="m">(Battle, type 4)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m440-fix-f014200.jpg" alt="m440 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m440-fix-f014300.jpg" alt="m440 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m440-fix-f014400.jpg" alt="m440 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m440-fix-f014537.jpg" alt="m440 port e60"><figcaption>port f014537</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m440-fix-f014877.jpg" alt="m440 port e400"><figcaption>port f014877</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m440-fix-f015677.jpg" alt="m440 port e1200"><figcaption>port f015677</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m440-fix-f016777.jpg" alt="m440 port e2300"><figcaption>port f016777</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m441"><div class="h">m441 &mdash; Butterfly Blitz <span class="m">(Battle, type 4)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m441-fix-f014200.jpg" alt="m441 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m441-fix-f014300.jpg" alt="m441 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m441-fix-f014400.jpg" alt="m441 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m441-fix-f014537.jpg" alt="m441 port e60"><figcaption>port f014537</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m441-fix-f014877.jpg" alt="m441 port e400"><figcaption>port f014877</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m441-fix-f015677.jpg" alt="m441 port e1200"><figcaption>port f015677</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m441-fix-f016777.jpg" alt="m441 port e2300"><figcaption>port f016777</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m442"><div class="h">m442 &mdash; Barrel Baron <span class="m">(Extra, type 7)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m442-fix-f014200.jpg" alt="m442 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m442-fix-f014300.jpg" alt="m442 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m442-fix-f014400.jpg" alt="m442 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m442-fix-f014537.jpg" alt="m442 port e60"><figcaption>port f014537</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m442-fix-f014877.jpg" alt="m442 port e400"><figcaption>port f014877</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m442-fix-f015677.jpg" alt="m442 port e1200"><figcaption>port f015677</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m442-fix-f016777.jpg" alt="m442 port e2300"><figcaption>port f016777</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m443"><div class="h">m443 &mdash; Mario Speedwagons <span class="m">(4-player, type 0)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m443-fix-f014200.jpg" alt="m443 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m443-fix-f014300.jpg" alt="m443 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m443-fix-f014400.jpg" alt="m443 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m443-fix-f014537.jpg" alt="m443 port e60"><figcaption>port f014537</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m443-fix-f014877.jpg" alt="m443 port e400"><figcaption>port f014877</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m443-fix-f015677.jpg" alt="m443 port e1200"><figcaption>port f015677</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m443-fix-f016777.jpg" alt="m443 port e2300"><figcaption>port f016777</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">results</figcaption>
+<img loading="lazy" src="m443-fix-f016386.jpg" alt="m443 port results"><figcaption>port f016386</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m444"><div class="h">m444 &mdash; Reversal of Fortune <span class="m">(Item, type 5)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m444-fix-f014200.jpg" alt="m444 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m444-fix-f014300.jpg" alt="m444 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m444-fix-f014400.jpg" alt="m444 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m444-fix-f014203.jpg" alt="m444 port e60"><figcaption>port f014203</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m444-fix-f014543.jpg" alt="m444 port e400"><figcaption>port f014543</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m444-fix-f015343.jpg" alt="m444 port e1200"><figcaption>port f015343</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m444-fix-f016443.jpg" alt="m444 port e2300"><figcaption>port f016443</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">results</figcaption>
+<img loading="lazy" src="m444-fix-f015343.jpg" alt="m444 port results"><figcaption>port f015343</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m445"><div class="h">m445 &mdash; Bowser Bop <span class="m">(Story, type 6)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m445-fix-f014200.jpg" alt="m445 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m445-fix-f014300.jpg" alt="m445 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m445-fix-f014400.jpg" alt="m445 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m445-fix-f014203.jpg" alt="m445 port e60"><figcaption>port f014203</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m445-fix-f014543.jpg" alt="m445 port e400"><figcaption>port f014543</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m445-fix-f015343.jpg" alt="m445 port e1200"><figcaption>port f015343</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m445-fix-f016443.jpg" alt="m445 port e2300"><figcaption>port f016443</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">results</figcaption>
+<img loading="lazy" src="m445-fix-f015343.jpg" alt="m445 port results"><figcaption>port f015343</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m446"><div class="h">m446 &mdash; Mystic Match 'Em <span class="m">(Story, type 6)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m446-fix-f014200.jpg" alt="m446 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m446-fix-f014300.jpg" alt="m446 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m446-fix-f014400.jpg" alt="m446 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m446-fix-f014203.jpg" alt="m446 port e60"><figcaption>port f014203</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m446-fix-f014543.jpg" alt="m446 port e400"><figcaption>port f014543</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m446-fix-f015343.jpg" alt="m446 port e1200"><figcaption>port f015343</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m446-fix-f016443.jpg" alt="m446 port e2300"><figcaption>port f016443</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">results</figcaption>
+<img loading="lazy" src="m446-fix-f015343.jpg" alt="m446 port results"><figcaption>port f015343</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m447"><div class="h">m447 &mdash; Archaeologuess <span class="m">(Story, type 6)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m447-fix-f014200.jpg" alt="m447 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m447-fix-f014300.jpg" alt="m447 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m447-fix-f014400.jpg" alt="m447 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m447-fix-f014203.jpg" alt="m447 port e60"><figcaption>port f014203</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m447-fix-f014543.jpg" alt="m447 port e400"><figcaption>port f014543</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m447-fix-f015343.jpg" alt="m447 port e1200"><figcaption>port f015343</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m447-fix-f016443.jpg" alt="m447 port e2300"><figcaption>port f016443</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">results</figcaption>
+<img loading="lazy" src="m447-fix-f015343.jpg" alt="m447 port results"><figcaption>port f015343</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m448"><div class="h">m448 &mdash; Goomba's Chip Flip <span class="m">(Story, type 6)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m448-fix-f014200.jpg" alt="m448 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m448-fix-f014300.jpg" alt="m448 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m448-fix-f014400.jpg" alt="m448 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m448-fix-f014203.jpg" alt="m448 port e60"><figcaption>port f014203</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m448-fix-f014543.jpg" alt="m448 port e400"><figcaption>port f014543</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m448-fix-f015343.jpg" alt="m448 port e1200"><figcaption>port f015343</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m448-fix-f016443.jpg" alt="m448 port e2300"><figcaption>port f016443</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">results</figcaption>
+<img loading="lazy" src="m448-fix-f015343.jpg" alt="m448 port results"><figcaption>port f015343</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m449"><div class="h">m449 &mdash; Kareening Koopa <span class="m">(Story, type 6)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m449-fix-f014200.jpg" alt="m449 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m449-fix-f014300.jpg" alt="m449 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m449-fix-f014400.jpg" alt="m449 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m449-fix-f014203.jpg" alt="m449 port e60"><figcaption>port f014203</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m449-fix-f014543.jpg" alt="m449 port e400"><figcaption>port f014543</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m449-fix-f015343.jpg" alt="m449 port e1200"><figcaption>port f015343</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m449-fix-f016443.jpg" alt="m449 port e2300"><figcaption>port f016443</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">results</figcaption>
+<img loading="lazy" src="m449-fix-f015343.jpg" alt="m449 port results"><figcaption>port f015343</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m450"><div class="h">m450 &mdash; The Final Battle! <span class="m">(Story/Extra, type 8)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m450-fix-f014200.jpg" alt="m450 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m450-fix-f014300.jpg" alt="m450 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m450-fix-f014400.jpg" alt="m450 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m450-fix-f014204.jpg" alt="m450 port e60"><figcaption>port f014204</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m450-fix-f014544.jpg" alt="m450 port e400"><figcaption>port f014544</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m450-fix-f015344.jpg" alt="m450 port e1200"><figcaption>port f015344</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m450-fix-f016444.jpg" alt="m450 port e2300"><figcaption>port f016444</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">results</figcaption>
+<img loading="lazy" src="m450-fix-f015344.jpg" alt="m450 port results"><figcaption>port f015344</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m451"><div class="h">m451 &mdash; Jigsaw Jitters <span class="m">(Extra, type 7)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m451-fix-f014200.jpg" alt="m451 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m451-fix-f014300.jpg" alt="m451 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m451-fix-f014400.jpg" alt="m451 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m451-fix-f014537.jpg" alt="m451 port e60"><figcaption>port f014537</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m451-fix-f014877.jpg" alt="m451 port e400"><figcaption>port f014877</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m451-fix-f015677.jpg" alt="m451 port e1200"><figcaption>port f015677</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m451-fix-f016777.jpg" alt="m451 port e2300"><figcaption>port f016777</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m452"><div class="h">m452 &mdash; The Final Battle! (variant 2, m450dll) <span class="m">(Extra, type 7)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m452-fix-f014200.jpg" alt="m452 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m452-fix-f014300.jpg" alt="m452 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m452-fix-f014400.jpg" alt="m452 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m453"><div class="h">m453 &mdash; Challenge Booksquirm <span class="m">(Extra, type 7)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m453-fix-f014200.jpg" alt="m453 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m453-fix-f014300.jpg" alt="m453 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m453-fix-f014400.jpg" alt="m453 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m453-fix-f014537.jpg" alt="m453 port e60"><figcaption>port f014537</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m453-fix-f014877.jpg" alt="m453 port e400"><figcaption>port f014877</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m453-fix-f015677.jpg" alt="m453 port e1200"><figcaption>port f015677</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m453-fix-f016777.jpg" alt="m453 port e2300"><figcaption>port f016777</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">results</figcaption>
+<img loading="lazy" src="m453-fix-f016295.jpg" alt="m453 port results"><figcaption>port f016295</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m454"><div class="h">m454 &mdash; The Final Battle! (variant 3, m450dll) <span class="m">(Extra, type 7)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m454-fix-f014200.jpg" alt="m454 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m454-fix-f014300.jpg" alt="m454 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m454-fix-f014400.jpg" alt="m454 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m455"><div class="h">m455 &mdash; Rumble Fishing <span class="m">(Battle, type 4)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m455-fix-f014200.jpg" alt="m455 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m455-fix-f014300.jpg" alt="m455 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m455-fix-f014400.jpg" alt="m455 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m455-fix-f014537.jpg" alt="m455 port e60"><figcaption>port f014537</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m455-fix-f014877.jpg" alt="m455 port e400"><figcaption>port f014877</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m455-fix-f015677.jpg" alt="m455 port e1200"><figcaption>port f015677</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m455-fix-f016777.jpg" alt="m455 port e2300"><figcaption>port f016777</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m456"><div class="h">m456 &mdash; Take a Breather <span class="m">(4-player, type 0)</span> <span class="m">§41: minor &rarr;</span> <span class="match">match</span></div>
+<div class="m">console: card 10568 (first yellow frame None, delta None), module first frame 10906, entry gc 11258, left gc 12878; stop: results done</div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m456-fix-f014200.jpg" alt="m456 port card1"><figcaption>port f014200</figcaption>
+<img loading="lazy" src="oracle/m456-c010632.jpg" alt="m456 console card1"><figcaption>console c010632</figcaption>
+<figcaption>sim 99% &middot; &gt;8: 8%</figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m456-fix-f014300.jpg" alt="m456 port card2"><figcaption>port f014300</figcaption>
+<img loading="lazy" src="oracle/m456-c010732.jpg" alt="m456 console card2"><figcaption>console c010732</figcaption>
+<figcaption>sim 97% &middot; &gt;8: 32%</figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m456-fix-f014400.jpg" alt="m456 port card3"><figcaption>port f014400</figcaption>
+<img loading="lazy" src="oracle/m456-c010832.jpg" alt="m456 console card3"><figcaption>console c010832</figcaption>
+<figcaption>sim 97% &middot; &gt;8: 26%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m456-fix-f014537.jpg" alt="m456 port e60"><figcaption>port f014537</figcaption>
+<img loading="lazy" src="oracle/m456-c010970.jpg" alt="m456 console e60"><figcaption>console c010970</figcaption>
+<figcaption>sim 98% &middot; &gt;8: 22%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m456-fix-f014877.jpg" alt="m456 port e400"><figcaption>port f014877</figcaption>
+<img loading="lazy" src="oracle/m456-c011310.jpg" alt="m456 console e400"><figcaption>console c011310</figcaption>
+<figcaption>sim 95% &middot; &gt;8: 64%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m456-fix-f015677.jpg" alt="m456 port e1200"><figcaption>port f015677</figcaption>
+<img loading="lazy" src="oracle/m456-c012110.jpg" alt="m456 console e1200"><figcaption>console c012110</figcaption>
+<figcaption>sim 93% &middot; &gt;8: 65%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m456-fix-f016777.jpg" alt="m456 port e2300"><figcaption>port f016777</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">results</figcaption>
+<img loading="lazy" src="m456-fix-f016089.jpg" alt="m456 port results"><figcaption>port f016089</figcaption>
+<img loading="lazy" src="oracle/m456-c012564.jpg" alt="m456 console results"><figcaption>console c012564</figcaption>
+<figcaption>sim 96% &middot; &gt;8: 40%</figcaption></figure>
+</div>
+<div class="n"><b class="match">match</b>: OVERTURNED (minor → match): the console's swimmers are just as low in the water — heads and hands at the surface (the console's +1200 shows FINISH! arriving at 0'04"80 with Mario, Luigi and Peach bobbing; the port's +1200 at 0'09"00 shows the same four bobbing, its run lasting longer); the rafts, the sea, the reef, the lens flare at +60 and the sky match; the card and the results match<br><b>preview box</b>: still on both (console box diff 0.6)</div></div>
+<div class="g" id="m457"><div class="h">m457 &mdash; Bowser Wrestling <span class="m">(Story/Extra, type 8)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m457-fix-f014200.jpg" alt="m457 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m457-fix-f014300.jpg" alt="m457 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m457-fix-f014400.jpg" alt="m457 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m457-fix-f014204.jpg" alt="m457 port e60"><figcaption>port f014204</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m457-fix-f014544.jpg" alt="m457 port e400"><figcaption>port f014544</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m457-fix-f015344.jpg" alt="m457 port e1200"><figcaption>port f015344</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m457-fix-f016444.jpg" alt="m457 port e2300"><figcaption>port f016444</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">results</figcaption>
+<img loading="lazy" src="m457-fix-f015344.jpg" alt="m457 port results"><figcaption>port f015344</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m458"><div class="h">m458 &mdash; Panels of Doom <span class="m">(Story/Extra, type 8)</span> <span class="m">§41: faulted &rarr;</span> <span class="port-faulted">port-faulted</span></div>
+<div class="m">console: card None (first yellow frame None, delta None), module first frame 10170, entry gc 10522, left gc 13759; stop: entry +3400</div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m458-fix-f014200.jpg" alt="m458 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m458-fix-f014300.jpg" alt="m458 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m458-fix-f014400.jpg" alt="m458 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m458-fix-f014204.jpg" alt="m458 port e60"><figcaption>port f014204</figcaption>
+<img loading="lazy" src="oracle/m458-c010234.jpg" alt="m458 console e60"><figcaption>console c010234</figcaption>
+<figcaption>sim 99% &middot; &gt;8: 10%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m458-fix-f014544.jpg" alt="m458 port e400"><figcaption>port f014544</figcaption>
+<img loading="lazy" src="oracle/m458-c010574.jpg" alt="m458 console e400"><figcaption>console c010574</figcaption>
+<figcaption>sim 99% &middot; &gt;8: 14%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<div class="miss">port: none (the game ran on)</div>
+<img loading="lazy" src="oracle/m458-c011374.jpg" alt="m458 console e1200"><figcaption>console c011374</figcaption>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<div class="miss">port: none (the game ran on)</div>
+<img loading="lazy" src="oracle/m458-c012474.jpg" alt="m458 console e2300"><figcaption>console c012474</figcaption>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">results</figcaption>
+<div class="miss">port: none (the game ran on)</div>
+<img loading="lazy" src="oracle/m458-c013445.jpg" alt="m458 console results"><figcaption>console c013445</figcaption>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="port-faulted">port-faulted</b>: the console plays Panels of Doom through (+60 the 3x3 panels, +400 the title plate, +1200 Mario and Bowser on the panels with the Roll prompt, +2300 panels dropped, then the results); the port's frames up to the fault (+56/+156/+256/+400) match the console's, then SIGBUS in the REL after the panel pick (§41 cause E) — a logic fault, not a picture fault<br><b>preview box</b>: no card (type 8)</div></div>
+<div class="g" id="m459"><div class="h">m459 &mdash; Mushroom Medic <span class="m">(Extra, type 7)</span> <span class="m">§41: faulted &rarr;</span> <span class="port-faulted">port-faulted</span></div>
+<div class="m">console: card 11532 (first yellow frame None, delta None), module first frame 11872, entry gc 12222, left gc None; stop: entry +3400</div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m459-fix-f014200.jpg" alt="m459 port card1"><figcaption>port f014200</figcaption>
+<img loading="lazy" src="oracle/m459-c011596.jpg" alt="m459 console card1"><figcaption>console c011596</figcaption>
+<figcaption>sim 99% &middot; &gt;8: 8%</figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m459-fix-f014300.jpg" alt="m459 port card2"><figcaption>port f014300</figcaption>
+<img loading="lazy" src="oracle/m459-c011696.jpg" alt="m459 console card2"><figcaption>console c011696</figcaption>
+<figcaption>sim 97% &middot; &gt;8: 32%</figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m459-fix-f014400.jpg" alt="m459 port card3"><figcaption>port f014400</figcaption>
+<img loading="lazy" src="oracle/m459-c011796.jpg" alt="m459 console card3"><figcaption>console c011796</figcaption>
+<figcaption>sim 97% &middot; &gt;8: 28%</figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<div class="miss">port: none (the game ran on)</div>
+<img loading="lazy" src="oracle/m459-c011936.jpg" alt="m459 console e60"><figcaption>console c011936</figcaption>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<div class="miss">port: none (the game ran on)</div>
+<img loading="lazy" src="oracle/m459-c012276.jpg" alt="m459 console e400"><figcaption>console c012276</figcaption>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<div class="miss">port: none (the game ran on)</div>
+<img loading="lazy" src="oracle/m459-c013076.jpg" alt="m459 console e1200"><figcaption>console c013076</figcaption>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<div class="miss">port: none (the game ran on)</div>
+<img loading="lazy" src="oracle/m459-c014176.jpg" alt="m459 console e2300"><figcaption>console c014176</figcaption>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="port-faulted">port-faulted</b>: the console plays Mushroom Medic (a hospital room: Koopa, Shy Guys, a Goomba and Toad in a row, START!, the timer at 08 at +1200, +2300 the patients changed); the port dies in HEAP_HEAP at the module's setup (§41 cause E) so it has no play frame; the card is the same on both sides — and on both it is titled "Panels of Doom" with m458's picture and a rules text reading just "Mario": mgInfoTbl[58]'s card strings are wrong in the game's own data (an Extra-room game the roulette never deals), not a port fault<br><b>preview box</b>: still on both (console box diff 0.5)</div></div>
+<div class="g" id="m460"><div class="h">m460 &mdash; Doors of Doom <span class="m">(Extra, type 7)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m460-fix-f014200.jpg" alt="m460 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m460-fix-f014300.jpg" alt="m460 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m460-fix-f014400.jpg" alt="m460 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m460-fix-f014537.jpg" alt="m460 port e60"><figcaption>port f014537</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m460-fix-f014877.jpg" alt="m460 port e400"><figcaption>port f014877</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m460-fix-f015677.jpg" alt="m460 port e1200"><figcaption>port f015677</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m460-fix-f016777.jpg" alt="m460 port e2300"><figcaption>port f016777</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">results</figcaption>
+<img loading="lazy" src="m460-fix-f015420.jpg" alt="m460 port results"><figcaption>port f015420</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m461"><div class="h">m461 &mdash; Bob-omb X-ing <span class="m">(Extra, type 7)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m461-fix-f014200.jpg" alt="m461 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m461-fix-f014300.jpg" alt="m461 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m461-fix-f014400.jpg" alt="m461 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m461-fix-f014537.jpg" alt="m461 port e60"><figcaption>port f014537</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m461-fix-f014877.jpg" alt="m461 port e400"><figcaption>port f014877</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m461-fix-f015677.jpg" alt="m461 port e1200"><figcaption>port f015677</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m461-fix-f016777.jpg" alt="m461 port e2300"><figcaption>port f016777</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">results</figcaption>
+<img loading="lazy" src="m461-fix-f015774.jpg" alt="m461 port results"><figcaption>port f015774</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m462"><div class="h">m462 &mdash; Goomba Stomp <span class="m">(Extra, type 7)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m462-fix-f014200.jpg" alt="m462 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m462-fix-f014300.jpg" alt="m462 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m462-fix-f014400.jpg" alt="m462 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m462-fix-f014537.jpg" alt="m462 port e60"><figcaption>port f014537</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m462-fix-f014877.jpg" alt="m462 port e400"><figcaption>port f014877</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m462-fix-f015677.jpg" alt="m462 port e1200"><figcaption>port f015677</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m462-fix-f016777.jpg" alt="m462 port e2300"><figcaption>port f016777</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>
+<div class="g" id="m463"><div class="h">m463 &mdash; Panel Panic 9 Player <span class="m">(Extra, type 7)</span> <span class="m">§41: ok &rarr;</span> <span class="?">?</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">card +64 (walk 14200)</figcaption>
+<img loading="lazy" src="m463-fix-f014200.jpg" alt="m463 port card1"><figcaption>port f014200</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +164 (14300)</figcaption>
+<img loading="lazy" src="m463-fix-f014300.jpg" alt="m463 port card2"><figcaption>port f014300</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">card +264 (14400)</figcaption>
+<img loading="lazy" src="m463-fix-f014400.jpg" alt="m463 port card3"><figcaption>port f014400</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +60</figcaption>
+<img loading="lazy" src="m463-fix-f014537.jpg" alt="m463 port e60"><figcaption>port f014537</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +400</figcaption>
+<img loading="lazy" src="m463-fix-f014877.jpg" alt="m463 port e400"><figcaption>port f014877</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +1200</figcaption>
+<img loading="lazy" src="m463-fix-f015677.jpg" alt="m463 port e1200"><figcaption>port f015677</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+<figure>
+<figcaption class="lab">entry +2300</figcaption>
+<img loading="lazy" src="m463-fix-f016777.jpg" alt="m463 port e2300"><figcaption>port f016777</figcaption>
+<div class="miss">console: not captured</div>
+<figcaption></figcaption></figure>
+</div>
+<div class="n"><b class="?">?</b>: </div></div>

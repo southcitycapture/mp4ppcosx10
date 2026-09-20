@@ -445,3 +445,76 @@ the console's at ~12,150 on this schedule).
   washed white-green with the boats as black silhouettes: the lamp's
   projection landing everywhere (cause A of PLAN.md §41.3); the fixed
   build is compared in §41.5.
+
+## The M26b oracle sweep (2026-09-20, capture on littlejelly, PLAN.md §41b)
+
+Every `mgInfoTbl` entry captured on Dolphin with the port's gallery schedule
+(`port/tools/gallery_chain.sh`), one run a game, the console's seven frames
+picked by event and put beside the port's in `port/docs/gallery/compare.html`
+(console JPEGs in `port/docs/gallery/oracle/mNNN-cNNNNNN.jpg`, the number =
+Dolphin's dump index).  Tools: `~/mp4-sweep-work/{capture.py,analyse.py,
+compare.py,chain.sh}` on littlejelly (scratch, not in the repo; the schedule
+template is reproduced below).
+
+**Schedule per game** = `m406-end.txt` (the board-start walk, the four
+`iscom` pokes) with, per game:
+
+* `GWPlayerCfg[i].group` (8018FC16 / FC20 / FC2A / FC34) = `park_minigame()`'s
+  assignment for the game's type: **type 1 (1-vs-3) → 0,1,1,1; type 2
+  (2-vs-2) → 0,0,1,1; every other type (0, 3, 4, 5, 6, 7, 8) → 0,1,2,3**
+  (selfplay.c's `default:` arm; the Bowser games (3), the item game (5), the
+  story games (6, 8) and the Extra games (7) get the 4-player split, exactly
+  as the port's chain did — m430's own reshuffle in instDll and the story
+  games' Mario-vs-Bowser casting are the game's, not the harness's);
+* `poke 8018FD2C 2 <index> 9000` — `GWSystem.mg_next`, as before;
+* **new: `poke 801D4208 2 <index> 9000`** — `mg_setup.c`'s static `mgNext`
+  (`.sbss`, symbols.txt), the roulette's own pick.  The board preloads
+  `mgInfoTbl[mgNext].data_dir` *before* it copies `mgNext` into
+  `GWSystem.mg_next` (mg_setup.c:268–290), so the M26 captures had TWO
+  directory images in `HEAP_DVD` (the roulette's pick and the poked game's)
+  and m402 ran the console out of it (`OSPanic dvd.c:75`).  With `mgNext`
+  poked too the board preloads the target itself — the retail path, one
+  image — and m402 plays.  Side effect: the card's `HuDataDirReadAsync` finds
+  the image already resident, so the console's card-to-module white is ~6
+  frames, not the ~116 of the 2026-09-19 m416 capture.
+
+The stop is the game's own state, not a clock: `MemoryWatcher` on
+`GlobalCounter` / `VCounter` / `omcurovl` (Locations.txt: 801D3A54 801D3A58
+801D3CE0; the USA `ovl_table.h` skips the `VERSION_JP` block, so instdll = 3,
+m401dll..m463dll = 9..69, resultdll = 84, w01dll = 89), Dolphin killed 700
+GC after the module is left or 3,400 GC after it is entered, ~4.5 min a
+game at ~110 dump fps (no audio, FFV1 AVI), the AVI split by ffmpeg from
+dump frame 10,001 on (`select=gte(n,10000)`, `-vsync 0`), ~60 s and 1.2 GB
+a game, deleted after the eight frames are picked.
+
+**The calibration (m416, both sides known).**  The port's dump frames are
+present-count frames: instDll's link at 14136 → the card frames
+14200/14300/14400 = instDll **+64/+164/+264**; the module's link at 14471
+(the ovllog; `mgdump: entered … 14477` counts retraces, six ahead after
+`--ffto`) → the in-module frames 14537/14877/15677/16777 = link
+**+66/+406/+1206/+2306**; the results frame = the module left +40.  On the
+console (dump indices of this sweep's m416): the first frame with the
+card's yellow polka-dot background dominant is 10610, and the port's 14300
+matches 10768 at a mean difference of 4.4 levels → the console's instDll
+link I_c = 10604 (first-yellow − 6; the template match is run for every
+game within ±14 and lands on −6 ± 2), card frames I_c+64/164/264 =
+10668/10768/10868 — the book, the card with Toad, the zoom with Toad's
+head: the same three pictures as the port's, frame for frame.  The card's
+wipe-out is fully white 10936–10940; instDll links the module two frames
+after the wipe ends (instMode 6, one VSleep, `omOvlCallEx`), so the module
+link L_c = (first non-fully-white frame S_c = 10941) − 2 = 10939, and
++66/+406/+1206/+2306 = 11005/11345/12145/13245: the lit intro with the four
+in place, the START! banner at full size, the timer at 19 — the port's
+14537/14877/15677 show the same three moments (the banner's full-size
+plateau is ~30 frames wide; the timer's 19 is a 60-frame window, and
+L_c+1206 sits inside it).  For the no-card types (3/5/6/8) S_c is the first
+non-fully-white frame after the board's white-out.  The results frame =
+the first drawn results frame + 38 (the module's fade-to-white peaks for
+~4 frames; resultDll's first drawn frame is ~2 after its link).  Note the
+user's own rule of thumb "port entry 95,487 → first scene ~95,500" (+13)
+is the frame the scene is *recognisable* through the 60-frame wipe-in; the
+first non-fully-white frame is +2 to +3, which is what this sweep anchors
+on.  Dump index vs GlobalCounter: the dump count runs ~350 *behind*
+GlobalCounter at the module (10939 vs 11294) and 1,900 behind the
+2026-09-19 m416 capture's indices (12,500 for the card) — the index is a
+file name, never a frame number (reference-dolphin.md §6).
