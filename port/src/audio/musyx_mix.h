@@ -51,6 +51,14 @@ void port_musyx_mix_frame(short* dest);
 #define MIX_PLAN_SKIP 0  /* the value half has nothing to do for this voice */
 #define MIX_PLAN_RUN 1   /* a voice already playing */
 #define MIX_PLAN_START 2 /* started this frame: prime from `mv`, then run */
+#define MIX_PLAN_CLEAR 3 /* M25: a start the control half REFUSED (a zero-length
+                          * one-shot, an envelope that is done at once, an
+                          * unreadable sample): its MixVoice is zeroed on both
+                          * sides.  Before M25 the plan said SKIP and the value
+                          * half kept the slot's previous voice -- live, if
+                          * MusyX had stopped it and reused the slot -- which the
+                          * join then took back: the soak's 14 mismatches in
+                          * 254,573 joins (PLAN.md 40.1) */
 typedef struct MixVoicePlan {
     u8 vi, studio, action, has_note;
     DSPvoice dv;

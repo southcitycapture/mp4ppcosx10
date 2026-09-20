@@ -1128,6 +1128,7 @@ static void writeback_current_addr(DSPvoice* dv, const MixVoice* mv) {
  * for the mismatch line -- the soak's 14 mismatches in 254,573 joins were
  * all "control all zeros, value live", and the line below did not say what
  * the control half had done with the slot in that tick. */
+static unsigned long stat_voices_refused; /* M25: starts start_voice_init refused */
 static u8 diag_last_action[64];
 static u8 diag_last_state[64];
 static u8 diag_last_refused[64];
@@ -1174,6 +1175,12 @@ MIX_INLINE void render_voice(int mode, DSPvoice* dv, MixVoice* mv, DSPstudioinfo
         if (plan->action == MIX_PLAN_SKIP) {
             return;
         }
+        if (plan->action == MIX_PLAN_CLEAR) {
+            /* M25: the control half refused this slot's start and zeroed its
+             * entry; the same bytes here, so the join is exact */
+            memset(mv, 0, sizeof(*mv));
+            return;
+        }
         if (plan->action == MIX_PLAN_START) {
             memcpy(mv, plan->mv, sizeof(*mv));
             if (plan->has_note) {
@@ -1191,7 +1198,8 @@ MIX_INLINE void render_voice(int mode, DSPvoice* dv, MixVoice* mv, DSPstudioinfo
                  * traces compare */
                 memset(mv, 0, sizeof(*mv));
                 if (mode == MIX_CTL) {
-                    plan->action = MIX_PLAN_SKIP;
+                    plan->action = MIX_PLAN_CLEAR; /* M25: not SKIP -- see musyx_mix.h */
+                    stat_voices_refused++;
                     diag_last_refused[plan->vi] = 1;
                     diag_last_action[plan->vi] = 3;
                     diag_last_frame[plan->vi] = stat_frames_mixed;
@@ -2239,6 +2247,12 @@ void port_musyx_mix_report(void) {
         port_log("port> musyx_mix: %lu ADPCM voice(s) refused for a missing extraData "
                  "block\n",
                  stat_voices_no_extradata);
+    }
+    if (stat_voices_refused) {
+        port_log("port> musyx_mix: %lu start(s) refused by start_voice_init (a zero-length "
+                 "one-shot, an envelope done at once, an unreadable sample); the slot's "
+                 "entry cleared on both halves (M25)\n",
+                 stat_voices_refused);
     }
     if (stat_bad_sample_addr) {
         port_log("port> musyx_mix: %lu sample address(es) resolved to neither ARAM nor "

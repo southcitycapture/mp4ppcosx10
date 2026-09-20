@@ -12420,3 +12420,436 @@ the final build (`isle` md5 `1ba0a29c…`; the M24 bundle is kept as
 `~/MarioParty4-m24.app`, the M23 one as `~/MarioParty4-m23.app` for the
 `m416-corrupt-f095000.snap` ring). M25 reads it as §39.8 says, plus:
 the next m416 (or any afterimage minigame) it deals is worth a `g4 shot`.
+## 40. M25 log — the machine the port has never seen *(2026-09-20, littlejelly)*
+
+M25's brief was the machine check: the port has run on exactly one PowerPC
+Mac — a dual 1 GHz Power Mac G4 (PowerMac3,5) with a 64 MB Radeon 9000
+under 10.5.4 — and the user is going to hand it to people with other G4s.
+Every extension the renderer leans on was read off that card's list
+(`docs/g4-glinfo.log`) and never asked for again. `port_machine_check()`
+now asks the machine it is on the same questions before the window opens,
+prints an inventory and a verdict with a line per reason, applies the
+settings the verdict implies and says why, and refuses (without `--force`)
+on a machine that cannot draw the game (§40.2). The verdict was witnessed on
+the G4 (`ok`), on the MacBook under Rosetta (`unsupported`, said plainly),
+and on three simulated machines through `--fake-machine` (§40.3);
+`docs/requirements.md` is the plain-words version for the launcher and the
+README (§40.4). Then the one leftover of §36–§39 that was still open, the
+fresh-process DRAW in Avalanche! (§40.5), and the packaging groundwork:
+the config file, the Application Support paths, a letterboxed
+`--fullscreen`, the dialogs and the plist (§40.6).
+
+### 40.1 The soak, read
+
+The soak §39.8 named — "the first with the workers on" — ran 30 minutes
+before M24b stopped it for its witness, and M24b read it (§39b.6:
+106,620 frames, 100.1%, 21.0 fps, 0 resyncs, `docs/soak/m24b-soak14-m24-leave-30min.log.gz`).
+What was running when M25 began was M24b's leave-behind, six minutes old:
+`g4 run --soak --com4 --rtc dolphin --freshcard --realtime --snap-every 5000
+--snap-keep 3 --status --ovllog --stuckwatch 200` on the M24b build
+(`1ba0a29c…`), the mixer's worker on and the EFB copies upright — the first
+soak with both. It was left to run while the machine check was written, and ended
+through Escape (a soft reset → the shutdown reports, which a `g4 stop`
+never writes) at 01:30 G4 time — **70 minutes, 252,660 frames, 4,227
+status lines** (`docs/soak/m25-soak15-m24b-leave.log.gz`):
+
+| | |
+|---|---|
+| mean speed | **100.1%**; board turns 1–20 at 100–101%, every one |
+| presented fps | 20.8 overall; board 20.7 (turns 18.6–22.6); minigames 12.2 (`m414`) to 29.6 (`m405`) |
+| where it got | **board 1, all 20 turns** → results (`mstory3dll` at 252,000), where it was ended |
+| minigames dealt | 28 plays of 25 modules, **M23's and M24's list in their order** (m412 m428 m420 m444 m423 m438 m429 m444 m430 m406 m416 m405 m438 m431 m422 m410 m407 m421 m424 m436 m404 m427 m455 m401 m414 m418 m404 m402): the deterministic replay holds across M24's mixer split and M24b's copy flip; m415 not dealt |
+| resyncs / stalls / STUCK / faults / the MEM1-top fault (§36.5) | **0 / 0 / 0 / 0 / did not recur** — the first soak with no resync at all (M24's had two, in `m401` and `m414`, which now read 100% at 14.7 and 12.2 fps) |
+| the results screen's save (§38.3) | no stall; `CARD: image flush took` never printed; `DVD: 1547 reads, 0 over 100 ms` |
+| audio | `aud` 0.28 ms mean, 0.60 worst, on `cpu 2` every line; 81 underruns / 1.26 s over 70 minutes; **`resampler linear, depop on`** |
+| `worker mixer` | 254,440 jobs: 254,435 finished by the worker, 5 late (9 ms inline), 210 waited for (94 ms, worst 5.3 ms); **362.5 s of work on the second core** = 8.6% of it |
+| `REL .data:` | 81 re-opens, 58 reset |
+| `skin: lifetime` | 691 dropped, **0 guard hits** |
+| `tex` / `rss` | 801 entries / 40.1 MB held at the end (5,819 evictions to stay under 40 MB); rss 111–126 MB on the board, peak 169 MB |
+| `copy-read:` | none (m415 not dealt); `EFB copies: 89,036` (17,314 whole-screen and 4,400 region copies from the front buffer on consumed frames, 96,331 clear-after copies kept, 53,323 half-scale) |
+
+**One line in the report is a finding**, and the brief ranks it above
+everything else in M25: `musyx_mix: split frames: 849082 control halves
+on the game thread, 849082 value halves, 254573 joins, 14 position
+mismatches <-- NOT EXACT`. M24's identity proofs had **0** mismatches in
+16,011 joins on the walk and 0 in 4,000 on the trace run (§39.4); over
+70 minutes there are 14, in two clusters, each printed by the join:
+
+```
+f203760 m427dll  SPLIT MISMATCH voice 23: control live 0 cur 0 fo 0 phase 0 ended 0 slc 0 pitch 0 | value live 1 cur 302d fo 13 phase 7e00 ended 0 slc 9 pitch 11f50   (twice, two joins)
+f217500 m401dll  SPLIT MISMATCH voice 48: control live 0 ...                     | value live 1 cur 31a2 fo 8 phase 7000 slc 0 pitch bfc0   (twice)
+                 SPLIT MISMATCH voice 48: control live 0 ...                     | value live 1 cur 28b3 fo 0 phase 0 slc 1 pitch 10000    (twice: the slot restarted)
+                 SPLIT MISMATCH voice 35 / voice 37: the same shape
+```
+
+The shape is the same every time: the **control half's `MixVoice` is all
+zeros** — not `live 0` with a position, as `finish_voice` leaves a voice
+that ended, but the bytes `start_voice_init`'s `memset` writes before it
+fills the entry (a filled entry has a non-zero pitch) — while the **value
+half's copy is a live voice mid-buffer** (`slc 9`: a stream voice nine
+loops in). Both clusters sit inside a burst of the game's own
+`SE Entry Error<SE 1621:ErrorNo -33>` lines, the sound layer refusing
+entries. The join's policy on a mismatch is to take the worker's table
+whole (§39.2), which here puts a voice the control half had zeroed back
+into `voices` as live; nothing mixes it (the next tick's control half
+skips a slot whose `DSPvoice` is not in state 2) and the next start on the
+slot re-initialises it, so the audible consequence, if any, is bounded to
+that slot's next frame — but "if any" is not a proof, and M24's proof
+was for a walk that never saw this state. What M25 did about it:
+
+* the mismatch line now prints the `DSPvoice`'s state, sample and
+  compType, both halves' `readKind`, **what the control half last decided
+  for that slot** (skip / run / start / refused / skipped-dead) with the
+  DSP frame it decided it at, and the join and mid-tick-flush counts
+  (`musyx_mix.c`, `diag_last_*`), and prints 24 of them instead of 8;
+* the reproduction is the soak itself, which is deterministic: a
+  headless `--soak --com4 --rtc dolphin --freshcard --headless --nodraw
+  --turbo --force --noconfig --frames 219000 --status` on the MacBook
+  runs the same game to the same frames at ~100 fps (35 minutes to the
+  first cluster), and **reproduced it** — 9 mismatches by frame 219,000,
+  the first pair at DSP frame 679,933 on the same stream voice (`cur 302d
+  fo 13 slc 9 pitch 11f50`; slot 31 there, 23 on the G4: the slot number
+  is MusyX's allocation, the voice is the same), and the new fields on the
+  line say what happened (`docs/soak/m25-mbp-repro-mismatch-before-fix.log.gz`):
+
+  ```
+  SPLIT MISMATCH voice 31: control live 0 ... | value live 1 cur 302d fo 13 phase 7e00 slc 9 pitch 11f50
+    | dsp state 0 smp 1140 comp 0 readKind 0/1
+    | ctl last: action 3 (refused) state 2 refused 1 at frame 679933; now frame 679936 joins 203860 flushes 103
+  ```
+
+**The cause.** MusyX stopped the stream voice on that slot and reused the
+slot for a new note (`dsp state` was 2 when the control half saw it, with
+the new sample 1140 in `smp_info`); the control half's `start_voice_init`
+**refused** the start — one of the paths that `salDeactivateVoice` and
+return 0 without being counted: a one-shot whose `curSample >= length`, an
+`adsrSetup` that reports VoiceDone at once, a sample address in neither
+ARAM nor MEM1 (the extraData refusal is counted and was 0) — and, as M24
+wrote it, zeroed its `MixVoice` and put **`SKIP`** in the plan. `SKIP`
+tells the value half there is nothing to do, so the worker's copy kept
+the slot's *previous* entry, the stream voice, live; at the join the two
+tables disagreed, and the join's policy (take the worker's) put the stale
+entry into `voices`. In the fused path the memset was the whole story;
+the split path needed the plan to carry it. **The fix** (`musyx_mix.h`,
+`musyx_mix.c`): a fourth plan action, `MIX_PLAN_CLEAR` — a refused start
+zeroes the entry on both halves — and the refusals are counted in the
+report (`N start(s) refused by start_voice_init …`). Nothing audible
+changes: the stale entry was never mixed (a slot whose `DSPvoice` is not
+in state 2 is skipped by both halves), so the `.wav` is the same bytes
+and the three frame md5s are untouched (the mixer does not draw). The
+fixed build is on the MacBook running the same 219,000 frames again as
+this is written (the answer belongs to the leave-behind soak's read, §40.9),
+and it is the build the G4's soak was restarted on.
+
+The rest of the soak is the cleanest yet, and the M24b build is kept as
+`~/MarioParty4-m24b.app`.
+
+### 40.2 The machine check
+
+`src/platform/machine.c`, run from `main()` right after the banner and
+before anything opens a window. Three parts, as the brief asked.
+
+**(a) The inventory.** `hw.model`, `hw.ncpu`, `hw.cpufrequency` (rounded:
+the G4 reports 999,999,997 Hz), `hw.cputype`/`hw.cpusubtype` (18/11 = a
+7450), `hw.optional.altivec`, `hw.memsize`, the OS through `Gestalt`
+(`gestaltSystemVersionMajor/Minor/BugFix`), and the GL side through a
+**CGL context with no window** — the same pixel-format asks as the SDL
+window (accelerated, double-buffered, 24/8/24), so the renderer answering
+is the one the window will get; the M2 finding that CGL works from an SSH
+session on Leopard is what lets `--machinecheck` run headless. VRAM is
+`kCGLRPVideoMemory` of the renderer whose id matches
+`kCGLCPCurrentRendererID` on its low sixteen bits (§40.3 says why). Then the
+extension table, **derived from the code**: every `strstr(ext, …)` and every
+`GL_*_EXT/ARB/ATI/APPLE` token in `gl13.c` and `gx_*.c`, with what each one
+gates:
+
+| extension | the port uses it for | without it |
+|---|---|---|
+| `GL_ARB_multitexture` | a unit per TEV stage (`glActiveTexture`) | **required** |
+| `GL_ARB_texture_env_combine` | every stage's combiner (`GL_COMBINE_RGB/ALPHA`) | **required** |
+| `GL_ARB_texture_env_crossbar` | a unit reading another unit's texture: `regfix`/`regfix2`/`regfix3` (`gl13_have_crossbar` gates the board eyes and walkway §31.3, the portraits §37.3) | **required** — every `GX_TEVREG` write folded to PREV |
+| `GL_ATI_texture_env_combine3` | `MODULATE_ADD_ATI` = A·C + B (`gl13_have_combine3`: the four-input stage, the textured highlight §37.3) | **required** — four-input stages drawn as their d term, the title's characters washed |
+| `GL_EXT_secondary_color` | `GL_COLOR_SUM` (0x8458), the specular fold §36.2 — used unconditionally | **required** — every shiny material white |
+| 4+ texture units | a stage is a unit; the game's chains run to five (`GX_TEVSTAGE4`), and `gx_tev.c:960` drops the stages past the card's units | **required** under 4 |
+| `GL_ARB_vertex_program` | phase 2 on the vertex unit (`vpl.have`) | degraded: `--cpuxf` applied |
+| `GL_APPLE_vertex_array_range` + `GL_APPLE_fence` | the 8 MB ring as DMA storage (`var_on`) | degraded: client arrays (the `--novar` path) |
+| `GL_EXT_multi_draw_arrays` | one call per batch of strips (`var_multidraw`) | degraded: one `glDrawArrays` per strip |
+| `GL_EXT_blend_subtract` | `GX_BM_SUBTRACT` (`gl13_have_blend_subtract`) | degraded: plain blends, a `gx_warn` each |
+| `GL_EXT_gpu_program_parameters`, `GL_EXT_fog_coord` | `--envbulk`, `--palette` — both measured and off | optional |
+| `GL_EXT_texture_compression_s3tc`, `GL_ARB_depth_texture` | `gl13_have_s3tc`/`_depth_texture` are set at boot and read by nothing (CMPR is decoded on the CPU) | optional |
+| `GL_ATI_text_fragment_shader` | on the G4's list, not built (§36.3) | not used |
+
+**(b) The verdict.** `ok` / `degraded` / `unsupported`, a line per reason,
+on the log, on stderr, as the SDL window's title until the first drawn
+frame reaches the screen (`gl13_present` restores the plain name after its
+first swap), and as `machine ok` on every status line. Required is what the
+game cannot be drawn correctly without: the four extensions above and four
+units. Degraded is what has a fallback: no vertex program, no vertex array
+range, one CPU, VRAM under 64 MB, a clock under 800 MHz ("will run below
+full speed", with the expected percentage), RAM under 256 MB (the process
+peaks at ~170 MB resident, §39.1). Unsupported is a required extension
+missing, an OS before 10.4 (the binary's `-mmacosx-version-min`), or **not
+PowerPC**: `sysctl.proc_native` is Apple's documented Rosetta test (a
+translated process reads 0; a PowerPC kernel has no such key, which is
+taken as native — Leopard on the G4 answers "top level name sysctl … is
+invalid"). `--machinecheck` prints all of it and exits 0/1/2; `unsupported`
+refuses without `--force`, with the reasons on stderr and in a dialog.
+
+**(c) The settings.** One CPU → `--threads 0`; VRAM under 64 MB →
+`--texbudget` three quarters of the card rounded down to 4 MB (32 → 24,
+16 → 12; the framebuffer is under 4 MB and the ring lives in AGP memory);
+no vertex program → `--cpuxf`. Each is skipped when the flag was given
+(`port_opt.texbudget_set`, `threads != -1`, `cpuxf`), and printed either
+way: `machine: applying --texbudget 24 (VRAM 32 MB)` or `machine:
+--texbudget given; not applying …`.
+
+### 40.3 The five machines
+
+**The G4** (`isle --machinecheck --noconfig` over ssh, the soak stopped;
+`docs/soak/m25-machinecheck-g4.log`), exit 0:
+
+```
+port> machine: model PowerMac3,5, 2 CPUs at 1000 MHz, 7450 (G4), AltiVec yes, 1536 MB RAM, Mac OS X 10.5.4
+port> machine: renderer 0: id 0x00021602 accelerated 1 video 64 MB texture 56 MB (this context)
+port> machine: renderer 1: id 0x00020400 accelerated 0 video 0 MB texture 0 MB
+port> machine: GL ATI Technologies Inc. / ATI Radeon 9000 OpenGL Engine / 1.3 ATI-1.5.28, VRAM 64 MB, 6 texture units, max texture 2048
+port> machine:   GL_ARB_multitexture … GL_EXT_secondary_color   present  required   (all five)
+port> machine:   GL_ARB_vertex_program … GL_EXT_blend_subtract  present  degraded without   (all five)
+port> machine:   GL_ARB_depth_texture                 MISSING  optional
+port> machine:   GL_ATI_text_fragment_shader          present  not used
+port> machine: verdict ok
+port> machine:   - every probe within the G4's envelope
+```
+
+Two things the G4 taught the probe on the way: `hw.cpufrequency` reads
+999,999,997 Hz (rounded now), and Leopard's Radeon driver answers
+`kCGLCPCurrentRendererID` as `0x00001602` where the renderer table lists
+`0x00021602` — the first run read VRAM −1 until the match was made on
+the low sixteen bits (the table is printed under `--machinecheck`).
+The window title with the verdict (photographed under `--nodraw`, which
+never draws the frame that would restore the plain title):
+
+![the verdict in the window title](screenshots/m25-title-verdict-ok.png)
+
+and `machine ok` on every status line of every run since.
+
+**The MacBook under Rosetta** (`ssh mbp`, the same binary; the
+inventory is what Rosetta lets a translated process see: `hw.model
+PowerMac`, a 7400 at 2300 MHz, four of them — and `sysctl.proc_native 0`):
+
+```
+port> machine: model PowerMac, 4 CPUs at 2300 MHz, 7400 (G4), AltiVec yes, 4096 MB RAM, Mac OS X 10.6.6 (under Rosetta)
+port> machine: GL Intel Inc. / Intel HD Graphics 3000 OpenGL Engine / 2.1 APPLE-1.6.30, VRAM 416 MB, 8 texture units, max texture 8192
+port> machine:   (every extension in the table present but GL_ATI_text_fragment_shader, which is not used)
+port> machine: verdict unsupported
+port> machine:   - not a PowerPC Mac: this is the PowerPC binary running under Rosetta (sysctl.proc_native = 0; Rosetta reports the machine as `PowerMac'), which the port does not support; --force runs it anyway, at about half the G4's speed on the game's code
+machine check: unsupported: PowerMac, 4 x 2300 MHz 7400 (G4), 4096 MB RAM, Intel HD Graphics 3000 OpenGL Engine, 416 MB VRAM, 8 units, OS 10.6.6
+```
+
+(`docs/soak/m25-machinecheck-mbp-rosetta.log`, exit 2.)
+
+So every run on the MacBook bench needs `--force` from M25 on (the
+witness runbook says so, §0n). Its Intel HD 3000 driver lists every
+extension the port uses including `GL_ATI_texture_env_combine3` — the
+GL side of the MacBook would be `ok`; the CPU side is the refusal.
+
+**Three simulated machines** (`docs/machines/*.txt`, each a `key=value`
+file overriding the probes; the extension lists are reconstructions of
+Apple's 10.4-era drivers and say so in the file):
+
+| machine | verdict | reasons | applied |
+|---|---|---|---|
+| the G4 itself | **`ok`** | every probe within the envelope | nothing |
+| a single 500 MHz G4 (PowerMac3,4) with a 32 MB Radeon 7500, 10.4.11 | **`unsupported`** | 3 texture units; and one CPU, 500 MHz ("expect 50% speed"), VRAM 32 MB | `--threads 0`, `--texbudget 24` (printed; moot without `--force`) |
+| an 800 MHz iMac G4 17" (PowerMac4,5) with its 32 MB GeForce4 MX, 10.4.11 | **`unsupported`** | `GL_ATI_texture_env_combine3` missing; 2 texture units; one CPU; VRAM 32 MB | `--threads 0`, `--texbudget 24` |
+| the G4 with a 32 MB Radeon 9000 | **`degraded`** | VRAM 32 MB (under 64) | `--texbudget 24 (VRAM 32 MB)` |
+| the MacBook under Rosetta | **`unsupported`** | not a PowerPC Mac | nothing |
+
+Two of the three simulated verdicts rest on a number the project has not
+measured on real hardware: the texture-unit count of the Radeon 7500
+(three, on the R100/RV200 combiner) and of the GeForce4 MX (two, on NV17),
+and the GeForce list's lack of the ATI combine3 token. The files say so,
+and a real `--machinecheck` on a real card is the answer; the logic those
+numbers feed is what the five runs witness.
+
+### 40.4 `docs/requirements.md`
+
+The minimum and recommended machine in plain words, from the table above,
+with the by-card table (witnessed / expected / unknown / unsupported) and
+the settings the check applies. The one-sentence version: *a PowerPC G4
+Mac with Mac OS X 10.4 or later, 256 MB of memory and a Radeon 9000-class
+card or better (four or more texture units with ATI's combiner
+extensions) is the minimum; a dual 1 GHz G4 with a 64 MB Radeon 9000 under
+10.5 is the recommended machine, where the game runs at console speed.*
+The README at the repo root is the user's to edit.
+
+### 40.5 The leftovers of §36–§39
+
+Of the four the brief listed, three had closed before M25: Stamp Out!'s
+paper (§38.2, the copy's padding and the quarter), the tinted-overlay pairs
+(§38.4: every one of them has `K_c = 1` and is emitted exactly since M23),
+and the atlas measurement (§38.4: 24% of batches, 84 a drawn frame, a few
+percent at best, not built). The fourth, **a fresh-process DRAW in
+Avalanche!** (§35.2), needed a way to make four players lose together, which
+four COMs never do.
+
+**`--mghold`** (selfplay.c `park_players`): inside a minigame's own overlay
+(`omMgIndexGet(omcurovl) >= 0`) all four players are human
+(`GWPlayerCfg[i].iscom = 0`, `GWPlayer[i].com = 0`) with idle controllers —
+the minigames read `iscom` every frame (`m406Dll/player.c:562`) and an idle
+pad reads zero, so they hold still; outside the overlay (the board, instDll,
+resultDll) the `--com4` rule holds as before. The pad seam allowed it
+without a per-player hold: the human path with no input *is* the hold.
+
+**The witness, in two runs on the G4** (`--minigame m406 --turns 1 --com4
+--rtc dolphin --freshcard --play … --mghold --ffto 13500 --status
+--dumpframe 14600-17400/50`, real time from the handover, m406dll from
+frame ~14,640). The first run held all four still and got **no DRAW**:
+Avalanche! is a ski run, the skiers descend on their own, and the three
+idle ones behind were buried at ~15,300 while the lead skier (Mario, pad 1)
+reached the course's end (`player.c:734`: `z < −60000` names a winner)
+— `MARIO WON!`, +10 coins. The DRAW is `player.c:978`: all four
+`unk_00_field0` (caught) before anyone finishes. So the second run
+steered controller 1 into the wall through the play script
+(`port/ref/movies/m406-draw-left.play`: the menu walk plus
+`at 14700 1200 dstk:LEFT`), the other three idle under `--mghold`:
+
+![Avalanche! from a fresh process: caught at 15,600, DRAW at 15,700](screenshots/m25-m406-fresh-draw-f15600-f15700.png)
+
+Four mounds, Luigi's head out, `DRAW!`, the results with no coins
+awarded, and **no rainbow ribbon** — §35.2's reading stands to the
+picture: the heads-in-mounds are the game's losing pose and the ribbon
+was the stalled process's artefact. Not "to the byte" (there is no
+console DRAW frame to compare against; the M20 photo is a photo), but a
+fresh-process DRAW exists now and takes four minutes to reach
+(`docs/soak/m25-m406-mghold-draw.log.gz`, the steer frame
+`screenshots/m25-m406-mghold-steer-f15100.png`).
+
+### 40.6 Packaging groundwork
+
+Built, each witnessed with a screenshot on the G4; no launcher UI.
+
+* **`Info.plist`** (`tools/make_bundle.sh`): `CFBundleIdentifier
+  com.southcitycapture.marioparty4` (as before), `CFBundleShortVersionString
+  0.25` / `CFBundleVersion 25` = the milestone (`MILESTONE=M25`),
+  `LSMinimumSystemVersion 10.4.0`, `LSRequiresNativeExecution` (Finder
+  will not offer Rosetta).
+* **The config file**, format written down first (`config.c`'s header):
+  `~/Library/Application Support/MarioParty4/config`, `key = value` lines,
+  `#` comments; keys `image` (the disc image `--image` gave or the dialog
+  chose; read when neither `--image`, `$MARIOPARTY4_IMAGE` nor the bundle's
+  Resources names one, before `~/MarioParty4`), `fullscreen` (0/1, from
+  `--fullscreen`/`--windowed`), `machine` (the check's summary the last
+  time the first-run message was shown). `--noconfig` neither reads nor
+  writes it (the lab's runs).
+* **The paths**: the card image was already in Application Support
+  (`card_file.c`); the log now defaults to `MarioParty4.log` there when no
+  `--log` is given (stdout still carries it for the runner).
+* **The disc image chooser**: Navigation Services
+  (`NavCreateChooseFileDialog`, files or a `files/` folder), shown when the
+  search finds nothing and the run is not headless/`--machinecheck`; the
+  answer is remembered.
+* **`--fullscreen`**, letterboxed: the renderer draws exactly as in the
+  window — 640×480 at 1:1 in the bottom-left of the back buffer, every
+  viewport, scissor, EFB copy and read-back in EFB coordinates — and
+  fullscreen is a *present* step (`gl13.c` `fs_blit_out`/`fs_blit_back`):
+  the corner is copied into a 1024×512 texture, the screen cleared black,
+  the texture drawn bilinear onto the largest 4:3 rectangle that fits,
+  swapped, and then drawn back nearest-filtered at 1:1 into the corner so
+  the back buffer's corner holds the last drawn frame — where a consumed
+  frame's `GXCopyTex` now reads (`gx_tex.c` reads `GL_BACK` under
+  fullscreen instead of the front buffer, which holds the scaled picture).
+  `--dumpframe` reads the corner before the blit. Remembered in the config.
+  Witness on the G4 (1680×1050): `--fullscreen: 1680x1050, the picture
+  at 1400x1050 from (140,0), scale 2.188`, and the next run *without the
+  flag* came up fullscreen from the config; a `--windowed` run cleared it.
+
+  ![the title fullscreen on the G4, letterboxed at 1400x1050](screenshots/m25-fullscreen-title-1680x1050.png)
+
+  Frame 800 dumped under `--fullscreen --lockstep` is `9d0a87b5…` against
+  the windowed `1df90661…` (reproduced exactly in the same session):
+  **2 pixels of 307,200 differ, by one level** — the fullscreen context's
+  rasterisation, not the blit (on the MacBook's Intel driver it is 31
+  pixels, ≤3 levels, unchanged when the blit-back's filter was made
+  nearest). Fullscreen is not a measurement mode; the md5s are windowed.
+* **The dialogs** (`CFUserNotificationDisplayAlert`, one OK button): the
+  `unsupported` refusal, with the reasons and the requirements paragraph;
+  and the **first-run message** on a `degraded` verdict — the reasons and
+  the requirements paragraph, shown once per distinct machine summary (the
+  `machine` key), so a new card or OS shows it again and every boot does
+  not. Both photographed on the G4 through
+  `--fake-machine`:
+
+  ![the first-run message on a `degraded` verdict (the 32 MB fake)](screenshots/m25-dialog-first-run-degraded.png)
+  ![the refusal on an `unsupported` verdict (the GeForce4 MX fake), exit 2 after OK](screenshots/m25-dialog-unsupported-fake-geforce4mx.png)
+  ![the disc image chooser, with `~/MarioParty4` hidden](screenshots/m25-dialog-choose-image.png)
+
+  The chooser is groundwork: it appears and it is the right dialog, and
+  System Events could not press its Cancel from an ssh session (the
+  CFUserNotification ones answer a Return), so choosing a file through
+  it has not been witnessed end to end.
+
+### 40.7 Three things found on the way
+
+* **A proof on a walk is a proof of the walk** (§40.1): M24's identity
+  proofs (0 mismatches in 16,011 joins) never saw a refused start on a
+  reused slot; 70 minutes of soak saw fourteen. The plan's action set
+  had three words for four cases, and the fourth was silent in the fused
+  path because the memset *was* the case. Every future soak reads the
+  `split frames` line (Escape, not `g4 stop`, gets it written).
+* **A CGL renderer id does not match its table entry on Leopard**
+  (§40.3): `0x00001602` against `0x00021602`; match on the low sixteen
+  bits. And `sysctl.proc_native` does not exist on a PowerPC kernel —
+  absent means native, 0 means Rosetta.
+* **Escape ends a run with its reports** (witness §0n): a `g4 stop` is
+  a `killall` and writes none, which is why no soak before this one had
+  its `worker mixer` line or its mismatch count.
+
+### 40.8 What M25 shipped, and what it did not
+
+| shipped, with a witness | |
+|---|---|
+| the soak read (§40.1) and its finding: the split's fourteen mismatches root-caused on the MacBook's reproduction and fixed (`MIX_PLAN_CLEAR`) | the instrumented line; the fixed build's proof is M26's first read |
+| the machine check (§40.2): inventory, verdict, applied settings; `--machinecheck`, `--force`, `--fake-machine`; the verdict in the window title and on the status line | the G4 `ok`, the MacBook `unsupported` under Rosetta, the three simulated machines (§40.3) |
+| `docs/requirements.md`, `docs/machines/` (§40.4) | |
+| `--mghold` and the fresh-process DRAW (§40.5) | four mounds, `DRAW!`, no ribbon, from boot in four minutes |
+| the packaging groundwork (§40.6): plist, config, paths, chooser, `--fullscreen`, the dialogs | the screenshots |
+| the soak's read (§40.1), `docs/soak/m25-*`, `docs/screenshots/m25-*` | |
+
+**Not done, and why:**
+
+* **The mixer mismatch fix's witness** (§40.1): the cause is read off
+  the instrumented line and the fix is in the leave-behind build, but
+  the MacBook's second 219,000-frame run (the fixed build) had not
+  finished when this was written, and the G4's soak reaches the first
+  cluster 57 minutes in. M26 reads both; `0 position mismatches` and a
+  non-zero `start(s) refused` count on the same run is the proof.
+* **The disc image chooser end to end** (§40.6): shown, not driven.
+* **The by-card table is argued, not measured** (§40.3, §40.4): the
+  Radeon 7500's three units, the GeForce4 MX's two and the NVIDIA lists'
+  lack of `ATI_texture_env_combine3` are the extension tables' word;
+  `--machinecheck` on a real card is the witness the project does not
+  own a machine for.
+* **No launcher UI** (the brief's scope); the first-run message and the
+  chooser are the pieces it will call.
+* The M24 leftovers stand: the results-screen stall (absent again in
+  this soak), the two mixer timers, the selected box's specular.
+
+### 40.9 What M26 starts with
+
+Left running: `g4 run --soak --com4 --rtc dolphin --freshcard --realtime
+--snap-every 5000 --snap-keep 3 --status --ovllog --stuckwatch 200` on
+the final build (`isle` md5 `bf4066de…`, from 02:09 G4 time) — the
+machine check at its boot (`verdict ok`, `machine ok` on every status
+line), the `MIX_PLAN_CLEAR` fix and the instrumented mismatch line in.
+Read it first: `g4 key esc` ends it with its reports (§0n); the `split
+frames` line must say **0 position mismatches** past frame 217,500 (the
+second cluster) with a non-zero `start(s) refused` count, or the fix is
+wrong and the instrumented lines say how; the MacBook's
+`~/m25/repro-mismatch-fixed.log` is the same question answered faster.
+Then `worker mixer`, `tex`/`rss` past turn 12, the minigame order
+(deterministic since M23), and whether m415 is ever dealt. Then the
+packaging's next pieces: the launcher that uses the first-run message
+and the chooser (the chooser driven end to end first), the README's
+requirements (`docs/requirements.md` is written for it), and the
+M24 leftovers.
