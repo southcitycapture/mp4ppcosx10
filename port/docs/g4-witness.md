@@ -701,3 +701,32 @@ is either ready to offer upstream or has a case to remove.
   starts at zero for the run (clock.c); a timespec built from it is 1970
   and the wait returns at once — a busy loop where a doze was meant.
   `gettimeofday` for the condvar, `port_now` for everything else.
+
+## 0q. Four things M28 paid for *(2026-09-20)*
+
+* **A `cp -R` of a bundle on the G4 during a real-time soak is a 3-second
+  dip.** Keeping the M27 bundle under another name (`cp -R ~/MarioParty4.app
+  ~/MarioParty4-m27.app`, 20 MB) while soak 18 ran read as three status lines
+  at 18.7 / 12.2 / 9.5 fps and `speed 87%` at frames 139,200–139,320, then
+  `118%` catching up — the same shape as §0j's install rule, from a copy
+  instead of an install. The soak's read (PLAN.md 43.1) marks it; anything
+  that touches the G4's disk waits for the soak to end.
+* **The cross toolchain's `mtxtest` target links and then fails in
+  `dsymutil`** ("unable to get target for ''"): the binary is complete
+  (`build-ppc-darwin/mtx_test`, run it on the G4 as `~/mtx_test_m28`); only
+  the dSYM step dies. Since M18 the test also needs `port_opt` and
+  `port_log` defined — tests/mtx_test.c carries stubs now.
+* **`--nodraw --ffto N` drew past N until M28.** fastfwd.c's end switched
+  the renderer on whatever `--nodraw` said (`--ffto` sets `nodraw` itself),
+  so the first "consumed-frame" profile of the day was a drawn one at 35
+  fps — the status lines' fps after N is the tell (a consumed board frame
+  runs at 160+). Fixed (`nodraw_user`); the M27 bundle still has it, which
+  is why the chain's `PN` walks to the board under `--nodraw` instead of
+  teleporting. And `sample isle 10` halves the fps for its ten seconds
+  (160 → 85 on consumed frames, 36 → 18 drawn), which is how the sampled
+  window is read off the status lines afterwards.
+* **A snapshot's differing spans are named by the link map, not by
+  `snapdiff.py`**: `port/build-ppc-darwin/marioparty4.map` (the address
+  column) turns a `first at (addr 0x...)` into a symbol; hsfdraw.c's
+  statics sit together in one `.bss` run, which is how "the walk's own
+  residue" is told from a game global.

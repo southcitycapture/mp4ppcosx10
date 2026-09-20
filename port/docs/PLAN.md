@@ -13791,3 +13791,183 @@ game's share is 11.5 ms of 28.5 and the levers in it are the square roots
 ~1.5%; the decode (33%) and the state walk (23%) are the port's, which
 is where (e) aims. So: (a), (c), (b), (d), then (e); (f) and (g) by
 reading first (§43.8).
+### 43.3 (a) The material walk with nothing drawn — exact, on by default
+
+**What FaceDraw does on a consumed frame.** Frame mode (§32.1) drops
+every GX call at the port's door on a consumed frame, but hsfdraw.c's
+`FaceDraw` still *decides* each one per material: the blend mode, the
+channel colours, `SetupGX` (Z, alpha compare, cull), sixteen
+`GXSetTevKAlphaSel`, the vertex descriptor block, `LoadTexture` for every
+attribute (a `GXInitTexObj` + `GXLoadTexObj`, a TLUT for the CI formats)
+and `HuSprTexLoad` for the reflection, toon, shadow, projection and hilite
+maps, then `SetTevStageNoTex` / `SetTevStageTex` — texgens, TEV stages,
+konst colours, texture matrices with `MTXScale`/`mtxRotCat` arithmetic
+behind them — and `GXCallDisplayList`. §32.4 had it at 449 samples of a
+7,200-sample consumed board frame, FaceDraw inclusive.
+
+**What of it game logic reads back.** Everything FaceDraw and its callees
+write was read (hsfdraw.c, hsfman.c `lightSet`, hsfanim.c `Hu3DAnimSet`,
+sprput.c `HuSprTexLoad`) and grepped for readers in src/game and src/REL:
+
+* hsfdraw.c's statics (`materialBak`, `vtxModeBak`, `shadingBak`,
+  `lightBit`, `BmpPtrBak[]`, `texCol[]`, `kColor`/`kColorIdx`, `TL32F`, the
+  `*MapNo` slots): each is reset per model (`Hu3DDraw`), per object
+  (`ObjDraw`, `Hu3DDrawPost`) or per material before it is read again;
+  nothing survives into the next drawn frame's walk.
+* `drawCnt`: the caller steps through the faces by
+  `DrawData[drawCnt - 1].polyCnt` — kept.
+* `totalMatCnt` / `totalTexCnt` / `totalTexCacheCnt` / `totalPolyCnt`:
+  copied once a frame into the `*Cnted` twins (hsfman.c:124) and printed by
+  the debug overlay (objmain.c:492), read by nothing else. `totalMatCnt`
+  and `totalPolyCnt` are kept; the two texture counters are the one thing
+  a snapshot can tell apart (a debug-print value).
+* **`lightSet` writes game memory**: for a light of type 1 it stores
+  `pos = dir * -1e6` into `Hu3DGlobalLight` / `Hu3DLocalLight`, which
+  fourteen REL modules touch (m425's own light setter reads `.pos`). The
+  write is idempotent in `dir`, but skipping it on a consumed frame would
+  leave `pos` stale after a `dir` change until the next drawn frame — so
+  `Hu3DLightSet` is called on consumed frames too, under the game's own
+  gate (`shading != shadingBak`, which differs between the two SetTevStage
+  bodies: `matHiliteF ? 2 : vtxMode` against `vtxMode`), `shadingBak` and
+  `lightBit` made extern by the patch so the gate is the game's.
+* `Hu3DAnimSet` writes the 2D texture animation's `scale`/`trans` into the
+  attribute's `HU3DATTRANIM` (heap), read by `SetTevStageTex` alone, in
+  the same FaceDraw after a fresh call — exact for the picture without
+  it; kept anyway (a few float divides) so the heap snapshot is identical.
+* `constData->matrix`, the hook-model matrices, `MTXBuf`: written by
+  `objMesh`, the *object* walk, which is not touched (§33.3's reason).
+
+**The hook** (`port/patches.txt`, hsfdraw.c; `port/src/gx/gx_matwalk.c`):
+FaceDraw asks `port_consumed_frame()` once the material is known and, on
+a consumed frame, does only the material-change bookkeeping,
+`port_face_consumed()` (the two side effects above, in the game's order),
+`drawCnt++`, return. `--nomatwalk` runs FaceDraw as written. The
+`GXCallDisplayList` was already a no-op on consumed frames; what goes is
+the state walk and the texture loads (with `--predecode` off by default
+since M24, nothing was staged from them).
+
+### 43.4 (b) The motion curves, memoised — exact, and measured
+
+`GetCurve` (hsfmotion.c) evaluates a track at a time: `GetLinear` or
+`GetBezier`, a segment search over the keyframes and the interpolation.
+The keyframes never change between a motion's load and its free; the one
+field `GetBezier` writes, `start`, is the segment it found, read back as
+where to look first. So the value and the `start` written are a function
+of (track, time, `start` on entry), and `port/src/os/curve_memo.c` is a
+direct-mapped table of 65,536 entries keyed on exactly that, holding the
+value's bits and the `start` on exit: a hit returns the bits `GetLinear` /
+`GetBezier` computed on the same inputs and writes back the same `start`.
+The address-reuse hole — a motion freed and another loaded at the same
+place — is closed the way M19 closed the skinning registry's: every free
+the game makes reaches `port_mem_freed`, which bumps a generation per 4 KB
+page of the block; an entry remembers its page's generation and a hit
+needs it unchanged. `--nocurvememo` is the game's body every call. Found
+next to it: `GetObjTRXPtr` and `GetBezier` were `__declspec(weak)` in the
+decomp, which the mirror had turned into `__attribute__((weak))`, and on
+Darwin a weak definition is called through the dyld stub even from its
+own file — `dyld_stub_GetObjTRXPtr` was 91 samples (1.4%) of the consumed
+frame on its own. Nothing in src/ defines either name twice; the attribute
+is gone from the patch and the calls are direct (exact by construction; in
+every arm below, control included).
+
+### 43.5 (c) The four concats of the bone walk, sparse — exact, with the sign rule
+
+`SetEnvelopMtx` builds a bone as `parent · T(pos) · Rz · Ry · Rx` with four
+general 3×4 concats, loading twelve elements of a right-hand matrix that is
+nine literals and three values, after `PSMTXRotTrig` stored those twelve.
+§32.4's claim that skipping the zero terms is exact "because a fused
+`a·0 + b` is `b`" is true of the value and false of the sign of zero, and
+the port's md5s are bits, so the sparse bodies (psmtx_c.c
+`port_mtx_concat_trans` / `port_mtx_concat_rot`) are built from the order
+GCC actually compiled `C_MTXConcat` in (read off `mtx.o` with otool:
+`m[i][j] = fmadds(a[i][2], b[2][j], fmadds(a[i][0], b[0][j], a[i][1]*b[1][j]))`,
+`+ a[i][3]` for the last column) and three facts about a fused
+multiply-add: `x · 0` is a zero with `x`'s sign; `fma(x, 0, t)` is `t`
+unless `t` is a zero, and then `−0` only if both are; `fma(x, 1, t)` with
+`t` a zero is `x` under the same rule. A literal term is therefore one
+sign bit, a chain of them an AND of sign bits that matters only when the
+surviving value is a zero; the real products (the sines, cosines, the
+translation) stay real fmas on the same operands in the same order, a
+signed zero reaching one as an addend passed as the zero it is. Inf and
+NaN entries are the one input the rule is not exact for (`inf · 0`), and a
+bone matrix holding either is already a broken picture. The witness is
+`port/tests/mtx_test.c` on the G4: 1.6 million concats against
+`C_MTXConcat` over random matrices seeded one element in four with a zero
+of either sign, plus underflowing products, in place and out — **0
+differ** — and the walk's md5s. `--nosparsemtx` runs `PSMTXRotRad` +
+`PSMTXConcat` inside the same calls.
+
+### 43.6 (d) The square root without libm — exact after all
+
+The brief expected an md5 argument: `frsqrte` plus two Newton steps is not
+libm's value, and `Hu3DMtxScaleGet`'s `!= 1.0f` tests would flip on an
+edge. It does not have to be approximate. The 7450 has no `fsqrt` but has
+`frsqrte` (5 bits) and a full-speed double FPU: four Newton steps in
+double take the estimate past the double's own precision, the product
+with `x` is the root to a double ulp, one correction step through a fused
+residual lands within a double ulp of the true root, and rounding *that*
+to single is the correctly rounded `sqrtf` — the exact root of a 24-bit
+float is never within 2⁻⁵⁰ (relative) of a single-precision rounding
+boundary (the 2p+2 bound), and a double ulp is 2⁻⁵². Rather than lean on
+the bound, `port_sqrtf` settles the rounding exactly: the root is on `f`'s
+side of both of `f`'s midpoints iff `f` is right, and a midpoint (25
+significant bits) squares exactly in a double, as does the comparison with
+`x`; a midpoint's square is never `x` itself (an odd 25-bit mantissa
+squared has 49 bits), so there are no ties. Zero, negatives, NaN, inf and
+the denormals go to libm. The value is libm's if libm's `sqrtf` is itself
+correctly rounded, which IEEE 754 requires and the test settles the only
+way that counts: every positive normal float, all 2,130,706,432 of them,
+through both. On littlejelly against glibc: 0 differ (7.6 min). On the
+G4 against Leopard's libm: **§43.9**. `C_VECMag`, `C_VECNormalize` and
+`C_VECDistance` (psmtx_c.c, the port's bodies) call it; `--nofastsqrt` is
+libm for everything.
+
+### 43.7 (e) The compiler on the port's own GX sources
+
+`GX_OPT` in port/Makefile applies to `src/gx/*.o` alone — the decode
+loops, the state walk, the texture decode, the stream — never to the
+game's objects or the mixer. Two trees beside the default:
+`build-ppc-o3` (`GX_OPT=-O3`) and `build-ppc-fast` (`-O3 -ffast-math`),
+bundled as `~/MarioParty4-o3.app` / `~/MarioParty4-fast.app` on the G4.
+`-O3` changes no float semantics, so its md5s must hold and the walk is
+the whole argument; `-ffast-math` changes them (the CPU transform's
+contractions, the reciprocal in the texgen divide, the lighting fold's
+associativity) and can only ship on a ppmdiff of its frames. Both walks
+carry the four experiments at their defaults. Numbers in §43.9.
+
+### 43.8 (f) and (g), by reading before building
+
+**(f) The sprites.** §37.2 counted 2.4M of the walk's 2.81M GL draws as
+single-strip sprite quads. The question the brief asks first — is the
+issue still the wall with the render thread on — §42.5 and soak 18 answer
+for the board: the render thread replays a board frame in 15.5 ms
+(median over the soak) and the gate waited for it 7,752 times in 104,481
+presented frames (3.6 s in all); the wall is the game thread's 28.5 ms. So
+on the board a sprite batch would move cost off a thread that is idle
+half the time. Where it is *not* idle is the character select (rt 25.3
+ms, §42.4) and the seven minigames whose `rt` runs over a retrace
+(§43.1: m431 29.9, m444 25.3, the menus 24.3…). And "same-texture
+consecutive sprites into one draw" is a thing the tree already has:
+sprput.c's `HuSprDisp` loads one texture and one position matrix per
+sprite, so two neighbours with the same texture differ in the matrix
+alone, which is exactly M22's lazy flush + pre-transform (`--lazyflush
+--premerge-max N`, §37.2: exact for a merge of ≤32 vertices; not faster
+then, on the single-threaded path). The A/B for (f) is therefore that
+lever again, on the render-thread build, at real time (`Rm`, `Tm` in the
+chain): if fewer batches now move the character select or the game
+thread's drawn frame, sprites are worth their own batcher; if not, the
+verdict of §37.2 stands with the thread on. §43.9.
+
+**(g) `GL_ATI_text_fragment_shader`.** The brief's condition was M26's
+gallery listing games that need the register-write shapes it would
+serve (§31.3's 5,733 emissions still folding a write to PREV, the tinted
+overlay of §37.6). The gallery's open causes (§41.8) are B water and EFB
+copies with `GX_TG_POS` texgens and `GXSetTevIndWarp`, C whole scenes
+missing through the per-camera scissor/viewport, D a copy in m430's right
+view, E two faults, F the unverified — none is a TEV register shape. The
+walk's report reads `0 stage emissions still folding a register write to
+PREV`; soak 18's, over 26 minigames, reads 16,526 of 3.6M unit emissions
+(0.5%, in games the gallery marked ok or minor), and the two-constant
+stage (`the first wins`) 895,574 of 22.4M draws in 139,945 configs. No
+game in the gallery's fault list is waiting on either; not built, the
+count kept for the day one is.
