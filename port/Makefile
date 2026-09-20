@@ -262,6 +262,14 @@ GX_DRAW_CFLAGS := -maltivec -mabi=altivec
 else
 GX_DRAW_CFLAGS :=
 endif
+# M28 (e): the compiler on the port's own GX and decode sources alone, never
+# the game's.  GX_OPT="-O3" or GX_OPT="-O3 -ffast-math" into a separate tree:
+#   port/build-ppc.sh -j8 BUILD=build-ppc-o3 GX_OPT=-O3
+# -O3 changes no float semantics (exact by construction, the md5s confirm);
+# -ffast-math does (the CPU transform, the texgens, the lighting fold) and
+# needs the ppmdiff argument.  Measured in PLAN.md 43.
+GX_OPT ?=
+$(BUILD)/port/src/gx/%.o: PORT_CFLAGS += $(GX_OPT)
 $(BUILD)/port/src/gx/gx_draw.o: src/gx/gx_draw.c $(MIRROR_STAMP)
 	@mkdir -p $(dir $@)
 	$(CC) $(PORT_CFLAGS) $(GX_DRAW_CFLAGS) -MMD -MP -c -o $@ $<

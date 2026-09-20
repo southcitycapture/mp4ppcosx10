@@ -727,3 +727,37 @@ src/game/hsfdraw.c	                i = objPtr - hsf->object;\n                MT
 # libm values for the same input, so exact; --nosincos bypasses it.
 src/dolphin/mtx/mtx.c	extern f32 tanf(f32);\n	extern f32 tanf(f32);\nvoid port_sincosf(f32 rad, f32 *s, f32 *c);\n
 src/dolphin/mtx/mtx.c	    sinA = sinf(rad);\n    cosA = cosf(rad);\n\n    PSMTXRotTrig(m, axis, sinA, cosA);	    port_sincosf(rad, &sinA, &cosA);\n\n    PSMTXRotTrig(m, axis, sinA, cosA);
+
+# ------------------------------------------------------------------ game/hsfdraw.c
+# M28 experiment (a) (PLAN.md 43): on a consumed frame (frame mode: nothing
+# drawn, every GX call dropped at the port) FaceDraw's material setup is
+# decided and discarded.  port_consumed_frame() is asked once the material is
+# known; on a consumed frame only what game logic can read back is kept --
+# the material-change bookkeeping, Hu3DLightSet under the game's own gate
+# (lightSet writes a type-1 light's pos), Hu3DAnimSet (the 2D anim's
+# scale/trans), drawCnt for the caller's face stepping (port/src/gx/
+# gx_matwalk.c has the reading).  --nomatwalk: FaceDraw as written.
+# shadingBak and lightBit become extern so the gate is the game's own.
+src/game/hsfdraw.c	#include "ext_math.h"\n#include <string.h>\n\nvoid port_envelope_sync(HSFDATA *hsf);\n	#include "ext_math.h"\n#include <string.h>\n\nvoid port_envelope_sync(HSFDATA *hsf);\nint port_consumed_frame(void);\nvoid port_face_consumed(HU3DDRAWOBJ *drawObj, HSFMATERIAL *mat);\n
+src/game/hsfdraw.c	static s32 shadingBak;	s32 shadingBak;
+src/game/hsfdraw.c	static s16 lightBit;	s16 lightBit;
+src/game/hsfdraw.c	    flags = object->flags | faceMaterial->flags;\n    SetBlendMode(flags);\n	    flags = object->flags | faceMaterial->flags;\n    if (port_consumed_frame()) {\n        if (faceMaterial != materialBak) {\n            totalMatCnt++;\n            materialBak = faceMaterial;\n            port_face_consumed(hsfDrawObject, faceMaterial);\n        }\n        drawCnt++;\n        return;\n    }\n    SetBlendMode(flags);\n
+
+# ------------------------------------------------------------ game/EnvelopeExec.c
+# M28 experiment (c) (PLAN.md 43): SetEnvelopMtx's four concats against a
+# translation and three single-axis rotations, whose right-hand matrices are
+# nine literals and three values each, go through port/src/os/psmtx_c.c's
+# sparse bodies -- the same fmadds in the same order on the same operands,
+# the literal terms resolved by their sign rule (the file has the argument;
+# port/tests/mtx_test.c the bit-for-bit check).  --nosparsemtx runs the
+# general PSMTXRotRad + PSMTXConcat inside the same calls.
+src/game/EnvelopeExec.c	#include "string.h"\n\nint port_envelope_proc(HSFDATA *hsf);\n	#include "string.h"\n\nint port_envelope_proc(HSFDATA *hsf);\nvoid port_mtx_concat_trans(const Mtx a, f32 x, f32 y, f32 z, Mtx ab);\nvoid port_mtx_concat_rot(const Mtx a, char axis, f32 rad, Mtx ab);\n
+src/game/EnvelopeExec.c	    PSMTXTrans(spC, arg1->mesh.curr.pos.x, arg1->mesh.curr.pos.y, arg1->mesh.curr.pos.z);\n    PSMTXConcat(arg2, spC, sp3C);\n    if (arg1->mesh.curr.rot.z) {\n        PSMTXRotRad(sp6C, 'z', MTXDegToRad(arg1->mesh.curr.rot.z));\n        PSMTXConcat(sp3C, sp6C, sp3C);\n    }\n    if (arg1->mesh.curr.rot.y) {\n        PSMTXRotRad(sp6C, 'y', MTXDegToRad(arg1->mesh.curr.rot.y));\n        PSMTXConcat(sp3C, sp6C, sp3C);\n    }\n    if (arg1->mesh.curr.rot.x) {\n        PSMTXRotRad(sp6C, 'x', MTXDegToRad(arg1->mesh.curr.rot.x));\n        PSMTXConcat(sp3C, sp6C, sp3C);\n    }\n	    port_mtx_concat_trans(arg2, arg1->mesh.curr.pos.x, arg1->mesh.curr.pos.y, arg1->mesh.curr.pos.z, sp3C);\n    if (arg1->mesh.curr.rot.z) {\n        port_mtx_concat_rot(sp3C, 'z', MTXDegToRad(arg1->mesh.curr.rot.z), sp3C);\n    }\n    if (arg1->mesh.curr.rot.y) {\n        port_mtx_concat_rot(sp3C, 'y', MTXDegToRad(arg1->mesh.curr.rot.y), sp3C);\n    }\n    if (arg1->mesh.curr.rot.x) {\n        port_mtx_concat_rot(sp3C, 'x', MTXDegToRad(arg1->mesh.curr.rot.x), sp3C);\n    }\n
+
+# ------------------------------------------------------------- game/hsfmotion.c
+# M28 experiment (b) (PLAN.md 43): GetCurve's linear and Bezier cases through
+# a memo keyed on the track, the time's bits and the Bezier's `start` on
+# entry (port/src/os/curve_memo.c) -- the same bits GetLinear/GetBezier
+# computed on the same inputs, and the same `start` written back; a free of
+# the track's page forgets it.  --nocurvememo: every call to the body.
+src/game/hsfmotion.c	float GetCurve(HSFTRACK *arg0, float arg1) {\n    float *var_r30;\n\n    switch (arg0->curveType) {\n        case 1:\n            return GetLinear(arg0->numKeyframes, arg0->data, arg1);\n        case 2:\n            return GetBezier(arg0->numKeyframes, arg0, arg1);\n	int port_curve_memo_get(HSFTRACK *t, float time, float *out);\nfloat port_curve_memo_put(HSFTRACK *t, float time, float value);\n\nfloat GetCurve(HSFTRACK *arg0, float arg1) {\n    float *var_r30;\n    float port_memo;\n\n    switch (arg0->curveType) {\n        case 1:\n            if (port_curve_memo_get(arg0, arg1, &port_memo)) {\n                return port_memo;\n            }\n            return port_curve_memo_put(arg0, arg1, GetLinear(arg0->numKeyframes, arg0->data, arg1));\n        case 2:\n            if (port_curve_memo_get(arg0, arg1, &port_memo)) {\n                return port_memo;\n            }\n            return port_curve_memo_put(arg0, arg1, GetBezier(arg0->numKeyframes, arg0, arg1));\n

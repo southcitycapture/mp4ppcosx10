@@ -49,6 +49,10 @@ void port_watchdog_arm(int seconds);
 void gx_tex_set_validate_every_bind(int v);
 void gx_tex_set_budget_mb(int mb);
 void port_sincos_report(void);
+void port_matwalk_report(void);
+void port_curve_memo_report(void);
+void port_sparse_report(void);
+void port_fastsqrt_report(void);
 
 #ifdef PORT_DEADCODE
 /* M19 (PLAN.md 34.4): a function nothing calls, so that a second build
@@ -109,6 +113,16 @@ static void usage(const char* argv0) {
             "                    form on every sample (M18 item 3)\n"
             "  --nosincos        PSMTXRotRad's sinf/cosf straight to libm instead of\n"
             "                    through the exact memo (M18 A/B)\n"
+            "  --nomatwalk       M28 (a): hsfdraw's material setup decided on consumed\n"
+            "                    frames as written (default: skipped, its two game-\n"
+            "                    visible side effects kept; PLAN.md 43)\n"
+            "  --nocurvememo     M28 (b): GetCurve to the game's body on every call\n"
+            "  --nosparsemtx     M28 (c): SetEnvelopMtx's four concats through the\n"
+            "                    general PSMTXRotRad + PSMTXConcat\n"
+            "  --nofastsqrt      M28 (d): VECMag/VECNormalize/VECDistance through\n"
+            "                    libm's sqrtf instead of frsqrte + Newton, exactly\n"
+            "                    rounded (--matwalk/--curvememo/--sparsemtx/--fastsqrt\n"
+            "                    turn each back on)\n"
             "  --snapsync        write snapshots synchronously on the game thread\n"
             "                    (default: copied at the retrace, written by a worker)\n"
             "  --threads N       M24: 0 = every job inline on the game thread (the\n"
@@ -548,6 +562,22 @@ int port_parse_args(int argc, char** argv) {
             port_opt.mixcheck = 1;
         } else if (!strcmp(a, "--nosincos")) {
             port_opt.nosincos = 1;
+        } else if (!strcmp(a, "--nomatwalk")) {
+            port_opt.nomatwalk = 1;
+        } else if (!strcmp(a, "--matwalk")) {
+            port_opt.nomatwalk = 0;
+        } else if (!strcmp(a, "--nocurvememo")) {
+            port_opt.nocurvememo = 1;
+        } else if (!strcmp(a, "--curvememo")) {
+            port_opt.nocurvememo = 0;
+        } else if (!strcmp(a, "--nosparsemtx")) {
+            port_opt.nosparsemtx = 1;
+        } else if (!strcmp(a, "--sparsemtx")) {
+            port_opt.nosparsemtx = 0;
+        } else if (!strcmp(a, "--nofastsqrt")) {
+            port_opt.nofastsqrt = 1;
+        } else if (!strcmp(a, "--fastsqrt")) {
+            port_opt.nofastsqrt = 0;
         } else if (!strcmp(a, "--snapsync")) {
             port_opt.snapsync = 1;
         } else if (!strcmp(a, "--threads") && i + 1 < argc) {
@@ -956,6 +986,10 @@ void port_shutdown(int code) {
     port_snap_report();
     port_workers_report();
     port_sincos_report();
+    port_matwalk_report();
+    port_curve_memo_report();
+    port_sparse_report();
+    port_fastsqrt_report();
     port_reset_report();
     port_stub_report();
     exit(code);

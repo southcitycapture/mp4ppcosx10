@@ -386,6 +386,15 @@ typedef struct PortOptions {
     int snapsync;           /* --snapsync   write snapshots on the game thread
                              *   (pre-M18: a 3 s stall each) instead of on a
                              *   worker from a copy taken at the retrace     */
+    /* ---- M28: the experiments (PLAN.md 43), each an exact rewrite ---- */
+    int nomatwalk;          /* --nomatwalk  FaceDraw's material setup runs on
+                             *   consumed frames as written (gx_matwalk.c)   */
+    int nocurvememo;        /* --nocurvememo  GetCurve to the game's body every
+                             *   call (curve_memo.c)                          */
+    int nosparsemtx;        /* --nosparsemtx  SetEnvelopMtx's concats through
+                             *   PSMTXRotRad + PSMTXConcat (psmtx_c.c)       */
+    int nofastsqrt;         /* --nofastsqrt  VECMag/VECNormalize/VECDistance's
+                             *   sqrtf through libm (psmtx_c.c port_sqrtf)   */
 } PortOptions;
 
 extern PortOptions port_opt;

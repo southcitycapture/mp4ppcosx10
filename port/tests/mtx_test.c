@@ -38,6 +38,8 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
+#include <time.h>
 
 #include <dolphin/types.h>
 #include <dolphin/mtx.h>
@@ -448,7 +450,229 @@ static void test_vec(void) {
     }
 }
 
-int main(void) {
+/* ---- 6. M28 (c): the sparse concats of the bone walk against C_MTXConcat,
+ * bit for bit (PLAN.md 43).  Random matrices whose elements are, one in
+ * four, a zero of either sign -- the case the sign rule exists for -- and
+ * angles that include 0 and the axes' multiples; both the out-of-place and
+ * the in-place (ab == a, which SetEnvelopMtx uses) forms. */
+#include "port.h"
+PortOptions port_opt;
+void port_log(const char* fmt, ...) { (void)fmt; }
+void port_mtx_concat_trans(const Mtx a, f32 x, f32 y, f32 z, Mtx ab);
+void port_mtx_concat_rot(const Mtx a, char axis, f32 rad, Mtx ab);
+void port_sincosf(f32 rad, f32* s, f32* c);
+f32 port_sqrtf(f32 x);
+
+static float frand_z(void) {
+    unsigned r;
+    rng_state = rng_state * 1103515245u + 12345u;
+    r = (rng_state >> 8) & 0xFF;
+    if (r < 32) {
+        return 0.0f;
+    }
+    if (r < 64) {
+        return -0.0f;
+    }
+    if (r < 72) {
+        return frand() * 1e-20f; /* tiny: the underflowing products */
+    }
+    return frand();
+}
+
+static int bits_differ(const Mtx a, const Mtx b) {
+    return memcmp(a, b, sizeof(Mtx)) != 0;
+}
+
+static void test_sparse_concat(void) {
+    int trial, ndiff = 0;
+    static const char axes[3] = {'z', 'y', 'x'};
+    printf("sparse concats == C_MTXConcat, bit for bit:\n");
+    port_opt.nosparsemtx = 0;
+    for (trial = 0; trial < 400000; trial++) {
+        Mtx a, want, got, r, t;
+        int i, j, ax;
+        f32 x = frand_z(), y = frand_z(), z = frand_z(), rad;
+        for (i = 0; i < 3; i++) {
+            for (j = 0; j < 4; j++) {
+                a[i][j] = frand_z();
+            }
+        }
+        /* translation */
+        PSMTXTrans(t, x, y, z);
+        C_MTXConcat(a, t, want);
+        port_mtx_concat_trans(a, x, y, z, got);
+        if (bits_differ(want, got)) {
+            ndiff++;
+        }
+        PSMTXCopy(a, got);
+        port_mtx_concat_trans(got, x, y, z, got);
+        if (bits_differ(want, got)) {
+            ndiff++;
+        }
+        /* rotations */
+        ax = trial % 3;
+        switch (trial % 7) {
+        case 0: rad = 0.0f; break;
+        case 1: rad = -0.0f; break;
+        case 2: rad = 3.14159265f; break;
+        case 3: rad = 1.5707963f; break;
+        default: rad = frand() * 0.05f; break;
+        }
+        {
+            f32 sn, cs;
+            port_sincosf(rad, &sn, &cs);
+            PSMTXRotTrig(r, axes[ax], sn, cs);
+        }
+        C_MTXConcat(a, r, want);
+        port_mtx_concat_rot(a, axes[ax], rad, got);
+        if (bits_differ(want, got)) {
+            ndiff++;
+            if (ndiff <= 4) {
+                printf("  axis %c rad %.9g: row0 want %.9g %.9g %.9g %.9g got %.9g %.9g %.9g %.9g\n",
+                       axes[ax], rad, want[0][0], want[0][1], want[0][2], want[0][3],
+                       got[0][0], got[0][1], got[0][2], got[0][3]);
+            }
+        }
+        PSMTXCopy(a, got);
+        port_mtx_concat_rot(got, axes[ax], rad, got);
+        if (bits_differ(want, got)) {
+            ndiff++;
+        }
+    }
+    printf("  %d of 1,600,000 concats differ\n", ndiff);
+    if (ndiff) {
+        fail("sparse concat", "differs from C_MTXConcat");
+    }
+}
+
+/* ---- 7. M28 (d): port_sqrtf against libm's sqrtf.  Default: sixteen million
+ * random floats over the whole range plus the edges; `--sqrt-all` every
+ * positive normal float, all 2^31 - 2^23 of them (minutes on the G4), which
+ * is the proof.  Then the speed of each over ten million calls. */
+static void test_sqrt(int all) {
+    unsigned long n = 0, ndiff = 0;
+    union { f32 f; u32 u; } k;
+    printf("port_sqrtf == sqrtf, bit for bit (%s):\n",
+           all > 1 ? "every positive normal float, strided" : all ? "every positive normal float" : "16M random");
+    port_opt.nofastsqrt = 0;
+    if (all) {
+        for (k.u = 0x00800000u; k.u < 0x7F800000u; k.u += (u32)all) {
+            union { f32 f; u32 u; } a, b;
+            a.f = port_sqrtf(k.f);
+            b.f = sqrtf(k.f);
+            n++;
+            if (a.u != b.u) {
+                ndiff++;
+                if (ndiff <= 8) {
+                    printf("  x=%.9g (0x%08x): port %.9g (0x%08x) libm %.9g (0x%08x)\n", k.f, k.u,
+                           a.f, a.u, b.f, b.u);
+                }
+            }
+        }
+    } else {
+        unsigned long i;
+        for (i = 0; i < 16000000UL; i++) {
+            union { f32 f; u32 u; } a, b;
+            rng_state = rng_state * 1103515245u + 12345u;
+            k.u = (rng_state << 8) ^ (rng_state >> 5);
+            k.u = 0x00800000u + (k.u % (0x7F800000u - 0x00800000u));
+            a.f = port_sqrtf(k.f);
+            b.f = sqrtf(k.f);
+            n++;
+            if (a.u != b.u) {
+                ndiff++;
+                if (ndiff <= 8) {
+                    printf("  x=%.9g (0x%08x): port %.9g (0x%08x) libm %.9g (0x%08x)\n", k.f, k.u,
+                           a.f, a.u, b.f, b.u);
+                }
+            }
+        }
+    }
+    {
+        /* the edges: zero, -0, denormals, FLT_MAX, inf, NaN, negative */
+        static const u32 edges[] = {0u, 0x80000000u, 1u, 0x007FFFFFu, 0x00800000u, 0x7F7FFFFFu,
+                                    0x7F800000u, 0x7FC00000u, 0xBF800000u, 0x3F800000u, 0x40800000u};
+        unsigned e;
+        for (e = 0; e < sizeof(edges) / sizeof(edges[0]); e++) {
+            union { f32 f; u32 u; } a, b;
+            k.u = edges[e];
+            a.f = port_sqrtf(k.f);
+            b.f = sqrtf(k.f);
+            n++;
+            if (a.u != b.u && !(a.f != a.f && b.f != b.f)) {
+                ndiff++;
+                printf("  edge x=0x%08x: port 0x%08x libm 0x%08x\n", k.u, a.u, b.u);
+            }
+        }
+    }
+    printf("  %lu of %lu differ\n", ndiff, n);
+    if (ndiff) {
+        fail("port_sqrtf", "differs from libm's sqrtf");
+    }
+    {
+        /* speed: the same ten million inputs through each, a dependency chain
+         * so the latency is what is timed (VECNormalize's 1/sqrt is one) */
+        unsigned long i;
+        float acc = 0.0f;
+        clock_t t0, t1, t2;
+        port_opt.nofastsqrt = 0;
+        t0 = clock();
+        for (i = 0; i < 10000000UL; i++) {
+            acc = port_sqrtf(acc + 1.5f + (float)(i & 1023));
+        }
+        t1 = clock();
+        for (i = 0; i < 10000000UL; i++) {
+            acc = sqrtf(acc + 1.5f + (float)(i & 1023));
+        }
+        t2 = clock();
+        printf("  10M chained: port_sqrtf %.0f ms, libm sqrtf %.0f ms (acc %g)\n",
+               (t1 - t0) * 1000.0 / CLOCKS_PER_SEC, (t2 - t1) * 1000.0 / CLOCKS_PER_SEC, acc);
+    }
+}
+
+static void bench_concat(void) {
+    /* a bone walk's shape: T then Rz Ry Rx, 2M bones, each form */
+    Mtx a, r, t, out;
+    unsigned long i;
+    clock_t t0, t1, t2;
+    int j, k;
+    for (j = 0; j < 3; j++) {
+        for (k = 0; k < 4; k++) {
+            a[j][k] = frand();
+        }
+    }
+    port_opt.nosparsemtx = 0;
+    t0 = clock();
+    for (i = 0; i < 2000000UL; i++) {
+        f32 ang = (float)(i & 255) * 0.01f;
+        port_mtx_concat_trans(a, 1.0f, 2.0f, 3.0f, out);
+        port_mtx_concat_rot(out, 'z', ang, out);
+        port_mtx_concat_rot(out, 'y', ang, out);
+        port_mtx_concat_rot(out, 'x', ang, out);
+        a[0][3] = out[0][3] * 1e-9f;
+    }
+    t1 = clock();
+    for (i = 0; i < 2000000UL; i++) {
+        f32 ang = (float)(i & 255) * 0.01f;
+        PSMTXTrans(t, 1.0f, 2.0f, 3.0f);
+        PSMTXConcat(a, t, out);
+        PSMTXRotRad(r, 'z', ang);
+        PSMTXConcat(out, r, out);
+        PSMTXRotRad(r, 'y', ang);
+        PSMTXConcat(out, r, out);
+        PSMTXRotRad(r, 'x', ang);
+        PSMTXConcat(out, r, out);
+        a[0][3] = out[0][3] * 1e-9f;
+    }
+    t2 = clock();
+    printf("  2M bones (T Rz Ry Rx): sparse %.0f ms, general %.0f ms\n",
+           (t1 - t0) * 1000.0 / CLOCKS_PER_SEC, (t2 - t1) * 1000.0 / CLOCKS_PER_SEC);
+}
+
+int main(int argc, char** argv) {
+    /* --sqrt-all [STRIDE]: every positive normal float (2^31 - 2^23 of them),
+     * or every STRIDE-th (the stride prime to the mantissa's pattern) */
+    int all = argc > 1 && !strcmp(argv[1], "--sqrt-all") ? (argc > 2 ? atoi(argv[2]) : 1) : 0;
     printf("---- port/tests/mtx_test ----\n");
     test_constructors();
     test_aliasing();
@@ -456,6 +680,9 @@ int main(void) {
     test_reorder();
     test_romult_altivec();
     test_vec();
+    test_sparse_concat();
+    bench_concat();
+    test_sqrt(all);
     printf("---- %d failure(s) ----\n", failures);
     return failures ? 1 : 0;
 }

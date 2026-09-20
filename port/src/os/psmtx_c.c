@@ -73,6 +73,215 @@ void port_sincos_report(void) {
     }
 }
 
+/* ---- M28 (c): the sparse concats of the bone walk (PLAN.md 43) ------------
+ *
+ * SetEnvelopMtx (EnvelopeExec.c) builds a bone's matrix as
+ * parent . T(pos) . Rz . Ry . Rx with four general 3x4 concats, each of which
+ * loads all twelve of the right-hand matrix although nine of them are the
+ * literal 0 and 1 of a translation or a single-axis rotation -- and each
+ * rotation was first *written* as twelve floats by PSMTXRotTrig.  These four
+ * bodies compute the same elements without the loads or the stores, and are
+ * bit-exact with C_MTXConcat by construction, which needs one thing spelled
+ * out: the ORDER GCC compiled C_MTXConcat in (port/build-ppc-darwin/.../mtx.o,
+ * read with otool; -std=gnu11 contracts to fmadds), per element
+ *
+ *     m[i][j] = fmadds(a[i][2], b[2][j], fmadds(a[i][0], b[0][j], a[i][1] * b[1][j]))
+ *     m[i][3] = a[i][3] + (the same over column 3)
+ *
+ * and what a fused multiply-add does with a literal 0 or 1:
+ *
+ *   x * 0            is a zero carrying x's sign;
+ *   fma(x, 0, t)     is t + (that zero): t itself unless t is a zero, and then
+ *                    -0 only if both are -0;
+ *   fma(x, 1, t)     is round(x + t): x itself unless x is a zero (the same
+ *                    rule), because t is then a zero too in every case below.
+ *
+ * So a product against a literal is one sign bit, and a chain of them is an
+ * AND of sign bits that matters only when the surviving term is a zero.
+ * The real products (the sines and cosines, the translation) stay real fmas
+ * with the same operands in the same order; a zero that reaches one as an
+ * addend is passed as the signed zero it is, and the hardware applies the
+ * rule.  Inf and NaN entries are the one input this is not exact for (inf*0
+ * is NaN in the general form); a bone matrix with either is already a broken
+ * picture.  port/tests/mtx_test.c runs each body against C_MTXConcat over
+ * random matrices seeded with zeros of both signs: 0 differ.  --nosparsemtx is
+ * the general form, through the very calls the game makes. */
+typedef union {
+    f32 f;
+    u32 u;
+} FloatBits;
+
+static inline u32 sgn(f32 x) {
+    FloatBits b;
+    b.f = x;
+    return b.u & 0x80000000u;
+}
+static inline f32 zero_of(u32 sign) {
+    FloatBits b;
+    b.u = sign;
+    return b.f;
+}
+/* fma(x, 0, t) */
+static inline f32 add_zero(f32 t, f32 x) { return t != 0.0f ? t : zero_of(sgn(t) & sgn(x)); }
+/* a[i][j] left alone by 1 and 0 terms whose signs AND to `zsign` */
+static inline f32 keep(f32 a, u32 zsign) { return a != 0.0f ? a : zero_of(sgn(a) & zsign); }
+
+#define FMA(x, y, t) __builtin_fmaf((x), (y), (t))
+
+static unsigned long sparse_calls, sparse_general;
+
+/* ab = a . T(x, y, z);  ab may alias a */
+void port_mtx_concat_trans(const Mtx a, f32 x, f32 y, f32 z, Mtx ab) {
+    int i;
+    if (port_opt.nosparsemtx) {
+        Mtx t;
+        sparse_general++;
+        PSMTXTrans(t, x, y, z);
+        PSMTXConcat(a, t, ab);
+        return;
+    }
+    sparse_calls++;
+    for (i = 0; i < 3; i++) {
+        f32 a0 = a[i][0], a1 = a[i][1], a2 = a[i][2], a3 = a[i][3];
+        u32 z012 = sgn(a0) & sgn(a1) & sgn(a2);
+        ab[i][0] = keep(a0, z012);
+        ab[i][1] = keep(a1, z012);
+        ab[i][2] = keep(a2, z012);
+        ab[i][3] = a3 + FMA(a2, z, FMA(a0, x, a1 * y));
+    }
+}
+
+/* ab = a . R(axis, rad), the rotation through PSMTXRotRad's own sin/cos memo;
+ * ab may alias a */
+void port_mtx_concat_rot(const Mtx a, char axis, f32 rad, Mtx ab) {
+    f32 s, c;
+    int i;
+    if (port_opt.nosparsemtx) {
+        Mtx r;
+        sparse_general++;
+        PSMTXRotRad(r, axis, rad);
+        PSMTXConcat(a, r, ab);
+        return;
+    }
+    sparse_calls++;
+    port_sincosf(rad, &s, &c);
+    switch (axis) {
+    case 'z': /* [c -s 0; s c 0; 0 0 1] */
+        for (i = 0; i < 3; i++) {
+            f32 a0 = a[i][0], a1 = a[i][1], a2 = a[i][2], a3 = a[i][3];
+            u32 z01 = sgn(a0) & sgn(a1);
+            ab[i][0] = add_zero(FMA(a0, c, a1 * s), a2);
+            ab[i][1] = add_zero(FMA(a0, -s, a1 * c), a2);
+            ab[i][2] = keep(a2, z01);
+            ab[i][3] = keep(a3, z01 & sgn(a2));
+        }
+        break;
+    case 'y': /* [c 0 s; 0 1 0; -s 0 c] */
+        for (i = 0; i < 3; i++) {
+            f32 a0 = a[i][0], a1 = a[i][1], a2 = a[i][2], a3 = a[i][3];
+            f32 z1 = zero_of(sgn(a1));
+            ab[i][0] = FMA(a2, -s, FMA(a0, c, z1));
+            ab[i][1] = keep(a1, sgn(a0) & sgn(a2));
+            ab[i][2] = FMA(a2, c, FMA(a0, s, z1));
+            ab[i][3] = keep(a3, sgn(a0) & sgn(a1) & sgn(a2));
+        }
+        break;
+    case 'x': /* [1 0 0; 0 c -s; 0 s c] */
+        for (i = 0; i < 3; i++) {
+            f32 a0 = a[i][0], a1 = a[i][1], a2 = a[i][2], a3 = a[i][3];
+            ab[i][0] = keep(a0, sgn(a1) & sgn(a2));
+            ab[i][1] = FMA(a2, s, add_zero(a1 * c, a0));
+            ab[i][2] = FMA(a2, c, add_zero(a1 * -s, a0));
+            ab[i][3] = keep(a3, sgn(a0) & sgn(a1) & sgn(a2));
+        }
+        break;
+    default: {
+        Mtx r;
+        PSMTXRotRad(r, axis, rad);
+        PSMTXConcat(a, r, ab);
+        break;
+    }
+    }
+}
+
+void port_sparse_report(void) {
+    if (sparse_calls || sparse_general) {
+        port_log("port> sparse concats (bone walk): %lu sparse, %lu general%s\n", sparse_calls,
+                 sparse_general, port_opt.nosparsemtx ? " (--nosparsemtx)" : "");
+    }
+}
+
+/* ---- M28 (d): the square root without libm (PLAN.md 43) ------------------
+ *
+ * The 7450 has no fsqrt; libm's sqrtf is a call into software.  It does have
+ * frsqrte, a reciprocal square root estimate good to 5 bits, and a double-
+ * precision FPU at full speed.  Four Newton steps take the estimate past 53
+ * bits (5, 10, 20, 40, 80 -- the last bounded by the double's own rounding),
+ * the product with x is the root to about a double ulp, and one correction
+ * step (s += (x - s*s) * y/2, the residual through a fused multiply-add)
+ * lands it within a double ulp or so of the true root.  Rounding THAT to
+ * single is the correctly rounded sqrtf: the exact root of a 24-bit float is
+ * never within 2^-50 (relative) of a single-precision rounding boundary
+ * (the classical bound, 2p+2 bits), and a double ulp is 2^-52.  So the value
+ * is libm's -- if libm's sqrtf is itself correctly rounded, which IEEE 754
+ * requires and port/tests/mtx_test.c checks the way that settles it: every
+ * positive float, all 2^31 of them, both ways, on the G4.  Zero, negative,
+ * inf, NaN and the denormals go to libm.  --nofastsqrt: libm for everything. */
+static unsigned long fastsqrt_calls, fastsqrt_libm;
+
+f32 port_sqrtf(f32 x) {
+    double d, y, s, h;
+    if (port_opt.nofastsqrt || !(x >= 1.17549435e-38f) || x > 3.4e38f) {
+        /* zero, negative, NaN, a denormal, inf: libm's own answer */
+        fastsqrt_libm++;
+        return sqrtf(x);
+    }
+    fastsqrt_calls++;
+    d = x;
+#if defined(__ppc__) || defined(__powerpc__)
+    __asm__("frsqrte %0,%1" : "=f"(y) : "f"(d));
+#else
+    y = 1.0 / sqrt(d);
+#endif
+    h = 0.5 * d;
+    y = y * (1.5 - h * y * y);
+    y = y * (1.5 - h * y * y);
+    y = y * (1.5 - h * y * y);
+    y = y * (1.5 - h * y * y);
+    s = d * y;
+    s = s + __builtin_fma(-s, s, d) * (0.5 * y);
+    {
+        /* The rounding settled exactly, whatever the steps above lost: the
+         * root lies on f's side of both of f's midpoints iff f is the
+         * correctly rounded root, and a midpoint (25 significant bits)
+         * squares exactly in a double (50), as does x (24) compare against
+         * it.  A midpoint's square is never x itself (an odd 25-bit
+         * mantissa squared has 49 bits), so there are no ties. */
+        FloatBits fb, up, dn;
+        double fd, mu, md;
+        fb.f = (f32)s;
+        up.u = fb.u + 1;
+        dn.u = fb.u - 1;
+        fd = fb.f;
+        mu = 0.5 * (fd + (double)up.f);
+        md = 0.5 * (fd + (double)dn.f);
+        if (d > mu * mu) {
+            return up.f;
+        }
+        if (d < md * md) {
+            return dn.f;
+        }
+        return fb.f;
+    }
+}
+
+void port_fastsqrt_report(void) {
+    if (fastsqrt_calls || fastsqrt_libm) {
+        port_log("port> sqrtf: %lu through frsqrte, %lu through libm%s\n", fastsqrt_calls,
+                 fastsqrt_libm, port_opt.nofastsqrt ? " (--nofastsqrt)" : "");
+    }
+}
+
 /* ---- the C_ bodies the SDK sources never spelled out --------------------- */
 
 void C_MTXMultVec(const Mtx m, const Vec* src, Vec* dst) {
@@ -128,12 +337,12 @@ void C_VECCrossProduct(const Vec* a, const Vec* b, Vec* r) {
 }
 
 f32 C_VECSquareMag(const Vec* v) { return v->x * v->x + v->y * v->y + v->z * v->z; }
-f32 C_VECMag(const Vec* v) { return sqrtf(C_VECSquareMag(v)); }
+f32 C_VECMag(const Vec* v) { return port_sqrtf(C_VECSquareMag(v)); }
 
 void C_VECNormalize(const Vec* src, Vec* dst) {
     f32 m = C_VECSquareMag(src);
     if (m > 0.0f) {
-        m = 1.0f / sqrtf(m);
+        m = 1.0f / port_sqrtf(m);
     }
     dst->x = src->x * m;
     dst->y = src->y * m;
@@ -145,7 +354,7 @@ f32 C_VECSquareDistance(const Vec* a, const Vec* b) {
     return dx * dx + dy * dy + dz * dz;
 }
 
-f32 C_VECDistance(const Vec* a, const Vec* b) { return sqrtf(C_VECSquareDistance(a, b)); }
+f32 C_VECDistance(const Vec* a, const Vec* b) { return port_sqrtf(C_VECSquareDistance(a, b)); }
 
 /* ---- PS* forwarders ------------------------------------------------------ */
 
