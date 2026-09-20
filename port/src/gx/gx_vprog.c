@@ -675,9 +675,16 @@ static void vp_gen(const VpKey* k, VpBuf* b) {
             in = "vertex.position"; /* w is 1 for the 3-float arrays */
         } else if (k->tg_kind[tt] == 2 && !k->viewtg) {
             /* GX_TG_NRM likewise: the raw normal; hsfdraw's reflection and
-             * hilite matrices carry the object->view rotation themselves. */
-            vpi(b, "MOV t0, vertex.normal;\n");
-            vpi(b, "MOV t0.w, 1.0;\n");
+             * hilite matrices carry the object->view rotation themselves.
+             * A descriptor with no normal reads the (0, 0, 1) phase 1 stores
+             * (the title's cake is such a draw: `vertex.normal` there is
+             * whatever the last glNormal was, which drew it striped). */
+            if (k->have_nrm) {
+                vpi(b, "MOV t0, vertex.normal;\n");
+                vpi(b, "MOV t0.w, 1.0;\n");
+            } else {
+                vpi(b, "MOV t0, {0.0, 0.0, 1.0, 1.0};\n");
+            }
             in = "t0";
         } else if (k->tg_kind[tt] == 1) {
             in = "vp"; /* the view-space position, w already 1 */

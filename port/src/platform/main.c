@@ -281,6 +281,8 @@ static void usage(const char* argv0) {
             "  --viewtexgen      M26: GX_TG_POS/NRM texgens read the view-space position\n"
             "                    and normal, as before M26 (every shadow map and\n"
             "                    reflection map was projected from the wrong space)\n"
+            "  --nrmfrac0        M26: S8/S16 normals scaled by the VAT's frac (0) instead of\n"
+            "                    the hardware's fixed 1.6/1.14 (raw normals 64x too long)\n"
             "  --vtxdivide       M26: projected texgens (GX_TG_MTX3x4: every shadow map)\n"
             "                    divided by q at the vertex, as before M26\n"
             "  --mghold          M25: inside a minigame's own overlay all four players\n"
@@ -563,6 +565,8 @@ int port_parse_args(int argc, char** argv) {
             port_opt.mgend = atoi(argv[++i]);
         } else if (!strcmp(a, "--viewtexgen")) {
             port_opt.viewtexgen = 1;
+        } else if (!strcmp(a, "--nrmfrac0")) {
+            port_opt.nrmfrac0 = 1;
         } else if (!strcmp(a, "--vtxdivide")) {
             port_opt.vtxdivide = 1;
         } else if (!strcmp(a, "--mghold")) {

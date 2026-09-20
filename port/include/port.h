@@ -263,6 +263,8 @@ typedef struct PortOptions {
     int viewtexgen;         /* --viewtexgen  M26: GX_TG_POS/GX_TG_NRM texgens read
                              *   the view-space position/normal (the M3..M25
                              *   picture) instead of the raw input row       */
+    int nrmfrac0;           /* --nrmfrac0  M26: decode S8/S16 normals with the VAT's
+                             *   frac (0) instead of the hardware's fixed 6/14 */
     int vtxdivide;          /* --vtxdivide  M26: GX_TG_MTX3x4's q divided at the
                              *   vertex (the M3..M25 picture) instead of per
                              *   pixel by the rasteriser                     */

@@ -550,6 +550,20 @@ const float gx_frac_scale[32] = {
  * 16- or 32-bit attribute is a load rather than a shift-and-or.  PowerPC
  * handles the unaligned case in hardware.  The portable path stays for the
  * little-endian development host, which is the only place it is needed. */
+/* GX_VA_NRM's fixed-point shift is not the VAT's: the hardware ignores the
+ * `frac` of GXSetVtxAttrFmt for normals and reads S8 as 1.6 and S16 as 1.14
+ * (GX manual, GXSetVtxAttrFmt: "for normals, frac is fixed").  hsfdraw.c sets
+ * frac 0 for its S8 normals, so until M26 every raw normal was 64x too long --
+ * invisible to the lighting (which normalises) and to nothing else until a
+ * GX_TG_NRM texgen read the raw row (PLAN.md 41.4: the title's cake drawn as a
+ * 64x-repeated hilite map).  `--nrmfrac0` keeps the VAT's value. */
+static u8 nrm_frac(u8 type, u8 frac) {
+    if (port_opt.nrmfrac0) {
+        return frac;
+    }
+    return type == GX_S8 ? 6 : type == GX_S16 ? 14 : frac;
+}
+
 static f32 read_component(const u8* p, u8 type, u8 frac, int i) {
     const float sc = gx_frac_scale[frac & 31];
     switch (type) {
@@ -1020,7 +1034,7 @@ static void build_decode_plan(void) {
         s->attr = (u8)a;
         s->base = NULL;
         s->stride = 0;
-        s->scale = gx_frac_scale[f->frac & 31];
+        s->scale = gx_frac_scale[(a == GX_VA_NRM ? nrm_frac(f->type, f->frac) : f->frac) & 31];
         s->tbl = NULL;
         s->to_pending = 0;
         s->dstoff = 0;
@@ -1213,7 +1227,8 @@ static void put_fixed(const s32* v, int n) {
         attr_written();
         return;
     }
-    k = gx_frac_scale[gx.vat[vtxfmt][a].frac & 31];
+    k = gx_frac_scale[(a == GX_VA_NRM ? nrm_frac(gx.vat[vtxfmt][a].type, gx.vat[vtxfmt][a].frac)
+                                      : gx.vat[vtxfmt][a].frac) & 31];
     for (i = 0; i < n && i < 3; i++) {
         f[i] = (f32)v[i] * k;
     }
@@ -1552,9 +1567,10 @@ static void indexed(u32 index) {
         pending.pos[1] = read_component(p, f->type, f->frac, 1);
         pending.pos[2] = n == 3 ? read_component(p, f->type, f->frac, 2) : 0.0f;
     } else if (attr == GX_VA_NRM) {
-        pending.nrm[0] = read_component(p, f->type, f->frac, 0);
-        pending.nrm[1] = read_component(p, f->type, f->frac, 1);
-        pending.nrm[2] = read_component(p, f->type, f->frac, 2);
+        u8 nf = nrm_frac(f->type, f->frac);
+        pending.nrm[0] = read_component(p, f->type, nf, 0);
+        pending.nrm[1] = read_component(p, f->type, nf, 1);
+        pending.nrm[2] = read_component(p, f->type, nf, 2);
     } else if (attr == GX_VA_CLR0 || attr == GX_VA_CLR1) {
         read_color(p, f->type, pending.clr[attr - GX_VA_CLR0]);
     } else if (attr >= GX_VA_TEX0 && attr <= GX_VA_TEX7) {
@@ -4560,9 +4576,10 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
                             pending.pos[2] =
                                 comps == 3 ? read_component(p, f->type, f->frac, 2) : 0.0f;
                         } else if (attr == GX_VA_NRM) {
-                            pending.nrm[0] = read_component(p, f->type, f->frac, 0);
-                            pending.nrm[1] = read_component(p, f->type, f->frac, 1);
-                            pending.nrm[2] = read_component(p, f->type, f->frac, 2);
+                            u8 nf = nrm_frac(f->type, f->frac);
+                            pending.nrm[0] = read_component(p, f->type, nf, 0);
+                            pending.nrm[1] = read_component(p, f->type, nf, 1);
+                            pending.nrm[2] = read_component(p, f->type, nf, 2);
                         } else {
                             int t = attr - GX_VA_TEX0;
                             pending.tex[t][0] = read_component(p, f->type, f->frac, 0);

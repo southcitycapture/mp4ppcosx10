@@ -438,4 +438,10 @@ the console's at ~12,150 on this schedule).
   minigame's load — the roulette's own choice is preloaded before the poke
   replaces it, and m402's directory on top of it does not fit. The port's
   harness moves `mg_next` before the preload (PLAN.md 28.4). Unverified.
-* **m427 Right Oar Left?**: captured after the others (see §41.3).
+* **m427 Right Oar Left?** (`m427-console-15400/16600/17000.png`): a dark
+  cave; the river is dark green and the boats are lit only by their
+  headlamp's cone (a projected light texture on the water and the walls) —
+  and by the fire-breathing enemy's orange blast. The port draws the river
+  washed white-green with the boats as black silhouettes: the lamp's
+  projection landing everywhere (cause A of PLAN.md §41.3); the fixed
+  build is compared in §41.5.
