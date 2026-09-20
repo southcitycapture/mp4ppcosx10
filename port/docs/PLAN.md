@@ -13284,3 +13284,161 @@ order of games behind each:
 And the gallery itself is now a tool: `GALLERY_APP=… GALLERY_DIR=… sh
 ~/gallery_chain.sh` on the G4 and `diff.py` on littlejelly say what any
 renderer change did to every minigame, overnight.
+
+## 42. M27 log: the render thread *(2026-09-20, littlejelly)*
+
+M27's brief is the structural change §32.1's arithmetic has pointed at
+since M17: presented fps = 60/(k+1), where k consumed frames pay for one
+drawn frame inside (k+1)·16.7 ms. The board's drawn frame is ~39 ms and its
+consumed one 6.4, so k = 2 and the cap is 20 (M24 measured 19.6). For the
+30 cap, drawn + consumed must fit 33.3 ms — the drawn frame under ~27 ms.
+§36.3 split the drawn frame into what the *game thread* must do (game 11 +
+decode 7 + state/tex ~3.5 ≈ 21 ms) and what only the *GL driver* does (the
+issue, ~13 ms: `gldUpdateDispatch`, the copying path, the command-buffer
+traffic). Serial they are 39; overlapped on the two cores they are
+max(21, 13) plus whatever the overlap costs. This milestone is that
+overlap: one GL thread — not Apple's multithreaded engine, which crosses a
+thread per call and was twice as slow (§32.3) — and the game on the other
+core, with a complete, ordered command buffer between them.
+
+### 42.1 The design, written before the code
+
+**The seam is the GL call.** Everything the port decides about a draw — the
+batching, the shadow's elision, the TEV → combiner mapping, the vertex
+program's variant and its parameters, the texture cache's hash/decode/bind
+— stays on the game thread exactly as it is; what moves is the *emission*.
+Every GL entry point the port calls (≈70: the `GL(fn)` macro's set in
+gl13.c, gx_tev.c, gx_tex.c, plus gx_vprog.c's `vp_*ARB` pointers and the
+VAR/fence pointers) gets a twin `rt_glX(...)` that, with the render thread
+on, appends `{op, args}` to a byte stream and, with it off, calls GL. The
+render thread replays the stream in order with the real GL. Nothing about
+any triangle, any state or any order changes, which is why the md5s must
+hold, and why they are the witness of every stage (§42.2).
+
+*(a) What the render thread reads.* Only the stream, and through it: the
+vertex ring's bytes (already copied there by the decode — §39.5's point
+that the copy *is* the decode is what makes this design free of a second
+copy; the ring is a fixed allocation the driver already DMAs from); the
+state, TEV config and program parameters *by value* in the records (a
+`glProgramEnvParameter4fvARB` record carries its 16 bytes, a
+`glLoadMatrixf` its 64, a `glMultiDrawArraysEXT` its `first[]`/`count[]`
+arrays); textures by GL name — the decode runs on the game thread as today
+into its malloc'd RGBA buffer, the upload record takes *ownership of that
+pointer* and the render thread frees it after `glTexImage2D` (no copy of
+the texels: a cold frame's 40 MB of uploads are 40 MB of records otherwise,
+and §39.3 already measured that copying decoded texels costs what the
+decode saved); the EFB copies (`glCopyTexSubImage2D`, `glReadBuffer`) as
+records in order, so a consumed frame's front-buffer copy lands after the
+previous present and before the draws that sample it, exactly as today.
+Anything that *returns* data is a **join**: `glReadPixels` (the
+`--dumpframe`/F12 PPM, `gl13_downsample_read` for `port_gx_copy_read`),
+`glGetTexImage` (`--dumpcopy`), `glGetError` (`--drawlog`), and the vertex
+program compile (`glProgramStringARB` + `glGetIntegerv`/`glGetProgramivARB`
+— run as one function *on the render thread* through an `RT_CALL` record
+whose argument block is the program text in and the id/error/native counts
+out, then joined). Joins are counted, timed and printed. GL names for
+textures come from a counter on the game thread once the render thread is
+up (an unused name bound with `glBindTexture` is a new object in GL 1.x;
+the counter starts at 0x100000, past anything the driver generated at
+init), so a cold scene's hundreds of new slots cost no join.
+
+*(b) What the game thread may overwrite before the replay.* Nothing the
+stream refers to, by construction. The pointers the draw path hands GL
+today, each accounted for: **the ring** (`src_buf`) — fixed, fenced (c);
+**`out_buf`** (the CPU transform fallback, `finish_vertices`, `--cpuxf` and
+the variants the card refuses) — a static buffer rewritten per draw, so
+under the render thread the draw copies its `n·stride` bytes into the
+stream as a payload and rebases the array pointers onto it; **the decoded
+RGBA** — ownership moves to the record; **`GXTexObj`s / TLUTs** — read at
+bind time on the game thread, never by the replay (the replay sees a name
+and parameters); **the skinning buffers** (§33.3) — inputs to the decode,
+which has already copied them into the ring; **display lists and vertex
+arrays** — likewise; **`glc_*` shadow, `gx.*`** — game-thread state the
+replay never touches; **`fs_tex`, the white texture, the fences** — names
+and objects created at init on the main thread, before the handover;
+**`pending_shot` / the PPM path** — copied into the `RT_CALL` record;
+**`frame_no`** — the drawn frame's number travels in the present record for
+the render thread's own timing line. The `--indexed` lever's index arrays
+(static, per batch) are copied as payload too, so the lever stays exact.
+
+*(c) The ring's fences.* Two hazards, one old and one new. The GPU may
+still be reading a chunk when the writer re-enters it a lap later — today
+the `GL_APPLE_fence` set on leaving and finished on entering; under the
+render thread the set and the finish are *records* (the finish blocks the
+render thread on the GPU, as it blocked the game thread), in the same
+stream positions as today. New: the render thread may not yet have *issued*
+the draws that read the chunk when the writer re-enters it. So each chunk
+remembers the stream position at which the writer last left it (the fence
+record's position), and `gl13_var_enter` waits until the render thread's
+read cursor has passed it — the join at reuse, counted (`ring waits`),
+timed, expected ~0 with an 8 MB ring and ~2 MB of vertices per frame.
+
+*(d) The frame gate.* The stream is published progressively (every 16 KB
+or at every draw), so the render thread issues frame N's first batches
+while the game thread is still decoding its last ones; a drawn frame's
+issue overlaps *its own* build, and the render thread trails by a chunk.
+The gate's rules stay (§32.1: the 30 cap, the half-period lateness test,
+`--maxskip`, `--dumpframe`/F12 forced): a frame that would be drawn is
+drawn if the render thread has drained the previous drawn frame, or drains
+it within a bounded wait (`--rtgate` ms, default 4, counted and timed as
+`gate waits`); otherwise it is consumed and counted (`rt busy`). A
+`--maxskip`- or `--dumpframe`-forced frame joins unbounded. The latency
+this adds is the render thread's trailing tail after the game's frame end:
+measured, expected a few ms, well under the brief's one frame.
+
+*(e) The instruments.* `--dumpframe`/F12: the PPM is written by the render
+thread (`RT_CALL` with the path; the read must be of the frame as
+presented, and only the GL thread can read it). `--drawlog`: printed at
+record time on the game thread, where every value it prints is known (the
+GL names are ours). `--gxsplit`: the game-thread regions keep their
+meaning, `issue` now measuring the *recording*; the render thread times its
+replay per frame (`rt` ms) and per region class, in the report. Snapshots:
+`port_snap_tick` runs at the top of the retrace after the workers' join;
+the render thread is joined there too when a snapshot is due (the registry
+carries no GL state, but the ring's bytes and the pending copies must be
+consumed before the game's memory is serialised and the run continued;
+`--snap-every` is on every soak, so this join is on every soak's path and
+counted separately). `--gltrace`/`--glcheck`: at record time.
+
+*(f) The single-core story.* `--renderthread 1` records the stream and
+replays it inline on the game thread at every publish point — the same
+records, the same replay switch, no thread. That is what `--threads 0`
+and a one-CPU machine get, and its cost over today's direct path is the
+recording plus the dispatch: measured in stage 1, budget under 1 ms a
+drawn frame. `--renderthread 0` (`--norenderthread`) is today's direct
+path on the same binary — the inline twin and the A/B baseline.
+`--renderthread 2` is the worker with a join at every frame end (stage 2:
+the thread hop's cost, no overlap); `--renderthread 3` the overlap (stage
+3). The default is 3 on `cpu 2` once it wins, 1 otherwise.
+
+*(g) The GL context stays on one thread.* SDL 2.0.3 (the panther fork)
+creates the context current on the main thread; the Cocoa backend's
+`SDLOpenGLContext` carries an atomic *dirty* flag so that
+`SDL_GL_SwapWindow` and `SDL_GL_MakeCurrent` — "called on the thread on
+which a user is using the context", the source says — run the deferred
+`update` while the main thread only *schedules* one on resize. That is a
+library designed for exactly this shape, and Cocoa's event loop must stay
+on the main thread anyway. So: the game thread is the main thread (SDL
+events, the window, the machine check's probes, `gl13_init`, the ring's
+VAR setup, the white texture, the fences — everything GL that happens
+before the first frame runs there); then `rt_start()` releases the context
+(`SDL_GL_MakeCurrent(window, NULL)`) and the render thread makes it
+current and owns it for the process's life; `rt_stop()` drains, the render
+thread releases it, and the main thread takes it back for `gl13_shutdown`.
+The fullscreen toggle and any window change join first.
+
+**The rules (§39), restated for this worker.** No GL call from any thread
+but the render thread once it is up (the wrappers are the one door; a bare
+`gl*` in `src/gx` is a build error under the header's redefinitions). No
+game global read by the render thread: the replay reads the stream and
+its own statistics, and `RT_CALL` targets take their inputs in the record.
+The inline twin is the same replay switch. The shutdown report prints
+frames replayed, joins by kind, waits (gate, ring, full-stream, joins) with
+their time and worst case, stream bytes (peak per frame, total). The status
+line says `rt` after `cpu 2` when the render thread is on.
+
+**What is not in this design.** A second copy of anything the ring holds;
+moving the decode, the TEV mapping or the texture decode off the game
+thread (§39.5 and §39.3 said why); Apple's `kCGLCEMPEngine`. The
+command stream is the port's own, ~60 opcodes, and it is complete by
+construction because the wrappers are the only way to reach GL.
