@@ -390,6 +390,37 @@ on the Mac. What is different there:
   Dolphin.Core.EnableCheats=True`, and `kill` `pgrep -x dolphin-emu`
   afterwards, every time.
 
+## 0o. Five things M26 paid for *(2026-09-20)*
+
+* **The MacBook refuses `open` for a bundle with `LSRequiresNativeExecution`.**
+  M25's plist key makes LaunchServices answer "incorrect executable
+  format" under Rosetta, before `--force` is ever read; delete the key
+  from the *bench copy's* Info.plist and `lsregister -f` it. `open` also
+  reports `-10810` for any run that exits non-zero within a second
+  (`--machinecheck` = 2, a usage error = 1): the real output is in
+  `/var/log/system.log` under the bundle id. And `--log` takes a FILE —
+  `--log --viewtexgen` silently eats the next flag, which cost one A/B arm.
+* **The MacBook's picture is not the G4's for cluster shapes.** Slime
+  Time's blobs (m402, `ClusterProc` morphs) render as spikes on the Intel
+  driver under Rosetta on every bundle back to M24b; the G4 draws them
+  round. A MacBook A/B says whether *a change* moved a picture, never
+  whether the picture is right.
+* **The oracle rig can run the console out of `HEAP_DVD`.** Forcing
+  `mg_next` from frame 9,000 leaves the board's own roulette choice
+  preloaded and `instDll` then loads the forced game's directory on top;
+  m402 panicked (`dvd.c:75`, the allocation error) on Dolphin where
+  m405/m406/m408/m415/m416 had not. The port's harness moves the value
+  before the preload (PLAN.md 28.4) and never sees it. A panic leaves
+  Dolphin sitting on a magenta screen with the 2,100 s budget running:
+  `ffmpeg -f x11grab` of `:0` is the 2-second check.
+* **A gallery chain runs 3 minutes a game on the G4** (`--ffto 14000` at
+  ~150 fps, then 2,600 lockstep frames at 12–25): 63 games in 3 h 10 min,
+  and the same chain again on a second build for a byte-diff. Two runs of
+  the whole set is a night; plan the second before starting the first.
+* **`--mgdump` / `--mgend` make the entry frame the harness's problem.**
+  Every game entered at 14,477 or 14,478 on the `board-start-com4.play`
+  walk, but the levers cost nothing and the chain never had to know.
+
 ## 1. m425 to its result screen — the M8 crash, witnessed
 
 §18.2 proved the `unk_3C[6]` correction at the level of the instructions. This

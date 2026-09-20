@@ -1,0 +1,991 @@
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mario Party 4 PowerPC port: the minigame gallery (M26)</title>
+<style>body{font:14px/1.4 -apple-system,Helvetica,Arial,sans-serif;margin:8px;background:#fafafa}
+.g{border-top:2px solid #ccc;padding:8px 0}.h{font-weight:bold;font-size:16px}.m{color:#555;font-size:12px}
+.f{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}.f figure{margin:0;width:320px}.f img{width:320px;height:240px;display:block;border:1px solid #bbb}
+.f figcaption{font-size:11px;color:#444}.n{background:#fff;border:1px solid #ddd;padding:6px;font-size:13px}
+.ok{color:#2a7}.minor{color:#c80}.major{color:#c22}.faulted{color:#808}
+@media(max-width:700px){.f figure{width:48%}.f img{width:100%;height:auto}}</style>
+<h1>Mario Party 4 on the G4: every minigame, four frames each (M26)</h1>
+<p>Each game teleported into from boot (<code>--minigame mNNN --turns 1 --com4 --rtc dolphin --freshcard --play board-start-com4.play --ffto 14000 --lockstep</code>), frames dumped on the G4 at the instruction card (walk frames 14200/14300/14400), then entry+60, +400, +1200, +2300 inside the module, and the results screen 40 frames after the module is left when it ends before that. Downscaled to 320&times;240. Verdicts are the first pass of the audit (PLAN.md &sect;41); flag anything that looks wrong.</p>
+<p><span class="faulted">faulted: 2</span>, <span class="major">major: 7</span>, <span class="minor">minor: 2</span>, <span class="minor">minor?: 3</span>, <span class="ok">ok: 49</span> &mdash; 63 games, 9.1 MB of JPEGs</p>
+<div class="g" id="m401"><div class="h">m401 &mdash; Manta Rings <span class="m">(4-player (type 0))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14478; still running at entry+2600; exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m401-f014200.jpg" alt="m401 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m401-f014300.jpg" alt="m401 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m401-f014400.jpg" alt="m401 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m401-f014538.jpg" alt="m401 f14538 (entry+60)"><figcaption>f14538 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m401-f014878.jpg" alt="m401 f14878 (entry+400)"><figcaption>f14878 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m401-f015678.jpg" alt="m401 f15678 (entry+1200)"><figcaption>f15678 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m401-f016778.jpg" alt="m401 f16778 (entry+2300)"><figcaption>f16778 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Manta Rings: plausible; no shadow receiver to judge</div></div>
+<div class="g" id="m402"><div class="h">m402 &mdash; Slime Time <span class="m">(4-player (type 0))</span> <span class="minor">minor?</span></div>
+<div class="m">M25 build; module entered at frame 14478; still running at entry+2600; exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m402-f014200.jpg" alt="m402 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m402-f014300.jpg" alt="m402 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m402-f014400.jpg" alt="m402 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m402-f014538.jpg" alt="m402 f14538 (entry+60)"><figcaption>f14538 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m402-f014878.jpg" alt="m402 f14878 (entry+400)"><figcaption>f14878 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m402-f015678.jpg" alt="m402 f15678 (entry+1200)"><figcaption>f15678 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m402-f016778.jpg" alt="m402 f16778 (entry+2300)"><figcaption>f16778 (entry+2300)</figcaption></figure>
+</div>
+<div class="m">the same frames on the M26 build (raw texgen inputs, per-pixel q):</div><div class="f">
+<figure><img loading="lazy" src="m402-fix-f014538.jpg" alt="m402 M26 fix f14538 (entry+60)"><figcaption>M26 fix f14538 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m402-fix-f014878.jpg" alt="m402 M26 fix f14878 (entry+400)"><figcaption>M26 fix f14878 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m402-fix-f015678.jpg" alt="m402 M26 fix f15678 (entry+1200)"><figcaption>M26 fix f15678 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m402-fix-f016778.jpg" alt="m402 M26 fix f16778 (entry+2300)"><figcaption>M26 fix f16778 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Slime Time: no shadows under the players and the outer floor flat dark green (the texgen cause; the M26 build draws the shadows and the floor's reflection-mapped shading); the tall yellow column unverified (the oracle capture panicked in Dolphin, dvd.c:75: HEAP_DVD)</div></div>
+<div class="g" id="m403"><div class="h">m403 &mdash; Booksquirm <span class="m">(4-player (type 0))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14477; left at 15685 (+1208); exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m403-f014200.jpg" alt="m403 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m403-f014300.jpg" alt="m403 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m403-f014400.jpg" alt="m403 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m403-f014537.jpg" alt="m403 f14537 (entry+60)"><figcaption>f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m403-f014877.jpg" alt="m403 f14877 (entry+400)"><figcaption>f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m403-f015677.jpg" alt="m403 f15677 (entry+1200)"><figcaption>f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m403-f015725.jpg" alt="m403 f15725 (entry+1248)"><figcaption>f15725 (entry+1248)</figcaption></figure>
+<figure><img loading="lazy" src="m403-f016777.jpg" alt="m403 f16777 (entry+2300)"><figcaption>f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Booksquirm: game ends at +1208 (all squished), white fade before results is the game's</div></div>
+<div class="g" id="m404"><div class="h">m404 &mdash; Trace Race <span class="m">(Battle (type 4))</span> <span class="minor">minor?</span></div>
+<div class="m">M25 build; module entered at frame 14477; still running at entry+2600; exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m404-f014200.jpg" alt="m404 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m404-f014300.jpg" alt="m404 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m404-f014400.jpg" alt="m404 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m404-f014537.jpg" alt="m404 f14537 (entry+60)"><figcaption>f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m404-f014877.jpg" alt="m404 f14877 (entry+400)"><figcaption>f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m404-f015677.jpg" alt="m404 f15677 (entry+1200)"><figcaption>f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m404-f016777.jpg" alt="m404 f16777 (entry+2300)"><figcaption>f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Trace Race: the lanes show no dotted guide line ahead of the players; unverified — the oracle run with mg_next poked to 3 dealt Order Up instead (a Battle-type game forced outside a battle space; not chased)</div></div>
+<div class="g" id="m405"><div class="h">m405 &mdash; Mario Medley <span class="m">(4-player (type 0))</span> <span class="major">major</span></div>
+<div class="m">M25 build; module entered at frame 14477; still running at entry+2600; exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m405-f014200.jpg" alt="m405 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m405-f014300.jpg" alt="m405 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m405-f014400.jpg" alt="m405 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m405-f014537.jpg" alt="m405 f14537 (entry+60)"><figcaption>f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m405-f014877.jpg" alt="m405 f14877 (entry+400)"><figcaption>f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m405-f015677.jpg" alt="m405 f15677 (entry+1200)"><figcaption>f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m405-f016777.jpg" alt="m405 f16777 (entry+2300)"><figcaption>f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="m">the same frames on the M26 build (raw texgen inputs, per-pixel q):</div><div class="f">
+<figure><img loading="lazy" src="m405-fix-f014537.jpg" alt="m405 M26 fix f14537 (entry+60)"><figcaption>M26 fix f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m405-fix-f014877.jpg" alt="m405 M26 fix f14877 (entry+400)"><figcaption>M26 fix f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m405-fix-f015677.jpg" alt="m405 M26 fix f15677 (entry+1200)"><figcaption>M26 fix f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m405-fix-f016777.jpg" alt="m405 M26 fix f16777 (entry+2300)"><figcaption>M26 fix f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Mario Medley: the pool is opaque and a black wedge covers its lower-left at +2300; the console (m405-console-15600/16500/17400.png) shows the swimmers through translucent water with lane ropes — same family as m434 (opaque black water)</div></div>
+<div class="g" id="m406"><div class="h">m406 &mdash; Avalanche! <span class="m">(4-player (type 0))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14477; left at 16912 (+2435); exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m406-f014200.jpg" alt="m406 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m406-f014300.jpg" alt="m406 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m406-f014400.jpg" alt="m406 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m406-f014537.jpg" alt="m406 f14537 (entry+60)"><figcaption>f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m406-f014877.jpg" alt="m406 f14877 (entry+400)"><figcaption>f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m406-f015677.jpg" alt="m406 f15677 (entry+1200)"><figcaption>f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m406-f016777.jpg" alt="m406 f16777 (entry+2300)"><figcaption>f16777 (entry+2300)</figcaption></figure>
+<figure><img loading="lazy" src="m406-f016952.jpg" alt="m406 f16952 (entry+2475)"><figcaption>f16952 (entry+2475)</figcaption></figure>
+</div>
+<div class="n">Avalanche!: matches port/ref/frames/m406-console-12500/13000</div></div>
+<div class="g" id="m407"><div class="h">m407 &mdash; Domination <span class="m">(4-player (type 0))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14477; left at 16512 (+2035); exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m407-f014200.jpg" alt="m407 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m407-f014300.jpg" alt="m407 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m407-f014400.jpg" alt="m407 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m407-f014537.jpg" alt="m407 f14537 (entry+60)"><figcaption>f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m407-f014877.jpg" alt="m407 f14877 (entry+400)"><figcaption>f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m407-f015677.jpg" alt="m407 f15677 (entry+1200)"><figcaption>f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m407-f016552.jpg" alt="m407 f16552 (entry+2075)"><figcaption>f16552 (entry+2075)</figcaption></figure>
+<figure><img loading="lazy" src="m407-f016777.jpg" alt="m407 f16777 (entry+2300)"><figcaption>f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="m">the same frames on the M26 build (raw texgen inputs, per-pixel q):</div><div class="f">
+<figure><img loading="lazy" src="m407-fix-f014537.jpg" alt="m407 M26 fix f14537 (entry+60)"><figcaption>M26 fix f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m407-fix-f014877.jpg" alt="m407 M26 fix f14877 (entry+400)"><figcaption>M26 fix f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m407-fix-f015677.jpg" alt="m407 M26 fix f15677 (entry+1200)"><figcaption>M26 fix f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m407-fix-f016552.jpg" alt="m407 M26 fix f16552 (entry+2075)"><figcaption>M26 fix f16552 (entry+2075)</figcaption></figure>
+<figure><img loading="lazy" src="m407-fix-f016777.jpg" alt="m407 M26 fix f16777 (entry+2300)"><figcaption>M26 fix f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Domination: the Whomps are grey stone blocks lying face-down on the console too (port/ref/frames/m407-console-12000.png); verified</div></div>
+<div class="g" id="m408"><div class="h">m408 &mdash; Paratrooper Plunge <span class="m">(4-player (type 0))</span> <span class="major">major</span></div>
+<div class="m">M25 build; module entered at frame 14477; left at 16970 (+2493); exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m408-f014200.jpg" alt="m408 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m408-f014300.jpg" alt="m408 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m408-f014400.jpg" alt="m408 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m408-f014537.jpg" alt="m408 f14537 (entry+60)"><figcaption>f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m408-f014877.jpg" alt="m408 f14877 (entry+400)"><figcaption>f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m408-f015677.jpg" alt="m408 f15677 (entry+1200)"><figcaption>f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m408-f016777.jpg" alt="m408 f16777 (entry+2300)"><figcaption>f16777 (entry+2300)</figcaption></figure>
+<figure><img loading="lazy" src="m408-f017010.jpg" alt="m408 f17010 (entry+2533)"><figcaption>f17010 (entry+2533)</figcaption></figure>
+</div>
+<div class="n">Paratrooper Plunge: the play is a blank white screen with the ring targets; the console (port/ref/frames/m408-console-12400/12800/13200.png) shows the sea, the islands and the coast below the falling players — the whole scene is missing</div></div>
+<div class="g" id="m409"><div class="h">m409 &mdash; Toad's Quick Draw <span class="m">(4-player (type 0))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14478; still running at entry+2600; exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m409-f014200.jpg" alt="m409 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m409-f014300.jpg" alt="m409 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m409-f014400.jpg" alt="m409 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m409-f014538.jpg" alt="m409 f14538 (entry+60)"><figcaption>f14538 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m409-f014878.jpg" alt="m409 f14878 (entry+400)"><figcaption>f14878 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m409-f015678.jpg" alt="m409 f15678 (entry+1200)"><figcaption>f15678 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m409-f016778.jpg" alt="m409 f16778 (entry+2300)"><figcaption>f16778 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Toad's Quick Draw</div></div>
+<div class="g" id="m410"><div class="h">m410 &mdash; Three Throw <span class="m">(4-player (type 0))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14477; still running at entry+2600; exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m410-f014200.jpg" alt="m410 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m410-f014300.jpg" alt="m410 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m410-f014400.jpg" alt="m410 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m410-f014537.jpg" alt="m410 f14537 (entry+60)"><figcaption>f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m410-f014877.jpg" alt="m410 f14877 (entry+400)"><figcaption>f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m410-f015677.jpg" alt="m410 f15677 (entry+1200)"><figcaption>f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m410-f016777.jpg" alt="m410 f16777 (entry+2300)"><figcaption>f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="m">the same frames on the M26 build (raw texgen inputs, per-pixel q):</div><div class="f">
+<figure><img loading="lazy" src="m410-fix-f014537.jpg" alt="m410 M26 fix f14537 (entry+60)"><figcaption>M26 fix f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m410-fix-f014877.jpg" alt="m410 M26 fix f14877 (entry+400)"><figcaption>M26 fix f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m410-fix-f015677.jpg" alt="m410 M26 fix f15677 (entry+1200)"><figcaption>M26 fix f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m410-fix-f016777.jpg" alt="m410 M26 fix f16777 (entry+2300)"><figcaption>M26 fix f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Three Throw</div></div>
+<div class="g" id="m411"><div class="h">m411 &mdash; Photo Finish <span class="m">(4-player (type 0))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14477; still running at entry+2600; exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m411-f014200.jpg" alt="m411 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m411-f014300.jpg" alt="m411 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m411-f014400.jpg" alt="m411 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m411-f014537.jpg" alt="m411 f14537 (entry+60)"><figcaption>f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m411-f014877.jpg" alt="m411 f14877 (entry+400)"><figcaption>f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m411-f015677.jpg" alt="m411 f15677 (entry+1200)"><figcaption>f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m411-f016777.jpg" alt="m411 f16777 (entry+2300)"><figcaption>f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Photo Finish</div></div>
+<div class="g" id="m412"><div class="h">m412 &mdash; Mr. Blizzard's Brigade <span class="m">(4-player (type 0))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14477; left at 16358 (+1881); exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m412-f014200.jpg" alt="m412 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m412-f014300.jpg" alt="m412 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m412-f014400.jpg" alt="m412 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m412-f014537.jpg" alt="m412 f14537 (entry+60)"><figcaption>f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m412-f014877.jpg" alt="m412 f14877 (entry+400)"><figcaption>f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m412-f015677.jpg" alt="m412 f15677 (entry+1200)"><figcaption>f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m412-f016398.jpg" alt="m412 f16398 (entry+1921)"><figcaption>f16398 (entry+1921)</figcaption></figure>
+<figure><img loading="lazy" src="m412-f016777.jpg" alt="m412 f16777 (entry+2300)"><figcaption>f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Mr. Blizzard's Brigade: frozen players in translucent ice</div></div>
+<div class="g" id="m413"><div class="h">m413 &mdash; Bob-omb Breakers <span class="m">(4-player (type 0))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14477; still running at entry+2600; exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m413-f014200.jpg" alt="m413 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m413-f014300.jpg" alt="m413 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m413-f014400.jpg" alt="m413 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m413-f014537.jpg" alt="m413 f14537 (entry+60)"><figcaption>f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m413-f014877.jpg" alt="m413 f14877 (entry+400)"><figcaption>f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m413-f015677.jpg" alt="m413 f15677 (entry+1200)"><figcaption>f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m413-f016777.jpg" alt="m413 f16777 (entry+2300)"><figcaption>f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="m">the same frames on the M26 build (raw texgen inputs, per-pixel q):</div><div class="f">
+<figure><img loading="lazy" src="m413-fix-f014537.jpg" alt="m413 M26 fix f14537 (entry+60)"><figcaption>M26 fix f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m413-fix-f014877.jpg" alt="m413 M26 fix f14877 (entry+400)"><figcaption>M26 fix f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m413-fix-f015677.jpg" alt="m413 M26 fix f15677 (entry+1200)"><figcaption>M26 fix f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m413-fix-f016777.jpg" alt="m413 M26 fix f16777 (entry+2300)"><figcaption>M26 fix f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Bob-omb Breakers</div></div>
+<div class="g" id="m414"><div class="h">m414 &mdash; Long Claw of the Law <span class="m">(4-player (type 0))</span> <span class="major">major</span></div>
+<div class="m">M25 build; module entered at frame 14477; left at 16975 (+2498); exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m414-f014200.jpg" alt="m414 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m414-f014300.jpg" alt="m414 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m414-f014400.jpg" alt="m414 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m414-f014537.jpg" alt="m414 f14537 (entry+60)"><figcaption>f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m414-f014877.jpg" alt="m414 f14877 (entry+400)"><figcaption>f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m414-f015677.jpg" alt="m414 f15677 (entry+1200)"><figcaption>f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m414-f016777.jpg" alt="m414 f16777 (entry+2300)"><figcaption>f16777 (entry+2300)</figcaption></figure>
+<figure><img loading="lazy" src="m414-f017015.jpg" alt="m414 f17015 (entry+2538)"><figcaption>f17015 (entry+2538)</figcaption></figure>
+</div>
+<div class="n">Long Claw of the Law: all four split-screen views are flat cyan, only the HUD (crosshairs, star meters, timer) draws; WON! banner over cyan</div></div>
+<div class="g" id="m415"><div class="h">m415 &mdash; Stamp Out! <span class="m">(4-player (type 0))</span> <span class="minor">minor</span></div>
+<div class="m">M25 build; module entered at frame 14477; still running at entry+2600; exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m415-f014200.jpg" alt="m415 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m415-f014300.jpg" alt="m415 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m415-f014400.jpg" alt="m415 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m415-f014537.jpg" alt="m415 f14537 (entry+60)"><figcaption>f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m415-f014877.jpg" alt="m415 f14877 (entry+400)"><figcaption>f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m415-f015677.jpg" alt="m415 f15677 (entry+1200)"><figcaption>f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m415-f016777.jpg" alt="m415 f16777 (entry+2300)"><figcaption>f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="m">the same frames on the M26 build (raw texgen inputs, per-pixel q):</div><div class="f">
+<figure><img loading="lazy" src="m415-fix-f014537.jpg" alt="m415 M26 fix f14537 (entry+60)"><figcaption>M26 fix f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m415-fix-f014877.jpg" alt="m415 M26 fix f14877 (entry+400)"><figcaption>M26 fix f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m415-fix-f015677.jpg" alt="m415 M26 fix f15677 (entry+1200)"><figcaption>M26 fix f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m415-fix-f016777.jpg" alt="m415 M26 fix f16777 (entry+2300)"><figcaption>M26 fix f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Stamp Out!: paper white (M23), toys textured (M21), but NO shadows under the players on the paper (console has them) = the texgen cause; fixed in M26</div></div>
+<div class="g" id="m416"><div class="h">m416 &mdash; Candlelight Flight <span class="m">(1-vs-3 (type 1))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14477; still running at entry+2600; exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m416-f014200.jpg" alt="m416 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m416-f014300.jpg" alt="m416 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m416-f014400.jpg" alt="m416 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m416-f014537.jpg" alt="m416 f14537 (entry+60)"><figcaption>f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m416-f014877.jpg" alt="m416 f14877 (entry+400)"><figcaption>f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m416-f015677.jpg" alt="m416 f15677 (entry+1200)"><figcaption>f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m416-f016777.jpg" alt="m416 f16777 (entry+2300)"><figcaption>f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Candlelight Flight: upright since M24b</div></div>
+<div class="g" id="m417"><div class="h">m417 &mdash; Makin' Waves <span class="m">(1-vs-3 (type 1))</span> <span class="major">major</span></div>
+<div class="m">M25 build; module entered at frame 14477; left at 15323 (+846); exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m417-f014200.jpg" alt="m417 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m417-f014300.jpg" alt="m417 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m417-f014400.jpg" alt="m417 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m417-f014537.jpg" alt="m417 f14537 (entry+60)"><figcaption>f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m417-f014877.jpg" alt="m417 f14877 (entry+400)"><figcaption>f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m417-f015363.jpg" alt="m417 f15363 (entry+886)"><figcaption>f15363 (entry+886)</figcaption></figure>
+<figure><img loading="lazy" src="m417-f015677.jpg" alt="m417 f15677 (entry+1200)"><figcaption>f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m417-f016777.jpg" alt="m417 f16777 (entry+2300)"><figcaption>f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Makin' Waves: nothing but the START banner over a cream screen at +400 (beige stripes at +60); the game ends at +846</div></div>
+<div class="g" id="m418"><div class="h">m418 &mdash; Hide and Go BOOM! <span class="m">(1-vs-3 (type 1))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14477; still running at entry+2600; exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m418-f014200.jpg" alt="m418 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m418-f014300.jpg" alt="m418 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m418-f014400.jpg" alt="m418 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m418-f014537.jpg" alt="m418 f14537 (entry+60)"><figcaption>f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m418-f014877.jpg" alt="m418 f14877 (entry+400)"><figcaption>f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m418-f015677.jpg" alt="m418 f15677 (entry+1200)"><figcaption>f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m418-f016777.jpg" alt="m418 f16777 (entry+2300)"><figcaption>f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Hide and Go BOOM!</div></div>
+<div class="g" id="m419"><div class="h">m419 &mdash; Tree Stomp <span class="m">(1-vs-3 (type 1))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14478; left at 16398 (+1920); exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m419-f014200.jpg" alt="m419 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m419-f014300.jpg" alt="m419 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m419-f014400.jpg" alt="m419 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m419-f014538.jpg" alt="m419 f14538 (entry+60)"><figcaption>f14538 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m419-f014878.jpg" alt="m419 f14878 (entry+400)"><figcaption>f14878 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m419-f015678.jpg" alt="m419 f15678 (entry+1200)"><figcaption>f15678 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m419-f016438.jpg" alt="m419 f16438 (entry+1960)"><figcaption>f16438 (entry+1960)</figcaption></figure>
+<figure><img loading="lazy" src="m419-f016778.jpg" alt="m419 f16778 (entry+2300)"><figcaption>f16778 (entry+2300)</figcaption></figure>
+</div>
+<div class="m">the same frames on the M26 build (raw texgen inputs, per-pixel q):</div><div class="f">
+<figure><img loading="lazy" src="m419-fix-f014538.jpg" alt="m419 M26 fix f14538 (entry+60)"><figcaption>M26 fix f14538 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m419-fix-f014878.jpg" alt="m419 M26 fix f14878 (entry+400)"><figcaption>M26 fix f14878 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m419-fix-f015678.jpg" alt="m419 M26 fix f15678 (entry+1200)"><figcaption>M26 fix f15678 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m419-fix-f016438.jpg" alt="m419 M26 fix f16438 (entry+1960)"><figcaption>M26 fix f16438 (entry+1960)</figcaption></figure>
+<figure><img loading="lazy" src="m419-fix-f016778.jpg" alt="m419 M26 fix f16778 (entry+2300)"><figcaption>M26 fix f16778 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Tree Stomp: +60 is the intro close-up (dark); play plausible; no shadow under the stomper on the tiles (the texgen cause)</div></div>
+<div class="g" id="m420"><div class="h">m420 &mdash; Fish n' Drips <span class="m">(1-vs-3 (type 1))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14477; still running at entry+2600; exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m420-f014200.jpg" alt="m420 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m420-f014300.jpg" alt="m420 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m420-f014400.jpg" alt="m420 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m420-f014537.jpg" alt="m420 f14537 (entry+60)"><figcaption>f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m420-f014877.jpg" alt="m420 f14877 (entry+400)"><figcaption>f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m420-f015677.jpg" alt="m420 f15677 (entry+1200)"><figcaption>f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m420-f016777.jpg" alt="m420 f16777 (entry+2300)"><figcaption>f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="m">the same frames on the M26 build (raw texgen inputs, per-pixel q):</div><div class="f">
+<figure><img loading="lazy" src="m420-fix-f014537.jpg" alt="m420 M26 fix f14537 (entry+60)"><figcaption>M26 fix f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m420-fix-f014877.jpg" alt="m420 M26 fix f14877 (entry+400)"><figcaption>M26 fix f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m420-fix-f015677.jpg" alt="m420 M26 fix f15677 (entry+1200)"><figcaption>M26 fix f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m420-fix-f016777.jpg" alt="m420 M26 fix f16777 (entry+2300)"><figcaption>M26 fix f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Fish n' Drips</div></div>
+<div class="g" id="m421"><div class="h">m421 &mdash; Hop or Pop <span class="m">(1-vs-3 (type 1))</span> <span class="minor">minor?</span></div>
+<div class="m">M25 build; module entered at frame 14477; still running at entry+2600; exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m421-f014200.jpg" alt="m421 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m421-f014300.jpg" alt="m421 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m421-f014400.jpg" alt="m421 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m421-f014537.jpg" alt="m421 f14537 (entry+60)"><figcaption>f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m421-f014877.jpg" alt="m421 f14877 (entry+400)"><figcaption>f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m421-f015677.jpg" alt="m421 f15677 (entry+1200)"><figcaption>f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m421-f016777.jpg" alt="m421 f16777 (entry+2300)"><figcaption>f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Hop or Pop: the arena's yellow star floor is washed nearly white (a hilite/lighting question, unverified)</div></div>
+<div class="g" id="m422"><div class="h">m422 &mdash; Money Belts <span class="m">(1-vs-3 (type 1))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14477; still running at entry+2600; exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m422-f014200.jpg" alt="m422 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m422-f014300.jpg" alt="m422 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m422-f014400.jpg" alt="m422 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m422-f014537.jpg" alt="m422 f14537 (entry+60)"><figcaption>f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m422-f014877.jpg" alt="m422 f14877 (entry+400)"><figcaption>f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m422-f015677.jpg" alt="m422 f15677 (entry+1200)"><figcaption>f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m422-f016777.jpg" alt="m422 f16777 (entry+2300)"><figcaption>f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="m">the same frames on the M26 build (raw texgen inputs, per-pixel q):</div><div class="f">
+<figure><img loading="lazy" src="m422-fix-f014537.jpg" alt="m422 M26 fix f14537 (entry+60)"><figcaption>M26 fix f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m422-fix-f014877.jpg" alt="m422 M26 fix f14877 (entry+400)"><figcaption>M26 fix f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m422-fix-f015677.jpg" alt="m422 M26 fix f15677 (entry+1200)"><figcaption>M26 fix f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m422-fix-f016777.jpg" alt="m422 M26 fix f16777 (entry+2300)"><figcaption>M26 fix f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Money Belts</div></div>
+<div class="g" id="m423"><div class="h">m423 &mdash; GOOOOOOOAL!! <span class="m">(1-vs-3 (type 1))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14477; left at 16911 (+2434); exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m423-f014200.jpg" alt="m423 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m423-f014300.jpg" alt="m423 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m423-f014400.jpg" alt="m423 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m423-f014537.jpg" alt="m423 f14537 (entry+60)"><figcaption>f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m423-f014877.jpg" alt="m423 f14877 (entry+400)"><figcaption>f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m423-f015677.jpg" alt="m423 f15677 (entry+1200)"><figcaption>f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m423-f016777.jpg" alt="m423 f16777 (entry+2300)"><figcaption>f16777 (entry+2300)</figcaption></figure>
+<figure><img loading="lazy" src="m423-f016951.jpg" alt="m423 f16951 (entry+2474)"><figcaption>f16951 (entry+2474)</figcaption></figure>
+</div>
+<div class="m">the same frames on the M26 build (raw texgen inputs, per-pixel q):</div><div class="f">
+<figure><img loading="lazy" src="m423-fix-f014537.jpg" alt="m423 M26 fix f14537 (entry+60)"><figcaption>M26 fix f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m423-fix-f014877.jpg" alt="m423 M26 fix f14877 (entry+400)"><figcaption>M26 fix f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m423-fix-f015677.jpg" alt="m423 M26 fix f15677 (entry+1200)"><figcaption>M26 fix f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m423-fix-f016777.jpg" alt="m423 M26 fix f16777 (entry+2300)"><figcaption>M26 fix f16777 (entry+2300)</figcaption></figure>
+<figure><img loading="lazy" src="m423-fix-f016951.jpg" alt="m423 M26 fix f16951 (entry+2474)"><figcaption>M26 fix f16951 (entry+2474)</figcaption></figure>
+</div>
+<div class="n">GOOOOOOOAL!!: the stadium's big screen stays dark (unverified whether the console shows a picture on it)</div></div>
+<div class="g" id="m424"><div class="h">m424 &mdash; Blame it on the Crane <span class="m">(1-vs-3 (type 1))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14477; still running at entry+2600; exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m424-f014200.jpg" alt="m424 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m424-f014300.jpg" alt="m424 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m424-f014400.jpg" alt="m424 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m424-f014537.jpg" alt="m424 f14537 (entry+60)"><figcaption>f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m424-f014877.jpg" alt="m424 f14877 (entry+400)"><figcaption>f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m424-f015677.jpg" alt="m424 f15677 (entry+1200)"><figcaption>f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m424-f016777.jpg" alt="m424 f16777 (entry+2300)"><figcaption>f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="m">the same frames on the M26 build (raw texgen inputs, per-pixel q):</div><div class="f">
+<figure><img loading="lazy" src="m424-fix-f014537.jpg" alt="m424 M26 fix f14537 (entry+60)"><figcaption>M26 fix f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m424-fix-f014877.jpg" alt="m424 M26 fix f14877 (entry+400)"><figcaption>M26 fix f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m424-fix-f015677.jpg" alt="m424 M26 fix f15677 (entry+1200)"><figcaption>M26 fix f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m424-fix-f016777.jpg" alt="m424 M26 fix f16777 (entry+2300)"><figcaption>M26 fix f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Blame it on the Crane</div></div>
+<div class="g" id="m425"><div class="h">m425 &mdash; The Great Deflate <span class="m">(2-vs-2 (type 2))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14477; left at 17048 (+2571); exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m425-f014200.jpg" alt="m425 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m425-f014300.jpg" alt="m425 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m425-f014400.jpg" alt="m425 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m425-f014537.jpg" alt="m425 f14537 (entry+60)"><figcaption>f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m425-f014877.jpg" alt="m425 f14877 (entry+400)"><figcaption>f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m425-f015677.jpg" alt="m425 f15677 (entry+1200)"><figcaption>f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m425-f016777.jpg" alt="m425 f16777 (entry+2300)"><figcaption>f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="m">the same frames on the M26 build (raw texgen inputs, per-pixel q):</div><div class="f">
+<figure><img loading="lazy" src="m425-fix-f014537.jpg" alt="m425 M26 fix f14537 (entry+60)"><figcaption>M26 fix f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m425-fix-f014877.jpg" alt="m425 M26 fix f14877 (entry+400)"><figcaption>M26 fix f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m425-fix-f015677.jpg" alt="m425 M26 fix f15677 (entry+1200)"><figcaption>M26 fix f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m425-fix-f016777.jpg" alt="m425 M26 fix f16777 (entry+2300)"><figcaption>M26 fix f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">The Great Deflate: the WON! banner at +2300 is mid-spin/zoom (its exit animation, as m416's FINISH!)</div></div>
+<div class="g" id="m426"><div class="h">m426 &mdash; Revers-a-Bomb <span class="m">(2-vs-2 (type 2))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14477; left at 16845 (+2368); exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m426-f014200.jpg" alt="m426 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m426-f014300.jpg" alt="m426 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m426-f014400.jpg" alt="m426 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m426-f014537.jpg" alt="m426 f14537 (entry+60)"><figcaption>f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m426-f014877.jpg" alt="m426 f14877 (entry+400)"><figcaption>f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m426-f015677.jpg" alt="m426 f15677 (entry+1200)"><figcaption>f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m426-f016777.jpg" alt="m426 f16777 (entry+2300)"><figcaption>f16777 (entry+2300)</figcaption></figure>
+<figure><img loading="lazy" src="m426-f016885.jpg" alt="m426 f16885 (entry+2408)"><figcaption>f16885 (entry+2408)</figcaption></figure>
+</div>
+<div class="n">Revers-a-Bomb</div></div>
+<div class="g" id="m427"><div class="h">m427 &mdash; Right Oar Left? <span class="m">(2-vs-2 (type 2))</span> <span class="major">major</span></div>
+<div class="m">M25 build; module entered at frame 14477; still running at entry+2600; exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m427-f014200.jpg" alt="m427 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m427-f014300.jpg" alt="m427 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m427-f014400.jpg" alt="m427 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m427-f014537.jpg" alt="m427 f14537 (entry+60)"><figcaption>f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m427-f014877.jpg" alt="m427 f14877 (entry+400)"><figcaption>f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m427-f015677.jpg" alt="m427 f15677 (entry+1200)"><figcaption>f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m427-f016777.jpg" alt="m427 f16777 (entry+2300)"><figcaption>f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Right Oar Left?: the boats and their riders are black silhouettes and the river is washed white-green in both views (frame +60: black band above a dark-green river)</div></div>
+<div class="g" id="m428"><div class="h">m428 &mdash; Cliffhangers <span class="m">(2-vs-2 (type 2))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14477; still running at entry+2600; exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m428-f014200.jpg" alt="m428 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m428-f014300.jpg" alt="m428 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m428-f014400.jpg" alt="m428 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m428-f014537.jpg" alt="m428 f14537 (entry+60)"><figcaption>f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m428-f014877.jpg" alt="m428 f14877 (entry+400)"><figcaption>f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m428-f015677.jpg" alt="m428 f15677 (entry+1200)"><figcaption>f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m428-f016777.jpg" alt="m428 f16777 (entry+2300)"><figcaption>f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Cliffhangers</div></div>
+<div class="g" id="m429"><div class="h">m429 &mdash; Team Treasure Trek <span class="m">(2-vs-2 (type 2))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14477; still running at entry+2600; exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m429-f014200.jpg" alt="m429 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m429-f014300.jpg" alt="m429 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m429-f014400.jpg" alt="m429 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m429-f014537.jpg" alt="m429 f14537 (entry+60)"><figcaption>f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m429-f014877.jpg" alt="m429 f14877 (entry+400)"><figcaption>f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m429-f015677.jpg" alt="m429 f15677 (entry+1200)"><figcaption>f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m429-f016777.jpg" alt="m429 f16777 (entry+2300)"><figcaption>f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Team Treasure Trek: four viewports, all drawn</div></div>
+<div class="g" id="m430"><div class="h">m430 &mdash; Pair-a-sailing <span class="m">(2-vs-2 (type 2))</span> <span class="major">major</span></div>
+<div class="m">M25 build; module entered at frame 14477; still running at entry+2600; exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m430-f014200.jpg" alt="m430 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m430-f014300.jpg" alt="m430 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m430-f014400.jpg" alt="m430 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m430-f014537.jpg" alt="m430 f14537 (entry+60)"><figcaption>f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m430-f014877.jpg" alt="m430 f14877 (entry+400)"><figcaption>f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m430-f015677.jpg" alt="m430 f15677 (entry+1200)"><figcaption>f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m430-f016777.jpg" alt="m430 f16777 (entry+2300)"><figcaption>f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="m">the same frames on the M26 build (raw texgen inputs, per-pixel q):</div><div class="f">
+<figure><img loading="lazy" src="m430-fix-f014537.jpg" alt="m430 M26 fix f14537 (entry+60)"><figcaption>M26 fix f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m430-fix-f014877.jpg" alt="m430 M26 fix f14877 (entry+400)"><figcaption>M26 fix f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m430-fix-f015677.jpg" alt="m430 M26 fix f15677 (entry+1200)"><figcaption>M26 fix f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m430-fix-f016777.jpg" alt="m430 M26 fix f16777 (entry+2300)"><figcaption>M26 fix f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Pair-a-sailing: a tall black rectangle stands in the right-hand view's upper half in every play frame (the left view is clean)</div></div>
+<div class="g" id="m431"><div class="h">m431 &mdash; Order Up <span class="m">(2-vs-2 (type 2))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14477; still running at entry+2600; exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m431-f014200.jpg" alt="m431 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m431-f014300.jpg" alt="m431 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m431-f014400.jpg" alt="m431 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m431-f014537.jpg" alt="m431 f14537 (entry+60)"><figcaption>f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m431-f014877.jpg" alt="m431 f14877 (entry+400)"><figcaption>f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m431-f015677.jpg" alt="m431 f15677 (entry+1200)"><figcaption>f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m431-f016777.jpg" alt="m431 f16777 (entry+2300)"><figcaption>f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="m">the same frames on the M26 build (raw texgen inputs, per-pixel q):</div><div class="f">
+<figure><img loading="lazy" src="m431-fix-f014537.jpg" alt="m431 M26 fix f14537 (entry+60)"><figcaption>M26 fix f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m431-fix-f014877.jpg" alt="m431 M26 fix f14877 (entry+400)"><figcaption>M26 fix f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m431-fix-f015677.jpg" alt="m431 M26 fix f15677 (entry+1200)"><figcaption>M26 fix f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m431-fix-f016777.jpg" alt="m431 M26 fix f16777 (entry+2300)"><figcaption>M26 fix f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Order Up</div></div>
+<div class="g" id="m432"><div class="h">m432 &mdash; Dungeon Duos <span class="m">(2-vs-2 (type 2))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14477; still running at entry+2600; exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m432-f014200.jpg" alt="m432 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m432-f014300.jpg" alt="m432 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m432-f014400.jpg" alt="m432 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m432-f014537.jpg" alt="m432 f14537 (entry+60)"><figcaption>f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m432-f014877.jpg" alt="m432 f14877 (entry+400)"><figcaption>f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m432-f015677.jpg" alt="m432 f15677 (entry+1200)"><figcaption>f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m432-f016777.jpg" alt="m432 f16777 (entry+2300)"><figcaption>f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Dungeon Duos</div></div>
+<div class="g" id="m433"><div class="h">m433 &mdash; Beach Volley Folly <span class="m">(Extra / Bowser-side (type 7))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14477; still running at entry+2600; exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m433-f014200.jpg" alt="m433 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m433-f014300.jpg" alt="m433 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m433-f014400.jpg" alt="m433 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m433-f014537.jpg" alt="m433 f14537 (entry+60)"><figcaption>f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m433-f014877.jpg" alt="m433 f14877 (entry+400)"><figcaption>f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m433-f015677.jpg" alt="m433 f15677 (entry+1200)"><figcaption>f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m433-f016777.jpg" alt="m433 f16777 (entry+2300)"><figcaption>f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Beach Volley Folly: no shadows on the sand under the players (the texgen cause)</div></div>
+<div class="g" id="m434"><div class="h">m434 &mdash; Cheep Cheep Sweep <span class="m">(2-vs-2 (type 2))</span> <span class="major">major</span></div>
+<div class="m">M25 build; module entered at frame 14477; still running at entry+2600; exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m434-f014200.jpg" alt="m434 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m434-f014300.jpg" alt="m434 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m434-f014400.jpg" alt="m434 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m434-f014537.jpg" alt="m434 f14537 (entry+60)"><figcaption>f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m434-f014877.jpg" alt="m434 f14877 (entry+400)"><figcaption>f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m434-f015677.jpg" alt="m434 f15677 (entry+1200)"><figcaption>f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m434-f016777.jpg" alt="m434 f16777 (entry+2300)"><figcaption>f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="m">the same frames on the M26 build (raw texgen inputs, per-pixel q):</div><div class="f">
+<figure><img loading="lazy" src="m434-fix-f014537.jpg" alt="m434 M26 fix f14537 (entry+60)"><figcaption>M26 fix f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m434-fix-f014877.jpg" alt="m434 M26 fix f14877 (entry+400)"><figcaption>M26 fix f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m434-fix-f015677.jpg" alt="m434 M26 fix f15677 (entry+1200)"><figcaption>M26 fix f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m434-fix-f016777.jpg" alt="m434 M26 fix f16777 (entry+2300)"><figcaption>M26 fix f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Cheep Cheep Sweep: the pond is opaque black (the console: water with the fish visible); the wading players are cut off at the waist by it</div></div>
+<div class="g" id="m435"><div class="h">m435 &mdash; Darts of Doom <span class="m">(Bowser (type 3))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14144; still running at entry+2600; exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m435-f014200.jpg" alt="m435 f14200 (entry+56)"><figcaption>f14200 (entry+56)</figcaption></figure>
+<figure><img loading="lazy" src="m435-f014204.jpg" alt="m435 f14204 (entry+60)"><figcaption>f14204 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m435-f014300.jpg" alt="m435 f14300 (entry+156)"><figcaption>f14300 (entry+156)</figcaption></figure>
+<figure><img loading="lazy" src="m435-f014400.jpg" alt="m435 f14400 (entry+256)"><figcaption>f14400 (entry+256)</figcaption></figure>
+<figure><img loading="lazy" src="m435-f014544.jpg" alt="m435 f14544 (entry+400)"><figcaption>f14544 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m435-f015344.jpg" alt="m435 f15344 (entry+1200)"><figcaption>f15344 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m435-f016444.jpg" alt="m435 f16444 (entry+2300)"><figcaption>f16444 (entry+2300)</figcaption></figure>
+</div>
+<div class="m">the same frames on the M26 build (raw texgen inputs, per-pixel q):</div><div class="f">
+<figure><img loading="lazy" src="m435-fix-f014200.jpg" alt="m435 M26 fix f14200 (entry+56)"><figcaption>M26 fix f14200 (entry+56)</figcaption></figure>
+<figure><img loading="lazy" src="m435-fix-f014204.jpg" alt="m435 M26 fix f14204 (entry+60)"><figcaption>M26 fix f14204 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m435-fix-f014300.jpg" alt="m435 M26 fix f14300 (entry+156)"><figcaption>M26 fix f14300 (entry+156)</figcaption></figure>
+<figure><img loading="lazy" src="m435-fix-f014400.jpg" alt="m435 M26 fix f14400 (entry+256)"><figcaption>M26 fix f14400 (entry+256)</figcaption></figure>
+<figure><img loading="lazy" src="m435-fix-f014544.jpg" alt="m435 M26 fix f14544 (entry+400)"><figcaption>M26 fix f14544 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m435-fix-f015344.jpg" alt="m435 M26 fix f15344 (entry+1200)"><figcaption>M26 fix f15344 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m435-fix-f016444.jpg" alt="m435 M26 fix f16444 (entry+2300)"><figcaption>M26 fix f16444 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Darts of Doom (Bowser; no card)</div></div>
+<div class="g" id="m436"><div class="h">m436 &mdash; Fruits of Doom <span class="m">(Bowser (type 3))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14144; still running at entry+2600; exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m436-f014200.jpg" alt="m436 f14200 (entry+56)"><figcaption>f14200 (entry+56)</figcaption></figure>
+<figure><img loading="lazy" src="m436-f014204.jpg" alt="m436 f14204 (entry+60)"><figcaption>f14204 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m436-f014300.jpg" alt="m436 f14300 (entry+156)"><figcaption>f14300 (entry+156)</figcaption></figure>
+<figure><img loading="lazy" src="m436-f014400.jpg" alt="m436 f14400 (entry+256)"><figcaption>f14400 (entry+256)</figcaption></figure>
+<figure><img loading="lazy" src="m436-f014544.jpg" alt="m436 f14544 (entry+400)"><figcaption>f14544 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m436-f015344.jpg" alt="m436 f15344 (entry+1200)"><figcaption>f15344 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m436-f016444.jpg" alt="m436 f16444 (entry+2300)"><figcaption>f16444 (entry+2300)</figcaption></figure>
+</div>
+<div class="m">the same frames on the M26 build (raw texgen inputs, per-pixel q):</div><div class="f">
+<figure><img loading="lazy" src="m436-fix-f014200.jpg" alt="m436 M26 fix f14200 (entry+56)"><figcaption>M26 fix f14200 (entry+56)</figcaption></figure>
+<figure><img loading="lazy" src="m436-fix-f014204.jpg" alt="m436 M26 fix f14204 (entry+60)"><figcaption>M26 fix f14204 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m436-fix-f014300.jpg" alt="m436 M26 fix f14300 (entry+156)"><figcaption>M26 fix f14300 (entry+156)</figcaption></figure>
+<figure><img loading="lazy" src="m436-fix-f014400.jpg" alt="m436 M26 fix f14400 (entry+256)"><figcaption>M26 fix f14400 (entry+256)</figcaption></figure>
+<figure><img loading="lazy" src="m436-fix-f014544.jpg" alt="m436 M26 fix f14544 (entry+400)"><figcaption>M26 fix f14544 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m436-fix-f015344.jpg" alt="m436 M26 fix f15344 (entry+1200)"><figcaption>M26 fix f15344 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m436-fix-f016444.jpg" alt="m436 M26 fix f16444 (entry+2300)"><figcaption>M26 fix f16444 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Fruits of Doom (Bowser; no card)</div></div>
+<div class="g" id="m437"><div class="h">m437 &mdash; Balloon of Doom <span class="m">(Bowser (type 3))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14143; still running at entry+2600; exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m437-f014200.jpg" alt="m437 f14200 (entry+57)"><figcaption>f14200 (entry+57)</figcaption></figure>
+<figure><img loading="lazy" src="m437-f014203.jpg" alt="m437 f14203 (entry+60)"><figcaption>f14203 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m437-f014300.jpg" alt="m437 f14300 (entry+157)"><figcaption>f14300 (entry+157)</figcaption></figure>
+<figure><img loading="lazy" src="m437-f014400.jpg" alt="m437 f14400 (entry+257)"><figcaption>f14400 (entry+257)</figcaption></figure>
+<figure><img loading="lazy" src="m437-f014543.jpg" alt="m437 f14543 (entry+400)"><figcaption>f14543 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m437-f015343.jpg" alt="m437 f15343 (entry+1200)"><figcaption>f15343 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m437-f016443.jpg" alt="m437 f16443 (entry+2300)"><figcaption>f16443 (entry+2300)</figcaption></figure>
+</div>
+<div class="m">the same frames on the M26 build (raw texgen inputs, per-pixel q):</div><div class="f">
+<figure><img loading="lazy" src="m437-fix-f014200.jpg" alt="m437 M26 fix f14200 (entry+57)"><figcaption>M26 fix f14200 (entry+57)</figcaption></figure>
+<figure><img loading="lazy" src="m437-fix-f014203.jpg" alt="m437 M26 fix f14203 (entry+60)"><figcaption>M26 fix f14203 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m437-fix-f014300.jpg" alt="m437 M26 fix f14300 (entry+157)"><figcaption>M26 fix f14300 (entry+157)</figcaption></figure>
+<figure><img loading="lazy" src="m437-fix-f014400.jpg" alt="m437 M26 fix f14400 (entry+257)"><figcaption>M26 fix f14400 (entry+257)</figcaption></figure>
+<figure><img loading="lazy" src="m437-fix-f014543.jpg" alt="m437 M26 fix f14543 (entry+400)"><figcaption>M26 fix f14543 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m437-fix-f015343.jpg" alt="m437 M26 fix f15343 (entry+1200)"><figcaption>M26 fix f15343 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m437-fix-f016443.jpg" alt="m437 M26 fix f16443 (entry+2300)"><figcaption>M26 fix f16443 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Balloon of Doom (Bowser; no card)</div></div>
+<div class="g" id="m438"><div class="h">m438 &mdash; Chain Chomp Fever <span class="m">(Battle (type 4))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14478; left at 16639 (+2161); exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m438-f014200.jpg" alt="m438 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m438-f014300.jpg" alt="m438 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m438-f014400.jpg" alt="m438 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m438-f014538.jpg" alt="m438 f14538 (entry+60)"><figcaption>f14538 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m438-f014878.jpg" alt="m438 f14878 (entry+400)"><figcaption>f14878 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m438-f015678.jpg" alt="m438 f15678 (entry+1200)"><figcaption>f15678 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m438-f016679.jpg" alt="m438 f16679 (entry+2201)"><figcaption>f16679 (entry+2201)</figcaption></figure>
+<figure><img loading="lazy" src="m438-f016778.jpg" alt="m438 f16778 (entry+2300)"><figcaption>f16778 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Chain Chomp Fever (Battle; battle results drawn)</div></div>
+<div class="g" id="m439"><div class="h">m439 &mdash; Paths of Peril <span class="m">(Battle (type 4))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14478; still running at entry+2600; exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m439-f014200.jpg" alt="m439 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m439-f014300.jpg" alt="m439 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m439-f014400.jpg" alt="m439 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m439-f014538.jpg" alt="m439 f14538 (entry+60)"><figcaption>f14538 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m439-f014878.jpg" alt="m439 f14878 (entry+400)"><figcaption>f14878 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m439-f015678.jpg" alt="m439 f15678 (entry+1200)"><figcaption>f15678 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m439-f016778.jpg" alt="m439 f16778 (entry+2300)"><figcaption>f16778 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Paths of Peril: four viewports, all drawn</div></div>
+<div class="g" id="m440"><div class="h">m440 &mdash; Bowser's Bigger Blast <span class="m">(Battle (type 4))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14477; still running at entry+2600; exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m440-f014200.jpg" alt="m440 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m440-f014300.jpg" alt="m440 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m440-f014400.jpg" alt="m440 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m440-f014537.jpg" alt="m440 f14537 (entry+60)"><figcaption>f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m440-f014877.jpg" alt="m440 f14877 (entry+400)"><figcaption>f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m440-f015677.jpg" alt="m440 f15677 (entry+1200)"><figcaption>f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m440-f016777.jpg" alt="m440 f16777 (entry+2300)"><figcaption>f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="m">the same frames on the M26 build (raw texgen inputs, per-pixel q):</div><div class="f">
+<figure><img loading="lazy" src="m440-fix-f014537.jpg" alt="m440 M26 fix f14537 (entry+60)"><figcaption>M26 fix f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m440-fix-f014877.jpg" alt="m440 M26 fix f14877 (entry+400)"><figcaption>M26 fix f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m440-fix-f015677.jpg" alt="m440 M26 fix f15677 (entry+1200)"><figcaption>M26 fix f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m440-fix-f016777.jpg" alt="m440 M26 fix f16777 (entry+2300)"><figcaption>M26 fix f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Bowser's Bigger Blast</div></div>
+<div class="g" id="m441"><div class="h">m441 &mdash; Butterfly Blitz <span class="m">(Battle (type 4))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14477; still running at entry+2600; exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m441-f014200.jpg" alt="m441 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m441-f014300.jpg" alt="m441 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m441-f014400.jpg" alt="m441 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m441-f014537.jpg" alt="m441 f14537 (entry+60)"><figcaption>f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m441-f014877.jpg" alt="m441 f14877 (entry+400)"><figcaption>f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m441-f015677.jpg" alt="m441 f15677 (entry+1200)"><figcaption>f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m441-f016777.jpg" alt="m441 f16777 (entry+2300)"><figcaption>f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Butterfly Blitz</div></div>
+<div class="g" id="m442"><div class="h">m442 &mdash; Barrel Baron <span class="m">(Extra / Bowser-side (type 7))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14477; still running at entry+2600; exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m442-f014200.jpg" alt="m442 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m442-f014300.jpg" alt="m442 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m442-f014400.jpg" alt="m442 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m442-f014537.jpg" alt="m442 f14537 (entry+60)"><figcaption>f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m442-f014877.jpg" alt="m442 f14877 (entry+400)"><figcaption>f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m442-f015677.jpg" alt="m442 f15677 (entry+1200)"><figcaption>f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m442-f016777.jpg" alt="m442 f16777 (entry+2300)"><figcaption>f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Barrel Baron (one player; +60 is the intro's sky and lens flare)</div></div>
+<div class="g" id="m443"><div class="h">m443 &mdash; Mario Speedwagons <span class="m">(4-player (type 0))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14477; left at 16346 (+1869); exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m443-f014200.jpg" alt="m443 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m443-f014300.jpg" alt="m443 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m443-f014400.jpg" alt="m443 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m443-f014537.jpg" alt="m443 f14537 (entry+60)"><figcaption>f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m443-f014877.jpg" alt="m443 f14877 (entry+400)"><figcaption>f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m443-f015677.jpg" alt="m443 f15677 (entry+1200)"><figcaption>f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m443-f016386.jpg" alt="m443 f16386 (entry+1909)"><figcaption>f16386 (entry+1909)</figcaption></figure>
+<figure><img loading="lazy" src="m443-f016777.jpg" alt="m443 f16777 (entry+2300)"><figcaption>f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Mario Speedwagons: four viewports drawn</div></div>
+<div class="g" id="m444"><div class="h">m444 &mdash; Reversal of Fortune <span class="m">(Item (fortune space) (type 5))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14143; still running at entry+2600; exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m444-f014200.jpg" alt="m444 f14200 (entry+57)"><figcaption>f14200 (entry+57)</figcaption></figure>
+<figure><img loading="lazy" src="m444-f014203.jpg" alt="m444 f14203 (entry+60)"><figcaption>f14203 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m444-f014300.jpg" alt="m444 f14300 (entry+157)"><figcaption>f14300 (entry+157)</figcaption></figure>
+<figure><img loading="lazy" src="m444-f014400.jpg" alt="m444 f14400 (entry+257)"><figcaption>f14400 (entry+257)</figcaption></figure>
+<figure><img loading="lazy" src="m444-f014543.jpg" alt="m444 f14543 (entry+400)"><figcaption>f14543 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m444-f015343.jpg" alt="m444 f15343 (entry+1200)"><figcaption>f15343 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m444-f016443.jpg" alt="m444 f16443 (entry+2300)"><figcaption>f16443 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Reversal of Fortune (no card; the pinball of §23)</div></div>
+<div class="g" id="m445"><div class="h">m445 &mdash; Bowser Bop <span class="m">(Story (type 6))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14143; still running at entry+2600; exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m445-f014200.jpg" alt="m445 f14200 (entry+57)"><figcaption>f14200 (entry+57)</figcaption></figure>
+<figure><img loading="lazy" src="m445-f014203.jpg" alt="m445 f14203 (entry+60)"><figcaption>f14203 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m445-f014300.jpg" alt="m445 f14300 (entry+157)"><figcaption>f14300 (entry+157)</figcaption></figure>
+<figure><img loading="lazy" src="m445-f014400.jpg" alt="m445 f14400 (entry+257)"><figcaption>f14400 (entry+257)</figcaption></figure>
+<figure><img loading="lazy" src="m445-f014543.jpg" alt="m445 f14543 (entry+400)"><figcaption>f14543 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m445-f015343.jpg" alt="m445 f15343 (entry+1200)"><figcaption>f15343 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m445-f016443.jpg" alt="m445 f16443 (entry+2300)"><figcaption>f16443 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Bowser Bop (story; Mario vs Peach)</div></div>
+<div class="g" id="m446"><div class="h">m446 &mdash; Mystic Match 'Em <span class="m">(Story (type 6))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14143; still running at entry+2600; exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m446-f014200.jpg" alt="m446 f14200 (entry+57)"><figcaption>f14200 (entry+57)</figcaption></figure>
+<figure><img loading="lazy" src="m446-f014203.jpg" alt="m446 f14203 (entry+60)"><figcaption>f14203 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m446-f014300.jpg" alt="m446 f14300 (entry+157)"><figcaption>f14300 (entry+157)</figcaption></figure>
+<figure><img loading="lazy" src="m446-f014400.jpg" alt="m446 f14400 (entry+257)"><figcaption>f14400 (entry+257)</figcaption></figure>
+<figure><img loading="lazy" src="m446-f014543.jpg" alt="m446 f14543 (entry+400)"><figcaption>f14543 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m446-f015343.jpg" alt="m446 f15343 (entry+1200)"><figcaption>f15343 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m446-f016443.jpg" alt="m446 f16443 (entry+2300)"><figcaption>f16443 (entry+2300)</figcaption></figure>
+</div>
+<div class="m">the same frames on the M26 build (raw texgen inputs, per-pixel q):</div><div class="f">
+<figure><img loading="lazy" src="m446-fix-f014200.jpg" alt="m446 M26 fix f14200 (entry+57)"><figcaption>M26 fix f14200 (entry+57)</figcaption></figure>
+<figure><img loading="lazy" src="m446-fix-f014203.jpg" alt="m446 M26 fix f14203 (entry+60)"><figcaption>M26 fix f14203 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m446-fix-f014300.jpg" alt="m446 M26 fix f14300 (entry+157)"><figcaption>M26 fix f14300 (entry+157)</figcaption></figure>
+<figure><img loading="lazy" src="m446-fix-f014400.jpg" alt="m446 M26 fix f14400 (entry+257)"><figcaption>M26 fix f14400 (entry+257)</figcaption></figure>
+<figure><img loading="lazy" src="m446-fix-f014543.jpg" alt="m446 M26 fix f14543 (entry+400)"><figcaption>M26 fix f14543 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m446-fix-f015343.jpg" alt="m446 M26 fix f15343 (entry+1200)"><figcaption>M26 fix f15343 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m446-fix-f016443.jpg" alt="m446 M26 fix f16443 (entry+2300)"><figcaption>M26 fix f16443 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Mystic Match 'Em (story)</div></div>
+<div class="g" id="m447"><div class="h">m447 &mdash; Archaeologuess <span class="m">(Story (type 6))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14143; still running at entry+2600; exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m447-f014200.jpg" alt="m447 f14200 (entry+57)"><figcaption>f14200 (entry+57)</figcaption></figure>
+<figure><img loading="lazy" src="m447-f014203.jpg" alt="m447 f14203 (entry+60)"><figcaption>f14203 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m447-f014300.jpg" alt="m447 f14300 (entry+157)"><figcaption>f14300 (entry+157)</figcaption></figure>
+<figure><img loading="lazy" src="m447-f014400.jpg" alt="m447 f14400 (entry+257)"><figcaption>f14400 (entry+257)</figcaption></figure>
+<figure><img loading="lazy" src="m447-f014543.jpg" alt="m447 f14543 (entry+400)"><figcaption>f14543 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m447-f015343.jpg" alt="m447 f15343 (entry+1200)"><figcaption>f15343 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m447-f016443.jpg" alt="m447 f16443 (entry+2300)"><figcaption>f16443 (entry+2300)</figcaption></figure>
+</div>
+<div class="m">the same frames on the M26 build (raw texgen inputs, per-pixel q):</div><div class="f">
+<figure><img loading="lazy" src="m447-fix-f014200.jpg" alt="m447 M26 fix f14200 (entry+57)"><figcaption>M26 fix f14200 (entry+57)</figcaption></figure>
+<figure><img loading="lazy" src="m447-fix-f014203.jpg" alt="m447 M26 fix f14203 (entry+60)"><figcaption>M26 fix f14203 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m447-fix-f014300.jpg" alt="m447 M26 fix f14300 (entry+157)"><figcaption>M26 fix f14300 (entry+157)</figcaption></figure>
+<figure><img loading="lazy" src="m447-fix-f014400.jpg" alt="m447 M26 fix f14400 (entry+257)"><figcaption>M26 fix f14400 (entry+257)</figcaption></figure>
+<figure><img loading="lazy" src="m447-fix-f014543.jpg" alt="m447 M26 fix f14543 (entry+400)"><figcaption>M26 fix f14543 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m447-fix-f015343.jpg" alt="m447 M26 fix f15343 (entry+1200)"><figcaption>M26 fix f15343 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m447-fix-f016443.jpg" alt="m447 M26 fix f16443 (entry+2300)"><figcaption>M26 fix f16443 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Archaeologuess (story)</div></div>
+<div class="g" id="m448"><div class="h">m448 &mdash; Goomba's Chip Flip <span class="m">(Story (type 6))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14143; still running at entry+2600; exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m448-f014200.jpg" alt="m448 f14200 (entry+57)"><figcaption>f14200 (entry+57)</figcaption></figure>
+<figure><img loading="lazy" src="m448-f014203.jpg" alt="m448 f14203 (entry+60)"><figcaption>f14203 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m448-f014300.jpg" alt="m448 f14300 (entry+157)"><figcaption>f14300 (entry+157)</figcaption></figure>
+<figure><img loading="lazy" src="m448-f014400.jpg" alt="m448 f14400 (entry+257)"><figcaption>f14400 (entry+257)</figcaption></figure>
+<figure><img loading="lazy" src="m448-f014543.jpg" alt="m448 f14543 (entry+400)"><figcaption>f14543 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m448-f015343.jpg" alt="m448 f15343 (entry+1200)"><figcaption>f15343 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m448-f016443.jpg" alt="m448 f16443 (entry+2300)"><figcaption>f16443 (entry+2300)</figcaption></figure>
+</div>
+<div class="m">the same frames on the M26 build (raw texgen inputs, per-pixel q):</div><div class="f">
+<figure><img loading="lazy" src="m448-fix-f014200.jpg" alt="m448 M26 fix f14200 (entry+57)"><figcaption>M26 fix f14200 (entry+57)</figcaption></figure>
+<figure><img loading="lazy" src="m448-fix-f014203.jpg" alt="m448 M26 fix f14203 (entry+60)"><figcaption>M26 fix f14203 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m448-fix-f014300.jpg" alt="m448 M26 fix f14300 (entry+157)"><figcaption>M26 fix f14300 (entry+157)</figcaption></figure>
+<figure><img loading="lazy" src="m448-fix-f014400.jpg" alt="m448 M26 fix f14400 (entry+257)"><figcaption>M26 fix f14400 (entry+257)</figcaption></figure>
+<figure><img loading="lazy" src="m448-fix-f014543.jpg" alt="m448 M26 fix f14543 (entry+400)"><figcaption>M26 fix f14543 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m448-fix-f015343.jpg" alt="m448 M26 fix f15343 (entry+1200)"><figcaption>M26 fix f15343 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m448-fix-f016443.jpg" alt="m448 M26 fix f16443 (entry+2300)"><figcaption>M26 fix f16443 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Goomba's Chip Flip (story)</div></div>
+<div class="g" id="m449"><div class="h">m449 &mdash; Kareening Koopa <span class="m">(Story (type 6))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14143; still running at entry+2600; exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m449-f014200.jpg" alt="m449 f14200 (entry+57)"><figcaption>f14200 (entry+57)</figcaption></figure>
+<figure><img loading="lazy" src="m449-f014203.jpg" alt="m449 f14203 (entry+60)"><figcaption>f14203 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m449-f014300.jpg" alt="m449 f14300 (entry+157)"><figcaption>f14300 (entry+157)</figcaption></figure>
+<figure><img loading="lazy" src="m449-f014400.jpg" alt="m449 f14400 (entry+257)"><figcaption>f14400 (entry+257)</figcaption></figure>
+<figure><img loading="lazy" src="m449-f014543.jpg" alt="m449 f14543 (entry+400)"><figcaption>f14543 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m449-f015343.jpg" alt="m449 f15343 (entry+1200)"><figcaption>f15343 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m449-f016443.jpg" alt="m449 f16443 (entry+2300)"><figcaption>f16443 (entry+2300)</figcaption></figure>
+</div>
+<div class="m">the same frames on the M26 build (raw texgen inputs, per-pixel q):</div><div class="f">
+<figure><img loading="lazy" src="m449-fix-f014200.jpg" alt="m449 M26 fix f14200 (entry+57)"><figcaption>M26 fix f14200 (entry+57)</figcaption></figure>
+<figure><img loading="lazy" src="m449-fix-f014203.jpg" alt="m449 M26 fix f14203 (entry+60)"><figcaption>M26 fix f14203 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m449-fix-f014300.jpg" alt="m449 M26 fix f14300 (entry+157)"><figcaption>M26 fix f14300 (entry+157)</figcaption></figure>
+<figure><img loading="lazy" src="m449-fix-f014400.jpg" alt="m449 M26 fix f14400 (entry+257)"><figcaption>M26 fix f14400 (entry+257)</figcaption></figure>
+<figure><img loading="lazy" src="m449-fix-f014543.jpg" alt="m449 M26 fix f14543 (entry+400)"><figcaption>M26 fix f14543 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m449-fix-f015343.jpg" alt="m449 M26 fix f15343 (entry+1200)"><figcaption>M26 fix f15343 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m449-fix-f016443.jpg" alt="m449 M26 fix f16443 (entry+2300)"><figcaption>M26 fix f16443 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Kareening Koopa (story)</div></div>
+<div class="g" id="m450"><div class="h">m450 &mdash; The Final Battle! <span class="m">(Extra (story) (type 8))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14144; still running at entry+2600; exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m450-f014200.jpg" alt="m450 f14200 (entry+56)"><figcaption>f14200 (entry+56)</figcaption></figure>
+<figure><img loading="lazy" src="m450-f014204.jpg" alt="m450 f14204 (entry+60)"><figcaption>f14204 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m450-f014300.jpg" alt="m450 f14300 (entry+156)"><figcaption>f14300 (entry+156)</figcaption></figure>
+<figure><img loading="lazy" src="m450-f014400.jpg" alt="m450 f14400 (entry+256)"><figcaption>f14400 (entry+256)</figcaption></figure>
+<figure><img loading="lazy" src="m450-f014544.jpg" alt="m450 f14544 (entry+400)"><figcaption>f14544 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m450-f015344.jpg" alt="m450 f15344 (entry+1200)"><figcaption>f15344 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m450-f016444.jpg" alt="m450 f16444 (entry+2300)"><figcaption>f16444 (entry+2300)</figcaption></figure>
+</div>
+<div class="m">the same frames on the M26 build (raw texgen inputs, per-pixel q):</div><div class="f">
+<figure><img loading="lazy" src="m450-fix-f014200.jpg" alt="m450 M26 fix f14200 (entry+56)"><figcaption>M26 fix f14200 (entry+56)</figcaption></figure>
+<figure><img loading="lazy" src="m450-fix-f014204.jpg" alt="m450 M26 fix f14204 (entry+60)"><figcaption>M26 fix f14204 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m450-fix-f014300.jpg" alt="m450 M26 fix f14300 (entry+156)"><figcaption>M26 fix f14300 (entry+156)</figcaption></figure>
+<figure><img loading="lazy" src="m450-fix-f014400.jpg" alt="m450 M26 fix f14400 (entry+256)"><figcaption>M26 fix f14400 (entry+256)</figcaption></figure>
+<figure><img loading="lazy" src="m450-fix-f014544.jpg" alt="m450 M26 fix f14544 (entry+400)"><figcaption>M26 fix f14544 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m450-fix-f015344.jpg" alt="m450 M26 fix f15344 (entry+1200)"><figcaption>M26 fix f15344 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m450-fix-f016444.jpg" alt="m450 M26 fix f16444 (entry+2300)"><figcaption>M26 fix f16444 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">The Final Battle! (story; Bowser's arena, the lava)</div></div>
+<div class="g" id="m451"><div class="h">m451 &mdash; Jigsaw Jitters <span class="m">(Extra / Bowser-side (type 7))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14477; still running at entry+2600; exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m451-f014200.jpg" alt="m451 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m451-f014300.jpg" alt="m451 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m451-f014400.jpg" alt="m451 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m451-f014537.jpg" alt="m451 f14537 (entry+60)"><figcaption>f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m451-f014877.jpg" alt="m451 f14877 (entry+400)"><figcaption>f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m451-f015677.jpg" alt="m451 f15677 (entry+1200)"><figcaption>f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m451-f016777.jpg" alt="m451 f16777 (entry+2300)"><figcaption>f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Jigsaw Jitters (Extra)</div></div>
+<div class="g" id="m452"><div class="h">m452 &mdash; The Final Battle! (variant 2, m450dll) <span class="m">(Extra / Bowser-side (type 7))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14478; still running at entry+2600; exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m452-f014200.jpg" alt="m452 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m452-f014300.jpg" alt="m452 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m452-f014400.jpg" alt="m452 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m452-f014538.jpg" alt="m452 f14538 (entry+60)"><figcaption>f14538 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m452-f014878.jpg" alt="m452 f14878 (entry+400)"><figcaption>f14878 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m452-f015678.jpg" alt="m452 f15678 (entry+1200)"><figcaption>f15678 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m452-f016778.jpg" alt="m452 f16778 (entry+2300)"><figcaption>f16778 (entry+2300)</figcaption></figure>
+</div>
+<div class="m">the same frames on the M26 build (raw texgen inputs, per-pixel q):</div><div class="f">
+<figure><img loading="lazy" src="m452-fix-f014538.jpg" alt="m452 M26 fix f14538 (entry+60)"><figcaption>M26 fix f14538 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m452-fix-f014878.jpg" alt="m452 M26 fix f14878 (entry+400)"><figcaption>M26 fix f14878 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m452-fix-f015678.jpg" alt="m452 M26 fix f15678 (entry+1200)"><figcaption>M26 fix f15678 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m452-fix-f016778.jpg" alt="m452 M26 fix f16778 (entry+2300)"><figcaption>M26 fix f16778 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">The Final Battle! variant 2 (m450dll, type 7)</div></div>
+<div class="g" id="m453"><div class="h">m453 &mdash; Challenge Booksquirm <span class="m">(Extra / Bowser-side (type 7))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14477; left at 16255 (+1778); exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m453-f014200.jpg" alt="m453 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m453-f014300.jpg" alt="m453 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m453-f014400.jpg" alt="m453 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m453-f014537.jpg" alt="m453 f14537 (entry+60)"><figcaption>f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m453-f014877.jpg" alt="m453 f14877 (entry+400)"><figcaption>f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m453-f015677.jpg" alt="m453 f15677 (entry+1200)"><figcaption>f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m453-f016295.jpg" alt="m453 f16295 (entry+1818)"><figcaption>f16295 (entry+1818)</figcaption></figure>
+<figure><img loading="lazy" src="m453-f016777.jpg" alt="m453 f16777 (entry+2300)"><figcaption>f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="m">the same frames on the M26 build (raw texgen inputs, per-pixel q):</div><div class="f">
+<figure><img loading="lazy" src="m453-fix-f014537.jpg" alt="m453 M26 fix f14537 (entry+60)"><figcaption>M26 fix f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m453-fix-f014877.jpg" alt="m453 M26 fix f14877 (entry+400)"><figcaption>M26 fix f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m453-fix-f015677.jpg" alt="m453 M26 fix f15677 (entry+1200)"><figcaption>M26 fix f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m453-fix-f016295.jpg" alt="m453 M26 fix f16295 (entry+1818)"><figcaption>M26 fix f16295 (entry+1818)</figcaption></figure>
+<figure><img loading="lazy" src="m453-fix-f016777.jpg" alt="m453 M26 fix f16777 (entry+2300)"><figcaption>M26 fix f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Challenge Booksquirm (--dvdheap 5888; four characters); the results frame is caught mid-wipe (lower half still black)</div></div>
+<div class="g" id="m454"><div class="h">m454 &mdash; The Final Battle! (variant 3, m450dll) <span class="m">(Extra / Bowser-side (type 7))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14478; still running at entry+2600; exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m454-f014200.jpg" alt="m454 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m454-f014300.jpg" alt="m454 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m454-f014400.jpg" alt="m454 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m454-f014538.jpg" alt="m454 f14538 (entry+60)"><figcaption>f14538 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m454-f014878.jpg" alt="m454 f14878 (entry+400)"><figcaption>f14878 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m454-f015678.jpg" alt="m454 f15678 (entry+1200)"><figcaption>f15678 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m454-f016778.jpg" alt="m454 f16778 (entry+2300)"><figcaption>f16778 (entry+2300)</figcaption></figure>
+</div>
+<div class="m">the same frames on the M26 build (raw texgen inputs, per-pixel q):</div><div class="f">
+<figure><img loading="lazy" src="m454-fix-f014538.jpg" alt="m454 M26 fix f14538 (entry+60)"><figcaption>M26 fix f14538 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m454-fix-f014878.jpg" alt="m454 M26 fix f14878 (entry+400)"><figcaption>M26 fix f14878 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m454-fix-f015678.jpg" alt="m454 M26 fix f15678 (entry+1200)"><figcaption>M26 fix f15678 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m454-fix-f016778.jpg" alt="m454 M26 fix f16778 (entry+2300)"><figcaption>M26 fix f16778 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">The Final Battle! variant 3 (m450dll, type 7)</div></div>
+<div class="g" id="m455"><div class="h">m455 &mdash; Rumble Fishing <span class="m">(Battle (type 4))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14477; left at 15648 (+1171); exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m455-f014200.jpg" alt="m455 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m455-f014300.jpg" alt="m455 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m455-f014400.jpg" alt="m455 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m455-f014537.jpg" alt="m455 f14537 (entry+60)"><figcaption>f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m455-f014877.jpg" alt="m455 f14877 (entry+400)"><figcaption>f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m455-f015677.jpg" alt="m455 f15677 (entry+1200)"><figcaption>f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m455-f015688.jpg" alt="m455 f15688 (entry+1211)"><figcaption>f15688 (entry+1211)</figcaption></figure>
+<figure><img loading="lazy" src="m455-f016777.jpg" alt="m455 f16777 (entry+2300)"><figcaption>f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="m">the same frames on the M26 build (raw texgen inputs, per-pixel q):</div><div class="f">
+<figure><img loading="lazy" src="m455-fix-f014537.jpg" alt="m455 M26 fix f14537 (entry+60)"><figcaption>M26 fix f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m455-fix-f014877.jpg" alt="m455 M26 fix f14877 (entry+400)"><figcaption>M26 fix f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m455-fix-f015677.jpg" alt="m455 M26 fix f15677 (entry+1200)"><figcaption>M26 fix f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m455-fix-f015688.jpg" alt="m455 M26 fix f15688 (entry+1211)"><figcaption>M26 fix f15688 (entry+1211)</figcaption></figure>
+<figure><img loading="lazy" src="m455-fix-f016777.jpg" alt="m455 M26 fix f16777 (entry+2300)"><figcaption>M26 fix f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Rumble Fishing (Battle): the play frame's sea and rafts drawn; results with the bomb blocks</div></div>
+<div class="g" id="m456"><div class="h">m456 &mdash; Take a Breather <span class="m">(4-player (type 0))</span> <span class="minor">minor</span></div>
+<div class="m">M25 build; module entered at frame 14477; left at 16049 (+1572); exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m456-f014200.jpg" alt="m456 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m456-f014300.jpg" alt="m456 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m456-f014400.jpg" alt="m456 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m456-f014537.jpg" alt="m456 f14537 (entry+60)"><figcaption>f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m456-f014877.jpg" alt="m456 f14877 (entry+400)"><figcaption>f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m456-f015677.jpg" alt="m456 f15677 (entry+1200)"><figcaption>f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m456-f016089.jpg" alt="m456 f16089 (entry+1612)"><figcaption>f16089 (entry+1612)</figcaption></figure>
+<figure><img loading="lazy" src="m456-f016777.jpg" alt="m456 f16777 (entry+2300)"><figcaption>f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="m">the same frames on the M26 build (raw texgen inputs, per-pixel q):</div><div class="f">
+<figure><img loading="lazy" src="m456-fix-f014537.jpg" alt="m456 M26 fix f14537 (entry+60)"><figcaption>M26 fix f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m456-fix-f014877.jpg" alt="m456 M26 fix f14877 (entry+400)"><figcaption>M26 fix f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m456-fix-f015677.jpg" alt="m456 M26 fix f15677 (entry+1200)"><figcaption>M26 fix f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m456-fix-f016089.jpg" alt="m456 M26 fix f16089 (entry+1612)"><figcaption>M26 fix f16089 (entry+1612)</figcaption></figure>
+<figure><img loading="lazy" src="m456-fix-f016777.jpg" alt="m456 M26 fix f16777 (entry+2300)"><figcaption>M26 fix f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Take a Breather: the rafts' far row and the sea look right; the players in the water are barely visible (translucent water over them; unverified)</div></div>
+<div class="g" id="m457"><div class="h">m457 &mdash; Bowser Wrestling <span class="m">(Extra (story) (type 8))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14144; left at 16586 (+2442); exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m457-f014200.jpg" alt="m457 f14200 (entry+56)"><figcaption>f14200 (entry+56)</figcaption></figure>
+<figure><img loading="lazy" src="m457-f014204.jpg" alt="m457 f14204 (entry+60)"><figcaption>f14204 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m457-f014300.jpg" alt="m457 f14300 (entry+156)"><figcaption>f14300 (entry+156)</figcaption></figure>
+<figure><img loading="lazy" src="m457-f014400.jpg" alt="m457 f14400 (entry+256)"><figcaption>f14400 (entry+256)</figcaption></figure>
+<figure><img loading="lazy" src="m457-f014544.jpg" alt="m457 f14544 (entry+400)"><figcaption>f14544 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m457-f015344.jpg" alt="m457 f15344 (entry+1200)"><figcaption>f15344 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m457-f016444.jpg" alt="m457 f16444 (entry+2300)"><figcaption>f16444 (entry+2300)</figcaption></figure>
+<figure><img loading="lazy" src="m457-f016626.jpg" alt="m457 f16626 (entry+2482)"><figcaption>f16626 (entry+2482)</figcaption></figure>
+</div>
+<div class="n">Bowser Wrestling (story, no card; L/R mash game with 4 COMs = Mario idles)</div></div>
+<div class="g" id="m458"><div class="h">m458 &mdash; Panels of Doom <span class="m">(Extra (story) (type 8))</span> <span class="faulted">faulted</span></div>
+<div class="m">M25 build; module entered at frame 14144; still running at entry+2600; exit code 138</div>
+<div class="f">
+<figure><img loading="lazy" src="m458-f014200.jpg" alt="m458 f14200 (entry+56)"><figcaption>f14200 (entry+56)</figcaption></figure>
+<figure><img loading="lazy" src="m458-f014204.jpg" alt="m458 f14204 (entry+60)"><figcaption>f14204 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m458-f014300.jpg" alt="m458 f14300 (entry+156)"><figcaption>f14300 (entry+156)</figcaption></figure>
+<figure><img loading="lazy" src="m458-f014400.jpg" alt="m458 f14400 (entry+256)"><figcaption>f14400 (entry+256)</figcaption></figure>
+<figure><img loading="lazy" src="m458-f014544.jpg" alt="m458 f14544 (entry+400)"><figcaption>f14544 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m458-f015344.jpg" alt="m458 f15344 (entry+1200)"><figcaption>f15344 (entry+1200)</figcaption></figure>
+</div>
+<div class="n">Panels of Doom: signal 10 (SIGBUS) at 0x935c001c in m458Dll after the panel pick (frame ~15,560, entry +1416), pc in the REL; snapshot snaps/lib/m458-fault-f015200.snap (the M25 build)</div></div>
+<div class="g" id="m459"><div class="h">m459 &mdash; Mushroom Medic <span class="m">(Extra / Bowser-side (type 7))</span> <span class="faulted">faulted</span></div>
+<div class="m">M25 build; module entered at frame 14477; still running at entry+2600; exit code 138</div>
+<div class="f">
+<figure><img loading="lazy" src="m459-f014200.jpg" alt="m459 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m459-f014300.jpg" alt="m459 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m459-f014400.jpg" alt="m459 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+</div>
+<div class="n">Mushroom Medic: HEAP_MODEL exhausted at the module's setup (`malloc error size 33184`, then HuPrcChildCreate on a null process from CharNpcDustSet, signal 10 at 0xc, frame ~14,600); no in-game frame; snapshot snaps/lib/m459-heap-f013600.snap</div></div>
+<div class="g" id="m460"><div class="h">m460 &mdash; Doors of Doom <span class="m">(Extra / Bowser-side (type 7))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14477; left at 15380 (+903); exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m460-f014200.jpg" alt="m460 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m460-f014300.jpg" alt="m460 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m460-f014400.jpg" alt="m460 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m460-f014537.jpg" alt="m460 f14537 (entry+60)"><figcaption>f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m460-f014877.jpg" alt="m460 f14877 (entry+400)"><figcaption>f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m460-f015420.jpg" alt="m460 f15420 (entry+943)"><figcaption>f15420 (entry+943)</figcaption></figure>
+<figure><img loading="lazy" src="m460-f015677.jpg" alt="m460 f15677 (entry+1200)"><figcaption>f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m460-f016777.jpg" alt="m460 f16777 (entry+2300)"><figcaption>f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Doors of Doom: game ends at +903 (a door chosen), Slot A saving after the results</div></div>
+<div class="g" id="m461"><div class="h">m461 &mdash; Bob-omb X-ing <span class="m">(Extra / Bowser-side (type 7))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14477; left at 15734 (+1257); exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m461-f014200.jpg" alt="m461 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m461-f014300.jpg" alt="m461 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m461-f014400.jpg" alt="m461 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m461-f014537.jpg" alt="m461 f14537 (entry+60)"><figcaption>f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m461-f014877.jpg" alt="m461 f14877 (entry+400)"><figcaption>f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m461-f015677.jpg" alt="m461 f15677 (entry+1200)"><figcaption>f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m461-f015774.jpg" alt="m461 f15774 (entry+1297)"><figcaption>f15774 (entry+1297)</figcaption></figure>
+<figure><img loading="lazy" src="m461-f016777.jpg" alt="m461 f16777 (entry+2300)"><figcaption>f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="m">the same frames on the M26 build (raw texgen inputs, per-pixel q):</div><div class="f">
+<figure><img loading="lazy" src="m461-fix-f014537.jpg" alt="m461 M26 fix f14537 (entry+60)"><figcaption>M26 fix f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m461-fix-f014877.jpg" alt="m461 M26 fix f14877 (entry+400)"><figcaption>M26 fix f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m461-fix-f015677.jpg" alt="m461 M26 fix f15677 (entry+1200)"><figcaption>M26 fix f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m461-fix-f015774.jpg" alt="m461 M26 fix f15774 (entry+1297)"><figcaption>M26 fix f15774 (entry+1297)</figcaption></figure>
+<figure><img loading="lazy" src="m461-fix-f016777.jpg" alt="m461 M26 fix f16777 (entry+2300)"><figcaption>M26 fix f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Bob-omb X-ing (one player)</div></div>
+<div class="g" id="m462"><div class="h">m462 &mdash; Goomba Stomp <span class="m">(Extra / Bowser-side (type 7))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14477; still running at entry+2600; exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m462-f014200.jpg" alt="m462 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m462-f014300.jpg" alt="m462 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m462-f014400.jpg" alt="m462 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m462-f014537.jpg" alt="m462 f14537 (entry+60)"><figcaption>f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m462-f014877.jpg" alt="m462 f14877 (entry+400)"><figcaption>f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m462-f015677.jpg" alt="m462 f15677 (entry+1200)"><figcaption>f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m462-f016777.jpg" alt="m462 f16777 (entry+2300)"><figcaption>f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Goomba Stomp (one player)</div></div>
+<div class="g" id="m463"><div class="h">m463 &mdash; Panel Panic 9 Player <span class="m">(Extra / Bowser-side (type 7))</span> <span class="ok">ok</span></div>
+<div class="m">M25 build; module entered at frame 14477; still running at entry+2600; exit code 0</div>
+<div class="f">
+<figure><img loading="lazy" src="m463-f014200.jpg" alt="m463 f14200 (card)"><figcaption>f14200 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m463-f014300.jpg" alt="m463 f14300 (card)"><figcaption>f14300 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m463-f014400.jpg" alt="m463 f14400 (card)"><figcaption>f14400 (card)</figcaption></figure>
+<figure><img loading="lazy" src="m463-f014537.jpg" alt="m463 f14537 (entry+60)"><figcaption>f14537 (entry+60)</figcaption></figure>
+<figure><img loading="lazy" src="m463-f014877.jpg" alt="m463 f14877 (entry+400)"><figcaption>f14877 (entry+400)</figcaption></figure>
+<figure><img loading="lazy" src="m463-f015677.jpg" alt="m463 f15677 (entry+1200)"><figcaption>f15677 (entry+1200)</figcaption></figure>
+<figure><img loading="lazy" src="m463-f016777.jpg" alt="m463 f16777 (entry+2300)"><figcaption>f16777 (entry+2300)</figcaption></figure>
+</div>
+<div class="n">Panel Panic 9 Player</div></div>

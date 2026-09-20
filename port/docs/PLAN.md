@@ -12865,3 +12865,422 @@ packaging's next pieces: the launcher that uses the first-run message
 and the chooser (the chooser driven end to end first), the README's
 requirements (`docs/requirements.md` is written for it), and the
 M24 leftovers.
+## 41. M26 log — the gallery, and the texgen that read the wrong row *(2026-09-20, littlejelly)*
+
+M26's brief was the first graphics audit: every minigame the roulette can
+deal, teleported into from boot and photographed, a contact sheet the user
+can read on a phone, a first pass of verdicts grouped by cause, and the one
+shared cause with the most games behind it fixed. The soak came first
+(§41.1). The gallery ran as a G4-side chain of 63 runs (§41.2) and, while
+it ran, the cause the brief suspected — the shadow maps — was read in the
+code and turned out to be larger and older than the copy path: since M3
+the port has fed every `GX_TG_POS` and `GX_TG_NRM` texgen the **view-space**
+position and normal, where the hardware reads the **raw input row** and the
+game's matrices are built for it (§41.4). Every projected shadow map and
+every reflection map in the game was sampled from the wrong space. The
+fix is a few lines in the two vertex paths behind two flags, and it
+uncovered a third fault on the way — the decoder had every S8 normal 64×
+too long since M3, hidden by the lighting's normalisation (§41.4) — and
+was witnessed on the G4 by running the whole chain again on the fixed
+build and diffing the frames (§41.5).
+
+### 41.1 The soak, read
+
+§40.9's leave-behind — `g4 run --soak --com4 --rtc dolphin --freshcard
+--realtime --snap-every 5000 --snap-keep 3 --status --ovllog --stuckwatch
+200` on the M25 build (`bf4066de…`), from 02:09 G4 time — was ended through
+Escape at 03:11, past the frame the brief named (217,500, the second
+cluster of §40.1's mismatches): **62 minutes, 224,277 frames**
+(`docs/soak/m26-soak16-m25-leave.log.gz`).
+
+| | |
+|---|---|
+| speed / presented fps | **100.1%** mean over 3,737 status lines; 20.8 fps; `machine ok` on every line |
+| where it got | board 1, turn 18 of 20 (ended for the gallery) |
+| minigames dealt | 24, **the same modules in the same order** as soaks 13–15 (m412 m428 m420 m444 m423 m438 m429 m444 m430 m406 m416 m405 m438 m431 m422 m410 m407 m421 m424 m436 m404 m427 m455 m401); m415 not dealt |
+| `split frames` | 748,328 halves each side, 224,361 joins, **0 position mismatches**; `15035 start(s) refused by start_voice_init` — the `MIX_PLAN_CLEAR` proof on the machine that found the fourteen (§40.1: the MacBook's 9 → 0 was the proof by reproduction; this is the proof in place) |
+| resyncs / faults / STUCK / guard hits | **1 / 0 / 0 / 0** — the one resync is `retrace 14203, 1695 ms behind`, the results-screen stall of §38.3/§40.8 at the first minigame's results, in a soak for the second time; still without `--perf` on, so no `stall:` line |
+| `worker mixer` | 224,246 jobs, 6 late (13 ms), 208 waited for (92 ms, worst 2.2 ms); 320.6 s of work on the second core |
+| audio | `aud` 0.28 ms; 165 underruns / 2.5 s over the hour; `resampler linear, depop on` |
+| `REL .data` / `skin: lifetime` / `copy-read` | 68 re-opens, 49 reset / 578 dropped, 0 guard hits / none (m415 not dealt) |
+| `EFB copies` | 82,963 (17,344 whole-screen + 4,398 region from the front buffer on consumed frames; 47,260 half-scale) |
+
+Nothing in it outranks the gallery. The results-screen stall is now two
+soaks and seventeen walks old and still has no `--perf` line; the next
+soak carries `--perf` (§41.8).
+
+### 41.2 The gallery run
+
+**Two harness levers, so the chain never has to know a frame number.**
+A `--minigame` run enters its module at a frame that depends on the game's
+type (types 3, 5, 6 and 8 skip the instruction card, `instDll/main.c:107`)
+and on the card's own length, so a chain of 63 runs cannot name absolute
+`--dumpframe`s in advance. `selfplay.c` grew `--mgdump 60,400,1200,2300`
+— on the first frame `omcurovl` names an m4xx module, the offsets are
+added to the entry frame and appended to the `--dumpframe` set, and when
+the module is left before the last one, the frame 40 after the exit (the
+results screen) is added too — and `--mgend 2600`, which sets `--frames`
+to entry+2600 at the same moment. Both log the entry and the exit:
+
+```
+port> mgdump: entered minigame m401dll (mg 401) at frame 14478; dumping 14200,14300,14400,14538,14878,15678,16778; the run ends at 17078
+port> mgdump: left minigame m403dll at frame 15685 (entry +1208)
+port> mgdump: results frame 15725 added
+```
+
+The absolute frames 14,200 / 14,300 / 14,400 are the instruction card
+(`instDll` runs 14,136–14,470 on the `board-start-com4.play` walk with
+`--rtc dolphin --freshcard`; every game's entry landed at 14,477 or 14,478,
+the card's auto-start with four COMs being a frame count), so each game's
+row also carries its own name from the card, and the game's English name
+in the table below is the card's, cross-checked against `configure.py`'s
+module comments.
+
+**The chain** is `port/tools/gallery_chain.sh`, installed as the chain
+app's executable on the G4 (`~/MarioParty4-chain.app/Contents/MacOS/isle`,
+§0e) so the console runner runs it as one job whatever happens to the lab
+host: for each of the 63 entries of `mgInfoTbl` (`objsub.c`; 61 modules —
+m452 and m454 are `m450dll` again with `type 7`, which the table
+distinguishes and `--minigame 452`/`454` reach by index),
+
+```
+isle --minigame mNNN --turns 1 --com4 --rtc dolphin --freshcard --play board-start-com4.play --noconfig
+     --ffto 14000 --lockstep --frames 20000 --mgdump 60,400,1200,2300 --mgend 2600 --dumpframe 14200,14300,14400
+     --shotdir ~/gallery/mNNN --snap-every 800 --snap-keep 2 --snap-dir ~/gallery/mNNN/snaps --status --ovllog
+```
+
+(`m453` adds `--dvdheap 5888`, §29: no four-character cast fits the retail
+`HEAP_DVD`), `killall -9 isle` between runs, one line per game into
+`~/gallery/index.txt` (exit code, entry and exit frames, faults, frames
+written). Nothing was excluded: the story-mode games (types 6 and 8,
+`flag 0`, never dealt by the party roulette) and the Extra Room games
+(type 7, `flag 0`) were forced through the same `instDll` path as
+everything else, and they all played. A game ran in **about three
+minutes** on the G4 — the `--ffto` at 150 fps, then 2,600 lockstep frames
+at 12–25 fps — and the 63 took 3 h 10 min (03:14–06:25 G4 time). The
+snapshot ring (two 43 MB snapshots a game) is there for the faulted games;
+none faulted, and the rings were deleted after the read.
+
+### 41.3 The first pass, and the causes
+
+The contact sheet is `port/docs/gallery/index.html` (63 rows, 454 frames
+at 320×240, 6.6 MB; the full-size PPMs stay on littlejelly under
+`~/gallery/`). The verdict is the first pass, from the port's frames
+against the code and, for six games, against the console; `?` marks a
+verdict the oracle has not settled.
+
+| module | game | type | entry | left | verdict | what is wrong |
+|---|---|---|---:|---|---|---|
+| `m401` | Manta Rings | 4-player | 14478 | ran on | **ok** | plausible; no shadow receiver to judge |
+| `m402` | Slime Time | 4-player | 14478 | ran on | **minor?** | no shadows under the players and the outer floor flat dark green (cause A; the M26 build draws the shadows and the floor's reflection-mapped shading); the tall yellow column unverified (the oracle capture panicked in Dolphin, dvd.c:75: HEAP_DVD) |
+| `m403` | Booksquirm | 4-player | 14477 | 15685 (+1208) | **ok** | game ends at +1208 (all squished), white fade before results is the game's |
+| `m404` | Trace Race | Battle | 14477 | ran on | **minor?** | the lanes show no dotted guide line ahead of the players; unverified (oracle not captured this milestone) |
+| `m405` | Mario Medley | 4-player | 14477 | ran on | **major** | the pool is opaque and a black wedge covers its lower-left at +2300; the console (m405-console-15600/16500/17400.png) shows the swimmers through translucent water with lane ropes — same family as m434 (opaque black water) |
+| `m406` | Avalanche! | 4-player | 14477 | 16912 (+2435) | **ok** | matches port/ref/frames/m406-console-12500/13000 |
+| `m407` | Domination | 4-player | 14477 | 16512 (+2035) | **ok** | the Whomps are grey stone blocks lying face-down on the console too (port/ref/frames/m407-console-12000.png); verified |
+| `m408` | Paratrooper Plunge | 4-player | 14477 | 16970 (+2493) | **major** | the play is a blank white screen with the ring targets; the console (port/ref/frames/m408-console-12400/12800/13200.png) shows the sea, the islands and the coast below the falling players — the whole scene is missing |
+| `m409` | Toad's Quick Draw | 4-player | 14478 | ran on | **ok** | Toad's Quick Draw |
+| `m410` | Three Throw | 4-player | 14477 | ran on | **ok** | Three Throw |
+| `m411` | Photo Finish | 4-player | 14477 | ran on | **ok** | Photo Finish |
+| `m412` | Mr. Blizzard's Brigade | 4-player | 14477 | 16358 (+1881) | **ok** | frozen players in translucent ice |
+| `m413` | Bob-omb Breakers | 4-player | 14477 | ran on | **ok** | Bob-omb Breakers |
+| `m414` | Long Claw of the Law | 4-player | 14477 | 16975 (+2498) | **major** | all four split-screen views are flat cyan, only the HUD (crosshairs, star meters, timer) draws; WON! banner over cyan |
+| `m415` | Stamp Out! | 4-player | 14477 | ran on | **minor** | paper white (M23), toys textured (M21), but NO shadows under the players on the paper (console has them) = the texgen cause; fixed in M26 |
+| `m416` | Candlelight Flight | 1-vs-3 | 14477 | ran on | **ok** | upright since M24b |
+| `m417` | Makin' Waves | 1-vs-3 | 14477 | 15323 (+846) | **major** | nothing but the START banner over a cream screen at +400 (beige stripes at +60); the game ends at +846 |
+| `m418` | Hide and Go BOOM! | 1-vs-3 | 14477 | ran on | **ok** | Hide and Go BOOM! |
+| `m419` | Tree Stomp | 1-vs-3 | 14478 | 16398 (+1920) | **ok** | +60 is the intro close-up (dark); play plausible; no shadow under the stomper on the tiles (the texgen cause) |
+| `m420` | Fish n' Drips | 1-vs-3 | 14477 | ran on | **ok** | Fish n' Drips |
+| `m421` | Hop or Pop | 1-vs-3 | 14477 | ran on | **minor?** | the arena's yellow star floor is washed nearly white (a hilite/lighting question, unverified) |
+| `m422` | Money Belts | 1-vs-3 | 14477 | ran on | **ok** | Money Belts |
+| `m423` | GOOOOOOOAL!! | 1-vs-3 | 14477 | 16911 (+2434) | **ok** | the stadium's big screen stays dark (unverified whether the console shows a picture on it) |
+| `m424` | Blame it on the Crane | 1-vs-3 | 14477 | ran on | **ok** | Blame it on the Crane |
+| `m425` | The Great Deflate | 2-vs-2 | 14477 | 17048 (+2571) | **ok** | the WON! banner at +2300 is mid-spin/zoom (its exit animation, as m416's FINISH!) |
+| `m426` | Revers-a-Bomb | 2-vs-2 | 14477 | 16845 (+2368) | **ok** | Revers-a-Bomb |
+| `m427` | Right Oar Left? | 2-vs-2 | 14477 | ran on | **major** | the boats and their riders are black silhouettes and the river is washed white-green in both views (frame +60: black band above a dark-green river) |
+| `m428` | Cliffhangers | 2-vs-2 | 14477 | ran on | **ok** | Cliffhangers |
+| `m429` | Team Treasure Trek | 2-vs-2 | 14477 | ran on | **ok** | four viewports, all drawn |
+| `m430` | Pair-a-sailing | 2-vs-2 | 14477 | ran on | **major** | a tall black rectangle stands in the right-hand view's upper half in every play frame (the left view is clean) |
+| `m431` | Order Up | 2-vs-2 | 14477 | ran on | **ok** | Order Up |
+| `m432` | Dungeon Duos | 2-vs-2 | 14477 | ran on | **ok** | Dungeon Duos |
+| `m433` | Beach Volley Folly | Extra / Bowser-side | 14477 | ran on | **ok** | no shadows on the sand under the players (the texgen cause) |
+| `m434` | Cheep Cheep Sweep | 2-vs-2 | 14477 | ran on | **major** | the pond is opaque black (the console: water with the fish visible); the wading players are cut off at the waist by it |
+| `m435` | Darts of Doom | Bowser | 14144 | ran on | **ok** | Darts of Doom (Bowser; no card) |
+| `m436` | Fruits of Doom | Bowser | 14144 | ran on | **ok** | Fruits of Doom (Bowser; no card) |
+| `m437` | Balloon of Doom | Bowser | 14143 | ran on | **ok** | Balloon of Doom (Bowser; no card) |
+| `m438` | Chain Chomp Fever | Battle | 14478 | 16639 (+2161) | **ok** | Chain Chomp Fever (Battle; battle results drawn) |
+| `m439` | Paths of Peril | Battle | 14478 | ran on | **ok** | four viewports, all drawn |
+| `m440` | Bowser's Bigger Blast | Battle | 14477 | ran on | **ok** | Bowser's Bigger Blast |
+| `m441` | Butterfly Blitz | Battle | 14477 | ran on | **ok** | Butterfly Blitz |
+| `m442` | Barrel Baron | Extra / Bowser-side | 14477 | ran on | **ok** | Barrel Baron (one player; +60 is the intro's sky and lens flare) |
+| `m443` | Mario Speedwagons | 4-player | 14477 | 16346 (+1869) | **ok** | four viewports drawn |
+| `m444` | Reversal of Fortune | Item | 14143 | ran on | **ok** | Reversal of Fortune (no card; the pinball of §23) |
+| `m445` | Bowser Bop | Story | 14143 | ran on | **ok** | Bowser Bop (story; Mario vs Peach) |
+| `m446` | Mystic Match 'Em | Story | 14143 | ran on | **ok** | Mystic Match 'Em (story) |
+| `m447` | Archaeologuess | Story | 14143 | ran on | **ok** | Archaeologuess (story) |
+| `m448` | Goomba's Chip Flip | Story | 14143 | ran on | **ok** | Goomba's Chip Flip (story) |
+| `m449` | Kareening Koopa | Story | 14143 | ran on | **ok** | Kareening Koopa (story) |
+| `m450` | The Final Battle! | Extra | 14144 | ran on | **ok** | The Final Battle! (story; Bowser's arena, the lava) |
+| `m451` | Jigsaw Jitters | Extra / Bowser-side | 14477 | ran on | **ok** | Jigsaw Jitters (Extra) |
+| `m452` | The Final Battle! (variant 2, m450dll) | Extra / Bowser-side | 14478 | ran on | **ok** | The Final Battle! variant 2 (m450dll, type 7) |
+| `m453` | Challenge Booksquirm | Extra / Bowser-side | 14477 | 16255 (+1778) | **ok** | Challenge Booksquirm (--dvdheap 5888; four characters); the results frame is caught mid-wipe (lower half still black) |
+| `m454` | The Final Battle! (variant 3, m450dll) | Extra / Bowser-side | 14478 | ran on | **ok** | The Final Battle! variant 3 (m450dll, type 7) |
+| `m455` | Rumble Fishing | Battle | 14477 | 15648 (+1171) | **ok** | the play frame's sea and rafts drawn; results with the bomb blocks |
+| `m456` | Take a Breather | 4-player | 14477 | 16049 (+1572) | **minor** | the rafts' far row and the sea look right; the players in the water are barely visible (translucent water over them; unverified) |
+| `m457` | Bowser Wrestling | Extra | 14144 | 16586 (+2442) | **ok** | Bowser Wrestling (story, no card; L/R mash game with 4 COMs = Mario idles) |
+| `m458` | Panels of Doom | Extra | 14144 | ran on | **faulted** | signal 10 (SIGBUS) at 0x935c001c in m458Dll after the panel pick (frame ~15,560, entry +1416), pc in the REL; snapshot snaps/lib/m458-fault-f015200.snap (the M25 build) |
+| `m459` | Mushroom Medic | Extra / Bowser-side | 14477 | ran on | **faulted** | HEAP_MODEL exhausted at the module's setup (`malloc error size 33184`, then HuPrcChildCreate on a null process from CharNpcDustSet, signal 10 at 0xc, frame ~14,600); no in-game frame; snapshot snaps/lib/m459-heap-f013600.snap |
+| `m460` | Doors of Doom | Extra / Bowser-side | 14477 | 15380 (+903) | **ok** | game ends at +903 (a door chosen), Slot A saving after the results |
+| `m461` | Bob-omb X-ing | Extra / Bowser-side | 14477 | 15734 (+1257) | **ok** | Bob-omb X-ing (one player) |
+| `m462` | Goomba Stomp | Extra / Bowser-side | 14477 | ran on | **ok** | Goomba Stomp (one player) |
+| `m463` | Panel Panic 9 Player | Extra / Bowser-side | 14477 | ran on | **ok** | Panel Panic 9 Player |
+
+**Grouped by cause** — what the frames show, what in the port explains it,
+and which games carry it:
+
+| cause | games | status |
+|---|---|---|
+| **A. `GX_TG_POS`/`GX_TG_NRM` texgens fed the view-space row** (§41.4): every projected shadow map off its receiver, every reflection/hilite map rotated twice, and every *other* projected texture — **the instruction card's preview picture blank on every card** (`instDll/main.c:1093`), m405's and m456's water surfaces drawn over the swimmers, m435–m437's arena under a black blot, m434's pond an opaque disc | shadows missing or misplaced in every game that sets a receiver (61 of 63 call `Hu3DShadowCreate`) — plainly in **m402, m405, m410, m415, m419, m431, m433, m435–m437, m440, m456**, the reflection maps of **m413, m422, m425, m444**, and the card of **all 63** | **fixed in M26** (§41.4, §41.5): `--viewtexgen`, `--vtxdivide`, `--nrmfrac0` are the old picture |
+| **B. water and other translucent surfaces drawn opaque** (the pool of m405, the pond of m434, the river of m427, m417's sea): a copy-fed or `GXSetTevIndWarp` water shader; m405's pool turned translucent with the texgen fix (its surface was a projected texture landing everywhere), m434 and m427 did not | **m405** (better), **m434**, **m427**, **m417** | M27 |
+| **C. whole scenes missing**: m408's sea, islands and coast (a projected/indirect background: `GXSetTevIndWarp`, §32.1's known drop), m414's four viewports flat cyan (the split-screen cameras' scissor/viewport, `Hu3DCameraScissorSet` ×4 — the HUD draws, the 3D does not), m417 a cream screen with the START banner | **m408**, **m414**, **m417** | M27 |
+| **D. a black rectangle standing in the right-hand view** of m430 (a two-viewport game: the right camera's copy or depth/scissor; the left view is clean) | **m430** | M27 |
+| **E. faults**: m458 SIGBUS at `0x935c001c` in `m458Dll` after the panel pick; m459 `HEAP_HEAP` exhausted at setup — 65 `HuPrcChildCreate`s of 0x2000 stacks, ×`PORT_PRC_STACK_MUL` (4) = 2.17 MB of the retail 2.25 MB heap (a port-caused fault: the console fits them in 0.55 MB) | **m458**, **m459** | M27 (m459 = a `--heapheap KB` lever like `--dvdheap`, or a smaller multiplier for the modules that create many processes) |
+| **F. unverified minor**: m402's tall yellow column and blobs, m404's missing guide line, m421's washed floor, m456's swimmers hidden by the water | m402, m404, m421, m456 | oracle in M27 |
+
+### 41.4 The cause: a texgen that read the transformed row
+
+The brief's suspect was the shadow-map copy path of §38 and §39b. It was
+read again (`Hu3DShadowExec`, hsfman.c:1913–2003: a `C_MTXPerspective`
+pass into a `size*2` square viewport, the half-scale `GX_CTF_R8` copy;
+`SetShadow`, hsfdraw.c:1619: `GXSetTexCoordGen2(coord, GX_TG_MTX3x4,
+GX_TG_POS, GX_TEXMTX9)` and the stage `CPREV * (1 − TEXC)`) and it is
+right after M23 and M24b. What was wrong was one step before the copy is
+ever sampled: **what the texgen multiplies**.
+
+`FaceDrawShadow`'s matrix (hsfdraw.c:2260–2266) is
+
+```
+mtx = Hu3DShadowData.projMtx * Hu3DShadowData.lookAtMtx * inverse(Hu3DCameraMtx) * drawObj->matrix
+```
+
+where `drawObj->matrix` is the model's matrix *in camera space* (what
+`GXLoadPosMtxImm` gets as `GX_PNMTX0`). `inverse(camera) * that` is the
+model's world matrix, and the product maps an **object-space** vertex to
+the shadow camera's clip space and on to `(s, t, q)` through
+`C_MTXLightPerspective`'s `(0.5, −0.5, 0.5, 0.5)`. The reflection matrix
+(hsfdraw.c:1563–1569) is the same idea for normals: `refMtx *
+(drawObj->matrix / scale, translation zeroed) * Hu3DCameraMtxXPose`, i.e.
+it carries the object→view rotation itself and expects the **raw normal**.
+That is how the GX texgen unit works: for `GX_TG_POS` and `GX_TG_NRM` the
+XF multiplies the texture matrix into the *input* row — the vertex as it
+came off the array, before the position matrix — and Dolphin's
+`VertexShaderGen.cpp` says it in two lines (`case SourceRow::Geom:
+coord.xyz = rawpos.xyz;` / `case SourceRow::Normal: coord.xyz =
+rawnormal.xyz;`).
+
+The port, since M3, fed both texgens the **view-space** position and the
+**transformed, renormalised** normal: `gx_draw.c`'s phase 2 used `op[]`
+(position × `pos_mtx`) and `nrm[]` for `src_kind` 1 and 2, and M11's
+vertex program kept that shape on purpose — §25 records "the lighting and
+a `GX_TG_POS` texgen both read the view-space position, exactly as
+`finish_vertices`'s `op[]` did". So every projected shadow map was
+sampled at `shadowCam * model * (camera * model * p)`: the shadow of a
+player landed where a point twice-transformed would have been in the
+world — off the receiver, usually — and every reflection and hilite map
+rotated twice with the camera. It never showed in the three md5 frames:
+the title, the mode select and the character select copy a shadow pass
+every frame (§39b.4) but nothing at 800 or 3,000 samples it, and the board
+has no shadow pass at all. It showed in the minigames, which are where the
+receivers are, and where nobody had looked (§0m).
+
+A second, smaller thing in the same path: `GX_TG_MTX3x4` is a projective
+texgen, and the hardware divides `(s, t)` by `q` **per pixel**. Both port
+paths divided at the vertex (`sc /= q` in phase 2, `RCP`/`MUL` in the
+program) and handed GL two components, so `s/q` was interpolated
+linearly across a polygon. Exact on a floor at a constant depth from the
+shadow camera; wrong on a slope or a wall.
+
+**The fix** (gx_vprog.c, gx_draw.c):
+
+* the program's `GX_TG_POS` input is `vertex.position` and its `GX_TG_NRM`
+  input is `vertex.normal` with `w = 1` (the normal is no longer computed
+  for a texgen alone — only lighting needs it); phase 2 reads `px, py, pz`
+  and the source array's normal;
+* a projective texgen writes `(s·su, t·sv + q·tv, 0, q)` and leaves the
+  divide to the rasteriser (the NPOT fold's offset rides on `q` so that
+  `(t·sv + q·tv)/q` is the flipped coordinate of §39b.3); the
+  fixed-function path still divides at the vertex (its arrays carry two
+  components) and is noted as such;
+* `--viewtexgen` is the M3–M25 input, `--vtxdivide` the M3–M25 divide, on
+  the same binary, so the gallery could be run both ways.
+
+**The first picture**, on the MacBook bench while the G4 ran the chain
+(`--minigame m415 --turns 1 … --ffto 15700 --lockstep --dumpframe 15800`,
+the M23 reproduction), `--viewtexgen --vtxdivide` over the fix over the
+console's 10,973:
+
+![Stamp Out! 15800: old, fix, raw+vertex divide, the console](screenshots/m26-m415-f15800-old-fix-rawvtx-console.png)
+
+Every player on the paper has the console's soft shadow to their lower
+left with the fix and none without it; the raw input with the vertex
+divide (bottom left) is indistinguishable from the fix on this flat
+paper, as the reading says it should be.
+
+**The third fault, found by the first two.** The fixed build's title
+frame (800) drew the cake — a textured-hilite material, `GX_TG_NRM`
+through `GX_TEXMTX7` (hsfdraw.c:809) — as a dense grey hatch
+(`screenshots/m26-md5-800-crop-old-new-console.png`, middle): the hilite
+map repeated sixty-odd times across each face. A flat face has one
+normal, so the coordinates were not varying — they were *large*. hsfdraw
+sets its normals as `GX_S8` with `frac` 0 (hsfdraw.c:511), and the GX
+hardware **ignores the VAT's `frac` for normals**: S8 is read as 1.6 and
+S16 as 1.14, always. `gx_draw.c` scaled every normal by the VAT's `frac`
+— 1 — so every raw S8 normal in the port was up to 64 units long since
+M3, and nothing saw it: the lighting normalises, the CPU path
+normalises, and no texgen had read the raw row. `nrm_frac()` applies the
+hardware's shift at the three decode sites (the plan's scale, the
+byte tables, `put_fixed` and the pending-attribute reads); `--nrmfrac0`
+is the VAT's value. And a raw-normal texgen on a descriptor with no
+normal reads `(0, 0, 1)`, as phase 1 stored it, rather than whatever
+`vertex.normal` last was.
+
+### 41.5 The witness: the whole gallery again on the fixed build
+
+The fixed build (`~/MarioParty4-m26fix.app` on the G4, `87604c2b…`) ran
+the same 63-game chain into `~/gallery-fix` (06:26–09:35 G4 time,
+`GALLERY_APP`/`GALLERY_DIR` in the chain script), and every frame was
+diffed against the M25 build's (`~/gallery-tools/diff.py` on littlejelly:
+pixels differing by more than 8 levels, over 640×480; the table is
+`port/docs/gallery/diff-m25-vs-m26.txt`). Same entry frames, same exits,
+the same two faults at the same frames (m458, m459 — the fix does not
+touch game logic); nothing else changed its course.
+
+**What the diff says**, game by game, with what the eye sees:
+
+* **Every instruction card changed by 18–21%** (frames 14,300 and 14,400):
+  the card's TV screen, blank dark blue since M3, now shows the
+  minigame's preview picture — `instDll/main.c:1093` projects it with a
+  `GX_TG_MTX3x4, GX_TG_POS` texgen. Sixty-three of sixty-three.
+* **Shadows landed**: m415's stamps (10–11%), m419's tree stumps and
+  Mario (11%), m410's players and balls (4%), m433's players on the sand
+  (2%), m431's diners around the tables (5% on the intro), m402's
+  players and the column (20–27%), m420/m421/m423/m424/m428/m432/m441
+  (1–7%: the receivers under the players).
+* **m405's pool is translucent** (12–53%): the water surface was a
+  projected texture landing across the whole pool at the wrong
+  coordinates; the swimmers are visible through it now, with the lane
+  ropes and the tiled floor, as the console's frames show — though the
+  port's water is grey-green where the console's is blue (cause B of
+  §41.3 is still in it).
+* **m434's pond** (24–58%): the opaque black disc is gone and the stone
+  floor of the pond shows through — the water *surface* is still not
+  drawn (cause B).
+* **m413's machine, m422's belts, m425's Thwomp, m444's board** changed
+  by 6–31% on their reflection-mapped surfaces (`GX_TG_NRM` with the
+  hsfdraw reflection matrix): the environment map no longer rotates
+  twice with the camera.
+* **Unchanged (< 1%)**: m401 (the sea has no receiver), m406 (its slope's
+  shadows were already right within a texel: an overhead camera over a
+  flat receiver is the one case the old input got right), m414, m416,
+  m417, m427, m430 — the causes C/D games, untouched by A, as they
+  should be.
+
+![the card, m405, m402, m407: M25 over M26](screenshots/m26-fix-g4-m401card-m405-m402-m407.png)
+
+![m413, m415, m419, m410: M25 over M26](screenshots/m26-fix-g4-m413-m415-m419-m410.png)
+
+![m434, m425, m430: M25 over M26](screenshots/m26-fix-g4-m434-m425-m430.png)
+
+**The md5 references move, and are re-based with this justification.**
+`--viewtexgen --vtxdivide` on the final build reproduces §40's three
+frames to the byte (800 `1df90661…`, 3000 `8762d432…`, 7000 `f5b52130…`
+— the control arm, `~/m26ab/ctl` on the G4). The default changes all
+three:
+
+| frame | §40 md5 (= `--viewtexgen --vtxdivide`) | **M26 md5** | channel samples > 32 | what |
+|---:|---|---|---:|---|
+| 800 | `1df90661…` | **`0b58c5ee1dee7b5da28a688c4fe315ce`** | 1.39% | the title's cake: its textured hilite (`GX_TG_NRM`, hsfdraw.c:809) now a soft highlight on the box's faces, as the console's `title.png` has it — and the first build of the fix drew it as a 64×-repeated hatch, which is how the normal shift was found |
+| 3000 | `8762d432…` | **`c58a046d9ce6fabe3fef0b2270179203`** | 0.48% | the character select's hosts (Goomba, Shy Guy, Toad, Boo, Koopa) have their **shadows on the floor** under them; there were none |
+| 7000 | `f5b52130…` | **`021d58fb35d2307a35f4d26ac5d08dfb`** | 0.27% | the board's balloon-star behind the HUD: the hilite map on the right normal |
+
+![the title's cake at 2x: M25, M26, the console](screenshots/m26-md5-800-crop-old-new2-console.png)
+![the character select's hosts: M25, M26](screenshots/m26-md5-3000-crop-old-new2.png)
+
+**m402's streaks were the normals, not the divide.** The fixed build's
+Slime Time floor showed radial streaks on its outer ring where the M25
+build had a flat dark green; `--vtxdivide` drew the same streaks
+(`screenshots/m26-m402-g4-pixel-vs-vertex-divide.png`), which put them
+outside the divide — and the normal shift (§41.4's third fault) removed
+them: the outer floor is a reflection-mapped material, and its
+`GX_TG_NRM` texgen was sampling with 64-unit normals. On the final build
+the floor is smooth dark green with the players' shadows on it
+(`screenshots/m26-final-vs-fix-m402-m413.png`; m413's machine glass,
+the same). The nine games with a `GX_TG_NRM` surface or a shadow of note
+(m402, m405, m413, m415, m422, m425, m434, m444, m456) were run a third
+time on the final build (`~/gallery-final` on the G4, 09:56–10:22) and
+those are the frames in the sheet's second strip; the rest of the
+sheet's second strip is the second run's, and `diff-m25-vs-m26.txt` is
+M25 against those. The per-pixel divide is the hardware's rule and is
+the default.
+
+### 41.6 Three things found on the way
+
+* **The gallery's second run is the witness the first cannot be.** A
+  chain that photographs 63 games in 3 h 10 min, run twice, gives a
+  per-frame diff of a renderer change across the whole game for the
+  price of one night — `port/docs/gallery/diff-m25-vs-m26.txt` is the
+  first such table, and it found the normal-shift fault (§41.4) that no
+  reference frame had.
+* **The MacBook's picture is not the G4's for cluster shapes** (§0o):
+  Slime Time's blobs render as spikes on the Intel driver under Rosetta
+  on every bundle back to M24b. A MacBook A/B says whether a change moved
+  a picture, not whether the picture is right.
+* **The oracle rig can run the console out of `HEAP_DVD`** (m402:
+  `OSPanic dvd.c:75`) and can deal a different game than the poke asks
+  for (m404 → Order Up): the poke lands after the board's own preload.
+  Both in `port/ref/notes.md`.
+
+### 41.7 What M26 shipped, and what it did not
+
+| shipped, with a witness | |
+|---|---|
+| the soak read (§41.1): `MIX_PLAN_CLEAR` proven on the G4, 0 mismatches over 224,277 frames | the `split frames` line |
+| `--mgdump`, `--mgend`, `port/tools/gallery_chain.sh` (§41.2) | 63 games, two runs, 908 frames |
+| the contact sheet `port/docs/gallery/index.html`: 63 rows, 454 frames of the M25 build and 151 of the M26 build at 320×240, 9.1 MB (§41.3, §41.5) | |
+| the first pass: 49 ok, 5 minor (3 unverified), 7 major, 2 faulted; six oracle captures (m405, m407, m408, m427, and the two that missed: m402, m404) | the table, `port/ref/frames/m40{5,7,8}-console-*.png`, `m427-console-*.png` |
+| **cause A fixed**: `GX_TG_POS`/`GX_TG_NRM` texgens read the raw row, `GX_TG_MTX3x4`'s `q` divided per pixel, S8/S16 normals at the hardware's shift (§41.4); `--viewtexgen`, `--vtxdivide`, `--nrmfrac0` | the whole gallery again on the fixed build and the diff (§41.5); the three md5s re-based |
+| the two faults' snapshots: `snaps/lib/m458-fault-f015200.snap`, `snaps/lib/m459-heap-f013600.snap` (the M25 build, kept as `~/MarioParty4-m26gallery.app`) | |
+
+**Not done, and why:**
+
+* **Causes B–F** (§41.3): not started, by the brief's rule of one cause.
+* **m402's outer floor** and the per-pixel divide's precision on the
+  Radeon: the oracle first.
+* **The CPU vertex path** (`--cpuxf`, the degraded machines of §40.3)
+  still divides `q` at the vertex; its arrays carry two components.
+* **`--palette`** (a dead lever since M18) hands the program a bone-space
+  `vertex.position`; a raw-input texgen on a palette-skinned draw would
+  need the skinned object-space position, which that path does not have.
+* The M24/M25 leftovers stand: the results-screen stall (in a soak for
+  the second time, §41.1, still without `--perf`), the two mixer timers,
+  the selected box's specular, the launcher.
+
+### 41.8 What M27 starts with
+
+Left running: `g4 run --soak --com4 --rtc dolphin --freshcard --realtime
+--snap-every 5000 --snap-keep 3 --status --ovllog --stuckwatch 200` on the
+final build (`isle` md5 `dee221ea…`) — the first soak with the texgens
+reading the right row. Read it as §40.9 says; then the M27 list, in the
+order of games behind each:
+
+| cause | games | where to start | snapshot / reproduction |
+|---|---|---|---|
+| B. water drawn opaque or not at all | m434 (the pond's surface missing after A), m427 (the river white, the boats black), m417 (a cream screen), m405 (grey-green where the console is blue) | m427's `map.c:1070/2429` (`GX_TG_POS` texgens with `GX_TEXMTX`s 0x1E/0x21 and three `GXCopyTex`), m434's `GXCopyTex`, m417's `GXSetTevIndWarp` water (the §32.1 drop); `--copylog --drawlog` on the MacBook | `--minigame m427 --turns 1 … --ffto 15600 --lockstep --dumpframe 15677`; console frames `m427-console-15400/16600/17000.png` |
+| C. whole scenes missing | m408 (sea, islands, coast), m414 (four cyan viewports), m417 | m414's `Hu3DCameraScissorSet` ×4 + `Hu3DCameraViewportSet(16, 0,0,640,480)` (the HUD camera draws, the four do not: the port's per-camera scissor/viewport with a camera bit mask); m408's background (`GXSetTevIndWarp`?) | `m408-console-12400/12800/13200.png`; m414 needs its oracle |
+| D. a black column in the right view | m430 | the right camera's copy/depth (`m430Dll` has one `GXCopyTex`) | `--minigame m430 … --dumpframe 15677` |
+| E. faults | m459 (`HEAP_HEAP`: 65 processes × `PORT_PRC_STACK_MUL` 4), m458 (SIGBUS in the REL after the panel pick) | m459: a `--heapheap KB` lever like `--dvdheap`, or scale `HEAP_HEAP` by the multiplier (a logged divergence); m458: `--restore snaps/lib/m458-fault-f015200.snap` on `~/MarioParty4-m26gallery.app` under gdb | the two snapshots |
+| F. unverified | m402 (column, blobs, the outer floor), m404 (guide line), m421 (washed floor), m456 (swimmers), m414 | the oracle: m402 needs the poke before the preload (a `--rtcoffset`-style earlier poke, or the `mg_list` path), m404 a battle space | |
+
+And the gallery itself is now a tool: `GALLERY_APP=… GALLERY_DIR=… sh
+~/gallery_chain.sh` on the G4 and `diff.py` on littlejelly say what any
+renderer change did to every minigame, overnight.
