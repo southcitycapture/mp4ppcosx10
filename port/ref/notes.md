@@ -365,3 +365,45 @@ unselected file boxes' bevelled frames are dim (mean 99 on the top edge,
 A0 = 76); the selected box's at 0.6 with the red frame's specular under
 it. The port drew the unselected frames at 170 until M23 (the stage after
 a lerp-by-konst pair was emitted as the M16 triple's third unit).
+
+## m416 on the console (2026-09-19, m416-end.txt schedule, capture on littlejelly, PLAN.md §39b)
+
+m416 is **Candlelight Flight** (1-vs-3: one player holds a candle, the
+other three try to put it out with water guns; its card
+`m416-console-12700.png`). Schedule: `m406-end.txt` with the `mg_next`
+poke set to 15 and the 1-vs-3 group assignment (`GWPlayerCfg[i].group` =
+0, 1, 1, 1: `~/mp4-oracle/m416-end.txt`); the AVI dump extracted to PNGs
+by `capture-linux.sh` (Dolphin's `kill` does not reach `dolphin-emu`, as
+before: it ran on for 30 minutes past its 900 s and was killed by hand at
+41,000 frames). Frames: 12700 the card, 13300-15000 the play (the timer
+runs 30 -> 0), 14200 the timer at **18** (the user's photograph of the
+port was at 18), 14880 `FINISH!` at 08, 14920 the banner flying off,
+15020-15100 the lights come back up, 15300-15400 `LUIGI PEACH YOSHI
+WON!`, 15700-15800 the results with the four portraits.
+
+What they settle for the port:
+
+1. **The room is dark and drawn once, upright.** The minigame's
+   afterimage (`m416Dll/map.c` fn_1_89BC: the whole screen copied to a
+   640x480 RGBA8 texture every frame and drawn back as a full-screen
+   quad under the next frame with `INVSRCALPHA/SRCALPHA`, the material
+   alpha 16/255 during the play) keeps the room barely visible — the
+   walls, the two chandeliers and the timer box at the top, the
+   players as silhouettes, the candle's glow on the floor — and
+   **nothing is mirrored**: one timer box, two chandeliers, the floor
+   at the bottom. The port drew the afterimage upside down (every EFB
+   copy was sampled bottom-up since M3), so the room was mirrored
+   about the middle of the screen; fixed in M24b.
+2. **The `FINISH!` banner's trail is by design.** `m416-console-14920`:
+   the banner spins off with rainbow afterimages of itself smeared
+   across the frame — that *is* the persistence effect on a moving
+   sprite. The port's "tiled and rotated many times" was this trail
+   plus its own mirror image.
+3. **The brightness during the play**: the console's frame at 22 is
+   mean luma 13 on the 640x480 letterbox, the port's (M24b, the
+   MacBook's Intel driver) 19 — the same picture, the port a little
+   lighter in the candle's fall-off; not chased.
+4. The results screen (15800) has the four portraits in its boxes, the
+   1-vs-3 ranking (the three water-gun players 1st, the candle holder
+   4th) — the port's portraits have been drawn since M22 (PLAN.md
+   §37.3); the witness compares this frame.

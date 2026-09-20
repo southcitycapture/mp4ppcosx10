@@ -152,7 +152,9 @@ typedef struct GlcUnit {
     int src_a[3], op_a[3];
     float scale_rgb, scale_a;
     float env_color[4];
-    float su, sv;          /* the NPOT fold, this unit's GL_TEXTURE matrix */
+    float su, sv, tv;      /* the NPOT fold, this unit's GL_TEXTURE matrix:
+                            * (s*su, t*sv + tv); tv is 0 except for an EFB
+                            * copy, which is flipped (M24b, PLAN.md 39b) */
     const void* coord_ptr;
     int coord_stride;
 } GlcUnit;
@@ -271,6 +273,7 @@ void glc_invalidate(void) {
             u->env_mode = u->combine_rgb = u->combine_a = -1;
             u->scale_rgb = u->scale_a = -1.0f;
             u->su = u->sv = -1.0f;
+            u->tv = 0.0f;
             u->coord_ptr = (const void*)-1;
             u->coord_stride = -1;
             for (j = 0; j < 3; j++) {
@@ -436,20 +439,27 @@ void glc_texenv_color(int unit, const float* c) {
 }
 
 /* The only thing this backend spends GL_TEXTURE on is the NPOT fold, so the
- * whole matrix is two numbers and the cache can key on them. */
-void glc_tex_matrix(int unit, float su, float sv) {
+ * whole matrix is three numbers and the cache can key on them: (s, t) ->
+ * (s*su, t*sv + tv).  `tv` is zero for a decoded texture; an EFB copy
+ * (M24b, PLAN.md 39b) is bound with sv negated and tv = +sv, because
+ * glCopyTexSubImage2D fills the texture in GL's row order -- t = 0 is the
+ * *bottom* of the copied region -- where a GX texture's t = 0 is its top. */
+void glc_tex_matrix(int unit, float su, float sv) { glc_tex_matrix_fold(unit, su, sv, 0.0f); }
+void glc_tex_matrix_fold(int unit, float su, float sv, float tv) {
     GLfloat m[16];
     GlcUnit* u = &glc.unit[unit];
-    HIT(u->su == su && u->sv == sv);
+    HIT(u->su == su && u->sv == sv && u->tv == tv);
     u->su = su;
     u->sv = sv;
+    u->tv = tv;
     glc_active_texture(unit);
     memset(m, 0, sizeof(m));
     m[0] = su;
     m[5] = sv;
+    m[13] = tv;
     m[10] = 1.0f;
     m[15] = 1.0f;
-    TR("glTexMatrix unit %d su %f sv %f\n", unit, su, sv);
+    TR("glTexMatrix unit %d su %f sv %f tv %f\n", unit, su, sv, tv);
     GL(glMatrixMode)(GL_TEXTURE);
     GL(glLoadMatrixf)(m);
     GL(glMatrixMode)(GL_MODELVIEW);
@@ -588,6 +598,10 @@ void glc_fogcoord_array(const void* p, int stride) {
  * fixed-function GL_TEXTURE matrix is not consulted while a program is bound,
  * and the program has to reproduce it (gx_vprog.c). */
 void glc_get_tex_scale(int unit, float* su, float* sv) {
+    float tv;
+    glc_get_tex_fold(unit, su, sv, &tv);
+}
+void glc_get_tex_fold(int unit, float* su, float* sv, float* tv) {
     /* The shadow starts at zero, and zero here is not "no fold" -- it is a
      * texture matrix that collapses every coordinate onto one texel.  The
      * fixed-function path never noticed, because GL only applies the matrix
@@ -596,6 +610,7 @@ void glc_get_tex_scale(int unit, float* su, float* sv) {
      * answer with the identity. */
     *su = glc.unit[unit].su != 0.0f ? glc.unit[unit].su : 1.0f;
     *sv = glc.unit[unit].sv != 0.0f ? glc.unit[unit].sv : 1.0f;
+    *tv = glc.unit[unit].tv;
 }
 
 void glc_coord_array(int unit, const void* p, int stride) {

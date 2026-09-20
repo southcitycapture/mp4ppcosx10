@@ -361,9 +361,10 @@ typedef struct VpKey {
  *                i < VPE_NLIGHTS
  *   env[18], [19] channel 1's register material and ambient (M21)
  *   env[20+3t]   texgen t's matrix, three rows of a 3x4
- *   env[44+u]    GL unit u's (su, sv): the NPOT fold gx_tex.c puts in the
- *                fixed-function GL_TEXTURE matrix, which a vertex program
- *                bypasses and therefore has to apply itself
+ *   env[44+u]    GL unit u's (su, sv, 0, tv): the NPOT fold gx_tex.c puts in
+ *                the fixed-function GL_TEXTURE matrix, which a vertex program
+ *                bypasses and therefore has to apply itself; tv is the EFB
+ *                copy's flip (M24b), zero for every decoded texture
  *   env[50..]    the matrix palette (M18): 23 slots of 6
  *
  * 50 of the card's 192 native parameters before the palette.  The block is
@@ -683,11 +684,12 @@ static void vp_gen(const VpKey* k, VpBuf* b) {
                 vpi(b, "MUL t1.xy, t1, t1.w;\n");
             }
         }
-        /* the NPOT fold, and r/q, which nothing generates but the rasteriser
+        /* the NPOT fold (s*su, t*sv + tv: the offset is the EFB copy's
+         * flip, M24b), and r/q, which nothing generates but the rasteriser
          * reads */
         vpi(b, "MOV result.texcoord[%d], {0.0, 0.0, 0.0, 1.0};\n", u);
-        vpi(b, "MUL result.texcoord[%d].xy, t1, program.env[%d];\n", u,
-            VPE_TEXSCL + u);
+        vpi(b, "MAD result.texcoord[%d].xy, t1, program.env[%d], program.env[%d].zwzw;\n", u,
+            VPE_TEXSCL + u, VPE_TEXSCL + u);
     }
 
     vpb_add(b, "END\n");
@@ -1137,12 +1139,12 @@ void gx_vprog_bind(const GxXfDesc* d) {
         }
     }
     for (u = 0; u < GX_TEX_UNITS; u++) {
-        float su = 1.0f, sv = 1.0f;
+        float su = 1.0f, sv = 1.0f, tv = 0.0f;
         if (!key.unit_on[u]) {
             continue;
         }
-        glc_get_tex_scale(u, &su, &sv);
-        env4(VPE_TEXSCL + u, su, sv, 0.0f, 0.0f);
+        glc_get_tex_fold(u, &su, &sv, &tv);
+        env4(VPE_TEXSCL + u, su, sv, 0.0f, tv);
     }
 
     /* ---- the arrays.  The *source* layout is the vertex format now: no

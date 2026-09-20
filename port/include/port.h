@@ -223,6 +223,14 @@ typedef struct PortOptions {
                              *   triple folded to PREV as before            */
     int nocopyhalf;         /* --nocopyhalf  M23: a half-scale EFB copy takes
                              *   the bottom-left quarter at 1:1 as before   */
+    int copylog;            /* --copylog  M24b: one line per GXCopyTex (the
+                             *   frame, the rectangle, the format, clear,
+                             *   from the front buffer), to find every
+                             *   consumer of a copy on a walk              */
+    int noefbflip;          /* --noefbflip  M24b: an EFB copy sampled with
+                             *   GL's row order (t = 0 the bottom of the
+                             *   copied region) as before PLAN.md 39b: every
+                             *   copy drawn back upside down (m416)         */
     int oldfirsthash;       /* --oldfirsthash  M23: a miss stores the exhaustive
                              *   hash, so the next epoch decodes it again   */
     int norekey;            /* --norekey  M23: a texture the cache holds under

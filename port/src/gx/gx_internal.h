@@ -287,6 +287,7 @@ void glc_texenvi(int unit, unsigned pname, int v);
 void glc_texenvf(int unit, unsigned pname, float v);
 void glc_texenv_color(int unit, const float* rgba);
 void glc_tex_matrix(int unit, float su, float sv);
+void glc_tex_matrix_fold(int unit, float su, float sv, float tv); /* M24b: t*sv + tv */
 void glc_projection(const float* m16);
 void glc_modelview_identity(void);
 void glc_vertex_array(const void* p, int stride);
@@ -296,6 +297,7 @@ void glc_normal_array(const void* p, int stride);          /* NULL turns it off 
 void glc_fogcoord_array(const void* p, int stride);        /* M18: the palette slot */
 int glc_fogcoord_available(void);
 void glc_get_tex_scale(int unit, float* su, float* sv);
+void glc_get_tex_fold(int unit, float* su, float* sv, float* tv);
 /* M16: the vertex ring (PLAN.md 31).  gl13_var_setup hands back the ring --
  * DMA-visible when GL_APPLE_vertex_array_range is on, plain memory otherwise
  * -- and the three calls below are the fence discipline gx_draw.c follows:

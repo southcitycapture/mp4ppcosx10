@@ -1872,9 +1872,10 @@ static void draw_log(u32 first, u32 count, u8 dprim) {
             port_log("    texmtx identity (mtx id %u)\n", g->mtx);
         }
         {
-            float su = 1.0f, sv = 1.0f;
-            glc_get_tex_scale(i, &su, &sv);
-            port_log("    npot fold unit %d  su %.6f sv %.6f\n", i, su, sv);
+            float su = 1.0f, sv = 1.0f, tv = 0.0f;
+            glc_get_tex_fold(i, &su, &sv, &tv);
+            port_log("    npot fold unit %d  su %.6f sv %.6f tv %.6f%s\n", i, su, sv, tv,
+                     tv != 0.0f ? "  (an EFB copy, flipped: M24b)" : "");
         }
     }
     (void)s0;

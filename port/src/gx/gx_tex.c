@@ -1168,7 +1168,23 @@ static void tex_bind_body(int unit, GXTexObjPort* o, u8 swap) {
         }
         stat_hit++;
         glc_bind_texture(unit, o->gl_name);
-        glc_tex_matrix(unit, cache[slot].su, cache[slot].sv);
+        /* M24b (PLAN.md 39b): the copy was filled by glCopyTexSubImage2D in
+         * GL's row order -- t = 0 is the *bottom* of the copied region --
+         * where the texture the game thinks it bound has its first row at
+         * the top of the region (the copy unit writes the EFB top-down, and
+         * every decoded texture is uploaded that way, so t = 0 is its top).
+         * So an EFB copy sampled with the game's own coordinates came out
+         * upside down: m416's afterimage (a whole-screen copy drawn back
+         * over itself every frame) mirrored the room about the middle of
+         * the screen, the wipe's crossfade faded the old scene in upside
+         * down, and every projected shadow map since M3 was mirrored in the
+         * light's t.  The fold puts t = 0 at the top: t' = sv - t*sv.
+         * `--noefbflip` is the old orientation. */
+        if (port_opt.noefbflip) {
+            glc_tex_matrix(unit, cache[slot].su, cache[slot].sv);
+        } else {
+            glc_tex_matrix_fold(unit, cache[slot].su, -cache[slot].sv, cache[slot].sv);
+        }
         if (cache[slot].param_wrap_s != (int)gl_wrap(o->wrap_s)) {
             cache[slot].param_wrap_s = (int)gl_wrap(o->wrap_s);
             glc_active_texture(unit); /* same reason as in tex_bind_finish */
@@ -1637,6 +1653,12 @@ void gx_tex_copy(void* dest, int clear) {
     cache[slot].su = (float)cw / (float)pw;
     cache[slot].sv = (float)ch / (float)ph;
     stat_efb++;
+    if (port_opt.copylog) {
+        port_log("port> copy: frame %u  src %d,%d %dx%d -> dst %dx%d fmt %u%s%s%s  slot %d gl %u  dest %p\n",
+                 gl13_frame_number() + 1, sl, st, sw, sh, dw, dh, (unsigned)gx.tex_dst_fmt,
+                 half ? " half" : "", clear ? " clear" : "", from_front ? " front" : "", slot,
+                 cache[slot].gl_name, dest);
+    }
     if (cache[slot].cpu_read && !from_front && stat_efb - cache[slot].cpu_read_at <= 8) {
         /* the game reads this one back (M23): downsample it into the region
          * the clear below is about to wipe, and keep the bytes */

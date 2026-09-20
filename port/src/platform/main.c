@@ -196,6 +196,11 @@ static void usage(const char* argv0) {
             "                    register triple (the results portraits) as before\n"
             "  --nocopyhalf      M23: a half-scale EFB copy (the shadow map) copies\n"
             "                    its bottom-left quarter at 1:1 as before PLAN.md 38\n"
+            "  --copylog         M24b: one line per GXCopyTex (frame, rectangle, format,\n"
+            "                    clear, front buffer): every copy consumer on a walk\n"
+            "  --noefbflip       M24b: an EFB copy is sampled in GL's row order as\n"
+            "                    before PLAN.md 39b (t = 0 the bottom of the region:\n"
+            "                    every copy drawn back upside down, m416's mirror)\n"
             "  --oldfirsthash    M23: a texture's first sight stores the exhaustive hash\n"
             "                    the next frame's sampled one never matches (the\n"
             "                    pre-M23 double decode of every texture over 1 KB)\n"
@@ -706,6 +711,10 @@ int port_parse_args(int argc, char** argv) {
             port_opt.nohilitetex = 1;
         } else if (!strcmp(a, "--nocopyhalf")) {
             port_opt.nocopyhalf = 1;
+        } else if (!strcmp(a, "--copylog")) {
+            port_opt.copylog = 1;
+        } else if (!strcmp(a, "--noefbflip")) {
+            port_opt.noefbflip = 1;
         } else if (!strcmp(a, "--oldfirsthash")) {
             port_opt.oldfirsthash = 1;
         } else if (!strcmp(a, "--norekey")) {
