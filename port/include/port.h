@@ -518,6 +518,7 @@ typedef struct PortJob {
     void (*run)(struct PortJob* j);
     volatile int state;   /* PORT_JOB_IDLE / QUEUED / RUNNING / DONE */
     double t_queued, t_start, t_end;
+    double fpscr;         /* the publishing thread's FPU control register (workers.c) */
     int ran_inline;       /* finished by the game thread at the join */
 } PortJob;
 enum { PORT_JOB_IDLE = 0, PORT_JOB_QUEUED, PORT_JOB_RUNNING, PORT_JOB_DONE };

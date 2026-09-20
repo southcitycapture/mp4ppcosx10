@@ -530,6 +530,23 @@ static void aux_process(const AuxPlan* ap) {
     }
 }
 
+/* hardware.c's hwSetAUXProcessingCallbacks (its body renamed away by the
+ * Makefile, as hwSaveSample's is; snd_synthapi.c's caller binds here): the
+ * one writer of a studio's effect handlers.  The game swaps its effects
+ * at scene changes (src/game/audio.c "Change AUX": msmSysSetAux clears the
+ * callbacks, shuts the effects down -- their delay lines are freed -- and
+ * prepares new ones), and a job in flight would run the old handler on a
+ * state being torn down.  The pending job is finished first; the four
+ * assignments are the extern body's. */
+void hwSetAUXProcessingCallbacks(u8 studio, SND_AUX_CALLBACK auxA, void* userA,
+                                 SND_AUX_CALLBACK auxB, void* userB) {
+    port_audio_join();
+    dspStudio[studio].auxAHandler = auxA;
+    dspStudio[studio].auxAUser = userA;
+    dspStudio[studio].auxBHandler = auxB;
+    dspStudio[studio].auxBUser = userB;
+}
+
 void port_sal_aux_hook(void) {
     if (tick_split) {
         MixStep* st = job_step(STEP_AUX);

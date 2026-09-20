@@ -43,6 +43,28 @@
 
 #define QMAX 64
 
+/* The FPU's control register travels with the job.  The game thread's FPSCR
+ * is not the default a new thread starts with: the GL driver sets the
+ * non-IEEE (flush-denormals) mode on the thread that calls it, and the
+ * reverb (extern/musyx StdReverb) is floating point -- a value half run
+ * with a different rounding or denormal mode than the fused frame would
+ * have had differs by a few units from the first reverberated sample on
+ * (found on the G4's real-time walk: the --nodraw runs, with no GL call,
+ * were identical).  So the job records the publishing thread's FPSCR and
+ * the worker adopts it before running. */
+#if defined(__ppc__) || defined(__powerpc__)
+static double fpscr_get(void) {
+    double d;
+    __asm__ volatile("mffs %0" : "=f"(d));
+    return d;
+}
+static void fpscr_set(double d) { __asm__ volatile("mtfsf 255, %0" : : "f"(d)); }
+#else
+static double fpscr_get(void) { return 0.0; }
+static void fpscr_set(double d) { (void)d; }
+#endif
+static unsigned long stat_fpscr_adopted;
+
 struct PortWorker {
     const char* name;
     pthread_t thread;
@@ -104,6 +126,13 @@ static void* worker_main(void* arg) {
         j->state = PORT_JOB_RUNNING;
         j->t_start = port_now_seconds();
         pthread_mutex_unlock(&w->mu);
+        {
+            double have = fpscr_get();
+            if (memcmp(&have, &j->fpscr, sizeof(have)) != 0) {
+                fpscr_set(j->fpscr);
+                stat_fpscr_adopted++;
+            }
+        }
         j->run(j);
         pthread_mutex_lock(&w->mu);
         j->t_end = port_now_seconds();
@@ -183,6 +212,21 @@ int port_worker_submit(PortWorker* w, PortJob* j) {
     }
     j->state = PORT_JOB_QUEUED;
     j->ran_inline = 0;
+    j->fpscr = fpscr_get();
+    {
+        /* the control bits (VE OE UE ZE XE NI RN) of the game thread's FPSCR,
+         * logged when they change: which thread set what, for the record */
+        static unsigned last_ctl = 0xffffffffu;
+        unsigned ctl;
+        memcpy(&ctl, (const char*)&j->fpscr + 4, 4);
+        ctl &= 0xffu;
+        if (ctl != last_ctl) {
+            port_log("port> workers: the game thread's FPSCR control bits are 0x%02x at job %lu "
+                     "(NI %u, RN %u)\n",
+                     ctl, w->jobs, (ctl >> 2) & 1u, ctl & 3u);
+            last_ctl = ctl;
+        }
+    }
     j->t_queued = port_now_seconds();
     j->t_start = j->t_end = 0.0;
     w->q[w->qtail % QMAX] = j;
@@ -287,6 +331,11 @@ void port_workers_report(void) {
     port_log("\nport> cpu %d: workers %s\n", ncpu_seen, threads_on ? "on" : "off");
     if (!threads_on) {
         return;
+    }
+    if (stat_fpscr_adopted) {
+        port_log("port> workers: the game thread's FPSCR adopted %lu time(s) (the GL driver's "
+                 "FPU mode, for the reverb's floats)\n",
+                 stat_fpscr_adopted);
     }
     worker_report(&mixer_w);
     worker_report(&decode_w);

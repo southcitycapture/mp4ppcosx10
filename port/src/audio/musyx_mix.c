@@ -1175,6 +1175,11 @@ MIX_INLINE void render_voice(int mode, DSPvoice* dv, MixVoice* mv, DSPstudioinfo
     } else {
         if (dv->state == 1) {
             if (!start_voice_init(dv, mv, plan)) {
+                /* M24: a refused start used to leave its half-initialised
+                 * MixVoice behind (live 0; nothing reads it); cleared, so the
+                 * fused table and the worker's are the same bytes and the
+                 * traces compare */
+                memset(mv, 0, sizeof(*mv));
                 if (mode == MIX_CTL) {
                     plan->action = MIX_PLAN_SKIP;
                 }

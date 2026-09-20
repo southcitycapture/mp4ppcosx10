@@ -303,12 +303,19 @@ $(BUILD)/musyx/%.o: $(MUSYX_DIR)/%.c
 # M24 (PLAN.md 39.2): the same trick for snd_handle_irq's one call to
 # salHandleAuxProcessing, so the aux effects can be a step of the mixer's job
 # on the second core; port/src/audio/musyx_sal.c's hook runs the same loop
-# (hw_dspctrl.c:2112) from a capture, inline or on the worker.
-$(BUILD)/musyx/hardware.o: $(MUSYX_DIR)/hardware.c
+# (hw_dspctrl.c:2112) from a capture, inline or on the worker.  And for
+# hwSetAUXProcessingCallbacks, the one writer of a studio's effect handlers:
+# the game swaps its reverb and delay at every scene change (audio.c "Change
+# AUX": the callbacks cleared, the effects freed and re-created), and the
+# port's version finishes the pending job before the handlers change under it.
+# (The Makefile is a prerequisite: the renames live here, and M24 lost an
+# afternoon's A/B to a hardware.o built before one of them was added.)
+$(BUILD)/musyx/hardware.o: $(MUSYX_DIR)/hardware.c Makefile
 	@mkdir -p $(dir $@)
 	$(CC) $(MUSYX_CFLAGS) -DhwSaveSample=musyx_pc_hwSaveSample_empty \
 	      -DhwRemoveSample=musyx_pc_hwRemoveSample_empty \
-	      -DsalHandleAuxProcessing=port_sal_aux_hook -MMD -MP -c -o $@ $<
+	      -DsalHandleAuxProcessing=port_sal_aux_hook \
+	      -DhwSetAUXProcessingCallbacks=musyx_pc_hwSetAUXProcessingCallbacks_unused -MMD -MP -c -o $@ $<
 
 $(BUILD)/port/jmp.o: $(CTX_ASM)
 	@mkdir -p $(dir $@)
