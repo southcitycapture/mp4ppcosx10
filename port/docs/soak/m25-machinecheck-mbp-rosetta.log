@@ -1,0 +1,21 @@
+Mario Party 4 -- native port, milestone M2a
+port> machine: model PowerMac, 4 CPUs at 2300 MHz, 7400 (G4), AltiVec yes, 4096 MB RAM, Mac OS X 10.6.6 (under Rosetta)
+port> machine: GL Intel Inc. / Intel HD Graphics 3000 OpenGL Engine / 2.1 APPLE-1.6.30, VRAM 416 MB, 8 texture units, max texture 8192
+port> machine:   GL_ARB_multitexture                  present  required
+port> machine:   GL_ARB_texture_env_combine           present  required
+port> machine:   GL_ARB_texture_env_crossbar          present  required
+port> machine:   GL_ATI_texture_env_combine3          present  required
+port> machine:   GL_EXT_secondary_color               present  required
+port> machine:   GL_ARB_vertex_program                present  degraded without
+port> machine:   GL_APPLE_vertex_array_range          present  degraded without
+port> machine:   GL_APPLE_fence                       present  degraded without
+port> machine:   GL_EXT_multi_draw_arrays             present  degraded without
+port> machine:   GL_EXT_blend_subtract                present  degraded without
+port> machine:   GL_EXT_gpu_program_parameters        present  optional
+port> machine:   GL_EXT_fog_coord                     present  optional
+port> machine:   GL_EXT_texture_compression_s3tc      present  optional
+port> machine:   GL_ARB_depth_texture                 present  optional
+port> machine:   GL_ATI_text_fragment_shader          MISSING  not used
+port> machine: verdict unsupported
+port> machine:   - not a PowerPC Mac: this is the PowerPC binary running under Rosetta (sysctl.proc_native = 0; Rosetta reports the machine as `PowerMac'), which the port does not support; --force runs it anyway, at about half the G4's speed on the game's code
+machine check: unsupported: PowerMac, 4 x 2300 MHz 7400 (G4), 4096 MB RAM, Intel HD Graphics 3000 OpenGL Engine, 416 MB VRAM, 8 units, OS 10.6.6

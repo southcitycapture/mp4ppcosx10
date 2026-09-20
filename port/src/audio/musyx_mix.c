@@ -1124,6 +1124,16 @@ static void writeback_current_addr(DSPvoice* dv, const MixVoice* mv) {
     }
 }
 
+/* M25 (PLAN.md 40.1): what the control half last decided for each voice,
+ * for the mismatch line -- the soak's 14 mismatches in 254,573 joins were
+ * all "control all zeros, value live", and the line below did not say what
+ * the control half had done with the slot in that tick. */
+static u8 diag_last_action[64];
+static u8 diag_last_state[64];
+static u8 diag_last_refused[64];
+static unsigned long diag_last_frame[64];
+unsigned long port_audio_flushes(void);
+
 /* ---- one voice, one 160-sample frame --------------------------------------
  *
  * Renders `dv` into its studio's main[]/auxA[]/auxB[] buses (already zeroed
@@ -1182,6 +1192,9 @@ MIX_INLINE void render_voice(int mode, DSPvoice* dv, MixVoice* mv, DSPstudioinfo
                 memset(mv, 0, sizeof(*mv));
                 if (mode == MIX_CTL) {
                     plan->action = MIX_PLAN_SKIP;
+                    diag_last_refused[plan->vi] = 1;
+                    diag_last_action[plan->vi] = 3;
+                    diag_last_frame[plan->vi] = stat_frames_mixed;
                 }
                 return;
             }
@@ -1196,8 +1209,17 @@ MIX_INLINE void render_voice(int mode, DSPvoice* dv, MixVoice* mv, DSPstudioinfo
         if (dv->state != 2 || !mv->live) {
             if (mode == MIX_CTL) {
                 plan->action = MIX_PLAN_SKIP;
+                diag_last_action[plan->vi] = 4 + (plan->action == MIX_PLAN_START);
+                diag_last_state[plan->vi] = (u8)dv->state;
+                diag_last_frame[plan->vi] = stat_frames_mixed;
             }
             return;
+        }
+        if (mode == MIX_CTL) {
+            diag_last_action[plan->vi] = (u8)plan->action;
+            diag_last_state[plan->vi] = (u8)dv->state;
+            diag_last_refused[plan->vi] = 0;
+            diag_last_frame[plan->vi] = stat_frames_mixed;
         }
     }
     if (mode != MIX_CTL) {
@@ -2132,13 +2154,22 @@ void port_musyx_mix_job_reconcile(void) {
             a->streamLoopCnt != b->streamLoopCnt || a->readBase != b->readBase ||
             a->pitch != b->pitch || a->srcType != b->srcType || a->loopEnd != b->loopEnd) {
             stat_ctl_val_mismatch++;
-            if (stat_ctl_val_mismatch <= 8) {
+            if (stat_ctl_val_mismatch <= 24) {
+                const DSPvoice* dv = &dspVoice[vi];
                 port_log("port> musyx_mix: SPLIT MISMATCH voice %u: control live %u cur %x fo %u "
                          "phase %x ended %u slc %x pitch %x | value live %u cur %x fo %u phase %x "
-                         "ended %u slc %x pitch %x\n",
+                         "ended %u slc %x pitch %x | dsp state %u smp %u comp %u readKind %u/%u "
+                         "| ctl last: action %u (0 skip 1 run 2 start 3 refused 4 skip-dead "
+                         "5 skip-after-start) state %u refused %u at frame %lu; now frame %lu "
+                         "joins %lu flushes %lu\n",
                          vi, a->live, a->curSample, a->frameOffset, a->phase, a->ended,
                          a->streamLoopCnt, a->pitch, b->live, b->curSample, b->frameOffset,
-                         b->phase, b->ended, b->streamLoopCnt, b->pitch);
+                         b->phase, b->ended, b->streamLoopCnt, b->pitch, (unsigned)dv->state,
+                         (unsigned)dv->smp_id, (unsigned)dv->smp_info.compType,
+                         (unsigned)a->readKind, (unsigned)b->readKind,
+                         diag_last_action[vi], diag_last_state[vi], diag_last_refused[vi],
+                         diag_last_frame[vi], stat_frames_mixed, stat_reconciles,
+                         port_audio_flushes());
             }
         }
     }

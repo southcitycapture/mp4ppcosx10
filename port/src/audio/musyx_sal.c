@@ -218,6 +218,7 @@ static MixStep* job_step(int kind) {
  * half found a voice the value half must not read behind the game's back,
  * or the pool ran out). */
 static unsigned long stat_flushes;
+unsigned long port_audio_flushes(void) { return stat_flushes; }
 static void job_flush_inline(int resume) {
     job_run_steps(&mixjob, 0, mixjob.nsteps);
     port_musyx_mix_job_reconcile();

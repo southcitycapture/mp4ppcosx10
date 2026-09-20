@@ -595,3 +595,38 @@ is either ready to offer upstream or has a case to remove.
   the same instruments on the G4 did not. The trace before the fault
   was enough. Also: the Dolphin capture ran on 30 minutes past its 900 s
   again (§0k's `kill` note stands: `pkill -x dolphin-emu` by hand).
+
+## 0n. Five things M25 paid for *(2026-09-20)*
+
+* **The MacBook bench needs `--force` from M25 on.** The machine check
+  refuses the PowerPC binary under Rosetta (`sysctl.proc_native` reads 0
+  there; the key does not exist on a PowerPC kernel, which is taken as
+  native), so every `open -a ~/MarioParty4.app --args …` and every ssh
+  exec on `mbp` carries `--force` now — or `--machinecheck`, which exits
+  before the refusal. CGL makes a context from a plain ssh exec on 10.6
+  too, so `--machinecheck` works headless on both machines.
+* **The config file is shared by every run on a machine.** `--fullscreen`
+  is remembered in `~/Library/Application Support/MarioParty4/config`
+  and the next run *without the flag* comes up fullscreen (that is the
+  point; PLAN.md 40.6). A lab run that must not inherit anything passes
+  `--noconfig`; a witness that set fullscreen ends with a `--windowed`
+  run. The soak command does neither and is fine: nothing it does writes
+  a key (the `machine` summary is written once per verdict).
+* **The verdict is in the window title only until the first drawn frame,
+  which is under a second from the window.** Photograph it with
+  `--nodraw` (no frame is ever drawn, the title stays); a real run's
+  title is plain `Mario Party 4` by the time `g4 shot` lands.
+* **A CFUserNotification dialog on the G4 is dismissed with `osascript
+  … set frontmost of process "UserNotificationCenter" to true … key code
+  36`.** `click button "OK"` needs assistive access, which is off, and
+  `g4 key` targets the `isle` process, which does not own the dialog.
+  The Navigation Services chooser (the disc image dialog) did NOT answer
+  Escape or ⌘. from System Events at all: kill the process
+  (`kill -9`, then `mv ~/MarioParty4.hold ~/MarioParty4` if the disc
+  folder was hidden to trigger it).
+* **Escape ends a run with its reports.** `g4 key esc` → the port's soft
+  reset → `port_shutdown` → every report line and `EXITCODE=0`, where
+  `g4 stop` (`killall`) writes none. A soak read that way has the
+  `worker mixer` line, the `split frames … position mismatches` line
+  (M25's finding, PLAN.md 40.1) and the texture-cache totals. Check `ps`
+  afterwards anyway.

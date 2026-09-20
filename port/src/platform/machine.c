@@ -50,11 +50,12 @@
 #include <OpenGL/gl.h>
 #include <OpenGL/CGLRenderers.h>
 #include <CoreServices/CoreServices.h>
-/* 10.5's CGLRenderers.h; the 10.4u SDK's ids differ only in the low
- * (display/instance) bits this masks off */
-#ifndef kCGLRendererIDMatchingMask
-#define kCGLRendererIDMatchingMask 0x00FE7F00
-#endif
+/* Leopard's Radeon 9000 driver answers kCGLCPCurrentRendererID 0x00001602
+ * where the renderer table lists 0x00021602 (the 0x20000 bit is set in the
+ * table only), so the match is on the low sixteen bits -- the vendor and
+ * family -- rather than 10.5's kCGLRendererIDMatchingMask (0x00FE7F00),
+ * which the 10.4u SDK does not define anyway. */
+#define MACH_RID_MASK 0x0000FFFFL
 #endif
 
 /* ---- the inventory ----------------------------------------------------- */
@@ -205,7 +206,8 @@ static void probe_cpu(void) {
         hz = sysctl_u64("hw.cpufrequency_max");
     }
     if (hz) {
-        mach.mhz = (unsigned)(hz / 1000000ull);
+        /* rounded: the G4 reports 999,999,997 Hz */
+        mach.mhz = (unsigned)((hz + 500000ull) / 1000000ull);
     } else {
         mach.mhz = (unsigned)sysctl_int("hw.clockrate", 0);
     }
@@ -223,8 +225,10 @@ static void probe_cpu(void) {
         mach.ram_mb = (unsigned)(bytes / (1024 * 1024));
     }
     /* Rosetta: Apple's documented test.  A native process reads 1; a
-     * translated PowerPC process on an Intel Mac reads 0; a kernel without
-     * the key (10.4.0 on PowerPC) has no translator, so treat it as native. */
+     * translated PowerPC process on an Intel Mac reads 0 (the MacBook: 0,
+     * with hw.model faked to `PowerMac' and a 7400 at 2300 MHz); a PowerPC
+     * kernel has no such key at all (Leopard 10.5.4 on the G4: "top level
+     * name sysctl ... is invalid"), and no translator, so absent = native. */
     mach.native = sysctl_int("sysctl.proc_native", 1);
 #else
     strcpy(mach.model, "(not Mac OS X)");
@@ -300,29 +304,47 @@ static void probe_gl(void) {
     mach.maxtexsize = (int)v;
     mach.gl = 1;
     /* VRAM: the renderer this context landed on, looked up in the renderer
-     * table by id (the low bits of a renderer id are the display/instance
-     * and are masked off by kCGLRendererIDMatchingMask). */
+     * table by id (MACH_RID_MASK above).  If the id does not match anything
+     * (the first G4 run read -1) the fallback is the accelerated renderer
+     * with the most memory; the table is printed under --machinecheck. */
     {
         long rid = 0;
-        if (CGLGetParameter(ctx, kCGLCPCurrentRendererID, &rid) == kCGLNoError) {
-            CGLRendererInfoObj info = NULL;
-            long n = 0, i;
-            if (CGLQueryRendererInfo(0xffffffffUL, &info, &n) == kCGLNoError && info) {
-                for (i = 0; i < n; i++) {
-                    long id = 0, mb = 0;
-                    if (CGLDescribeRenderer(info, i, kCGLRPRendererID, &id) != kCGLNoError) {
-                        continue;
-                    }
-                    if ((id & kCGLRendererIDMatchingMask) != (rid & kCGLRendererIDMatchingMask)) {
-                        continue;
-                    }
-                    if (CGLDescribeRenderer(info, i, kCGLRPVideoMemory, &mb) == kCGLNoError) {
-                        mach.vram_mb = (int)(mb / (1024 * 1024));
-                    }
-                    break;
+        int have_rid = CGLGetParameter(ctx, kCGLCPCurrentRendererID, &rid) == kCGLNoError;
+        CGLRendererInfoObj info = NULL;
+        long n = 0, i;
+        long best_mb = -1;
+        if (CGLQueryRendererInfo(0xffffffffUL, &info, &n) == kCGLNoError && info) {
+            for (i = 0; i < n; i++) {
+                long id = 0, mb = 0, acc = 0, tex = 0;
+                if (CGLDescribeRenderer(info, i, kCGLRPRendererID, &id) != kCGLNoError) {
+                    continue;
                 }
-                CGLDestroyRendererInfo(info);
+                CGLDescribeRenderer(info, i, kCGLRPAccelerated, &acc);
+                CGLDescribeRenderer(info, i, kCGLRPVideoMemory, &mb);
+                CGLDescribeRenderer(info, i, kCGLRPTextureMemory, &tex);
+                if (port_opt.machinecheck) {
+                    port_log("port> machine: renderer %ld: id 0x%08lx accelerated %ld video %ld MB "
+                             "texture %ld MB%s\n", i, id, acc, mb / (1024 * 1024),
+                             tex / (1024 * 1024),
+                             have_rid && (id & MACH_RID_MASK) ==
+                                             (rid & MACH_RID_MASK)
+                                 ? " (this context)" : "");
+                }
+                if (have_rid && (id & MACH_RID_MASK) ==
+                                    (rid & MACH_RID_MASK)) {
+                    mach.vram_mb = (int)(mb / (1024 * 1024));
+                } else if (acc && mb / (1024 * 1024) > best_mb) {
+                    best_mb = mb / (1024 * 1024);
+                }
             }
+            CGLDestroyRendererInfo(info);
+        }
+        if (mach.vram_mb < 0 && best_mb >= 0) {
+            mach.vram_mb = (int)best_mb;
+        }
+        if (port_opt.machinecheck) {
+            port_log("port> machine: kCGLCPCurrentRendererID %s 0x%08lx\n",
+                     have_rid ? "=" : "not answered;", rid);
         }
     }
     CGLSetCurrentContext(NULL);
@@ -608,9 +630,19 @@ static void decide(void) {
              verdict_word(), mach.model[0] ? mach.model : "?", mach.ncpu, mach.mhz,
              cpu_family(), mach.ram_mb, mach.gl ? mach.gl_renderer : "no GL",
              mach.vram_mb, mach.texunits, mach.os_major, mach.os_minor, mach.os_bugfix);
-    snprintf(title, sizeof(title), "Mario Party 4 - machine check: %s (%s, %s, %d MB VRAM)",
-             verdict_word(), mach.model[0] ? mach.model : "?",
-             mach.gl ? mach.gl_renderer : "no GL", mach.vram_mb);
+    {
+        /* the title has a 640-pixel window to fit in: the renderer without
+         * its " OpenGL Engine" suffix */
+        char ren[64];
+        char* e;
+        snprintf(ren, sizeof(ren), "%s", mach.gl ? mach.gl_renderer : "no GL");
+        e = strstr(ren, " OpenGL Engine");
+        if (e) {
+            *e = '\0';
+        }
+        snprintf(title, sizeof(title), "Mario Party 4 - machine check: %s - %s, %s, %d MB",
+                 verdict_word(), mach.model[0] ? mach.model : "?", ren, mach.vram_mb);
+    }
 }
 
 static void print_inventory(void) {

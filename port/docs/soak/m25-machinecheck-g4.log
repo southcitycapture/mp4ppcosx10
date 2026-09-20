@@ -1,0 +1,24 @@
+Mario Party 4 -- native port, milestone M2a
+port> machine: renderer 0: id 0x00021602 accelerated 1 video 64 MB texture 56 MB (this context)
+port> machine: renderer 1: id 0x00020400 accelerated 0 video 0 MB texture 0 MB
+port> machine: kCGLCPCurrentRendererID = 0x00001602
+port> machine: model PowerMac3,5, 2 CPUs at 1000 MHz, 7450 (G4), AltiVec yes, 1536 MB RAM, Mac OS X 10.5.4
+port> machine: GL ATI Technologies Inc. / ATI Radeon 9000 OpenGL Engine / 1.3 ATI-1.5.28, VRAM 64 MB, 6 texture units, max texture 2048
+port> machine:   GL_ARB_multitexture                  present  required
+port> machine:   GL_ARB_texture_env_combine           present  required
+port> machine:   GL_ARB_texture_env_crossbar          present  required
+port> machine:   GL_ATI_texture_env_combine3          present  required
+port> machine:   GL_EXT_secondary_color               present  required
+port> machine:   GL_ARB_vertex_program                present  degraded without
+port> machine:   GL_APPLE_vertex_array_range          present  degraded without
+port> machine:   GL_APPLE_fence                       present  degraded without
+port> machine:   GL_EXT_multi_draw_arrays             present  degraded without
+port> machine:   GL_EXT_blend_subtract                present  degraded without
+port> machine:   GL_EXT_gpu_program_parameters        present  optional
+port> machine:   GL_EXT_fog_coord                     present  optional
+port> machine:   GL_EXT_texture_compression_s3tc      present  optional
+port> machine:   GL_ARB_depth_texture                 MISSING  optional
+port> machine:   GL_ATI_text_fragment_shader          present  not used
+port> machine: verdict ok
+port> machine:   - every probe within the G4's envelope
+machine check: ok: PowerMac3,5, 2 x 1000 MHz 7450 (G4), 1536 MB RAM, ATI Radeon 9000 OpenGL Engine, 64 MB VRAM, 6 units, OS 10.5.4
