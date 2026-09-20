@@ -545,3 +545,31 @@ not exist.
 Update §18.7's evidence table: every row that says **not tested** either gains
 a log and a screenshot or gains a new bug. Then `port/docs/decomp-struct-notes.md`
 is either ready to offer upstream or has a case to remove.
+
+## 0l. Five things M24 paid for *(2026-09-19)*
+
+* **A MusyX header's `#pragma pack(4)` never closes.** Any port file
+  that includes `musyx/synth.h` (directly or through `dspvoice.h`)
+  before `port.h` sees a packed `PortOptions`, and since M20 that meant
+  `musyx_mix.c` read `depop` as `--stuckwatch` and `resample4` as
+  `--soak` (PLAN.md 39.1). `port.h` first, always; and read the report's
+  own option lines (`resampler …, depop …`) against the command line.
+* **A Makefile `-D` rename needs the object rebuilt.** `hardware.o`'s
+  rule did not list the Makefile, so a rename added to it changed
+  nothing until `hardware.c` changed — M24's aux hook was never linked
+  in through a whole A/B chain. `nm` the object for the renamed symbol
+  after touching the rule; the rule lists the Makefile now.
+* **`--wav` on the worker meets the disc image on the disk.** A queue
+  step's `fwrite` at a scene load waited behind the DVD reads for up to
+  428 ms and the game thread waited at the join with it (4.1 s over a
+  walk); a walk with `--wav` is an identity witness, not a speed one.
+  The same for `--mixtrace` (40 MB of text per 1,400 frames).
+* **The M23 bundle does not know M24's flags.** A chain step that passes
+  `--predecodelog` to `~/MarioParty4-m23.app` exits 1 in a second and the
+  chain moves on; check every `EXIT=` line before reading a comparison.
+* **A real-time divergence with identical lockstep traces is a
+  timing-dependent input.** The first differing `--mixtrace` line under
+  `--realtime` (`retB` at F3862, the aux-B return) named the effect
+  state the game swaps at a scene change (PLAN.md 39.6); the `--nodraw
+  --turbo` runs had been identical because the worker always finished
+  before the game's frame reached the swap.
