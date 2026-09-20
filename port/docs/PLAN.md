@@ -12536,10 +12536,19 @@ zeroes the entry on both halves — and the refusals are counted in the
 report (`N start(s) refused by start_voice_init …`). Nothing audible
 changes: the stale entry was never mixed (a slot whose `DSPvoice` is not
 in state 2 is skipped by both halves), so the `.wav` is the same bytes
-and the three frame md5s are untouched (the mixer does not draw). The
-fixed build is on the MacBook running the same 219,000 frames again as
-this is written (the answer belongs to the leave-behind soak's read, §40.9),
-and it is the build the G4's soak was restarted on.
+and the three frame md5s are untouched (the mixer does not draw).
+
+**The proof**, the fixed build on the MacBook over the same 219,000
+frames (`docs/soak/m25-mbp-repro-mismatch-fixed.log.gz` against
+`…-before-fix.log.gz`, the same 730,717 mixed frames and 219,083 joins):
+
+| | before | **after** |
+|---|---:|---:|
+| position mismatches at the joins | 9 (`<-- NOT EXACT`) | **0** |
+| starts refused by `start_voice_init` | not counted | 14,566 (of 207,854 starts: refusals are common, and the mismatch needed one on a slot whose worker copy still held a live voice) |
+
+The G4's leave-behind soak runs this build; its `split frames` line at
+57 minutes is the same proof on the machine that found it.
 
 The rest of the soak is the cleanest yet, and the M24b build is kept as
 `~/MarioParty4-m24b.app`.
@@ -12809,7 +12818,7 @@ Built, each witnessed with a screenshot on the G4; no launcher UI.
 
 | shipped, with a witness | |
 |---|---|
-| the soak read (§40.1) and its finding: the split's fourteen mismatches root-caused on the MacBook's reproduction and fixed (`MIX_PLAN_CLEAR`) | the instrumented line; the fixed build's proof is M26's first read |
+| the soak read (§40.1) and its finding: the split's fourteen mismatches root-caused on the MacBook's reproduction and fixed (`MIX_PLAN_CLEAR`) | the instrumented line; 9 → **0** mismatches over the same 219,000 frames on the MacBook, 14,566 refusals counted |
 | the machine check (§40.2): inventory, verdict, applied settings; `--machinecheck`, `--force`, `--fake-machine`; the verdict in the window title and on the status line | the G4 `ok`, the MacBook `unsupported` under Rosetta, the three simulated machines (§40.3) |
 | `docs/requirements.md`, `docs/machines/` (§40.4) | |
 | `--mghold` and the fresh-process DRAW (§40.5) | four mounds, `DRAW!`, no ribbon, from boot in four minutes |
@@ -12818,12 +12827,16 @@ Built, each witnessed with a screenshot on the G4; no launcher UI.
 
 **Not done, and why:**
 
-* **The mixer mismatch fix's witness** (§40.1): the cause is read off
-  the instrumented line and the fix is in the leave-behind build, but
-  the MacBook's second 219,000-frame run (the fixed build) had not
-  finished when this was written, and the G4's soak reaches the first
-  cluster 57 minutes in. M26 reads both; `0 position mismatches` and a
-  non-zero `start(s) refused` count on the same run is the proof.
+* **The mixer fix on the G4 itself** (§40.1): proven on the MacBook's
+  reproduction; the G4's own `split frames` line is in the leave-behind
+  soak, 57 minutes in.
+* **The results-screen stall in a soak, at last** (§38.3, §39.4): the
+  leave-behind soak's first minutes had `realtime: resync at retrace
+  14203, 1695 ms behind` at the first minigame's results — the walks'
+  frame-14,198 stall, in a soak for the first time (M24 saw it in 10 of
+  17 walks and no soak); no `stall:` line, because the soak runs
+  `--status` without `--perf`. Still open; the next soak wants `--perf`
+  on so the line's `frees` and `dll` fields get written.
 * **The disc image chooser end to end** (§40.6): shown, not driven.
 * **The by-card table is argued, not measured** (§40.3, §40.4): the
   Radeon 7500's three units, the GeForce4 MX's two and the NVIDIA lists'
@@ -12843,10 +12856,9 @@ the final build (`isle` md5 `bf4066de…`, from 02:09 G4 time) — the
 machine check at its boot (`verdict ok`, `machine ok` on every status
 line), the `MIX_PLAN_CLEAR` fix and the instrumented mismatch line in.
 Read it first: `g4 key esc` ends it with its reports (§0n); the `split
-frames` line must say **0 position mismatches** past frame 217,500 (the
-second cluster) with a non-zero `start(s) refused` count, or the fix is
-wrong and the instrumented lines say how; the MacBook's
-`~/m25/repro-mismatch-fixed.log` is the same question answered faster.
+frames` line should say **0 position mismatches** past frame 217,500 (the
+second cluster) with a non-zero `start(s) refused` count, as the
+MacBook's run does (§40.1); the instrumented lines say how if not.
 Then `worker mixer`, `tex`/`rss` past turn 12, the minigame order
 (deterministic since M23), and whether m415 is ever dealt. Then the
 packaging's next pieces: the launcher that uses the first-run message
