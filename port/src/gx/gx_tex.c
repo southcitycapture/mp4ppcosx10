@@ -2220,7 +2220,7 @@ void gx_tex_tile_report(void) {
 #define PRE_REQ_MAX 1024
 #define PRE_STAGED_MAX 1024
 #define PRE_BUDGET_BYTES ((size_t)32 << 20) /* source copies plus RGBA held */
-#define PRE_STALE_FRAMES 12
+#define PRE_STALE_FRAMES 30
 #define PRE_JOBS 8
 
 typedef struct PreReq {
@@ -2280,6 +2280,43 @@ static double frame_pre_taken_s;
 
 static int predecode_on(void) { return port_threads_on() && !port_opt.nopredecode; }
 
+/* Textures a consumed frame names and no drawn frame binds -- the indirect
+ * tiling's sheets and maps (bound through the tile cache, keyed by content),
+ * a texture the game loads and never draws -- would be staged every retrace
+ * and dropped stale every time.  An image that went stale is not asked for
+ * again for PRE_STALE_HOLD frames. */
+#define PRE_NEG 512
+#define PRE_STALE_HOLD 1800
+static struct {
+    const void* image;
+    unsigned frame;
+} pre_neg[PRE_NEG];
+static unsigned stat_pre_neg_hits;
+
+static int predecode_neg_probe(const void* image, unsigned frame, int insert) {
+    unsigned h = hash_key(image) & (PRE_NEG - 1), k;
+    for (k = 0; k < 8; k++) {
+        unsigned at = (h + k) & (PRE_NEG - 1);
+        if (pre_neg[at].image == image) {
+            if (insert) {
+                pre_neg[at].frame = frame;
+                return 1;
+            }
+            if (frame < pre_neg[at].frame + PRE_STALE_HOLD) {
+                return 1;
+            }
+            pre_neg[at].image = NULL; /* expired */
+            return 0;
+        }
+        if (insert && (!pre_neg[at].image || frame >= pre_neg[at].frame + PRE_STALE_HOLD)) {
+            pre_neg[at].image = image;
+            pre_neg[at].frame = frame;
+            return 1;
+        }
+    }
+    return 0;
+}
+
 /* A consumed frame's GXLoadTexObj: note the texture if the cache does not
  * hold it.  The palette is resolved now, as the bind would resolve it. */
 static void predecode_request(const GXTexObjPort* o) {
@@ -2292,9 +2329,25 @@ static void predecode_request(const GXTexObjPort* o) {
     if (o->is_ci && o->tlut_name < 64 && gx.tlut[o->tlut_name].magic == TLUT_MAGIC) {
         tlut = &gx.tlut[o->tlut_name];
     }
-    slot = find_slot(o->image, o->format, o->width, o->height, tlut ? tlut->lut : NULL,
-                     GX_SWAP_IDENTITY, &is_efb);
-    if (slot >= 0) {
+    /* held under any swap table: the bind's key carries the stage's swap,
+     * which a setter cannot know, and a staged decode serves every swap
+     * (the swizzle is applied at the upload) */
+    {
+        const void* lut = tlut ? tlut->lut : NULL;
+        int i;
+        for (i = hash_head[hash_key(o->image)]; i >= 0; i = cache[i].hash_next) {
+            const CacheEntry* e = &cache[i];
+            if (e->image == o->image &&
+                (e->efb || (e->format == o->format && e->w == o->width && e->h == o->height &&
+                            e->lut == lut))) {
+                return;
+            }
+        }
+        (void)slot;
+        (void)is_efb;
+    }
+    if (predecode_neg_probe(o->image, gl13_frame_number(), 0)) {
+        stat_pre_neg_hits++;
         return;
     }
     h = hash_key(o->image) & (PRE_SEEN - 1);
@@ -2327,8 +2380,9 @@ static void predecode_request(const GXTexObjPort* o) {
     }
 }
 
+static size_t staged_bytes(const Staged* e);
 static void staged_free(Staged* e) {
-    pre_bytes_held -= e->src_n + e->lut_bytes + (size_t)e->pw * e->ph * 4;
+    pre_bytes_held -= staged_bytes(e);
     free(e->src);
     free(e->lutcopy);
     free(e->rgba);
@@ -2388,6 +2442,38 @@ static void predecode_job_run(PortJob* pj) {
     }
 }
 
+/* A batch of staged entries handed to the worker; if no job slot is free
+ * (eight in flight is a stalled worker) they are marked claimed so the
+ * binds decode them as before, and nothing leaks. */
+static void predecode_publish(int first, int count) {
+    PreJob* j = &pre_jobs[pre_job_next % PRE_JOBS];
+    int i;
+    if (count <= 0) {
+        return;
+    }
+    if (j->job.state == PORT_JOB_IDLE) {
+        j->first = first;
+        j->count = count;
+        j->job.run = predecode_job_run;
+        pre_job_next++;
+        if (port_worker_submit(port_worker_decode(), &j->job)) {
+            return;
+        }
+    }
+    stat_pre_nojob += (unsigned)count;
+    for (i = first; i < first + count; i++) {
+        if (staged[i].state == PRE_PENDING) {
+            staged[i].state = PRE_CLAIMED;
+        }
+    }
+}
+
+/* what a staged entry holds against the budget: the copies and the padded
+ * RGBA the worker will produce, known before it does */
+static size_t staged_bytes(const Staged* e) {
+    return e->src_n + e->lut_bytes + (size_t)pot_up(e->w) * (size_t)pot_up(e->h) * 4;
+}
+
 /* The retrace: reap finished jobs, drop stale entries, then publish the
  * consumed frames' requests as a job.  Never waits for the worker: a
  * decode that is not done is not done, and the bind will do it. */
@@ -2417,6 +2503,7 @@ void port_gx_predecode_join(void) {
             frame > e->frame + PRE_STALE_FRAMES) {
             if (e->state == PRE_DONE) {
                 stat_pre_stale++;
+                predecode_neg_probe(e->image, frame, 1);
             }
             staged_free(e);
         }
@@ -2431,48 +2518,48 @@ void port_gx_predecode_join(void) {
         const PreReq* r = &pre_req[k];
         size_t n = encoded_size(r->format, r->w, r->h);
         size_t lb = r->lut ? (size_t)r->lut_n * 2 : 0;
+        size_t need = n + lb + (size_t)pot_up(r->w) * (size_t)pot_up(r->h) * 4;
         int is_efb;
-        Staged* e = NULL;
+        Staged* e;
         /* the cache may have got it since (a drawn frame between) */
-        if (find_slot(r->image, r->format, r->w, r->h, r->lut, GX_SWAP_IDENTITY, &is_efb) >= 0) {
-            continue;
+        {
+            int c, held = 0;
+            for (c = hash_head[hash_key(r->image)]; c >= 0; c = cache[c].hash_next) {
+                const CacheEntry* ce = &cache[c];
+                if (ce->image == r->image &&
+                    (ce->efb || (ce->format == r->format && ce->w == r->w && ce->h == r->h &&
+                                 ce->lut == r->lut))) {
+                    held = 1;
+                    break;
+                }
+            }
+            (void)is_efb;
+            if (held) {
+                continue;
+            }
         }
-        if (n == 0 || pre_bytes_held + n + lb + (size_t)r->w * r->h * 4 > PRE_BUDGET_BYTES) {
+        if (n == 0 || pre_bytes_held + need > PRE_BUDGET_BYTES) {
             stat_pre_budget++;
             continue;
         }
-        /* a free slot, contiguous with this batch if possible */
-        for (i = first < 0 ? 0 : first + count; i < PRE_STAGED_MAX; i++) {
-            if (staged[i].state == PRE_FREE) {
-                e = &staged[i];
-                break;
-            }
+        /* the next free slot; a batch is one contiguous range */
+        i = first < 0 ? 0 : first + count;
+        while (i < PRE_STAGED_MAX && staged[i].state != PRE_FREE) {
+            i++;
         }
-        if (!e || (first >= 0 && i != first + count)) {
-            /* the batch must be one range: publish what there is and start
-             * another (or give up on this request) */
-            if (first >= 0 && count) {
-                PreJob* j = &pre_jobs[pre_job_next % PRE_JOBS];
-                if (j->job.state == PORT_JOB_IDLE) {
-                    j->first = first;
-                    j->count = count;
-                    j->job.run = predecode_job_run;
-                    if (!port_worker_submit(port_worker_decode(), &j->job)) {
-                        stat_pre_nojob++;
-                    }
-                    pre_job_next++;
-                }
-                first = -1;
-                count = 0;
-            }
-            if (!e) {
-                stat_pre_budget++;
-                continue;
-            }
-            first = i;
-        } else if (first < 0) {
+        if (i >= PRE_STAGED_MAX) {
+            stat_pre_budget++;
+            continue;
+        }
+        if (first >= 0 && i != first + count) {
+            predecode_publish(first, count);
+            first = -1;
+            count = 0;
+        }
+        if (first < 0) {
             first = i;
         }
+        e = &staged[i];
         e->src = (u8*)malloc(n);
         e->lutcopy = lb ? (u8*)malloc(lb) : NULL;
         if (!e->src || (lb && !e->lutcopy)) {
@@ -2480,6 +2567,9 @@ void port_gx_predecode_join(void) {
             free(e->lutcopy);
             memset(e, 0, sizeof(*e));
             stat_pre_budget++;
+            if (count == 0) {
+                first = -1;
+            }
             continue;
         }
         memcpy(e->src, r->image, n);
@@ -2499,32 +2589,13 @@ void port_gx_predecode_join(void) {
         e->frame = frame;
         e->rgba = NULL;
         e->pw = e->ph = 0;
-        pre_bytes_held += n + lb;
+        e->counted = 0;
+        pre_bytes_held += staged_bytes(e);
         e->state = PRE_PENDING;
         count++;
         stat_pre_published++;
     }
-    if (first >= 0 && count) {
-        PreJob* j = &pre_jobs[pre_job_next % PRE_JOBS];
-        if (j->job.state == PORT_JOB_IDLE) {
-            j->first = first;
-            j->count = count;
-            j->job.run = predecode_job_run;
-            if (!port_worker_submit(port_worker_decode(), &j->job)) {
-                stat_pre_nojob++;
-                predecode_job_run(&j->job); /* the same function, here */
-                j->job.state = PORT_JOB_IDLE;
-            }
-            pre_job_next++;
-        } else {
-            stat_pre_nojob++;
-            for (i = first; i < first + count; i++) {
-                if (staged[i].state == PRE_PENDING) {
-                    staged[i].state = PRE_CLAIMED; /* nobody will decode it: the bind will */
-                }
-            }
-        }
-    }
+    predecode_publish(first, count);
     stat_pre_copy_s += port_now_seconds() - t0;
     pre_nreq = 0;
     memset(pre_seen, 0, sizeof(pre_seen));
@@ -2637,12 +2708,13 @@ void gx_tex_predecode_report(void) {
     port_log("port> predecode (M24): %u requests on consumed frames (%u dropped), %u published "
              "(%.0f ms of copies on the game thread), %u decoded by the worker (%.0f ms), "
              "%u taken at a bind (%lu KB, %.0f ms of decode saved), %u claimed before the "
-             "worker reached them, %u stale, %u hash mismatches, %u over budget, %u without "
-             "a job\n",
+             "worker reached them, %u stale (%u requests held back after one), %u hash "
+             "mismatches, %u over budget, %u without a job\n",
              stat_pre_requests, pre_req_dropped, stat_pre_published, stat_pre_copy_s * 1000.0,
              stat_pre_decoded, stat_pre_worker_s * 1000.0, stat_pre_taken,
              stat_pre_taken_bytes / 1024, stat_pre_taken_s * 1000.0, stat_pre_claimed,
-             stat_pre_stale, stat_pre_hash_miss, stat_pre_budget, stat_pre_nojob);
+             stat_pre_stale, stat_pre_neg_hits, stat_pre_hash_miss, stat_pre_budget,
+             stat_pre_nojob);
 }
 
 void gx_tex_flush_all(void) {

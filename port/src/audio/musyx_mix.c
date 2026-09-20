@@ -2116,6 +2116,12 @@ void port_musyx_mix_job_reconcile(void) {
     for (vi = 0; vi < num_voices; vi++) {
         const MixVoice* a = &voices[vi];
         const MixVoice* b = &wvoices[vi];
+        /* a voice the start refused leaves its half-initialised MixVoice
+         * behind on the control side (live 0), as the fused path does; only
+         * a live voice's position is a claim */
+        if (!a->live && !b->live) {
+            continue;
+        }
         if (a->live != b->live || a->curSample != b->curSample ||
             a->frameOffset != b->frameOffset || a->phase != b->phase || a->ended != b->ended ||
             a->streamLoopCnt != b->streamLoopCnt || a->readBase != b->readBase ||
