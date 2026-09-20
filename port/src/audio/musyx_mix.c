@@ -31,6 +31,7 @@
  * plain scalar fixed-point integer code (no division, no floating point, no
  * function-pointer calls) so the cost stays predictable across ~64 voices.
  */
+#include "port.h" /* before any MusyX header: see musyx_mix.h */
 #include "musyx_mix.h"
 
 #include <stdio.h>
@@ -138,6 +139,7 @@ typedef struct MixVoice {
 } MixVoice;
 
 static MixVoice* voices;
+typedef char mixvoice_fits_the_plan[sizeof(MixVoice) <= sizeof(((MixVoicePlan*)0)->mv) ? 1 : -1];
 static u32 num_voices;
 static int mixer_up;
 
@@ -166,7 +168,7 @@ static unsigned long stat_clicks;
 static long stat_worst_step;
 
 static void add_dpop(s32* sum, s32 delta);
-static void apply_depop(void);
+static void apply_depop(const MixFramePlan* fp);
 
 /* --perf-gated per-call cost, in seconds; port_now_seconds() is the same
  * clock port_perf_* already uses elsewhere, so this composes with --perf
@@ -439,6 +441,22 @@ static s16 setup_ramp(u16* last_vol, u16 vol) {
  */
 static s32 sign_extend4(u32 nibble) { return ((s32)(nibble << 28)) >> 28; }
 
+/* ---- M24: the three instantiations of the frame (PLAN.md 39.2) ------------
+ *
+ * Every function of the render path below takes a `mode` that is a compile-
+ * time constant at each call site: MIX_BOTH is the fused frame every run
+ * before M24 ran (and what `--threads 0` runs); MIX_CTL is the control half
+ * on the game thread -- the same per-sample loop with the value arithmetic
+ * elided, so that the position of every voice at every sample is the fused
+ * path's; MIX_VAL is the value half on the worker, on a copy of the
+ * DSPvoice, with the two MusyX calls (the voice-done message, the
+ * deactivation) and the heap walk compiled out.  GCC folds the constant
+ * and each wrapper is the fused body with its other half dead. */
+#define MIX_BOTH 0
+#define MIX_CTL 1
+#define MIX_VAL 2
+#define MIX_INLINE __attribute__((always_inline)) static inline
+
 /* Decode exactly the next ADPCM sample for `mv`, honouring loop wraparound,
  * and advance `mv->curSample`/`mv->frameOffset`.  `frame_byte` is the offset
  * of this 8-byte frame RELATIVE to `mv->readBase` (sample byte 0), which is
@@ -446,30 +464,32 @@ static s32 sign_extend4(u32 nibble) { return ((s32)(nibble << 28)) >> 28; }
  * frameNo==0, and compType 1's seek already lands `curSample` on a frame
  * boundary at voice-start (see start_voice()), so there is no separate base
  * to add here. Returns the decoded sample already normalised to the common
- * s16 scale (see the gain-scaling note in start_voice()). */
-static s32 adpcm_decode_advance(DSPvoice* dv, MixVoice* mv) {
-    u32 frame_no = mv->curSample / 14u;
-    u32 frame_byte = frame_no * 8u;
-    s32 out;
+ * s16 scale (see the gain-scaling note in start_voice()).  In MIX_CTL the
+ * value work is elided and only the position advances. */
+MIX_INLINE s32 adpcm_decode_advance(int mode, DSPvoice* dv, MixVoice* mv) {
+    s32 out = 0;
 
-    if (mv->frameOffset == 0) {
-        u8 ps = voice_read_u8(mv, frame_byte);
-        mv->predScale = ps;
-    }
-
-    {
-        u8 predictor = (u8)(mv->predScale >> 4);
-        u8 scale = (u8)(mv->predScale & 0xF);
-        u32 data_byte_index = 1u + mv->frameOffset / 2u;
-        u8 raw = voice_read_u8(mv, frame_byte + data_byte_index);
-        u32 nibble = (mv->frameOffset & 1u) ? (raw & 0xF) : (raw >> 4);
-        s32 s = sign_extend4(nibble);
-        s32 c0 = mv->coefTab[predictor][0];
-        s32 c1 = mv->coefTab[predictor][1];
-        s64 acc = ((s64)s << scale << 11) + (s64)c0 * mv->yn1 + (s64)c1 * mv->yn2;
-        out = clamp_s16((s32)((acc + 1024) >> 11));
-        mv->yn2 = mv->yn1;
-        mv->yn1 = out;
+    if (mode != MIX_CTL) {
+        u32 frame_no = mv->curSample / 14u;
+        u32 frame_byte = frame_no * 8u;
+        if (mv->frameOffset == 0) {
+            u8 ps = voice_read_u8(mv, frame_byte);
+            mv->predScale = ps;
+        }
+        {
+            u8 predictor = (u8)(mv->predScale >> 4);
+            u8 scale = (u8)(mv->predScale & 0xF);
+            u32 data_byte_index = 1u + mv->frameOffset / 2u;
+            u8 raw = voice_read_u8(mv, frame_byte + data_byte_index);
+            u32 nibble = (mv->frameOffset & 1u) ? (raw & 0xF) : (raw >> 4);
+            s32 s = sign_extend4(nibble);
+            s32 c0 = mv->coefTab[predictor][0];
+            s32 c1 = mv->coefTab[predictor][1];
+            s64 acc = ((s64)s << scale << 11) + (s64)c0 * mv->yn1 + (s64)c1 * mv->yn2;
+            out = clamp_s16((s32)((acc + 1024) >> 11));
+            mv->yn2 = mv->yn1;
+            mv->yn1 = out;
+        }
     }
 
     mv->curSample++;
@@ -481,12 +501,14 @@ static s32 adpcm_decode_advance(DSPvoice* dv, MixVoice* mv) {
     if (mv->looping && mv->curSample > mv->loopEnd) {
         mv->curSample = mv->loopStart;
         mv->frameOffset = (u32)(mv->loopStart % 14u);
-        if (mv->loopType == 0) {
-            mv->yn1 = mv->loopY1;
-            mv->yn2 = mv->loopY0;
-            mv->predScale = mv->loopPS;
-        } else {
-            mv->predScale = dv->streamLoopPS;
+        if (mode != MIX_CTL) {
+            if (mv->loopType == 0) {
+                mv->yn1 = mv->loopY1;
+                mv->yn2 = mv->loopY0;
+                mv->predScale = mv->loopPS;
+            } else {
+                mv->predScale = dv->streamLoopPS;
+            }
         }
         mv->streamLoopCnt++;
 
@@ -518,7 +540,9 @@ static s32 adpcm_decode_advance(DSPvoice* dv, MixVoice* mv) {
          * restored on a wrap, from `streamLoopPS`, which the switch above
          * already did), so there is no click at the hand-off -- the decoder
          * simply keeps going, now reading a different but ADPCM-continuous
-         * buffer. This only runs once per voice (`inLoopBuffer` latches). */
+         * buffer. This only runs once per voice (`inLoopBuffer` latches).
+         * (M24: a compType 5 voice keeps the tick on the fused path, so the
+         * split halves never reach this arm; see port_musyx_mix_needs_inline.) */
         if (mv->compType == 5 && !dv->vSampleInfo.inLoopBuffer &&
             dv->vSampleInfo.loopBufferLength != 0) {
             SampleLoc kind;
@@ -565,8 +589,8 @@ static s32 adpcm_decode_advance(DSPvoice* dv, MixVoice* mv) {
  * format instead of replicating the DSP's internal shift constants, since
  * the two are audibly equivalent and the flat scale is what every later
  * volume/envelope multiply below expects. */
-static s32 pcm16_decode_advance(MixVoice* mv) {
-    s32 out = voice_read_s16be(mv, mv->curSample * 2u);
+MIX_INLINE s32 pcm16_decode_advance(int mode, MixVoice* mv) {
+    s32 out = mode == MIX_CTL ? 0 : voice_read_s16be(mv, mv->curSample * 2u);
     mv->curSample++;
     if (mv->looping && mv->curSample > mv->loopEnd) {
         mv->curSample = mv->loopStart;
@@ -577,9 +601,12 @@ static s32 pcm16_decode_advance(MixVoice* mv) {
     return out;
 }
 
-static s32 pcm8_decode_advance(MixVoice* mv) {
-    s8 raw = (s8)voice_read_u8(mv, mv->curSample);
-    s32 out = (s32)raw << 8;
+MIX_INLINE s32 pcm8_decode_advance(int mode, MixVoice* mv) {
+    s32 out = 0;
+    if (mode != MIX_CTL) {
+        s8 raw = (s8)voice_read_u8(mv, mv->curSample);
+        out = (s32)raw << 8;
+    }
     mv->curSample++;
     if (mv->looping && mv->curSample > mv->loopEnd) {
         mv->curSample = mv->loopStart;
@@ -590,7 +617,7 @@ static s32 pcm8_decode_advance(MixVoice* mv) {
     return out;
 }
 
-static s32 voice_decode_advance(DSPvoice* dv, MixVoice* mv) {
+MIX_INLINE s32 voice_decode_advance(int mode, DSPvoice* dv, MixVoice* mv) {
     if (mv->ended) {
         return 0;
     }
@@ -599,11 +626,11 @@ static s32 voice_decode_advance(DSPvoice* dv, MixVoice* mv) {
     case 1:
     case 4:
     case 5:
-        return adpcm_decode_advance(dv, mv);
+        return adpcm_decode_advance(mode, dv, mv);
     case 2:
-        return pcm16_decode_advance(mv);
+        return pcm16_decode_advance(mode, mv);
     case 3:
-        return pcm8_decode_advance(mv);
+        return pcm8_decode_advance(mode, mv);
     default:
         mv->ended = 1;
         return 0;
@@ -669,30 +696,36 @@ static void src_table_init(void) {
  * a local in the caller is a load and a branch removed from the innermost loop
  * the port has, for no change in behaviour: it is a command-line flag and it
  * cannot change while a frame is being mixed. */
-static s32 voice_output_sample(DSPvoice* dv, MixVoice* mv, int use4) {
-    s32 out;
+MIX_INLINE s32 voice_output_sample(int mode, DSPvoice* dv, MixVoice* mv, int use4) {
+    s32 out = 0;
 
     if (mv->srcType == 2) {
-        return voice_decode_advance(dv, mv);
+        return voice_decode_advance(mode, dv, mv);
     }
 
-    if (use4) {
-        const s16* c = src_coef[(mv->phase & 0xFFFF) >> (16 - 8)];
-        out = (mv->hist[0] * c[0] + mv->hist[1] * c[1] + mv->hist[2] * c[2] +
-               mv->hist[3] * c[3]) >> SRC_Q;
-        if (out > 32767) out = 32767;
-        else if (out < -32768) out = -32768;
-    } else {
-        out = mv->hist[1] + (s32)((((s64)(mv->hist[2] - mv->hist[1])) *
-                                   (s64)(mv->phase & 0xFFFF)) >> 16);
+    if (mode != MIX_CTL) {
+        if (use4) {
+            const s16* c = src_coef[(mv->phase & 0xFFFF) >> (16 - 8)];
+            out = (mv->hist[0] * c[0] + mv->hist[1] * c[1] + mv->hist[2] * c[2] +
+                   mv->hist[3] * c[3]) >> SRC_Q;
+            if (out > 32767) out = 32767;
+            else if (out < -32768) out = -32768;
+        } else {
+            out = mv->hist[1] + (s32)((((s64)(mv->hist[2] - mv->hist[1])) *
+                                       (s64)(mv->phase & 0xFFFF)) >> 16);
+        }
     }
     mv->phase += mv->pitch;
     while (mv->phase >= 0x10000u && !mv->ended) {
         mv->phase -= 0x10000u;
-        mv->hist[0] = mv->hist[1];
-        mv->hist[1] = mv->hist[2];
-        mv->hist[2] = mv->hist[3];
-        mv->hist[3] = voice_decode_advance(dv, mv);
+        if (mode != MIX_CTL) {
+            mv->hist[0] = mv->hist[1];
+            mv->hist[1] = mv->hist[2];
+            mv->hist[2] = mv->hist[3];
+            mv->hist[3] = voice_decode_advance(mode, dv, mv);
+        } else {
+            voice_decode_advance(mode, dv, mv);
+        }
     }
     return out;
 }
@@ -704,7 +737,13 @@ static s32 voice_output_sample(DSPvoice* dv, MixVoice* mv, int use4) {
  * sample -- but writes into `MixVoice` instead of `dsp_vptr->pb`, since `pb`
  * is not usable on this target (see the file header).  Returns 0 and leaves
  * the voice deactivated if it could not be started (mirrors every `continue`
- * in the original after a `salDeactivateVoice`). */
+ * in the original after a `salDeactivateVoice`).
+ *
+ * M24 splits it at the priming decodes: `start_voice_init` is the decision
+ * and the MixVoice's setup (every MusyX call the start makes is here, so it
+ * runs on the game thread only: MIX_BOTH and MIX_CTL), `start_voice_prime`
+ * is the resampler window's three decodes and the dv writes that follow
+ * (all three modes; in MIX_CTL the decodes advance the position only). */
 /* M19 (PLAN.md 34.4): which HuMem block holds a MEM1 sample, and is it
  * allocated?  The header is src/game/memory.c's `struct memory_block`
  * (32 bytes: size, magic 0xa5 allocated / 0xcd free, flag, prev, next, num,
@@ -739,8 +778,16 @@ static const PortMemBlock* mem_block_of(const void* p, int* heap_out) {
     return NULL;
 }
 static unsigned long stat_voices_in_free_block;
+static int ctl_poisoned; /* M24: a MEM1 voice started under the split halves */
 
-static int start_voice(DSPvoice* dv, MixVoice* mv) {
+static void mixtrace_start_note(unsigned vi, unsigned smp, const PortMemBlock* b, int heap) {
+    if (mixtrace_f) {
+        fprintf(mixtrace_f, "START voice %u sample %u in block %p size %d num %08x call %08x heap %d\n",
+                vi, smp, (const void*)b, b->size, b->num, b->retaddr, heap);
+    }
+}
+
+static int start_voice_init(DSPvoice* dv, MixVoice* mv, MixVoicePlan* plan) {
     SAMPLE_INFO* smp = &dv->smp_info;
 
     memset(mv, 0, sizeof(*mv));
@@ -868,6 +915,14 @@ static int start_voice(DSPvoice* dv, MixVoice* mv) {
         if (kind == SAMPLE_LOC_MEM1) {
             int heap = -1;
             const PortMemBlock* b = mem_block_of(mv->readBase, &heap);
+            /* M24: a MEM1 sample can be freed or rewritten by the game
+             * during its frame, which is when the value half would read
+             * it.  The job so far is finished on the game thread at once
+             * and the tick runs fused from here (port_musyx_mix_needs_inline
+             * sees the live voice's readKind). */
+            if (plan) {
+                ctl_poisoned = 1;
+            }
             if (!b || b->magic != 0xa5 || !b->flag) {
                 stat_voices_in_free_block++;
                 if (stat_voices_in_free_block <= 12) {
@@ -884,10 +939,16 @@ static int start_voice(DSPvoice* dv, MixVoice* mv) {
                                  heap);
                     }
                 }
-            } else if (mixtrace_f) {
-                fprintf(mixtrace_f, "START voice %u sample %u in block %p size %d num %08x call %08x heap %d\n",
-                        (unsigned)(dv - dspVoice), (unsigned)dv->smp_id, (const void*)b, b->size,
-                        b->num, b->retaddr, heap);
+            } else if (plan) {
+                /* the value half prints the note where the fused path does */
+                plan->has_note = 1;
+                plan->note_block = b;
+                plan->note_size = b->size;
+                plan->note_num = b->num;
+                plan->note_call = b->retaddr;
+                plan->note_heap = heap;
+            } else {
+                mixtrace_start_note((unsigned)(dv - dspVoice), (unsigned)dv->smp_id, b, heap);
             }
         }
         /* One-shot: what is actually AT the resolved address?  A valid
@@ -926,7 +987,23 @@ static int start_voice(DSPvoice* dv, MixVoice* mv) {
         salDeactivateVoice(dv);
         return 0;
     }
+    return 1;
+}
 
+/* The second half of the start: the resampler window and the state flip.
+ * The value half runs this on its copy of the DSPvoice, taken at the
+ * frame's entry -- before the init above set the envelope up and wrote the
+ * play-info into the real one -- so it redoes those two writes on the copy
+ * first: adsrSetup is a function of the ADSR struct alone (synth_adsr.c)
+ * and returned 0 for a voice that got this far, and posHi is the start
+ * sample in every format (0 from the top, the seek frame, the offset). */
+MIX_INLINE void start_voice_prime(int mode, DSPvoice* dv, MixVoice* mv) {
+    if (mode == MIX_VAL) {
+        adsrSetup(&dv->adsr);
+        dv->playInfo.posHi = mv->curSample;
+        dv->playInfo.posLo = 0;
+        dv->playInfo.pitch = mv->pitch;
+    }
     /* Resampler window.  The DSP zeroes `last_samples[]` at voice start
      * (hw_dspctrl.c:916-920) rather than back-filling with the first sample,
      * so hist[0] stays 0 and the filter eases in from silence -- which is the
@@ -934,25 +1011,34 @@ static int start_voice(DSPvoice* dv, MixVoice* mv) {
      * hist[1] is the first decoded sample, and hist[2..3] the lookahead the
      * 4-tap kernel reads ahead of the output position. */
     mv->hist[0] = 0;
-    mv->hist[1] = voice_decode_advance(dv, mv);
-    mv->hist[2] = mv->ended ? mv->hist[1] : voice_decode_advance(dv, mv);
-    mv->hist[3] = mv->ended ? mv->hist[2] : voice_decode_advance(dv, mv);
+    if (mode != MIX_CTL) {
+        mv->hist[1] = voice_decode_advance(mode, dv, mv);
+        mv->hist[2] = mv->ended ? mv->hist[1] : voice_decode_advance(mode, dv, mv);
+        mv->hist[3] = mv->ended ? mv->hist[2] : voice_decode_advance(mode, dv, mv);
+    } else {
+        voice_decode_advance(mode, dv, mv);
+        if (!mv->ended) voice_decode_advance(mode, dv, mv);
+        if (!mv->ended) voice_decode_advance(mode, dv, mv);
+    }
     mv->phase = 0;
 
     mv->live = 1;
     dv->state = 2;
-    stat_voices_started++;
-    return 1;
+    if (mode != MIX_VAL) {
+        stat_voices_started++;
+    }
 }
 
 /* Finish a voice this frame: notify the sequencer and unlink it from its
  * studio's voice list (hw_dspctrl.c:1224/1600/1657 all do exactly this pair
  * when a one-shot runs out or adsrHandle reports VoiceDone). */
-static void finish_voice(DSPvoice* dv, MixVoice* mv) {
-    salSynthSendMessage(dv, 0);
-    salDeactivateVoice(dv);
+MIX_INLINE void finish_voice(int mode, DSPvoice* dv, MixVoice* mv) {
+    if (mode != MIX_VAL) {
+        salSynthSendMessage(dv, 0);
+        salDeactivateVoice(dv);
+        stat_voices_ended++;
+    }
     mv->live = 0;
-    stat_voices_ended++;
 }
 
 /* ---- per-sub-frame `changed[]` handling ------------------------------------
@@ -1044,14 +1130,19 @@ static void writeback_current_addr(DSPvoice* dv, const MixVoice* mv) {
  * by the caller for this frame) and updates every host-visible field this
  * mixer is responsible for. `next_out` receives dv->next captured *before*
  * any deactivation, since salDeactivateVoice() unlinks the voice from the
- * list the caller is walking. */
-static void render_voice(DSPvoice* dv, MixVoice* mv, DSPstudioinfo* stp) {
+ * list the caller is walking.
+ *
+ * M24: `plan` is the voice's entry in the frame plan -- written in MIX_CTL
+ * (the action and, for a start, the MixVoice as initialised), read in
+ * MIX_VAL (where `dv` is the plan's copy), NULL in MIX_BOTH. */
+MIX_INLINE void render_voice(int mode, DSPvoice* dv, MixVoice* mv, DSPstudioinfo* stp,
+                             u8 sal_frame, u8 sal_aux_frame, MixVoicePlan* plan) {
     /* Read once per voice per frame, not once per sample: see
      * voice_output_sample. */
     const int use_src4 = port_opt.resample4;
-    s32* main_buf = stp->main[salFrame];
-    s32* auxa_buf = stp->auxA[salAuxFrame];
-    s32* auxb_buf = stp->auxB[salAuxFrame];
+    s32* main_buf = stp->main[sal_frame];
+    s32* auxa_buf = stp->auxA[sal_aux_frame];
+    s32* auxb_buf = stp->auxB[sal_aux_frame];
 
     s16 dL, dR, dS, dLa, dRa, dSa, dLb, dRb, dSb;
     s32 volL, volR, volS, volLa, volRa, volSa, volLb, volRb, volSb;
@@ -1069,17 +1160,46 @@ static void render_voice(DSPvoice* dv, MixVoice* mv, DSPstudioinfo* stp) {
     s32 dpop_lb = 0, dpop_rb = 0, dpop_sb = 0;
     u32 last_idx = 0;
 
-    if (dv->state == 1) {
-        if (!start_voice(dv, mv)) {
+    if (mode == MIX_VAL) {
+        if (plan->action == MIX_PLAN_SKIP) {
+            return;
+        }
+        if (plan->action == MIX_PLAN_START) {
+            memcpy(mv, plan->mv, sizeof(*mv));
+            if (plan->has_note) {
+                mixtrace_start_note(plan->vi, (unsigned)dv->smp_id,
+                                    (const PortMemBlock*)plan->note_block, plan->note_heap);
+            }
+            start_voice_prime(mode, dv, mv);
+        }
+    } else {
+        if (dv->state == 1) {
+            if (!start_voice_init(dv, mv, plan)) {
+                if (mode == MIX_CTL) {
+                    plan->action = MIX_PLAN_SKIP;
+                }
+                return;
+            }
+            if (mode == MIX_CTL) {
+                plan->action = MIX_PLAN_START;
+                memcpy(plan->mv, mv, sizeof(*mv));
+            }
+            start_voice_prime(mode, dv, mv);
+        } else if (mode == MIX_CTL) {
+            plan->action = MIX_PLAN_RUN;
+        }
+        if (dv->state != 2 || !mv->live) {
+            if (mode == MIX_CTL) {
+                plan->action = MIX_PLAN_SKIP;
+            }
             return;
         }
     }
-    if (dv->state != 2 || !mv->live) {
-        return;
+    if (mode != MIX_CTL) {
+        stat_voices_active_this_frame++;
+        aram_blame = mv;
+        aram_blame_dv = dv;
     }
-    stat_voices_active_this_frame++;
-    aram_blame = mv;
-    aram_blame_dv = dv;
 
     /* Cheap "is this bus worth touching" gate, reproducing the console's own
      * mixerCtrl policy (hw_dspctrl.c:1131 for L/R, 1157-1166/1537-1544 for
@@ -1145,10 +1265,23 @@ static void render_voice(DSPvoice* dv, MixVoice* mv, DSPstudioinfo* stp) {
             u32 idx = s * SUBFRAME_SAMPLES + i;
             s32 raw;
 
+            if (mode == MIX_CTL) {
+                /* the position only: the value half redoes this loop with
+                 * the arithmetic, from the same state */
+                if (!mv->ended) {
+                    voice_output_sample(mode, dv, mv, use_src4);
+                }
+                if (mv->ended) {
+                    done = 1;
+                    break;
+                }
+                continue;
+            }
+
             if (mv->ended || port_musyx_mix_mute) {
                 raw = 0;
             } else {
-                raw = voice_output_sample(dv, mv, use_src4);
+                raw = voice_output_sample(mode, dv, mv, use_src4);
             }
 
             /* total gain per bus = envelope volume x bus volume, both
@@ -1235,7 +1368,7 @@ static void render_voice(DSPvoice* dv, MixVoice* mv, DSPstudioinfo* stp) {
          * So the value is banked whatever `last_idx` was; what
          * `stat_depop_cuts` counts is the mid-frame case, which is the loud
          * one and the one PLAN.md §16.7 localised. */
-        if (port_opt.depop) {
+        if (mode != MIX_CTL && port_opt.depop) {
             add_dpop(&stp->hostDPopSum.l, dpop_l);
             add_dpop(&stp->hostDPopSum.r, dpop_r);
             add_dpop(&stp->hostDPopSum.s, dpop_s);
@@ -1249,9 +1382,10 @@ static void render_voice(DSPvoice* dv, MixVoice* mv, DSPstudioinfo* stp) {
                 stat_depop_cuts++;
             }
         }
-        finish_voice(dv, mv);
+        finish_voice(mode, dv, mv);
     }
 }
+
 
 /* ---- the depop path (hw_dspctrl.c:631-705, 1880-1888) ----------------------
  *
@@ -1299,7 +1433,7 @@ static void depop_bus(s32* bus, u32 off, s32* sum) {
     *sum = (delta == 0) ? 0 : start + delta * (s32)FRAME_SAMPLES;
 }
 
-static void apply_depop(void) {
+static void apply_depop(const MixFramePlan* fp) {
     u8 st;
     if (!port_opt.depop) {
         return;
@@ -1309,12 +1443,12 @@ static void apply_depop(void) {
         s32* mb;
         s32* aa;
         s32* ab;
-        if (stp->state != 1) {
+        if (fp->st[st].state != 1) {
             continue;
         }
-        mb = stp->main[salFrame];
-        aa = stp->auxA[salAuxFrame];
-        ab = stp->auxB[salAuxFrame];
+        mb = stp->main[fp->salFrame];
+        aa = stp->auxA[fp->salAuxFrame];
+        ab = stp->auxB[fp->salAuxFrame];
         depop_bus(mb, BUS_L_OFF, &stp->hostDPopSum.l);
         depop_bus(mb, BUS_R_OFF, &stp->hostDPopSum.r);
         depop_bus(mb, BUS_S_OFF, &stp->hostDPopSum.s);
@@ -1328,40 +1462,61 @@ static void apply_depop(void) {
 }
 
 /* ---- studio-level passes ---------------------------------------------------- */
+/* M24: every pass reads the studios' state, type, master flag and input
+ * list from the frame plan -- captured at the frame's entry on the game
+ * thread (capture_studios), which in the fused frame is the same instant
+ * and the same values as reading dspStudio[] directly, and on the worker
+ * is the only way to read them at all.  The bus buffers and the depop sums
+ * are dspStudio's own: nothing but the mixer touches them. */
 
-static void zero_buses(void) {
+static void capture_studios(MixFramePlan* fp) {
+    u8 st;
+    fp->salFrame = salFrame;
+    fp->salAuxFrame = salAuxFrame;
+    for (st = 0; st < salMaxStudioNum && st < MIX_MAX_STUDIOS; st++) {
+        const DSPstudioinfo* stp = &dspStudio[st];
+        MixStudioPlan* sp = &fp->st[st];
+        sp->state = stp->state;
+        sp->isMaster = stp->isMaster;
+        sp->numInputs = stp->numInputs;
+        sp->type = (u32)stp->type;
+        memcpy(sp->in, stp->in, sizeof(sp->in));
+    }
+}
+
+static void zero_buses(const MixFramePlan* fp) {
     u8 st;
     for (st = 0; st < salMaxStudioNum; st++) {
         DSPstudioinfo* stp = &dspStudio[st];
-        if (stp->state != 1) {
+        if (fp->st[st].state != 1) {
             continue;
         }
-        memset(stp->main[salFrame], 0, BUS_LEN * sizeof(s32));
-        memset(stp->auxA[salAuxFrame], 0, BUS_LEN * sizeof(s32));
-        memset(stp->auxB[salAuxFrame], 0, BUS_LEN * sizeof(s32));
+        memset(stp->main[fp->salFrame], 0, BUS_LEN * sizeof(s32));
+        memset(stp->auxA[fp->salAuxFrame], 0, BUS_LEN * sizeof(s32));
+        memset(stp->auxB[fp->salAuxFrame], 0, BUS_LEN * sizeof(s32));
     }
 }
 
 /* Studio input chaining: each studio's `in[]` reads *last* frame's main[] of
  * its source studio (main[salFrame ^ 1]) so that studio chains do not need a
  * particular activation order within a frame (hw_dspctrl.c:867-872). */
-static void mix_studio_inputs(void) {
+static void mix_studio_inputs(const MixFramePlan* fp) {
     u8 st;
     for (st = 0; st < salMaxStudioNum; st++) {
         DSPstudioinfo* stp = &dspStudio[st];
         u8 in;
-        if (stp->state != 1) {
+        if (fp->st[st].state != 1) {
             continue;
         }
-        for (in = 0; in < stp->numInputs; in++) {
-            DSPinput* di = &stp->in[in];
+        for (in = 0; in < fp->st[st].numInputs; in++) {
+            const DSPinput* di = &fp->st[st].in[in];
             DSPstudioinfo* src = &dspStudio[di->studio];
-            s32* src_main = src->main[salFrame ^ 1];
-            s32* dst_main = stp->main[salFrame];
-            s32* dst_auxa = stp->auxA[salAuxFrame];
-            s32* dst_auxb = stp->auxB[salAuxFrame];
+            s32* src_main = src->main[fp->salFrame ^ 1];
+            s32* dst_main = stp->main[fp->salFrame];
+            s32* dst_auxa = stp->auxA[fp->salAuxFrame];
+            s32* dst_auxb = stp->auxB[fp->salAuxFrame];
             u32 i;
-            if (src->state != 1) {
+            if (di->studio >= MIX_MAX_STUDIOS || fp->st[di->studio].state != 1) {
                 continue;
             }
             for (i = 0; i < BUS_LEN; i++) {
@@ -1428,25 +1583,95 @@ static u32 trace_fnv_s32(const s32* b, u32 n) {
  * each stage, so a divergence names its stage: after the voices (main/auxA/
  * auxB of this frame), after the depop, the aux returns the effects wrote
  * (what fold_aux_return is about to add), and the folded main. */
-static void mixtrace_stage(const char* tag) {
+static void mixtrace_stage(const MixFramePlan* fp, const char* tag) {
     DSPstudioinfo* stp = &dspStudio[0];
-    if (!mixtrace_f || stp->state != 1) {
+    if (!mixtrace_f || fp->st[0].state != 1) {
         return;
     }
     fprintf(mixtrace_f, "F%lu %s main %08x auxA %08x auxB %08x retA %08x retB %08x\n",
-            stat_frames_mixed, tag, trace_fnv_s32(stp->main[salFrame], BUS_LEN),
-            trace_fnv_s32(stp->auxA[salAuxFrame], BUS_LEN),
-            trace_fnv_s32(stp->auxB[salAuxFrame], BUS_LEN),
-            trace_fnv_s32(stp->auxA[(salAuxFrame + 1) % 3], BUS_LEN),
-            trace_fnv_s32(stp->auxB[(salAuxFrame + 1) % 3], BUS_LEN));
+            stat_frames_mixed, tag, trace_fnv_s32(stp->main[fp->salFrame], BUS_LEN),
+            trace_fnv_s32(stp->auxA[fp->salAuxFrame], BUS_LEN),
+            trace_fnv_s32(stp->auxB[fp->salAuxFrame], BUS_LEN),
+            trace_fnv_s32(stp->auxA[(fp->salAuxFrame + 1) % 3], BUS_LEN),
+            trace_fnv_s32(stp->auxB[(fp->salAuxFrame + 1) % 3], BUS_LEN));
 }
 
-static void mix_studio_voices(void) {
+/* the `mv` half of the trace, from the voice table the rendering half
+ * holds (the fused frame's `voices[]`, the worker's `wvoices[]`) */
+static void mixtrace_mv(const MixVoice* mv, u32 vi, const DSPstudioinfo* stp,
+                        const MixFramePlan* fp) {
+    u32 sd = 0;
+    (void)stp;
+    (void)fp;
+    if (mv->live && mv->readBase) {
+        /* the sample bytes about to be read: ADPCM is 8 bytes per
+         * 14 samples, PCM16 2 per sample, PCM8 1 */
+        u32 off = mv->compType == 2 ? mv->curSample * 2
+                  : mv->compType == 3 ? mv->curSample
+                                      : (mv->curSample / 14u) * 8u;
+        if (off + 256 <= mv->readLen) {
+            sd = trace_fnv_s32((const s32*)(mv->readBase + off), 64);
+        }
+    }
+    fprintf(mixtrace_f, "  smp256 %08x\n", sd);
+    /* M24: an ARAM read base as its offset, so two processes' traces
+     * compare (the arena's address is the mmap's, not the run's) */
+    fprintf(mixtrace_f,
+            "  mv live %u ct %u lt %u loop %u base %08x read %s%lx/%x/%u len %x "
+            "ls %x le %x yn %d/%d ps %x fo %u cur %x src %u pitch %x phase %x "
+            "hist %d/%d/%d/%d slc %x ended %u pb %u\n",
+            mv->live, mv->compType, mv->loopType, mv->looping, mv->addrBase,
+            mv->readKind == SAMPLE_LOC_ARAM ? "aram+" : "",
+            mv->readKind == SAMPLE_LOC_ARAM
+                ? (unsigned long)(mv->readBase - (const u8*)port_aram())
+                : (unsigned long)(uintptr_t)mv->readBase,
+            mv->readLen, mv->readKind, mv->length,
+            mv->loopStart, mv->loopEnd, mv->yn1, mv->yn2, mv->predScale,
+            mv->frameOffset, mv->curSample, mv->srcType, mv->pitch, mv->phase,
+            mv->hist[0], mv->hist[1], mv->hist[2], mv->hist[3],
+            mv->streamLoopCnt, mv->ended, mv->postBreak);
+    (void)vi;
+}
+
+static void mixtrace_after(u32 vi, const DSPstudioinfo* stp, const MixFramePlan* fp) {
+    fprintf(mixtrace_f, "  after v%u main %08x auxA %08x\n", vi,
+            trace_fnv_s32(stp->main[fp->salFrame], BUS_LEN),
+            trace_fnv_s32(stp->auxA[fp->salAuxFrame], BUS_LEN));
+}
+
+/* The voices, walked.  MIX_BOTH and MIX_CTL walk the studios' live lists as
+ * the console's command-list builder did, capturing `next` before a voice
+ * can deactivate itself; MIX_CTL also records every voice it visits (with
+ * the DSPvoice as it stood at that moment -- after the voices before it in
+ * the walk have run, which matters when a voice-done message deactivates a
+ * later one) into the plan.  MIX_VAL walks the plan.  Returns the pool
+ * entries used, or -1 when MIX_CTL ran out of pool. */
+static int mix_studio_voices(int mode, MixFramePlan* fp, MixVoice* vtab, MixVoicePlan* pool,
+                             unsigned pool_cap) {
     u8 st;
+    unsigned used = 0;
+    if (mode == MIX_VAL) {
+        unsigned k;
+        for (k = 0; k < fp->nvoices; k++) {
+            MixVoicePlan* p = &fp->voices[k];
+            DSPstudioinfo* stp = &dspStudio[p->studio];
+            if (mixtrace_f || port_opt.mixtrace) {
+                mixtrace_voice(&p->dv, p->vi, p->studio);
+                if (mixtrace_f) {
+                    mixtrace_mv(&vtab[p->vi], p->vi, stp, fp);
+                }
+            }
+            render_voice(MIX_VAL, &p->dv, &vtab[p->vi], stp, fp->salFrame, fp->salAuxFrame, p);
+            if (mixtrace_f) {
+                mixtrace_after(p->vi, stp, fp);
+            }
+        }
+        return (int)fp->nvoices;
+    }
     for (st = 0; st < salMaxStudioNum; st++) {
         DSPstudioinfo* stp = &dspStudio[st];
         DSPvoice* dv;
-        if (stp->state != 1) {
+        if (fp->st[st].state != 1) {
             continue;
         }
         dv = stp->voiceRoot;
@@ -1454,42 +1679,37 @@ static void mix_studio_voices(void) {
             DSPvoice* next = dv->next; /* capture before a possible deactivate */
             u32 vi = (u32)(dv - dspVoice);
             if (vi < num_voices) {
-                mixtrace_voice(dv, vi, st);
-                if (mixtrace_f) {
-                    const MixVoice* mv = &voices[vi];
-                    u32 sd = 0;
-                    if (mv->live && mv->readBase) {
-                        /* the sample bytes about to be read: ADPCM is 8 bytes per
-                         * 14 samples, PCM16 2 per sample, PCM8 1 */
-                        u32 off = mv->compType == 2 ? mv->curSample * 2
-                                  : mv->compType == 3 ? mv->curSample
-                                                      : (mv->curSample / 14u) * 8u;
-                        if (off + 256 <= mv->readLen) {
-                            sd = trace_fnv_s32((const s32*)(mv->readBase + off), 64);
+                if (mode == MIX_CTL) {
+                    MixVoicePlan* p;
+                    if (used >= pool_cap) {
+                        return -1;
+                    }
+                    p = &pool[used++];
+                    p->vi = (u8)vi;
+                    p->studio = st;
+                    p->action = MIX_PLAN_SKIP;
+                    p->has_note = 0;
+                    memcpy(&p->dv, dv, sizeof(p->dv));
+                    render_voice(MIX_CTL, dv, &vtab[vi], stp, fp->salFrame, fp->salAuxFrame, p);
+                } else {
+                    if (mixtrace_f || port_opt.mixtrace) {
+                        mixtrace_voice(dv, vi, st);
+                        if (mixtrace_f) {
+                            mixtrace_mv(&vtab[vi], vi, stp, fp);
                         }
                     }
-                    fprintf(mixtrace_f, "  smp256 %08x\n", sd);
-                    fprintf(mixtrace_f,
-                            "  mv live %u ct %u lt %u loop %u base %08x read %p/%x/%u len %x "
-                            "ls %x le %x yn %d/%d ps %x fo %u cur %x src %u pitch %x phase %x "
-                            "hist %d/%d/%d/%d slc %x ended %u pb %u\n",
-                            mv->live, mv->compType, mv->loopType, mv->looping, mv->addrBase,
-                            (const void*)mv->readBase, mv->readLen, mv->readKind, mv->length,
-                            mv->loopStart, mv->loopEnd, mv->yn1, mv->yn2, mv->predScale,
-                            mv->frameOffset, mv->curSample, mv->srcType, mv->pitch, mv->phase,
-                            mv->hist[0], mv->hist[1], mv->hist[2], mv->hist[3],
-                            mv->streamLoopCnt, mv->ended, mv->postBreak);
-                }
-                render_voice(dv, &voices[vi], stp);
-                if (mixtrace_f) {
-                    fprintf(mixtrace_f, "  after v%u main %08x auxA %08x\n", vi,
-                            trace_fnv_s32(stp->main[salFrame], BUS_LEN),
-                            trace_fnv_s32(stp->auxA[salAuxFrame], BUS_LEN));
+                    render_voice(MIX_BOTH, dv, &vtab[vi], stp, fp->salFrame, fp->salAuxFrame, NULL);
+                    if (mixtrace_f) {
+                        mixtrace_after(vi, stp, fp);
+                    }
                 }
             }
             dv = next;
         }
     }
+    fp->nvoices = used;
+    fp->voices = pool;
+    return (int)used;
 }
 
 static void add_buf(s32* dst, const s32* src) {
@@ -1502,16 +1722,16 @@ static void add_buf(s32* dst, const s32* src) {
 /* Aux return: fold the slot the host's reverb/delay callback (run by
  * salHandleAuxProcessing, between salCtrlDsp calls) already processed back
  * into this frame's main[] bus. */
-static void fold_aux_return(void) {
+static void fold_aux_return(const MixFramePlan* fp) {
     u8 st;
     for (st = 0; st < salMaxStudioNum; st++) {
         DSPstudioinfo* stp = &dspStudio[st];
-        if (stp->state != 1) {
+        if (fp->st[st].state != 1) {
             continue;
         }
-        add_buf(stp->main[salFrame], stp->auxA[(salAuxFrame + 1) % 3]);
-        if (stp->type == SND_STUDIO_TYPE_STD) {
-            add_buf(stp->main[salFrame], stp->auxB[(salAuxFrame + 1) % 3]);
+        add_buf(stp->main[fp->salFrame], stp->auxA[(fp->salAuxFrame + 1) % 3]);
+        if (fp->st[st].type == SND_STUDIO_TYPE_STD) {
+            add_buf(stp->main[fp->salFrame], stp->auxB[(fp->salAuxFrame + 1) % 3]);
         } else {
             /* SND_STUDIO_TYPE_DPL2: auxB carries the rear L/R of the Dolby
              * Pro Logic II matrix rather than an effects send. There is no
@@ -1523,8 +1743,8 @@ static void fold_aux_return(void) {
              * auxB[salFrame ^ 1] would be last frame's, which is not used
              * here but is what a real decoder would also want for its own
              * all-pass/delay state. */
-            s32* rear = stp->auxB[salFrame];
-            s32* main_buf = stp->main[salFrame];
+            s32* rear = stp->auxB[fp->salFrame];
+            s32* main_buf = stp->main[fp->salFrame];
             u32 i;
             for (i = 0; i < BUS_LEN; i++) {
                 main_buf[i] = clamp_accum((s64)main_buf[i] + (rear[i] >> 1));
@@ -1533,7 +1753,7 @@ static void fold_aux_return(void) {
     }
 }
 
-static void render_output(short* dest) {
+static void render_output(const MixFramePlan* fp, short* dest) {
     static s32 out_l[FRAME_SAMPLES], out_r[FRAME_SAMPLES], out_s[FRAME_SAMPLES];
     u8 st;
     u32 i;
@@ -1545,10 +1765,10 @@ static void render_output(short* dest) {
     for (st = 0; st < salMaxStudioNum; st++) {
         DSPstudioinfo* stp = &dspStudio[st];
         s32* mb;
-        if (stp->state != 1 || !stp->isMaster) {
+        if (fp->st[st].state != 1 || !fp->st[st].isMaster) {
             continue;
         }
-        mb = stp->main[salFrame];
+        mb = stp->main[fp->salFrame];
         for (i = 0; i < FRAME_SAMPLES; i++) {
             out_l[i] = clamp_accum((s64)out_l[i] + mb[BUS_L_OFF + i]);
             out_r[i] = clamp_accum((s64)out_r[i] + mb[BUS_R_OFF + i]);
@@ -1598,6 +1818,7 @@ static void render_output(short* dest) {
         }
     }
 }
+
 
 /* ---- public entry points ---------------------------------------------------- */
 
@@ -1660,8 +1881,9 @@ void port_musyx_mix_init(void) {
     stat_time_sum = 0.0;
     stat_time_worst = 0.0;
     stat_time_samples = 0;
-    port_log("port> musyx_mix: CPU mixer up, %u voices, %u studios, %u Hz\n",
-             num_voices, (unsigned)salMaxStudioNum, MIX_FRQ);
+    port_log("port> musyx_mix: CPU mixer up, %u voices, %u studios, %u Hz%s%s\n",
+             num_voices, (unsigned)salMaxStudioNum, MIX_FRQ,
+             port_opt.mixtrace ? ", tracing to " : "", port_opt.mixtrace ? port_opt.mixtrace : "");
 }
 
 /* M19 (PLAN.md 34.4): HuMemMemoryFree, via gx_skin.c's port_mem_freed.  A
@@ -1703,8 +1925,13 @@ void port_musyx_mix_mem_freed(const void* data, unsigned long size) {
     }
 }
 
+/* The fused frame: control and values in one pass on the game thread.
+ * Every run before M24 ran this and `--threads 0` still does; with the
+ * workers on it is also what a tick runs when a voice's sample cannot be
+ * read behind the game's back (port_musyx_mix_needs_inline). */
 void port_musyx_mix_frame(short* dest) {
     double t0 = 0.0;
+    MixFramePlan fp;
 
     if (!dest) {
         return;
@@ -1718,21 +1945,22 @@ void port_musyx_mix_frame(short* dest) {
         t0 = port_now_seconds();
     }
 
+    capture_studios(&fp);
     stat_voices_active_this_frame = 0;
-    zero_buses();
-    mix_studio_inputs();
-    mixtrace_stage("in");
-    mix_studio_voices();
-    mixtrace_stage("voices");
+    zero_buses(&fp);
+    mix_studio_inputs(&fp);
+    mixtrace_stage(&fp, "in");
+    mix_studio_voices(MIX_BOTH, &fp, voices, NULL, 0);
+    mixtrace_stage(&fp, "voices");
     /* After the voices, before the aux return: the step a cut voice leaves is
      * in the dry bus, and the console injects the compensating offset into
      * the same bus in the same frame (hw_dspctrl.c:1880, right after
      * UPLOAD_LRS). */
-    apply_depop();
-    mixtrace_stage("depop");
-    fold_aux_return();
-    mixtrace_stage("folded");
-    render_output(dest);
+    apply_depop(&fp);
+    mixtrace_stage(&fp, "depop");
+    fold_aux_return(&fp);
+    mixtrace_stage(&fp, "folded");
+    render_output(&fp, dest);
 
     if (stat_voices_active_this_frame > stat_max_concurrent_voices) {
         stat_max_concurrent_voices = stat_voices_active_this_frame;
@@ -1750,6 +1978,174 @@ void port_musyx_mix_frame(short* dest) {
     stat_frames_mixed++;
 }
 
+/* ---- M24: the frame in two halves ------------------------------------------
+ *
+ * `wvoices` is the worker's voice table.  At the start of a tick it is a
+ * copy of `voices` (the two are equal then: the last job was joined and
+ * reconciled); the control halves of the tick's frames advance `voices`
+ * (positions only), the value halves advance `wvoices` (positions and
+ * values) from the same inputs; at the join the positions are compared and
+ * `voices` takes `wvoices` whole, so the snapshot registry's `voices` is the
+ * complete state at every retrace boundary and a restore seeds the worker
+ * for free through the copy at the next tick. */
+static MixVoice* wvoices;
+static unsigned long stat_ctl_frames, stat_val_frames, stat_reconciles, stat_ctl_val_mismatch;
+static double stat_val_time_sum;
+
+/* A voice the value half must not read behind the game's back: a MEM1
+ * sample (the game may free or rewrite the block during its frame; none
+ * since M19 stored every sample in the port's heap) or a virtual sample
+ * (compType 5: its start is a MusyX message the value half cannot send;
+ * unused by this game).  A stream (compType 4) is fine: its ring buffer is
+ * refilled through aramUploadData, which finishes the pending job first. */
+static unsigned stat_inline_named;
+int port_musyx_mix_needs_inline(void) {
+    u32 vi;
+    if (!mixer_up || !voices) {
+        return 0;
+    }
+    for (vi = 0; vi < num_voices; vi++) {
+        const MixVoice* mv = &voices[vi];
+        const DSPvoice* dv = &dspVoice[vi];
+        int why = 0;
+        if (mv->live && (mv->readKind == SAMPLE_LOC_MEM1 || mv->compType == 5)) {
+            why = 1;
+        } else if (dv->state == 1 && dv->smp_info.compType == 5) {
+            why = 2;
+        }
+        if (why) {
+            if (stat_inline_named < 4) {
+                stat_inline_named++;
+                port_log("port> musyx_mix: tick fused: voice %u %s (compType %u, readKind %u, "
+                         "state %u, sample %u) at DSP frame %lu\n",
+                         vi, why == 1 ? "live" : "starting", why == 1 ? mv->compType : dv->smp_info.compType,
+                         mv->readKind, dv->state, (unsigned)dv->smp_id, stat_frames_mixed);
+            }
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int port_musyx_mix_ctl_poisoned(void) {
+    int p = ctl_poisoned;
+    ctl_poisoned = 0;
+    return p;
+}
+
+void port_musyx_mix_job_begin(void) {
+    if (!wvoices) {
+        wvoices = (MixVoice*)calloc(MIX_MAX_VOICES, sizeof(MixVoice));
+    }
+    if (wvoices && voices) {
+        memcpy(wvoices, voices, (size_t)MIX_MAX_VOICES * sizeof(MixVoice));
+    }
+    ctl_poisoned = 0;
+}
+
+int port_musyx_mix_frame_ctl(MixFramePlan* fp, short* dest, unsigned long retrace,
+                             MixVoicePlan* pool, unsigned pool_cap) {
+    int n;
+    if (!dest) {
+        return 0;
+    }
+    fp->dest = dest;
+    fp->retrace = retrace;
+    fp->nvoices = 0;
+    fp->voices = pool;
+    if (!mixer_up || !wvoices) {
+        /* nothing to control: the value half writes silence */
+        capture_studios(fp);
+        return 0;
+    }
+    capture_studios(fp);
+    n = mix_studio_voices(MIX_CTL, fp, voices, pool, pool_cap);
+    if (n >= 0) {
+        stat_ctl_frames++;
+    }
+    return n;
+}
+
+void port_musyx_mix_frame_val(const MixFramePlan* fp) {
+    double t0 = 0.0;
+    MixFramePlan f = *fp; /* the walk fills nothing here, but the type is shared */
+    short* dest = fp->dest;
+
+    if (!mixer_up || !wvoices) {
+        memset(dest, 0, FRAME_SAMPLES * 2 * sizeof(short));
+        return;
+    }
+    if (port_opt.perf) {
+        t0 = port_now_seconds();
+    }
+    stat_voices_active_this_frame = 0;
+    zero_buses(&f);
+    mix_studio_inputs(&f);
+    mixtrace_stage(&f, "in");
+    mix_studio_voices(MIX_VAL, &f, wvoices, NULL, 0);
+    mixtrace_stage(&f, "voices");
+    apply_depop(&f);
+    mixtrace_stage(&f, "depop");
+    fold_aux_return(&f);
+    mixtrace_stage(&f, "folded");
+    render_output(&f, dest);
+
+    if (stat_voices_active_this_frame > stat_max_concurrent_voices) {
+        stat_max_concurrent_voices = stat_voices_active_this_frame;
+    }
+    if (port_opt.perf) {
+        double dt = port_now_seconds() - t0;
+        stat_val_time_sum += dt;
+        stat_time_sum += dt;
+        stat_time_samples++;
+        if (dt > stat_time_worst) {
+            stat_time_worst = dt;
+        }
+    }
+    stat_val_frames++;
+    stat_frames_mixed++;
+}
+
+/* The join: the control half's positions against the value half's, then
+ * `voices` takes the worker's table whole. */
+void port_musyx_mix_job_reconcile(void) {
+    u32 vi;
+    if (!wvoices || !voices) {
+        return;
+    }
+    for (vi = 0; vi < num_voices; vi++) {
+        const MixVoice* a = &voices[vi];
+        const MixVoice* b = &wvoices[vi];
+        if (a->live != b->live || a->curSample != b->curSample ||
+            a->frameOffset != b->frameOffset || a->phase != b->phase || a->ended != b->ended ||
+            a->streamLoopCnt != b->streamLoopCnt || a->readBase != b->readBase ||
+            a->pitch != b->pitch || a->srcType != b->srcType || a->loopEnd != b->loopEnd) {
+            stat_ctl_val_mismatch++;
+            if (stat_ctl_val_mismatch <= 8) {
+                port_log("port> musyx_mix: SPLIT MISMATCH voice %u: control live %u cur %x fo %u "
+                         "phase %x ended %u slc %x pitch %x | value live %u cur %x fo %u phase %x "
+                         "ended %u slc %x pitch %x\n",
+                         vi, a->live, a->curSample, a->frameOffset, a->phase, a->ended,
+                         a->streamLoopCnt, a->pitch, b->live, b->curSample, b->frameOffset,
+                         b->phase, b->ended, b->streamLoopCnt, b->pitch);
+            }
+        }
+    }
+    memcpy(voices, wvoices, (size_t)MIX_MAX_VOICES * sizeof(MixVoice));
+    stat_reconciles++;
+}
+
+void port_musyx_mix_split_report(void) {
+    if (!stat_ctl_frames && !stat_val_frames) {
+        return;
+    }
+    port_log("port> musyx_mix: split frames: %lu control halves on the game thread, %lu value "
+             "halves (%.0f ms), %lu joins, %lu position mismatches%s\n",
+             stat_ctl_frames, stat_val_frames, stat_val_time_sum * 1000.0, stat_reconciles,
+             stat_ctl_val_mismatch, stat_ctl_val_mismatch ? "  <-- NOT EXACT" : "");
+}
+
+
 void port_musyx_mix_shutdown(void) {
     if (mixtrace_f) {
         fclose(mixtrace_f);
@@ -1760,9 +2156,13 @@ void port_musyx_mix_shutdown(void) {
     if (voices) {
         memset(voices, 0, (size_t)MIX_MAX_VOICES * sizeof(MixVoice));
     }
+    if (wvoices) {
+        memset(wvoices, 0, (size_t)MIX_MAX_VOICES * sizeof(MixVoice));
+    }
     mixer_up = 0;
 }
 
+void port_musyx_mix_split_report(void);
 void port_musyx_mix_report(void) {
     port_log("port> musyx_mix: %lu frames mixed, %lu voices started, "
              "%lu voices ended, peak |sample| %lu%s, %lu clamped ARAM reads, "
@@ -1809,4 +2209,5 @@ void port_musyx_mix_report(void) {
                  (stat_time_sum / stat_time_samples) * 1e6, stat_time_worst * 1e6,
                  stat_time_samples);
     }
+    port_musyx_mix_split_report();
 }

@@ -138,6 +138,10 @@ void port_vi_rebase_schedule(void) {
 static double first_retrace_at;
 
 void VIWaitForRetrace(void) {
+    /* M24: every job published at the previous retrace is finished before
+     * anything below reads what it wrote -- the snapshot serialises the
+     * mixer's state, the texture cache takes the staged decodes. */
+    port_workers_retrace_join();
     /* Before the present, because it decides whether the *next* frame is
      * drawn: --ffto's switch, and the snapshot ring's safe point (the top of
      * the retrace is the one moment in the frame at which no GX call and no

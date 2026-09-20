@@ -59,6 +59,7 @@ void ARStartDMA(u32 type, uintptr_t mainmem_addr, u32 aram_addr, u32 length) {
         port_fatal("ARStartDMA out of range: %08x + %u", aram_addr, length);
     }
     if (type == ARAM_DIR_MRAM_TO_ARAM) {
+        port_audio_join(); /* M24: the mixer's worker reads ARAM as of its retrace */
         memcpy(aram + aram_addr, (void*)mainmem_addr, length);
     } else {
         memcpy((void*)mainmem_addr, aram + aram_addr, length);

@@ -195,20 +195,32 @@ void port_perf_frame(int drawn) {
          * --texdecodelog, on any frame that decoded over 20 ms of it. */
         unsigned td_n, td_src, td_rgba, td_rekey;
         double td_dec, td_up, td_hash;
+        /* M24: of those, the decodes a staged (worker) decode stood in for */
+        unsigned pd_taken, pd_claimed, pd_unstaged;
+        double pd_saved;
         gx_tex_frame_decode_take(&td_n, &td_src, &td_rgba, &td_dec, &td_up, &td_hash, &td_rekey);
+        gx_tex_predecode_frame_take(&pd_taken, &pd_claimed, &pd_unstaged, &pd_saved);
         if (wall > 0.1 && port_opt.realtime) {
             /* A stall the frame mode cannot hide: named, so the log says which
              * frame and which scene (--ovllog) it belongs to. */
             port_log("port> stall: frame %u took %.0f ms (game %.0f gx %.0f present %.0f aud %.0f)%s"
-                     " tex: %u decoded (%u KB -> %u KB) dec %.0f up %.0f hash %.0f ms, %u re-keyed\n",
+                     " tex: %u decoded (%u KB -> %u KB) dec %.0f up %.0f hash %.0f ms, %u re-keyed"
+                     "; staged %u (%.0f ms saved) claimed %u unstaged %u\n",
                      gl13_frame_number(), wall * 1000.0, game * 1000.0, t_gx * 1000.0, t_present * 1000.0,
                      t_audio * 1000.0, drawn ? "" : " [consumed]",
-                     td_n, td_src, td_rgba, td_dec, td_up, td_hash, td_rekey);
+                     td_n, td_src, td_rgba, td_dec, td_up, td_hash, td_rekey,
+                     pd_taken, pd_saved, pd_claimed, pd_unstaged);
         } else if (port_opt.texdecodelog && td_dec + td_up > 20.0) {
             port_log("port> texdecode: frame %u: %u decoded (%u KB -> %u KB) dec %.0f up %.0f hash %.0f ms, "
-                     "%u re-keyed; frame %.0f ms%s\n",
+                     "%u re-keyed; staged %u (%.0f ms saved) claimed %u unstaged %u; frame %.0f ms%s\n",
                      gl13_frame_number(), td_n, td_src, td_rgba, td_dec, td_up, td_hash, td_rekey,
+                     pd_taken, pd_saved, pd_claimed, pd_unstaged,
                      wall * 1000.0, drawn ? "" : " [consumed]");
+        } else if (port_opt.predecodelog && (pd_taken || pd_claimed || pd_unstaged)) {
+            port_log("port> predecode: frame %u: %u decoded, staged %u (%.0f ms saved) claimed %u "
+                     "unstaged %u; dec %.0f up %.0f ms; frame %.0f ms%s\n",
+                     gl13_frame_number(), td_n, pd_taken, pd_saved, pd_claimed, pd_unstaged, td_dec,
+                     td_up, wall * 1000.0, drawn ? "" : " [consumed]");
         }
     }
     if (n_samples < PERF_MAX) {

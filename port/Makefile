@@ -300,10 +300,15 @@ $(BUILD)/musyx/%.o: $(MUSYX_DIR)/%.c
 # two empty bodies are renamed out of the way in this one translation unit;
 # port/src/audio/musyx_aram.c defines the real ones over aramStoreData /
 # aramRemoveData, as the Dolphin arm does.  extern/ stays untouched.
+# M24 (PLAN.md 39.2): the same trick for snd_handle_irq's one call to
+# salHandleAuxProcessing, so the aux effects can be a step of the mixer's job
+# on the second core; port/src/audio/musyx_sal.c's hook runs the same loop
+# (hw_dspctrl.c:2112) from a capture, inline or on the worker.
 $(BUILD)/musyx/hardware.o: $(MUSYX_DIR)/hardware.c
 	@mkdir -p $(dir $@)
 	$(CC) $(MUSYX_CFLAGS) -DhwSaveSample=musyx_pc_hwSaveSample_empty \
-	      -DhwRemoveSample=musyx_pc_hwRemoveSample_empty -MMD -MP -c -o $@ $<
+	      -DhwRemoveSample=musyx_pc_hwRemoveSample_empty \
+	      -DsalHandleAuxProcessing=port_sal_aux_hook -MMD -MP -c -o $@ $<
 
 $(BUILD)/port/jmp.o: $(CTX_ASM)
 	@mkdir -p $(dir $@)

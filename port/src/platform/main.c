@@ -111,6 +111,12 @@ static void usage(const char* argv0) {
             "                    through the exact memo (M18 A/B)\n"
             "  --snapsync        write snapshots synchronously on the game thread\n"
             "                    (default: copied at the retrace, written by a worker)\n"
+            "  --threads N       M24: 0 = every job inline on the game thread (the\n"
+            "                    single-core path, today's code); 1 = the workers on,\n"
+            "                    on any machine; default: on when hw.ncpu > 1\n"
+            "  --nomixthread     M24: the mixer stays on the game thread\n"
+            "  --nopredecode     M24: no texture decode on the worker\n"
+            "  --predecodelog    M24: a line per drawn frame that took a staged decode\n"
             "  --texbudget MB    GL texture bytes the cache may hold before it evicts\n"
             "                    least-recently-bound entries (default 40; 0 = never,\n"
             "                    the pre-M18 behaviour that paged the 64 MB card)\n"
@@ -408,6 +414,7 @@ int port_parse_args(int argc, char** argv) {
      * that every unadorned run -- including every run of the self-play soak --
      * exercises them, and an A/B is one word on the command line. */
     port_opt.depop = 1;
+    port_opt.threads = -1; /* M24: the workers when the machine has the cores */
     /* Linear, since the G4 measured both on the same walk (PLAN.md §20.5):
      * 1.75 ms mean against the 4-tap's 2.00, a worst frame of 10.92 ms against
      * 28.30, and fewer discontinuities, not more -- 33,002 against 36,328.
@@ -476,6 +483,14 @@ int port_parse_args(int argc, char** argv) {
             port_opt.nosincos = 1;
         } else if (!strcmp(a, "--snapsync")) {
             port_opt.snapsync = 1;
+        } else if (!strcmp(a, "--threads") && i + 1 < argc) {
+            port_opt.threads = atoi(argv[++i]);
+        } else if (!strcmp(a, "--nomixthread")) {
+            port_opt.nomixthread = 1;
+        } else if (!strcmp(a, "--nopredecode")) {
+            port_opt.nopredecode = 1;
+        } else if (!strcmp(a, "--predecodelog")) {
+            port_opt.predecodelog = 1;
         } else if (!strcmp(a, "--texbudget") && i + 1 < argc) {
             gx_tex_set_budget_mb(atoi(argv[++i]));
         } else if (!strcmp(a, "--noprefetch")) {
@@ -819,6 +834,7 @@ void GXInit_demo_bootstrap(void);
  * through the end of main() all report the same things in the same order. */
 void port_shutdown(int code) {
     port_audio_shutdown(); /* first: it closes the WAV, which must be complete */
+    port_workers_shutdown(); /* M24: after the audio's join, before the reports */
     void gx_tev_report(void);
     gx_tev_report();
     port_perf_report();
@@ -831,6 +847,7 @@ void port_shutdown(int code) {
     port_card_report();
     port_dll_report();
     port_snap_report();
+    port_workers_report();
     port_sincos_report();
     port_reset_report();
     port_stub_report();
@@ -887,6 +904,7 @@ int main(int argc, char** argv) {
     port_vi_init();
     port_dvd_init();
     port_gx_init();
+    port_workers_init(); /* M24: the second core, if there is one */
     /* After port_gx_init, which is what brings SDL up.  --noaudio keeps the
      * whole path switched off, including the tick, so the boot behaves exactly
      * as it did before M6 -- which is what makes an audio regression bisectable

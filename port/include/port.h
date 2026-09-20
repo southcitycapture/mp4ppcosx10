@@ -235,6 +235,17 @@ typedef struct PortOptions {
                              *   tinted lerp-by-konst pair (the dropped tint) */
     int texdecodelog;       /* --texdecodelog  M23: a line for every frame that
                              *   spent over 20 ms decoding textures          */
+    /* ---- M24: the second core (PLAN.md 39) ---- */
+    int threads;            /* --threads N  -1: the workers run when hw.ncpu > 1
+                             *   (the default); 0: every job inline on the game
+                             *   thread, today's code; 1: the workers on, on
+                             *   any machine, for measurement                 */
+    int nomixthread;        /* --nomixthread  M24: the mixer stays on the game
+                             *   thread even with the workers on               */
+    int nopredecode;        /* --nopredecode  M24: no texture decode on the
+                             *   worker; the miss path decodes as today        */
+    int predecodelog;       /* --predecodelog  M24: a line per drawn frame that
+                             *   took or missed a staged decode                */
     int regfix2dbg;         /* --regfix2dbg  M22: unit C of the mask/reflect
                              *   triple shows one input per frame (frame%4)  */
     int lazyflush;          /* --lazyflush  a state setter applies the pending
@@ -369,6 +380,8 @@ enum {
 void gx_tex_frame_decode_take(unsigned* n, unsigned* src_kb, unsigned* rgba_kb,
                               double* decode_ms, double* upload_ms, double* hash_ms,
                               unsigned* rekeys); /* M23 */
+void gx_tex_predecode_frame_take(unsigned* taken, unsigned* claimed, unsigned* unstaged,
+                                 double* saved_ms); /* M24 */
 void port_perf_sub_enter(int which);
 void port_perf_sub_leave(void);
 void port_perf_audio_begin(void);
@@ -492,6 +505,36 @@ void port_audio_report(void);
 /* MusyX's own ARAM allocator, ported off its stubbed PC arm (musyx_aram.c) */
 void port_musyx_aram_report(void);
 extern int port_audio_enabled; /* cleared by --noaudio */
+void port_audio_join(void);    /* M24: finish the retrace's mixer job (game thread) */
+
+/* ---- M24: the workers (port/src/platform/workers.c) ------------------------
+ * Plain pthreads for work that has no dependency on the game's frame.  The
+ * game is single-threaded and stays so: a job is published at the retrace
+ * boundary with a copy of everything it reads, runs while the game runs the
+ * next frame, and is joined at the next retrace, where the game thread
+ * finishes it itself if the worker never picked it up.  With one CPU or
+ * --threads 0 no job is ever built and every path is today's. */
+typedef struct PortJob {
+    void (*run)(struct PortJob* j);
+    volatile int state;   /* PORT_JOB_IDLE / QUEUED / RUNNING / DONE */
+    double t_queued, t_start, t_end;
+    int ran_inline;       /* finished by the game thread at the join */
+} PortJob;
+enum { PORT_JOB_IDLE = 0, PORT_JOB_QUEUED, PORT_JOB_RUNNING, PORT_JOB_DONE };
+typedef struct PortWorker PortWorker;
+int port_ncpu(void);
+int port_threads_on(void);          /* the workers are up */
+void port_workers_init(void);       /* after the options: reads --threads and hw.ncpu */
+void port_workers_shutdown(void);
+void port_workers_report(void);
+PortWorker* port_worker_mixer(void);
+PortWorker* port_worker_decode(void);
+int port_worker_submit(PortWorker* w, PortJob* j);  /* 0: workers off, run it yourself */
+void port_worker_join(PortWorker* w, PortJob* j);   /* game thread: it is done when this returns */
+int port_worker_done(const PortJob* j);
+void port_worker_stats(PortWorker* w, unsigned long* jobs, unsigned long* late_inline,
+                       unsigned long* late_wait, double* wait_ms, double* busy_ms);
+void port_workers_retrace_join(void); /* the top of VIWaitForRetrace: every retrace-bound job finished */
 
 /* the output device, port/src/audio/audio_out_sdl.c */
 int port_audio_out_init(void);

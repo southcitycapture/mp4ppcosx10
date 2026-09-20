@@ -256,6 +256,10 @@ void aramSetUploadCallback(ARAMUploadCallback callback, unsigned long chunckSize
 void aramUploadData(void* mram, unsigned long aram, unsigned long len, unsigned long highPrio,
                     void (*callback)(size_t), unsigned long user) {
     (void)highPrio; /* no queue to prioritize: this always completes inline */
+    /* M24: the mixer's value half may be reading these bytes on the worker;
+     * it reads the ARAM of the retrace it was published at, so the job is
+     * finished before anything in ARAM changes. */
+    port_audio_join();
 
     if (len == 0) {
         if (callback != NULL) {

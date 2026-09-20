@@ -65,6 +65,11 @@
 
 #include "musyx_mix.h"
 
+/* hardware.c's frame cursors, file-scope there and read by the aux capture
+ * (musyx_mix.c declares the same two) */
+extern u8 salFrame;
+extern u8 salAuxFrame;
+
 /* Declared rather than #included: <dolphin/vi.h> drags in the whole VI
  * surface and all this needs is the frame counter the gate keeps. */
 u32 VIGetRetraceCount(void);
@@ -96,6 +101,195 @@ static unsigned long stat_frames;   /* 160-sample frames mixed */
 static unsigned long stat_retraces; /* retraces that carried audio */
 
 int port_audio_enabled = 1; /* cleared by --noaudio */
+
+/* ---- M24: the mixer's job (PLAN.md 39.2) -----------------------------------
+ *
+ * With the workers on, a tick no longer mixes: each simulated AI interrupt
+ * appends its three steps to the tick's job in the order they ran before --
+ * the buffer the hardware has finished playing goes to the output ring, the
+ * frame is mixed (the CONTROL half runs here and now, on the game thread,
+ * and leaves the VALUE half a plan), the aux effects run on the bus the
+ * previous frame filled -- and the job is handed to the mixer's worker at
+ * the end of the tick.  The sequencer passes between the interrupts run
+ * here as always, on the state the control halves left them, so the game
+ * and MusyX see exactly what they saw.  The job is joined at the top of the
+ * next retrace (port_audio_join, from port_workers_retrace_join), where the
+ * worker's voice table is taken back; a job the worker has not started by
+ * then is run by the game thread itself, which is the same function.
+ *
+ * Three things make a tick run fused instead (counted):
+ *   - a live voice whose sample the value half cannot read behind the
+ *     game's back (a MEM1 sample, a virtual sample:
+ *     port_musyx_mix_needs_inline; a stream's ring buffer is refilled
+ *     through aramUploadData, which finishes the pending job first);
+ *   - a voice of that kind *starting* under the split halves (the control
+ *     half poisons the job, which is finished on the game thread at once);
+ *   - the plan pool running out (a catch-up burst of more than 16 frames
+ *     with 64 voices each). */
+#define JOB_STEPS_MAX 200
+#define JOB_POOL_CAP (16 * 64)
+enum { STEP_QUEUE = 1, STEP_MIX, STEP_AUX };
+typedef struct AuxPlan {
+    u8 salAuxFrame;
+    struct {
+        u8 state;
+        u32 type;
+        SND_AUX_CALLBACK a, b;
+        void* ua;
+        void* ub;
+    } st[MIX_MAX_STUDIOS];
+} AuxPlan;
+typedef struct MixStep {
+    int kind;
+    u8 buf;                  /* STEP_QUEUE: which AI buffer */
+    unsigned long frame_no;  /* STEP_MIX: stat_frames at the control half */
+    MixFramePlan mix;
+    AuxPlan aux;
+} MixStep;
+typedef struct MixJob {
+    PortJob job;
+    MixStep* steps;
+    unsigned nsteps;
+    MixVoicePlan* pool;
+    unsigned pool_used;
+    int pending;             /* submitted, not yet joined */
+} MixJob;
+static MixJob mixjob;
+static int tick_split;       /* this tick's frames run as control + value halves */
+static int tick_open;        /* inside port_audio_tick (for the asserts below) */
+static unsigned long stat_ticks_split, stat_ticks_fused_inline, stat_ticks_poisoned,
+    stat_ticks_pool_out, stat_jobs_run_at_submit, stat_steps_total;
+
+static void mix_post(short* dest, unsigned long frame_no, unsigned long retrace);
+static void aux_capture(AuxPlan* ap);
+static void aux_process(const AuxPlan* ap);
+
+static int mix_threaded(void) {
+    return port_threads_on() && !port_opt.nomixthread && port_audio_enabled;
+}
+
+static void job_alloc(void) {
+    if (!mixjob.steps) {
+        mixjob.steps = (MixStep*)calloc(JOB_STEPS_MAX, sizeof(MixStep));
+        mixjob.pool = (MixVoicePlan*)calloc(JOB_POOL_CAP, sizeof(MixVoicePlan));
+    }
+}
+
+static void job_run_steps(MixJob* j, unsigned from, unsigned to) {
+    unsigned k;
+    for (k = from; k < to; k++) {
+        MixStep* st = &j->steps[k];
+        switch (st->kind) {
+        case STEP_QUEUE:
+            port_audio_out_queue(ai_buffers + st->buf * DMA_BUFFER_LEN, DMA_BUFFER_LEN);
+            break;
+        case STEP_MIX:
+            port_musyx_mix_frame_val(&st->mix);
+            mix_post(st->mix.dest, st->frame_no, st->mix.retrace);
+            break;
+        case STEP_AUX:
+            aux_process(&st->aux);
+            break;
+        default:
+            break;
+        }
+    }
+}
+
+static void mixjob_run(PortJob* pj) {
+    MixJob* j = (MixJob*)pj;
+    job_run_steps(j, 0, j->nsteps);
+}
+
+static MixStep* job_step(int kind) {
+    MixStep* st;
+    if (mixjob.nsteps >= JOB_STEPS_MAX) {
+        return NULL;
+    }
+    st = &mixjob.steps[mixjob.nsteps++];
+    st->kind = kind;
+    stat_steps_total++;
+    return st;
+}
+
+/* The job so far, finished on the game thread right now.  With `resume`
+ * the tick carries on split from a fresh job (an ARAM write mid-tick: a
+ * stream refill); without it the rest of the tick runs fused (the control
+ * half found a voice the value half must not read behind the game's back,
+ * or the pool ran out). */
+static unsigned long stat_flushes;
+static void job_flush_inline(int resume) {
+    job_run_steps(&mixjob, 0, mixjob.nsteps);
+    port_musyx_mix_job_reconcile();
+    mixjob.nsteps = 0;
+    mixjob.pool_used = 0;
+    stat_flushes++;
+    if (resume) {
+        port_musyx_mix_job_begin();
+    } else {
+        tick_split = 0;
+    }
+}
+
+/* Game thread: the retrace's job is finished when this returns.  Idempotent.
+ * Called mid-tick (an ARAM write from the sequencer's own passes: a stream
+ * refill) it finishes the job built so far, so that no value half ever
+ * reads bytes written after its control half ran. */
+void port_audio_join(void) {
+    if (tick_split && mixjob.nsteps) {
+        job_flush_inline(1);
+        return;
+    }
+    if (!mixjob.pending) {
+        return;
+    }
+    port_worker_join(port_worker_mixer(), &mixjob.job);
+    port_musyx_mix_job_reconcile();
+    mixjob.pending = 0;
+    mixjob.nsteps = 0;
+    mixjob.pool_used = 0;
+}
+
+static void job_tick_begin(void) {
+    if (!mix_threaded() || !sal_up) {
+        tick_split = 0;
+        return;
+    }
+    port_audio_join(); /* never pending here; a guard, not a policy */
+    job_alloc();
+    if (!mixjob.steps || !mixjob.pool) {
+        tick_split = 0;
+        return;
+    }
+    if (port_musyx_mix_needs_inline()) {
+        stat_ticks_fused_inline++;
+        tick_split = 0;
+        return;
+    }
+    mixjob.nsteps = 0;
+    mixjob.pool_used = 0;
+    port_musyx_mix_job_begin();
+    tick_split = 1;
+    stat_ticks_split++;
+}
+
+static void job_tick_end(void) {
+    if (!tick_split) {
+        return;
+    }
+    tick_split = 0;
+    if (!mixjob.nsteps) {
+        return;
+    }
+    mixjob.job.run = mixjob_run;
+    mixjob.pending = 1;
+    if (!port_worker_submit(port_worker_mixer(), &mixjob.job)) {
+        /* the queue is full or the worker is gone: the same function, here */
+        stat_jobs_run_at_submit++;
+        mixjob_run(&mixjob.job);
+        mixjob.job.state = PORT_JOB_DONE;
+    }
+}
 
 /* ---- the interrupt controller -------------------------------------------- */
 /* There is nothing to disable.  The mixer, the sequencer and every `sal*`
@@ -173,6 +367,7 @@ bool salStartAi(void) {
 }
 
 bool salExitAi(void) {
+    port_audio_join();
     ai_started = 0;
     sal_up = 0;
     /* Kept, not freed: 2.5 KB whose address is in the snapshot registry. */
@@ -199,21 +394,57 @@ bool salInitDsp(u32 flags) {
 bool salExitDsp(void) { return TRUE; }
 
 /* The seam.  On the console: build the command list, mail it to dspSlave.
- * Here: render the frame. */
+ * Here: render the frame -- fused, or (M24) its control half now and its
+ * value half as a step of the tick's job. */
 void salCtrlDsp(s16* dest) {
     if (!dest) {
         return;
     }
     port_perf_audio_begin();
     ai_dma_tick();
-    port_musyx_mix_frame(dest);
+    if (tick_split) {
+        MixStep* st = job_step(STEP_MIX);
+        int n = -1;
+        if (st) {
+            st->frame_no = stat_frames;
+            n = port_musyx_mix_frame_ctl(&st->mix, dest, (unsigned long)VIGetRetraceCount(),
+                                         mixjob.pool + mixjob.pool_used,
+                                         JOB_POOL_CAP - mixjob.pool_used);
+        }
+        if (n < 0) {
+            /* out of pool (or steps): drop the step, finish the job so far on
+             * the game thread, and mix this frame fused */
+            if (st) {
+                mixjob.nsteps--;
+            }
+            stat_ticks_pool_out++;
+            job_flush_inline(0);
+            port_musyx_mix_frame(dest);
+            mix_post(dest, stat_frames, (unsigned long)VIGetRetraceCount());
+        } else {
+            mixjob.pool_used += (unsigned)n;
+            if (port_musyx_mix_ctl_poisoned()) {
+                stat_ticks_poisoned++;
+                job_flush_inline(0);
+            }
+        }
+    } else {
+        port_musyx_mix_frame(dest);
+        mix_post(dest, stat_frames, (unsigned long)VIGetRetraceCount());
+    }
     port_perf_audio_end();
     stat_frames++;
+}
+
+/* What the fused frame used to do after the mix, on `dest`: the value half
+ * runs it in both modes, so the retrace it names is the plan's. */
+static void mix_post(short* dest, unsigned long frame_no, unsigned long retrace) {
+    unsigned long frames_after = frame_no + 1;
     /* --audiolog: one line per second of mixed audio.  The peak and the ring
      * fill are the two numbers that separate the three ways this can be
      * wrong -- nothing is being mixed, something is being mixed but the ring
      * is starving, or both are fine and the fault is downstream. */
-    if (port_opt.audiolog && (stat_frames % 200) == 0) {
+    if (port_opt.audiolog && (frames_after % 200) == 0) {
         int i;
         unsigned peak = 0;
         for (i = 0; i < FRAME_SAMPLES * 2; i++) {
@@ -223,9 +454,8 @@ void salCtrlDsp(s16* dest) {
             }
         }
         port_log("audio> %6.2f s mixed at retrace %6lu: peak %5u, ring %5u/%u bytes\n",
-                 stat_frames * (double)FRAME_SAMPLES / MIX_FRQ,
-                 (unsigned long)VIGetRetraceCount(), peak, port_audio_out_queued(),
-                 262144u);
+                 frames_after * (double)FRAME_SAMPLES / MIX_FRQ, retrace, peak,
+                 port_audio_out_queued(), 262144u);
     }
     /* "Does the title music start at the right frame" is the one question a
      * --wav capture cannot answer on its own, because the WAV has no frame
@@ -236,14 +466,85 @@ void salCtrlDsp(s16* dest) {
         int i;
         for (i = 0; i < FRAME_SAMPLES * 2; i++) {
             if (dest[i]) {
-                first_sound_frame = (long)VIGetRetraceCount() + 1;
-                first_sound_second = stat_frames * (double)FRAME_SAMPLES / MIX_FRQ;
+                first_sound_frame = (long)retrace + 1;
+                first_sound_second = frames_after * (double)FRAME_SAMPLES / MIX_FRQ;
                 port_log("port> audio: first non-silent sample at retrace %ld "
                          "(%.2f s of mixed audio)\n",
                          first_sound_frame, first_sound_second);
                 break;
             }
         }
+    }
+}
+
+/* ---- the aux effects (M24) ---------------------------------------------------
+ *
+ * hardware.c's snd_handle_irq calls salHandleAuxProcessing right after
+ * salCtrlDsp; the Makefile renames that one call site to this hook (the
+ * hwSaveSample trick of PLAN.md 34.4; extern/ stays untouched) and the
+ * effect callbacks -- the game's reverb, msmsys.c:51 -- run on the bus the
+ * mixer filled a frame ago, which under the split halves is the worker's.
+ * So the aux pass is a step of the job, from a capture of what the extern
+ * loop reads (hw_dspctrl.c:2112: each studio's state, type, handlers and
+ * user data, and salAuxFrame), and the same function runs it inline when
+ * the tick is fused.  The effects' own state is touched by nothing but the
+ * callback at runtime (the game sets it once at msmSysInit and frees it at
+ * msmSysExit, which comes through salExitAi's join). */
+static void aux_capture(AuxPlan* ap) {
+    u8 st;
+    ap->salAuxFrame = salAuxFrame;
+    for (st = 0; st < salMaxStudioNum && st < MIX_MAX_STUDIOS; st++) {
+        const DSPstudioinfo* sp = &dspStudio[st];
+        ap->st[st].state = sp->state;
+        ap->st[st].type = (u32)sp->type;
+        ap->st[st].a = sp->auxAHandler;
+        ap->st[st].b = sp->auxBHandler;
+        ap->st[st].ua = sp->auxAUser;
+        ap->st[st].ub = sp->auxBUser;
+    }
+}
+
+static void aux_process(const AuxPlan* ap) {
+    u8 st;
+    for (st = 0; st < salMaxStudioNum && st < MIX_MAX_STUDIOS; st++) {
+        DSPstudioinfo* sp = &dspStudio[st];
+        SND_AUX_INFO info;
+        s32* work;
+        if (ap->st[st].state != 1) {
+            continue;
+        }
+        if (ap->st[st].a != NULL) {
+            work = sp->auxA[(ap->salAuxFrame + 2) % 3];
+            info.data.bufferUpdate.left = work;
+            info.data.bufferUpdate.right = work + 0xa0;
+            info.data.bufferUpdate.surround = work + 0x140;
+            ap->st[st].a(0, &info, ap->st[st].ua);
+        }
+        if (ap->st[st].type == 0 && ap->st[st].b != NULL) {
+            work = sp->auxB[(ap->salAuxFrame + 2) % 3];
+            info.data.bufferUpdate.left = work;
+            info.data.bufferUpdate.right = work + 0xa0;
+            info.data.bufferUpdate.surround = work + 0x140;
+            ap->st[st].b(0, &info, ap->st[st].ub);
+        }
+    }
+}
+
+void port_sal_aux_hook(void) {
+    if (tick_split) {
+        MixStep* st = job_step(STEP_AUX);
+        if (st) {
+            aux_capture(&st->aux);
+            return;
+        }
+        /* out of steps: finish the job here and fall through */
+        stat_ticks_pool_out++;
+        job_flush_inline(0);
+    }
+    {
+        AuxPlan ap;
+        aux_capture(&ap);
+        aux_process(&ap);
     }
 }
 
@@ -258,7 +559,18 @@ void salCtrlDsp(s16* dest) {
  * one but two. */
 static void ai_interrupt(void) {
     ai_index = (u8)((ai_index + 1) % DMA_BUFFERS);
-    port_audio_out_queue(ai_buffers + ai_index * DMA_BUFFER_LEN, DMA_BUFFER_LEN);
+    if (tick_split) {
+        MixStep* st = job_step(STEP_QUEUE);
+        if (st) {
+            st->buf = ai_index;
+        } else {
+            stat_ticks_pool_out++;
+            job_flush_inline(0);
+            port_audio_out_queue(ai_buffers + ai_index * DMA_BUFFER_LEN, DMA_BUFFER_LEN);
+        }
+    } else {
+        port_audio_out_queue(ai_buffers + ai_index * DMA_BUFFER_LEN, DMA_BUFFER_LEN);
+    }
     if (user_callback) {
         user_callback(); /* snd_handle_irq: salCtrlDsp, aux, 5 x seq+synth */
     }
@@ -285,17 +597,22 @@ void port_audio_tick(void) {
     if (tick_credit > per_frame * 64) {
         tick_credit = per_frame * 64;
     }
+    tick_open = 1;
+    job_tick_begin();
     while (tick_credit >= per_frame) {
         tick_credit -= per_frame;
         ai_interrupt();
         fired++;
     }
+    job_tick_end();
+    tick_open = 0;
     if (fired) {
         stat_retraces++;
     }
 }
 
 void port_audio_shutdown(void) {
+    port_audio_join();
     if (sal_up) {
         port_musyx_mix_shutdown();
         sal_up = 0;
@@ -319,6 +636,13 @@ void port_audio_report(void) {
         port_log("port> audio: NOTHING was ever mixed above silence\n");
     }
     port_musyx_mix_report();
+    if (stat_ticks_split || stat_ticks_fused_inline) {
+        port_log("port> audio: M24 mixer job: %lu ticks split (%lu steps), %lu ticks fused "
+                 "for a MEM1/vsample voice, %lu poisoned mid-tick, %lu out of pool, "
+                 "%lu jobs run at submit, %lu jobs finished mid-tick (ARAM writes)\n",
+                 stat_ticks_split, stat_steps_total, stat_ticks_fused_inline, stat_ticks_poisoned,
+                 stat_ticks_pool_out, stat_jobs_run_at_submit, stat_flushes);
+    }
     port_musyx_aram_report();
     port_audio_out_report();
 }
