@@ -136,6 +136,11 @@ if [ -n "$sdl_ref" ]; then
 fi
 [ -f "$here/../resources/MarioParty4.icns" ] && \
     cp "$here/../resources/MarioParty4.icns" "$out/Contents/Resources/MarioParty4.icns"
+# M25: the bundle's version is the milestone (CFBundleShortVersionString
+# 0.25 = M25; CFBundleVersion the bare number), the minimum system 10.4 --
+# what the binary is built for (-mmacosx-version-min=10.4).
+MILESTONE=${MILESTONE:-M25}
+ver_num=${MILESTONE#M}
 cat > "$out/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -150,10 +155,11 @@ cat > "$out/Contents/Info.plist" <<PLIST
 	<key>CFBundleDisplayName</key><string>Mario Party 4</string>
 	<key>CFBundlePackageType</key><string>APPL</string>
 	<key>CFBundleSignature</key><string>????</string>
-	<key>CFBundleShortVersionString</key><string>1.0</string>
-	<key>CFBundleVersion</key><string>1.0</string>
-	<key>CFBundleGetInfoString</key><string>Mario Party 4 PowerPC Edition</string>
-	<key>LSMinimumSystemVersion</key><string>10.4</string>
+	<key>CFBundleShortVersionString</key><string>0.${ver_num}</string>
+	<key>CFBundleVersion</key><string>${ver_num}</string>
+	<key>CFBundleGetInfoString</key><string>Mario Party 4 PowerPC Edition, milestone ${MILESTONE}</string>
+	<key>LSMinimumSystemVersion</key><string>10.4.0</string>
+	<key>LSRequiresNativeExecution</key><true/>
 	<key>LSApplicationCategoryType</key><string>public.app-category.games</string>
 	<key>NSHighResolutionCapable</key><false/>
 </dict>

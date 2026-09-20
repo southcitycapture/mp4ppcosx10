@@ -53,6 +53,8 @@ static SDL_GLContext ctx;
 static int gl_on;
 static unsigned frame_no;
 static const char* pending_shot;
+static int title_plain; /* M25: the window title is the verdict until the first present */
+static void fs_setup(void); /* M25: --fullscreen, below gl13_present */
 
 /* ---- --glcheck ------------------------------------------------------------ */
 /* Everything GL this backend is allowed to call.  GL 1.3 core plus the four
@@ -985,9 +987,12 @@ int gl13_init(void) {
     SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8);
-    window = SDL_CreateWindow("Mario Party 4", SDL_WINDOWPOS_CENTERED,
+    /* M25: the machine check's verdict is the title until the first drawn
+     * frame reaches the screen (gl13_present restores the plain name). */
+    window = SDL_CreateWindow(port_machine_title(), SDL_WINDOWPOS_CENTERED,
                               SDL_WINDOWPOS_CENTERED, EFB_W * scale, EFB_H * scale,
-                              SDL_WINDOW_OPENGL);
+                              SDL_WINDOW_OPENGL |
+                              (port_opt.fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0));
     if (!window) {
         port_log("port> SDL_CreateWindow failed (%s); running headless\n",
                  SDL_GetError());
@@ -1003,6 +1008,9 @@ int gl13_init(void) {
     gl_on = 1;
     glc_invalidate();
     report_caps();
+    if (port_opt.fullscreen) {
+        fs_setup();
+    }
 #if defined(__APPLE__) && defined(__ppc__)
     /* --mpgl (M17): Apple's multithreaded GL engine, which moves the driver's
      * own command processing -- the copy into the command buffer and the
@@ -1540,6 +1548,146 @@ static int frame_wanted(unsigned n) {
     return 0;
 }
 
+/* ---- --fullscreen (M25, PLAN.md 40.4) ------------------------------------
+ *
+ * The renderer draws the game exactly as in the window: 640x480 at 1:1 in
+ * the bottom-left of the back buffer, every viewport, scissor, EFB copy and
+ * read-back in EFB coordinates.  Fullscreen is a *present* step: the corner
+ * is copied into a texture, the screen cleared to black and the texture
+ * drawn scaled to the largest 4:3 rectangle that fits (letterboxed), and
+ * after the swap the texture is drawn back 1:1 into the corner, so the back
+ * buffer's corner holds the last drawn frame as the front buffer does in a
+ * window -- which is where a consumed frame's GXCopyTex reads from
+ * (gx_tex.c reads GL_BACK under fullscreen).  Nothing the game's frame
+ * touches changes, so --dumpframe still reads the 1:1 corner before the
+ * blit and the md5s hold. */
+static int fs_on;
+static int fs_w, fs_h;          /* the drawable */
+static int fs_x, fs_y, fs_rw, fs_rh; /* the letterboxed rectangle */
+static GLuint fs_tex;
+#define FS_TEX_W 1024
+#define FS_TEX_H 512
+
+int gl13_fullscreen(void) { return fs_on; }
+
+static void fs_setup(void) {
+#ifndef PORT_NO_SDL
+    double sx, sy, sc;
+    SDL_GL_GetDrawableSize(window, &fs_w, &fs_h);
+    if (fs_w < EFB_W || fs_h < EFB_H) {
+        port_log("port> --fullscreen: the drawable is %dx%d, under 640x480; staying 1:1\n",
+                 fs_w, fs_h);
+        return;
+    }
+    sx = (double)fs_w / EFB_W;
+    sy = (double)fs_h / EFB_H;
+    sc = sx < sy ? sx : sy;
+    fs_rw = (int)(EFB_W * sc + 0.5);
+    fs_rh = (int)(EFB_H * sc + 0.5);
+    fs_x = (fs_w - fs_rw) / 2;
+    fs_y = (fs_h - fs_rh) / 2;
+    GL(glGenTextures)(1, &fs_tex);
+    GL(glBindTexture)(GL_TEXTURE_2D, fs_tex);
+    GL(glTexImage2D)(GL_TEXTURE_2D, 0, GL_RGB8, FS_TEX_W, FS_TEX_H, 0, GL_RGB,
+                     GL_UNSIGNED_BYTE, NULL);
+    GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    GL(glBindTexture)(GL_TEXTURE_2D, 0);
+    SDL_ShowCursor(SDL_DISABLE);
+    fs_on = 1;
+    port_log("port> --fullscreen: %dx%d, the picture at %dx%d from (%d,%d), scale %.3f\n",
+             fs_w, fs_h, fs_rw, fs_rh, fs_x, fs_y, sc);
+#endif
+}
+
+/* the state a blit needs; the shadow forgets it all afterwards */
+static void fs_quad_begin(int vw, int vh) {
+    int i;
+    for (i = 5; i >= 0; i--) {
+        GL(glActiveTexture)(GL_TEXTURE0 + i);
+        if (i) {
+            GL(glDisable)(GL_TEXTURE_2D);
+        }
+    }
+    GL(glEnable)(GL_TEXTURE_2D);
+    GL(glBindTexture)(GL_TEXTURE_2D, fs_tex);
+    GL(glTexEnvi)(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+    GL(glDisable)(GL_BLEND);
+    GL(glDisable)(GL_DEPTH_TEST);
+    GL(glDepthMask)(GL_FALSE);
+    GL(glDisable)(GL_ALPHA_TEST);
+    GL(glDisable)(GL_CULL_FACE);
+    GL(glDisable)(GL_FOG);
+    GL(glDisable)(GL_LIGHTING);
+    GL(glDisable)(GL_COLOR_SUM);
+    GL(glDisable)(GL_SCISSOR_TEST);
+    GL(glColorMask)(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    GL(glViewport)(0, 0, vw, vh);
+    GL(glMatrixMode)(GL_TEXTURE);
+    GL(glPushMatrix)();
+    GL(glLoadIdentity)();
+    GL(glMatrixMode)(GL_PROJECTION);
+    GL(glPushMatrix)();
+    GL(glLoadIdentity)();
+    GL(glOrtho)(0.0, (double)vw, 0.0, (double)vh, -1.0, 1.0);
+    GL(glMatrixMode)(GL_MODELVIEW);
+    GL(glPushMatrix)();
+    GL(glLoadIdentity)();
+}
+
+static void fs_quad(int x, int y, int w, int h) {
+    const float su = (float)EFB_W / FS_TEX_W, sv = (float)EFB_H / FS_TEX_H;
+    GL(glBegin)(GL_TRIANGLE_STRIP);
+    GL(glTexCoord2f)(0.0f, 0.0f);
+    GL(glVertex2f)((float)x, (float)y);
+    GL(glTexCoord2f)(su, 0.0f);
+    GL(glVertex2f)((float)(x + w), (float)y);
+    GL(glTexCoord2f)(0.0f, sv);
+    GL(glVertex2f)((float)x, (float)(y + h));
+    GL(glTexCoord2f)(su, sv);
+    GL(glVertex2f)((float)(x + w), (float)(y + h));
+    GL(glEnd)();
+}
+
+static void fs_quad_end(void) {
+    GL(glPopMatrix)();
+    GL(glMatrixMode)(GL_PROJECTION);
+    GL(glPopMatrix)();
+    GL(glMatrixMode)(GL_TEXTURE);
+    GL(glPopMatrix)();
+    GL(glMatrixMode)(GL_MODELVIEW);
+    GL(glDepthMask)(GL_TRUE);
+    GL(glEnable)(GL_SCISSOR_TEST);
+    glc_invalidate();
+}
+
+/* before the swap: the corner into the texture, the screen black, the
+ * letterboxed picture */
+static void fs_blit_out(void) {
+    gx_vprog_disable();
+    fs_quad_begin(fs_w, fs_h);
+    GL(glCopyTexSubImage2D)(GL_TEXTURE_2D, 0, 0, 0, 0, 0, EFB_W, EFB_H);
+    GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    GL(glClearColor)(0.0f, 0.0f, 0.0f, 1.0f);
+    GL(glClear)(GL_COLOR_BUFFER_BIT);
+    fs_quad(fs_x, fs_y, fs_rw, fs_rh);
+    fs_quad_end();
+}
+
+/* after the swap: the last drawn frame back into the corner at 1:1 */
+static void fs_blit_back(void) {
+    fs_quad_begin(EFB_W, EFB_H);
+    /* nearest at 1:1: the texel itself, no filter rounding, so the corner
+     * is the drawn frame's bytes (RGB; the alpha plane comes back opaque) */
+    GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    fs_quad(0, 0, EFB_W, EFB_H);
+    fs_quad_end();
+}
+
 void gl13_present(void) {
 #ifndef PORT_NO_SDL
     /* Nothing after the last draw of a frame -- the readback, the swap, the
@@ -1574,7 +1722,19 @@ void gl13_present(void) {
     if (!gl_on || draw_off) {
         return; /* nothing was drawn, so there is nothing to show */
     }
+    if (fs_on) {
+        fs_blit_out();
+    }
     SDL_GL_SwapWindow(window);
+    if (fs_on) {
+        fs_blit_back();
+    }
+    if (!title_plain) {
+        /* the first drawn frame is on screen: the machine check's verdict
+         * has had its say in the title bar */
+        title_plain = 1;
+        SDL_SetWindowTitle(window, "Mario Party 4");
+    }
     /* The clear the game asked for is run by gl13_begin_frame(), which the
      * gate calls once it knows the next frame is drawn -- under --realtime a
      * consumed frame in between may have asked for a different colour, and

@@ -118,6 +118,14 @@ static void usage(const char* argv0) {
             "  --predecode       M24: the texture decode staged on the worker from\n"
             "                    consumed frames (measured, off: PLAN.md 39.3)\n"
             "  --predecodelog    M24: a line per drawn frame that took a staged decode\n"
+            "  --machinecheck    M25: print the machine inventory (CPU, RAM, OS, GL\n"
+            "                    renderer, VRAM, every extension the port uses) and\n"
+            "                    the verdict; exit 0 ok / 1 degraded / 2 unsupported\n"
+            "  --force           M25: run on an `unsupported' verdict anyway\n"
+            "  --fake-machine F  M25: override the probes from F (key=value lines:\n"
+            "                    model ncpu mhz cputype cpusubtype altivec ram_mb os\n"
+            "                    native gl gl_vendor gl_renderer gl_version\n"
+            "                    gl_extensions vram_mb texunits maxtexsize)\n"
             "  --texbudget MB    GL texture bytes the cache may hold before it evicts\n"
             "                    least-recently-bound entries (default 40; 0 = never,\n"
             "                    the pre-M18 behaviour that paged the 64 MB card)\n"
@@ -248,6 +256,11 @@ static void usage(const char* argv0) {
             "                    N, or a,b,c, or first-last/step (e.g. 1-400/20)\n"
             "  --shotdir DIR     where --dumpframe writes (default: .)\n"
             "  --scale N         window scale over 640x480 (default 1)\n"
+            "  --fullscreen      M25: the whole screen, the 640x480 picture scaled to\n"
+            "                    fit and letterboxed; remembered in the config file\n"
+            "  --windowed        M25: the 640x480 window (clears a remembered --fullscreen)\n"
+            "  --noconfig        M25: neither read nor write ~/Library/Application\n"
+            "                    Support/MarioParty4/config (the lab's runs)\n"
             "\n"
             "  --nopad           no controller 1 at all, not even the keyboard\n"
             "  --paddbg          log raw pad reports/buttons/axes as they arrive\n"
@@ -262,6 +275,9 @@ static void usage(const char* argv0) {
             "                    on when the one in force has been played, and\n"
             "                    releasing the roulette when the list is done\n"
             "  --com4            all four players are CPU\n"
+            "  --mghold          M25: inside a minigame's own overlay all four players\n"
+            "                    are human with idle controllers (they hold still):\n"
+            "                    a four-way DRAW on demand (Avalanche!, PLAN.md 35.2)\n"
             "  --cast a,b,c,d    the four characters a --com4 run plays: numbers\n"
             "                    0-7 or names (mario luigi peach yoshi wario\n"
             "                    donkey daisy waluigi).  PLAN.md 29.2\n"
@@ -404,10 +420,37 @@ static const char* port_find_default_image(void) {
         }
     }
 #endif
+    /* M25: the image the config remembers (from a --image or the dialog),
+     * if it is still there */
+    if (!port_opt.noconfig) {
+        const char* remembered = port_config_get("image");
+        if (remembered) {
+            struct stat st;
+            if (stat(remembered, &st) == 0) {
+                snprintf(default_image, sizeof(default_image), "%s", remembered);
+                port_log("port> config: disc image %s (remembered)\n", default_image);
+                return default_image;
+            }
+            port_log("port> config: the remembered disc image %s is gone; searching\n",
+                     remembered);
+        }
+    }
     home = getenv("HOME");
     if (home && *home) {
         snprintf(buf, sizeof(buf), "%s/MarioParty4", home);
         if (dir_holds_disc(buf)) {
+            return default_image;
+        }
+    }
+    /* M25: nothing found: ask, once, and remember the answer.  Not for the
+     * runs that never open a window (the answer would be a hang on a
+     * dialog nobody can see). */
+    if (!port_opt.headless && !port_opt.machinecheck && !port_opt.noconfig &&
+        !port_opt.reltest && !port_opt.gxdemo) {
+        if (port_dialog_choose_image(default_image, sizeof(default_image))) {
+            port_config_set("image", default_image);
+            port_config_save();
+            port_log("port> config: disc image %s (chosen; remembered)\n", default_image);
             return default_image;
         }
     }
@@ -499,6 +542,23 @@ int port_parse_args(int argc, char** argv) {
             port_opt.predecodelog = 1;
         } else if (!strcmp(a, "--texbudget") && i + 1 < argc) {
             gx_tex_set_budget_mb(atoi(argv[++i]));
+            port_opt.texbudget_set = 1;
+        } else if (!strcmp(a, "--fake-machine") && i + 1 < argc) {
+            port_opt.fake_machine = argv[++i];
+        } else if (!strcmp(a, "--machinecheck")) {
+            port_opt.machinecheck = 1;
+        } else if (!strcmp(a, "--force")) {
+            port_opt.force = 1;
+        } else if (!strcmp(a, "--mghold")) {
+            port_opt.mghold = 1;
+        } else if (!strcmp(a, "--fullscreen")) {
+            port_opt.fullscreen = 1;
+            port_opt.fullscreen_set = 1;
+        } else if (!strcmp(a, "--windowed")) {
+            port_opt.fullscreen = 0;
+            port_opt.fullscreen_set = 1;
+        } else if (!strcmp(a, "--noconfig")) {
+            port_opt.noconfig = 1;
         } else if (!strcmp(a, "--noprefetch")) {
             port_opt.noprefetch = 1;
         } else if (!strcmp(a, "--olddecode3")) {
@@ -876,15 +936,46 @@ int main(int argc, char** argv) {
     if (!port_parse_args(argc, argv)) {
         return 1;
     }
+    /* M25: the config file -- what --image, --fullscreen and the dialogs
+     * remembered; the log's default home; see config.c for the format. */
+    if (!port_opt.noconfig) {
+        static char default_log[800];
+        port_config_load();
+        if (port_opt.image) {
+            char abs[1024];
+            /* an absolute path, so a run from another directory finds it */
+            port_config_set("image", port_opt.image[0] == '/' ? port_opt.image
+                            : realpath(port_opt.image, abs) ? abs : port_opt.image);
+        }
+        if (port_opt.fullscreen_set) {
+            port_config_set("fullscreen", port_opt.fullscreen ? "1" : "0");
+        } else {
+            const char* fs = port_config_get("fullscreen");
+            port_opt.fullscreen = fs && atoi(fs) != 0;
+        }
+        if (!port_opt.log) {
+            snprintf(default_log, sizeof(default_log), "%s/MarioParty4.log",
+                     port_app_support_dir());
+            port_opt.log = default_log;
+        }
+        port_config_save();
+    }
     if (!port_opt.image) {
         port_opt.image = port_find_default_image();
     }
     port_log_open(port_opt.log);
+    if (port_opt.log) {
+        port_log("port> log: %s\n", port_opt.log);
+    }
     port_crash_handler_install();
     if (port_opt.watchdog) {
         port_watchdog_arm(port_opt.watchdog);
     }
     port_log("Mario Party 4 -- native port, milestone M2a\n");
+    /* M25: the machine check, before anything opens a window: the inventory,
+     * the verdict and the settings it implies (or the exit, under
+     * --machinecheck / an unsupported machine without --force). */
+    port_machine_check();
     if (port_opt.reltest) {
         port_opt.reldlclose = 1; /* the self-test is *about* the unload path */
         return port_dll_selftest();

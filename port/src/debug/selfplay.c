@@ -235,7 +235,20 @@ static void cast_parse(void) {
 
 static void park_players(void) {
     int i;
+    /* --mghold (M25, PLAN.md 40): inside a minigame's own overlay all four
+     * players are human with idle controllers, so they hold still -- the way
+     * to a four-way DRAW on demand (Avalanche!, PLAN.md 35.2), which four
+     * COMs never give.  The minigames read `GWPlayerCfg[].iscom` every frame
+     * (m406Dll/player.c:562) and an idle pad reads zero; outside the overlay
+     * (the board, instDll, resultDll) the --com4 rule below holds as before. */
+    int hold = port_opt.mghold && (int)omcurovl >= 0 && omMgIndexGet((s16)omcurovl) >= 0;
     for (i = 0; i < 4; i++) {
+        if (hold) {
+            GWPlayerCfg[i].pad_idx = (s16)i;
+            GWPlayerCfg[i].iscom = 0;
+            GWPlayer[i].com = 0;
+            continue;
+        }
         if (port_opt.com4) {
             if (cast_char[i] >= 0) {
                 /* A named cast is parked every frame, exactly the way the rest
@@ -351,11 +364,11 @@ static void status_line(u32 frame) {
          * the screen are the fps, and they are different numbers now */
         port_log("port> status f%-7u %-12s board %d turn %d/%d  mg %d (%s)  "
                  "coins/stars %s  aud %.2f ms  speed %.0f%%  %.1f fps presented  "
-                 "tex %u/%u KB  rss %u MB  cpu %d\n",
+                 "tex %u/%u KB  rss %u MB  cpu %d  machine %s\n",
                  frame, screen_name((int)omcurovl), (int)GWSystem.board,
                  (int)GWSystem.turn, (int)GWSystem.max_turn, mg + 0x191,
                  screen_name(mg_ovl), players, aud, speed, pfps, tex_n, tex_kb,
-                 port_rss_mb(), port_threads_on() ? 2 : 1);
+                 port_rss_mb(), port_threads_on() ? 2 : 1, port_machine_verdict());
         return;
     }
     port_log("port> status f%-7u %-12s board %d turn %d/%d  mg %d (%s)  "

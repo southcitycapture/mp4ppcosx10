@@ -1641,12 +1641,15 @@ void gx_tex_copy(void* dest, int clear) {
          * bottom, and the copy is written into the bottom-left of the padded
          * texture so the game's own 0..1 texcoords, folded by su/sv below,
          * land on it. */
-        if (from_front) {
+        if (from_front && !gl13_fullscreen()) {
+            /* under --fullscreen the back buffer's corner holds the last
+             * drawn frame (gl13.c fs_blit_back); the front holds the scaled
+             * picture */
             GL(glReadBuffer)(GL_FRONT);
         }
         GL(glCopyTexSubImage2D)(GL_TEXTURE_2D, 0, 0, 0, sl, 480 - (st + sh),
                                 sw < cw ? sw : cw, sh < ch ? sh : ch);
-        if (from_front) {
+        if (from_front && !gl13_fullscreen()) {
             GL(glReadBuffer)(GL_BACK);
         }
     }

@@ -321,6 +321,7 @@ int gl13_live(void);
 int gl13_draw_off(void);
 void gl13_set_draw_off(int v);
 int gl13_have_context(void); /* a window and a context, drawn into or not */
+int gl13_fullscreen(void);   /* M25: the letterboxed present is on */
 int port_framemode_active(void); /* src/platform/framemode.c */
 /* Drop every decoded texture and every composed indirect tile, deleting their
  * GL names if there is a context.  Called when drawing comes back on after a

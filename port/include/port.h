@@ -250,6 +250,20 @@ typedef struct PortOptions {
                              *   any machine, for measurement                 */
     int nomixthread;        /* --nomixthread  M24: the mixer stays on the game
                              *   thread even with the workers on               */
+    /* ---- M25: the machine check (src/platform/machine.c, PLAN.md 40) ---- */
+    const char* fake_machine; /* --fake-machine FILE  key=value overrides of the
+                             *   probes: argue another machine on this one   */
+    int machinecheck;       /* --machinecheck  print the inventory and the
+                             *   verdict, exit 0 ok / 1 degraded / 2 unsupported */
+    int force;              /* --force  run on an `unsupported' verdict        */
+    int mghold;             /* --mghold  inside a minigame all four players are
+                             *   human with idle pads: they hold still (M25)  */
+    int fullscreen;         /* --fullscreen  the desktop's size, the 640x480
+                             *   picture scaled to fit and letterboxed; --windowed
+                             *   clears it; remembered in the config (M25)  */
+    int fullscreen_set;     /* --fullscreen or --windowed was given          */
+    int noconfig;           /* --noconfig  neither read nor write the config  */
+    int texbudget_set;      /* --texbudget was given: the check leaves it alone */
     int predecode;          /* --predecode  M24: the texture decode staged on the
                              *   worker from consumed frames; built, measured
                              *   (the cold frame did not move) and OFF         */
@@ -368,6 +382,25 @@ void port_log(const char* fmt, ...);
 void port_logv(const char* fmt, va_list ap);
 void port_fatal(const char* fmt, ...);
 void port_shutdown(int code); /* the one exit path: report, flush, close SDL */
+
+/* M25: the machine check (src/platform/machine.c).  Runs once at boot before
+ * the window opens; the title is what the window shows until the first drawn
+ * frame, the summary is the one-line inventory + verdict. */
+void port_machine_check(void);
+const char* port_machine_title(void);
+const char* port_machine_summary(void);
+const char* port_machine_verdict(void);   /* "ok" / "degraded" / "unsupported" */
+int port_machine_degraded(void);
+int port_machine_reasons(const char** out, int cap);
+
+/* M25: the config file and the dialogs (src/platform/config.c) */
+const char* port_app_support_dir(void);      /* ~/Library/Application Support/MarioParty4 */
+void port_config_load(void);
+const char* port_config_get(const char* key); /* NULL when absent */
+void port_config_set(const char* key, const char* val);
+void port_config_save(void);                 /* only when something changed */
+int port_dialog_notice(const char* title, const char* text);
+int port_dialog_choose_image(char* out, size_t n);
 
 /* --perf, src/debug/perf.c */
 void port_perf_gx_begin(void);
