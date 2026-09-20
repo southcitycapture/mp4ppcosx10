@@ -573,3 +573,25 @@ is either ready to offer upstream or has a case to remove.
   state the game swaps at a scene change (PLAN.md 39.6); the `--nodraw
   --turbo` runs had been identical because the worker always finished
   before the game's frame reached the swap.
+
+## 0m. Three things M24b paid for *(2026-09-20)*
+
+* **A copy's rows are GL's, whatever its origin is.** `glCopyTexSubImage2D`
+  puts the region's *bottom* row at `t = 0`; flipping the source
+  rectangle's origin (`480 - (st + sh)`) does not flip the rows inside
+  it. Every EFB copy sampled with the game's coordinates was upside down
+  from M3 to M24 (PLAN.md 39b), and the consumers that showed it were
+  the ones nobody watched: a 30-frame crossfade at the start of every
+  board turn, and a minigame dealt three times in soaks with no picture
+  taken. `--copylog` now names every copy on a walk; a `--dumpframe` of
+  the frames after each one is the cheap check.
+* **A soak's status line cannot see a picture fault.** Soak 13 read
+  100% speed and 17–20 fps through the whole of m416 while the screen
+  was a mirror. The realtime soaks are watched by numbers; a minigame
+  the soaks keep dealing deserves one `g4 shot` at least once, and the
+  console frames for it in `port/ref` before anyone reads the port's.
+* **`--gltrace` with `--drawlog` faulted under Rosetta** (the M23 bundle
+  on the MacBook, `signal 11 at 0x0` at draw 368 of the traced frame);
+  the same instruments on the G4 did not. The trace before the fault
+  was enough. Also: the Dolphin capture ran on 30 minutes past its 900 s
+  again (§0k's `kill` note stands: `pkill -x dolphin-emu` by hand).

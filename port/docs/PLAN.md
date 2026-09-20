@@ -12175,3 +12175,248 @@ counts), `tex`/`rss` past turn 12, `DVD: read of … took` and `stall:
 … frees N, dll M ms` lines around the results screens (frame ~250,000),
 and whether m415 or a second m406 is dealt. Then the results-screen
 stall with its new fields, the two mixer timers, and M23's specular.
+
+## 39b. M24b log: m416 — every EFB copy was upside down *(2026-09-20, littlejelly)*
+
+M24b's brief was one photograph: during the M23 leave-behind soak (build
+`fd48f0df`, `docs/soak/m24-soak13-m23-leave-73min.log.gz`, m416 dealt at
+frame 95,150, entered 95,487, left 97,849) the user photographed
+*Candlelight Flight* on the G4 with its dark castle room **mirrored about
+the middle of the screen** — the timer box at the top with an upside-down
+twin at the bottom, the chandeliers too — the players an exploded mess
+of coloured fragments, and the `FINISH!!` banner smeared and rotated over
+the whole frame; the status line healthy throughout (100% speed, 17–20
+fps, the coins updated, the minigame over on time). The cause is one
+line that has been wrong since M3: **an EFB copy's texture is filled by
+`glCopyTexSubImage2D` in GL's row order — `t = 0` is the *bottom* of the
+copied region — and the port bound it with the game's own coordinates,
+whose `t = 0` is the top.** Every copy sampled on the GPU came out
+mirrored in `t`: m416's afterimage, the board's turn-start crossfade
+(which had been fading an upside-down board in for half a second at the
+start of every turn of every soak), and every projected shadow map. Not
+an M23 regression: the M21 bundle draws the same mirror (§39b.2).
+
+### 39b.1 The reading of the copy path
+
+m416Dll (`src/REL/m416Dll/map.c:226–276`, the hook `fn_1_89BC` on a
+layer-1 model) is a persistence effect: every frame it draws the
+*previous* frame's whole-screen copy as a full-screen quad under the new
+frame — `MTXOrtho(0,480,0,576)` (top = 0, GX's y down), texcoords (0,0)
+at the top-left, one TEV stage `TEXC`, `GX_BL_INVSRCALPHA / GX_BL_SRCALPHA`
+with the material alpha `RASA` (255 in the intro, 16 during the play,
+`fn_1_8FF4`), then copies the composite back —
+`GXSetTexCopySrc(0,0,640,480); GXSetTexCopyDst(640,480,GX_TF_RGBA8,
+GX_FALSE); GXCopyTex(buf, 0)` — for the next frame. So during the play
+the picture is `0.94 × previous + 0.06 × scene`, which is how the
+console's room stays barely visible with the candle's glow trailing
+(`port/ref/frames/m416-console-14200.png`, `port/ref/notes.md`).
+
+The port's copy (`gx_tex_copy`, gx_tex.c) sizes a 1024×512 texture,
+`glCopyTexSubImage2D`s the 640×480 back buffer into its bottom-left,
+and binds it with the NPOT fold `(s·su, t·sv)`, `su = 0.625`, `sv =
+0.9375`. The M3 comment beside the call reads "GX's y runs down from the
+top of the EFB and GL's up from the bottom, and the copy is written into
+the bottom-left of the padded texture so the game's own 0..1 texcoords,
+folded by su/sv below, land on it" — which is true of the *rectangle's
+origin* (`480 - (st + sh)`) and false of the *rows inside it*: GL copies
+window row `y` to texture row `y`, so the region's bottom row is at
+`t = 0`, where a decoded GX texture's first row (its top) is. The
+M23-bundle reproduction on the MacBook with `--gltrace 15500`
+(`docs/soak/m24b-m416-m23-bundle-mbp-gltrace.log.gz`) shows the quad
+arriving exactly as the game meant it: `glBindTexture name 58`,
+`glTexMatrix unit 0 su 0.625 sv 0.9375` (scale only, no flip), `glDrawArrays
+QUADS count 4`, `proj ortho [0.00347 -1 -0.00417 1 …]` (y down), the
+material alpha 15, `blend src 5 dst 4`; and `--dumpcopy` of the copy at
+frame 15,000 is already the mirrored composite, because the feedback has
+folded the flip into itself. With `a = 0.06` and a flip every frame the
+sum of the upright ghosts is `0.06/(1 − 0.94²) ≈ 0.52` and of the
+flipped ones `0.48` — an even mirror, which is what the photograph
+shows. The "tiled and rotated" `FINISH!!` is the banner's own exit
+animation (it spins off with rainbow afterimages of itself *on the
+console too*, `m416-console-14920.png`) plus its mirror image.
+
+The one copy consumer that was right is the one the CPU reads:
+`port_gx_copy_read` (§35.3, §38.2) reads the texture back through
+`gl13_downsample_read` in GL's order and encodes "GX row y is GL row
+h−1−y" — so Stamp Out!'s paper never saw the flip, and neither did its
+floor shadows, which the intro bakes into that canvas.
+
+### 39b.2 Regression or pre-existing: pre-existing since M3
+
+`git show 0906e66c:port/src/gx/gx_tex.c` (M3, 2026-09-13, the commit that
+added EFB copies) has the same `glCopyTexSubImage2D` and the same
+scale-only fold; M22's tip (`fb8a2717`) and M23's copy rewrite (`698fd668`,
+`7470d3d1`) changed the rectangle (the half-scale source, §38.2), the
+padding (defined texels) and the read-back, never the row order. The
+A/B on the G4: **the M21 bundle** (`~/MarioParty4-m21.app`, `eca3f859…`)
+on the 2.5-minute reproduction (`--minigame m416 --turns 1 --com4 --rtc
+dolphin --freshcard --play board-start-com4.play --ffto 14400 --lockstep
+--frames 15600 --dumpframe 15000,15500`; the roulette is dealt at 14,140,
+m416 links at 14,472, `START!` is frame 15,000, the timer reads 22 at
+15,500) draws the mirror at both frames
+(`docs/soak/m24b-m416-m21-bundle-lockstep.log.gz`):
+
+![m416 at START: the M21 bundle and M24b](screenshots/m24b-m416-f15000-m21-vs-fix.png)
+
+m416 had been dealt in the M20 soak (soak 9) and the M23 soak (soak 12)
+with nobody looking at its picture; soak 13's was the first anyone saw.
+
+### 39b.3 The fix
+
+The NPOT fold grows an offset: `(s, t) → (s·su, t·sv + tv)`,
+`glc_tex_matrix_fold` / `glc_get_tex_fold` (gl13.c), `tv = 0` for every
+decoded texture and the tile cache. An EFB copy is bound (the `is_efb`
+branch of `tex_bind_body`, gx_tex.c) with **`sv` negated and `tv = +sv`**:
+`t' = sv − t·sv`, so `t = 0` lands on the region's top row and `t = 1`
+on its bottom, inside the padded texture either way. The fixed-function
+path carries it in the `GL_TEXTURE` matrix (`m[13]`); the vertex program
+carries it in `env[44+u].w` and its fold became one `MAD` where it was a
+`MUL` (`MAD result.texcoord[u].xy, t1, env[44+u], env[44+u].zwzw`;
+same instruction count, every variant still under the native limits).
+The projected shadow maps get the same flip after their `GX_TG_MTX3x4`
+texgen, which is where GX applies it. `--noefbflip` is the pre-M24b
+orientation on the same binary; `--copylog` (new) prints one line per
+`GXCopyTex` — the frame, the rectangle, the format, `half`/`clear`/`front`,
+the slot — so a walk names every copy consumer, and `--drawlog` prints
+`tv` and marks a flipped unit (`an EFB copy, flipped: M24b`).
+
+Same reproduction, the final build (`1ba0a29c…`), the G4:
+
+![m416 at 22: --noefbflip, M24b, the console](screenshots/m24b-m416-f15500-noflip-fix-console.png)
+
+![m416 lockstep 15000/15500/16000 and real time 16860 over the console's 13350/14000/14480/14880](screenshots/m24b-m416-fix-vs-console.png)
+
+The drawlog of frame 15,500 (`docs/soak/m24b-m416-fix-lockstep-copylog-drawlog.log.gz`)
+has the quad as `texmap0 640x480 fmt 6 gl 59`, `npot fold unit 0 su
+0.625 sv -0.9375 tv 0.9375 (an EFB copy, flipped: M24b)`, and the room's
+pieces (`bmerge*` of model 27, `Hu3DModelShadowMapSet` in map.c:66)
+sampling the 192×192 shadow map on unit 1 through `texgen1 func 0 … mtx
+57` with `su 0.75 sv -0.75 tv 0.75`. `--copylog` on that run: 2,423
+whole-screen RGBA8 copies from frame 14,472 to the module's last, and
+2,494 half-scale shadow copies.
+
+### 39b.4 Every other copy consumer, checked
+
+`--copylog` over the 9,000-frame turbo walk (`docs/soak/m24b-walk-turbo-copylog-md5.log.gz`)
+finds exactly **two** rectangles: the 384×384→192×192 half-scale
+clear-after shadow copy, every frame from 880 to 5,100 (the title's,
+the mode select's and the character select's shadow passes), and **one**
+whole-screen `GX_TF_RGB565` copy at frame 8,717 — the board's turn-start
+crossfade (`board/main.c:484`, `WipeCreate(WIPE_MODE_IN, WIPE_TYPE_CROSS,
+30)`). Nothing else copies on the walk.
+
+* **The md5 references hold**: 800 `1df90661…`, 3000 `8762d432…`, 7000
+  `f5b52130…` (§39's, byte-identical; `~/m24b/md5s.txt` on the G4). 800
+  is before the first copy; the character select's shadow copies exist
+  but nothing at 3,000 samples them; the board takes none.
+* **The wipe's crossfade** (`--ffto 8700 --lockstep --dumpframe
+  8716,8718,8722,8730,8740`, `docs/soak/m24b-board-crossfade-f8717.log.gz`):
+  with `--noefbflip` frames 8,718–8,730 are the board **upside down**
+  (the HUD's `COM` reads `COW`, Mario stands on his head) fading into
+  the new camera; with the fix the still is upright and fades into the
+  new view. Every turn of every board since M3 opened this way for 30
+  frames.
+
+  ![the turn-start crossfade, M24b over --noefbflip](screenshots/m24b-board-crossfade-f8716-8730-fix-vs-noflip.png)
+
+* **The mode-select bubbles** (§32.1): the mode select takes **no copies
+  of its own** — `modeseldll` has no `GXCopyTex`, and the walk's copylog
+  shows only the shadow pass between frames 1,200 and 2,600. §32.1's
+  "region copies behind each bubble" were the 384×384 shadow copies
+  (M17 classified anything under 640×400 as a region copy); the bubbles'
+  squares are the `GXSetTevIndWarp` drop, as §32.1 also says, and
+  frame 2,100 is unchanged by the flip.
+* **The shadow maps** (hsfman.c:2007, m428, m439): the pass is copied
+  every frame in every scene that enables it, but the receivers are few
+  and every shadow camera is centred on its casters — m416's map at
+  15,500 is four blobs within 30 texels of the centre of 384
+  (`--dumpcopy`, the MacBook) — so the mirror moved little. m428
+  (Avalanche!) and m439 at frames 14,700/15,000/15,500 are
+  **byte-identical** with and without the flip (their maps are not
+  sampled on those frames), as are m416's own intro frames 14,500 and
+  14,750 (the afterimage at alpha 255, the map not yet sampled).
+* **Stamp Out!'s paper** (§38.2): white with the line art at 15,000 and
+  15,800, the toys textured, the read-back's 120 reads unchanged
+  (`copy-read: 120 … 127 read at the copy through the back buffer (326
+  ms), 1 drawn and read on demand`); frame 15,000 byte-identical with
+  `--noefbflip` — the paper and the floor's baked shadows never went
+  through the GPU sample.
+
+  ![Stamp Out! on M24b: 15000, 15800, the console](screenshots/m24b-m415-paper-f15000-f15800-console.png)
+
+* **m428 / m439's clear-after copies** stay on M21's rule (kept from the
+  last drawn frame on a consumed frame): the real-time run's report
+  counts `5613 clear-after copies kept`, `2298 whole-screen` from the
+  front buffer (m416's afterimage on consumed frames), `0 region`.
+* Not exercised, same fix by construction (they bind the copy with the
+  game's coordinates, no CPU read): the other afterimage helpers
+  (`m405`, `m434`, `m442`, `m455`, `m456`, `m460`), the water
+  reflections (`m417`, `m430`), `m419`'s pair of buffers, `m410`/`m421`'s
+  player copies, `m440`, `m448`, `m411` and the board's Boo
+  (`board/boo.c:683`, a 160×160 render copied to an 80×80 RGB5A3 sprite
+  bitmap). Any of them drawn wrong now would be a second fault, not this
+  one.
+
+### 39b.5 The witness
+
+The console: `port/ref/frames/m416-console-{12700,14200,14880,14920,15400,15800}.png`
+from the m416-end.txt schedule (`mg_next` 15, groups 0,1,1,1) captured on
+littlejelly — the card, the timer at 18, `FINISH!` at 08, the banner's
+own trail, `WON!`, the results with the portraits; what they settle is in
+`port/ref/notes.md`.
+
+**Real time from boot on the G4**, the final build: `--minigame m416
+--turns 1 --com4 --rtc dolphin --freshcard --play board-start-com4.play
+--realtime --frames 18600 --status --copylog --dumpframe
+15740,16800,16830,16860,16900,17300,17700`
+(`docs/soak/m24b-m416-realtime-from-boot.log.gz`): game 310.31 s against
+wall 310.32 s, **100.0% speed, 20.5 presented fps, 0 resyncs**, 81
+underruns / 1.2 s on the whole run (the scene loads), the mixer's worker
+on (`cpu 2`). The room upright at 18 (the moment of the photograph), the
+banner sliding in at 00, its trail as it leaves, `MARIO WON!`, and the
+`g4 shot`s of the screen at 11 and of the two results screens after it:
+
+![m416 at real time from boot: 15740, 16800, 16830, 16860, 16900, 17300](screenshots/m24b-m416-realtime-from-boot-f15740-f17300.png)
+
+![the G4's screen at 11, the minigame results, the board results](screenshots/m24b-m416-rt-screen-and-results.png)
+
+![the banner's trail: the port at real time, the console](screenshots/m24b-m416-finish-trail-port-vs-console.png)
+
+**One thing the picture at real time still is not**: the afterimage
+decays once per *drawn* frame. On a consumed frame the copy reads the
+front buffer (§32.1) — the last composite presented — so the ghost is
+re-blended only when a frame is drawn, one in three at 20 fps, and the
+trails are about three times longer than the console's (compare
+`m24b-m416-finish-trail-port-vs-console.png`, where the console's banner
+at 14,880 has settled and the port's at 16,860 still carries its
+slide-in). The lockstep picture is exact. A per-consumed-frame decay
+would mean drawing the quad on frames nothing else is drawn on; not
+done, named here.
+
+### 39b.6 What M24b shipped, and what it did not
+
+| shipped, with a witness | |
+|---|---|
+| the EFB copy's `t` flipped at bind, fixed-function and vertex program (§39b.3), `--noefbflip` | m416 upright at 15,000/15,500/16,000/16,500 lockstep and from boot at real time; the crossfade upright; the three md5s unchanged |
+| `--copylog`, the drawlog's `tv` and flipped-unit mark | the walk's two rectangles; the consumer table in §39b.4 |
+| the verdict on M23 (§39b.2) | the M21 bundle's mirror at 15,000 and 15,500 |
+| m416's console frames and `port/ref/notes.md` | the six frames |
+| the M24 leave-behind soak's first 30 minutes (`docs/soak/m24b-soak14-m24-leave-30min.log.gz`) | 106,620 frames, 100.1% speed, 21.0 presented fps, **0 resyncs** (M23's two board-load resyncs did not recur), the same twelve minigames dealt in the same order as soak 13 (m416 at 95,487 again), `aud` 0.10–0.25 ms on `cpu 2`; stopped for the witness at turn 9 |
+
+**Not done, and why:**
+
+* The afterimage's decay per drawn frame at real time (§39b.5).
+* The brightness during the play: the console's frame at 22 is mean
+  luma 13 on the letterbox, the port's 19 (the MacBook) — the same
+  picture, the port lighter in the candle's fall-off; not chased.
+* The other copy consumers in §39b.4's last bullet: not exercised.
+* The M24 leftovers stand (§39.7): the results-screen stall, the two
+  mixer timers, the selected box's specular, the fresh-process DRAW in
+  Avalanche!.
+
+Left running: `g4 run --soak --com4 --rtc dolphin --freshcard --realtime
+--snap-every 5000 --snap-keep 3 --status --ovllog --stuckwatch 200` on
+the final build (`isle` md5 `1ba0a29c…`; the M24 bundle is kept as
+`~/MarioParty4-m24.app`, the M23 one as `~/MarioParty4-m23.app` for the
+`m416-corrupt-f095000.snap` ring). M25 reads it as §39.8 says, plus:
+the next m416 (or any afterimage minigame) it deals is worth a `g4 shot`.
