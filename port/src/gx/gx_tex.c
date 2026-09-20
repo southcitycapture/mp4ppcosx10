@@ -2214,9 +2214,12 @@ void gx_tex_tile_report(void) {
  * function on the same bytes, so the upload is the one the inline decode
  * would have made.  A staged entry the worker has not reached is decoded
  * inline as before (and marked so the worker skips it); one nobody binds
- * within PRE_STALE_FRAMES is dropped.  --nopredecode is the pre-M24 miss;
- * --predecodelog names every drawn frame that took or missed a staged
- * decode. */
+ * within PRE_STALE_FRAMES is dropped.  Built, measured on the walk
+ * (PLAN.md 39.3: it reaches the decodes -- 624 of 790 taken -- and the
+ * cold frame does not move, the upload of memory-cold texels giving a
+ * third of it back and the copies costing the game thread as much as the
+ * decode saved), and OFF: --predecode turns it on, --predecodelog names
+ * every drawn frame that took or missed a staged decode. */
 #define PRE_REQ_MAX 1024
 #define PRE_STAGED_MAX 1024
 #define PRE_BUDGET_BYTES ((size_t)32 << 20) /* source copies plus RGBA held */
@@ -2278,7 +2281,7 @@ static double stat_pre_taken_s, stat_pre_worker_s, stat_pre_copy_s;
 static unsigned frame_pre_taken, frame_pre_claimed;
 static double frame_pre_taken_s;
 
-static int predecode_on(void) { return port_threads_on() && !port_opt.nopredecode; }
+static int predecode_on(void) { return port_threads_on() && port_opt.predecode; }
 
 /* Textures a consumed frame names and no drawn frame binds -- the indirect
  * tiling's sheets and maps (bound through the tile cache, keyed by content),

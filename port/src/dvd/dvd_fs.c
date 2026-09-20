@@ -41,6 +41,8 @@ static FILE* image;
 static char tree_root[1024];
 static unsigned long bytes_read;
 static unsigned long reads;
+static unsigned long slow_reads; /* M24: reads over 100 ms */
+static double slow_read_s;       /* M24: every read's wall time */
 
 static u32 be32(const u8* p) {
     return ((u32)p[0] << 24) | ((u32)p[1] << 16) | ((u32)p[2] << 8) | p[3];
@@ -262,10 +264,23 @@ static s32 do_read(DVDFileInfo* fi, void* addr, s32 length, s32 offset) {
         length = (s32)(entries[n].length - offset);
     }
     if (image) {
+        /* M24: a read over 100 ms is named -- the 1.7 s game-side stall at
+         * the results screen's last frame (PLAN.md 38.3, 39.1) is not the
+         * card flush, and the disc image's reads are the other synchronous
+         * thing a game frame does */
+        double t0 = port_now_seconds(), dt;
         if (fseek(image, (long)(entries[n].offset + (u32)offset), SEEK_SET) != 0) {
             return DVD_RESULT_FATAL_ERROR;
         }
         got = fread(addr, 1, (size_t)length, image);
+        dt = port_now_seconds() - t0;
+        slow_read_s += dt;
+        if (dt > 0.1) {
+            unsigned gl13_frame_number(void);
+            slow_reads++;
+            port_log("port> DVD: read of %s (%d bytes at %d) took %.0f ms (frame %u)\n",
+                     entries[n].path, length, offset, dt * 1000.0, gl13_frame_number());
+        }
     } else {
         char full[1200];
         FILE* f;
@@ -316,5 +331,6 @@ s32 DVDCancel(DVDCommandBlock* block) {
 void port_dvd_service(void) { /* nothing pending: reads complete inline */ }
 
 void port_dvd_stats(void) {
-    port_log("port> DVD: %lu reads, %lu bytes\n", reads, bytes_read);
+    port_log("port> DVD: %lu reads, %lu bytes, %.0f ms in reads, %lu over 100 ms\n", reads, bytes_read,
+             slow_read_s * 1000.0, slow_reads);
 }

@@ -242,8 +242,9 @@ typedef struct PortOptions {
                              *   any machine, for measurement                 */
     int nomixthread;        /* --nomixthread  M24: the mixer stays on the game
                              *   thread even with the workers on               */
-    int nopredecode;        /* --nopredecode  M24: no texture decode on the
-                             *   worker; the miss path decodes as today        */
+    int predecode;          /* --predecode  M24: the texture decode staged on the
+                             *   worker from consumed frames; built, measured
+                             *   (the cold frame did not move) and OFF         */
     int predecodelog;       /* --predecodelog  M24: a line per drawn frame that
                              *   took or missed a staged decode                */
     int regfix2dbg;         /* --regfix2dbg  M22: unit C of the mask/reflect

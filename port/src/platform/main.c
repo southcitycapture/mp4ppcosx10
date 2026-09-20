@@ -115,7 +115,8 @@ static void usage(const char* argv0) {
             "                    single-core path, today's code); 1 = the workers on,\n"
             "                    on any machine; default: on when hw.ncpu > 1\n"
             "  --nomixthread     M24: the mixer stays on the game thread\n"
-            "  --nopredecode     M24: no texture decode on the worker\n"
+            "  --predecode       M24: the texture decode staged on the worker from\n"
+            "                    consumed frames (measured, off: PLAN.md 39.3)\n"
             "  --predecodelog    M24: a line per drawn frame that took a staged decode\n"
             "  --texbudget MB    GL texture bytes the cache may hold before it evicts\n"
             "                    least-recently-bound entries (default 40; 0 = never,\n"
@@ -487,8 +488,8 @@ int port_parse_args(int argc, char** argv) {
             port_opt.threads = atoi(argv[++i]);
         } else if (!strcmp(a, "--nomixthread")) {
             port_opt.nomixthread = 1;
-        } else if (!strcmp(a, "--nopredecode")) {
-            port_opt.nopredecode = 1;
+        } else if (!strcmp(a, "--predecode")) {
+            port_opt.predecode = 1;
         } else if (!strcmp(a, "--predecodelog")) {
             port_opt.predecodelog = 1;
         } else if (!strcmp(a, "--texbudget") && i + 1 < argc) {
