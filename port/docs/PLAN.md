@@ -13284,3 +13284,289 @@ order of games behind each:
 And the gallery itself is now a tool: `GALLERY_APP=… GALLERY_DIR=… sh
 ~/gallery_chain.sh` on the G4 and `diff.py` on littlejelly say what any
 renderer change did to every minigame, overnight.
+
+## 41b. M26b log — the oracle sweep: every minigame, the console beside the port *(2026-09-20, littlejelly, in parallel with M27)*
+
+§41's verdicts were a first pass from the port's frames against the code,
+with six oracle captures behind them. This milestone is the second pass
+the brief asked for: **a Dolphin run per minigame with the port's own
+schedule, the console's seven frames picked by event and put beside the
+port's**, a similarity number under each pair, and the verdicts re-read.
+The page is `port/docs/gallery/compare.html` (63 rows, the console's
+frames in `port/docs/gallery/oracle/mNNN-cNNNNNN.jpg` at 320×240, the
+port's fix-build frames alongside as `mNNN-fix-fNNNNNN.jpg`); the
+capture and picking tools are scratch on littlejelly
+(`~/mp4-sweep-work/{capture.py,analyse.py,compare.py,chain.sh}`), their
+schedule and the calibration are in `port/ref/notes.md`.
+
+### 41b.1 The rig, and the poke that let m402 run
+
+One Dolphin run a game (the Flatpak on littlejelly, OpenGL, no audio,
+FFV1 AVI at ~110 dump fps): a fresh user dir seeded from
+`port/ref/dolphin-user` every time (the 2026-09-19 lesson: a dirty card
+walks a different menu path), the `m406-end.txt` walk with the four
+`iscom` pokes, the four `group` pokes for the game's type (**type 1 →
+0,1,1,1; type 2 → 0,0,1,1; types 0/3/4/5/6/7/8 → 0,1,2,3** —
+`park_minigame()`'s `default:` arm covers the Bowser, item, story and
+Extra types, and the port's chain forced them through instDll the same
+way), `GWSystem.mg_next` poked from GC 9000 — **and `mg_setup.c`'s static
+`mgNext` (`0x801D4208`, `.sbss`) poked to the same index.** The board
+preloads `mgInfoTbl[mgNext].data_dir` from that static *before* it copies
+it into `GWSystem.mg_next` (mg_setup.c:268–290), so M26's captures had
+two directory images in `HEAP_DVD` — the roulette's own pick and the
+poked game's — which is why m402 panicked the console (`dvd.c:75`). With
+`mgNext` poked as well the board preloads the target itself: the retail
+path, one image. m402 played, m404 dealt Trace Race (M26's "Order Up"
+was the dirty card), and m453 — "no four-character cast fits" under two
+images — see its row.
+
+The stop is the game's state, not a clock: MemoryWatcher on
+`GlobalCounter`, `VCounter` and `omcurovl` (the USA `ovl_table.h` without
+the `VERSION_JP` block: instdll 3, m401dll–m463dll 9–69, resultdll 84,
+w01dll 89), Dolphin killed 700 GC after the module is left (its results
+are in) or 3,400 GC after it is entered (the port's window is 2,600), and
+only the Dolphin it started (M27 shares the host). ~4.5 min a game plus a
+60–90 s ffmpeg split of the window from 1,200 GC before instDll (the
+walk's length varies by game: the board seeds from the clock at board
+setup, which the walk reaches at a different frame each run, and the
+first turn's dice differ — instDll came at GC 9,766 for m414 and 12,537
+for m417), 1.2 GB of PNGs a game deleted after the eight frames are
+picked, 57 GB free throughout, 62 games in 6 h 50 min of one chain (11:43–18:35, m416 before it as the
+calibration run) plus a redo chain of eight for the picker's early
+mistakes and the two hangs.
+
+### 41b.2 The calibration, on m416
+
+The port's dump frames are **present-count** frames (`gl13`'s
+`frame_no`); `mgdump: entered … 14477` counts retraces, six ahead after
+`--ffto`. So, from the port's own log of the walk: instDll's link at
+present 14136 → the card frames 14200/14300/14400 are instDll
+**+64/+164/+264**; the module's link at 14471 → the in-module frames
+14537/14877/15677/16777 are link **+66/+406/+1206/+2306**; the results
+frame is the module's exit +40. (For the twelve no-card types — 3, 5, 6,
+8 — instDll links the module on its first frame, present 14137, and the
+walk frames 14200/14300/14400 are in-module frames at link +63/+163/+263.)
+
+On the console every frame is a dump index and nothing lines up with the
+port's numbers, so each position is found by event:
+
+* **the card**: the port's 14300 (the fix build's) is matched against
+  the whole console window at 32×24 then ±4 at 160×120; for m416 it lands
+  on 10768 at a mean difference of 4.4 levels (every card game of the
+  sweep matches its own between 4.0 and 5.6 — the card is the
+  frame-exact pair), so the console's instDll link I_c = 10768 − 164 =
+  10604, six frames before the card's yellow background dominates the
+  wipe-in, and the three card frames are I_c + 64/164/264;
+* **the module**: instDll's wipe-out is fully white for five frames
+  (10936–10940); the code links the module two frames after the wipe
+  ends (`instMode = 6`, one `HuPrcVSleep`, `omOvlCallEx`), so the link
+  L_c = (the first non-fully-white frame S_c = 10941) − 2, and the four
+  play frames are L_c + 66/406/1206/2306 = 11005/11345/12145/13245;
+* **the results**: the module's fade-to-white peaks for ~4 frames, the
+  results' first drawn frame is the one after, and the frame is that +
+  38 (resultDll's first drawn frame is ~2 after its link).
+
+The check is the picture: m416's four console frames are the lit intro
+with the four in their places, the START! banner at full size, the timer
+at **19**, and the play — the port's 14537/14877/15677 show the same
+three moments (the banner's full-size plateau is ~30 frames wide, the
+timer's 19 a 60-frame window with L_c + 1206 inside it), at sim 95 / 97 /
+97%. The brief's rule of thumb "port entry 95,487 → first scene ~95,500"
+(+13) is the frame the room is *recognisable* through the module's
+60-frame wipe-in; the first non-fully-white frame is +2 to +3, and that
+is what the sweep anchors on. The runs do not share their RNG (the board
+seeds from the clock at board setup, reached at different frames), so
+the play frames differ by the play itself — m416's console candle was out
+at 08 (`LUIGI PEACH YOSHI WON!`) at +2306 where the port's burned to 01 —
+and the card, the intro and the timers are what the numbers compare;
+sim on a play frame says "same scene", not "same pixels".
+
+### 41b.3 The per-game table
+
+Verdicts: **match** = the console shows the port's scene at every position
+captured (the play may differ; the card, the intro and the HUD are
+frame-exact); **minor** = one element wrong or missing; **major** = a
+scene, a surface or a piece of geometry wrong; **port-faulted** = the
+port dies in the module; **oracle-failed** = the console did not reach
+the play on this schedule. The similarity cell is `sim/>8` per position
+(§41b.2): sim = 100·(1 − mean |Δ| / 255), >8 = % of pixels whose worst
+channel differs by more than 8 levels, both at 320×240; `-` = one side
+has no frame (the game was over, the port ran on, the console hung), `·`
+= neither. The card triple runs 97–99 / 7–36 on every card game — the
+frame-exact pairs — except m411 (its puzzle is a per-run draw); the play
+frames run 70–99 by how far the two plays had drifted.
+
+| module | game | type | §41 | **M26b** | sim: card +64/+164/+264 · entry +60/+400/+1200/+2300 · results (sim%/>8%) | what the console shows |
+|---|---|---|---|---|---|---|
+| `m401` | Manta Rings | 0 | ok | **match** | 99/8 97/33 98/23 · 93/92 93/95 91/93 92/94 · · | CONFIRMED ok: the boat's hull seen from below with the light shafts, START! with the four divers, the rock arches and the rings, the score HUD — the same scene at every position (the divers' places differ by the play); the card matches |
+| `m402` | Slime Time | 0 | minor? | **major** | 99/8 97/35 97/28 · 82/93 86/88 86/90 86/90 · - | OVERTURNED (minor? → major), and the console now runs it (the mgNext poke — one directory image, no HEAP_DVD panic): the console's arena has a dark dome with the "SLIME POWER" sign at the centre and NO column; the port stands a tall yellow hexagonal prism through the middle of the arena in every play frame, from +60 on, hiding the sign — a piece of geometry the console does not draw at that size (new cause G); everything else lines up: the checkered cross, the four coloured slime blobs, the outer floor's dark green, the timer (24 / 06); the card matches; the console's game ended at the timer and its results were captured (the port ran on) |
+| `m403` | Booksquirm | 0 | ok | **match** | 99/8 97/36 97/26 · 99/9 95/40 99/0 - · 96/34 | CONFIRMED ok: the book's cover at +60, START! on the open page with the four players and the quill (the page's text is laid out differently — the console's page has a wide column of text at the top and the port's a narrower one: the page is a randomly chosen layout, the play's draw), the white page-fall at +1200 on both (the console's game ended by +2300), the results match; the card matches |
+| `m404` | Trace Race | 4 | minor? | **minor** | 99/7 97/32 97/26 · 96/48 94/57 91/68 82/94 · - | CONFIRMED (cause F → a fault of its own): the console dealt Trace Race this time (fresh userdir + the mgNext poke; M26's "Order Up" was the dirty card's walk) and its lanes carry the wavy guide line each player has to trace from +60 on (a dark line on every lane, the coloured trace drawn over it as they go); the port's lanes are blank until the players' own traces appear (+2300) — the guide line, the objective of the game, is not drawn; everything else (the desk, the pencils, the START!, the timers) matches; the console's battle results were captured (the port ran on) |
+| `m405` | Mario Medley | 0 | major | **minor** | 99/8 97/36 97/27 · 95/66 93/74 87/88 90/91 · · | DOWNGRADED (major → minor) by the fix build and the console together: the port's pool is translucent now — the swimmers, the lane ropes and the tiled floor show through, as on the console — but its water is a flat grey-green where the console's is a bright blue with a moving caustic pattern and the black wedge of §41 is gone; the intro (Mario on the block, 5'00"00), START! and the clock (0'29"71 vs 0'29"72) match to the frame; the card matches. What is left is cause B's tint: the water's colour (a copy-fed or indirect stage) — one surface, not a missing scene |
+| `m406` | Avalanche! | 0 | ok | **match** | 99/8 97/35 97/25 · 93/20 90/51 75/75 90/44 · 96/32 | CONFIRMED ok: the slope, START!, the skiers and the trees, the ending (LUIGI WON! on the port, Yoshi with the losers in the snow mounds on the console — §35.2's mounds by design), the results; the card matches |
+| `m407` | Domination | 0 | ok | **match** | 99/8 97/30 97/24 · 96/52 97/45 96/57 43/100 · 96/40 | CONFIRMED ok: the Whomp dominoes face-down (as §41), the red switch mat, the timer (10), the counters, the results; the port's +2300 is the results' white-out where the console's is Slot A: Saving — the same transition ~40 frames apart; the card matches |
+| `m408` | Paratrooper Plunge | 0 | major | **major** | 99/8 97/33 97/25 · 92/80 93/99 83/94 62/100 · 96/33 | CONFIRMED (cause C): the console's sky is blue with clouds and the sea, the swirl and the island are under the falling players at +1200/+2300; the port has white where the sky gradient and the sea should be — only the plane, the players, the balloons and the HUD draw; the card and the results match |
+| `m409` | Toad's Quick Draw | 0 | ok | **match** | 99/8 97/34 98/25 · 98/21 97/27 93/50 94/47 · · | CONFIRMED ok: the mine tunnel at +60, the western station with the train, the four shooters and Toad's flag, the balloons and the crosshairs — the same at every position; the card matches |
+| `m410` | Three Throw | 0 | ok | **match** | 99/8 97/34 97/28 · 86/73 96/52 91/68 93/62 · - | CONFIRMED ok: the wall of baskets, START!, the timer (18 / 00), FINISH!, the players' shadows on the court (the texgen fix); the intro's close-up features Peach on the port and Yoshi on the console (the play's draw); the card and the results match |
+| `m411` | Photo Finish | 0 | ok | **match** | 99/8 94/44 95/32 · 76/91 95/59 90/76 87/84 · · | CONFIRMED ok: the puzzle frames, the four faded portrait boards, the timer (51 / 33) and the pieces being placed; the puzzle picture is the game's draw (`GWMGTypeSet(frandmod(3))`, instDll:69 — the banquet on the port, the penguins on the console), which is also why the card's preview differs (mean diff 11.4 on the card match, the only card above 6) |
+| `m412` | Mr. Blizzard's Brigade | 0 | ok | **match** | 99/8 97/33 98/23 · 99/13 98/15 97/22 64/100 · 97/31 | CONFIRMED ok: the snowy intro, the frozen pond with the Blizzards and the four runners, the frozen players in translucent ice, the timer (52); the console's game ended earlier (+2300 is the board again) and its results match the port's; the card matches |
+| `m413` | Bob-omb Breakers | 0 | ok | **match** | 99/8 97/39 97/27 · 98/25 94/74 95/68 95/69 · · | CONFIRMED ok, piece for piece: the machine, START!, the same board layout and the same scores (012/003/006/000) at +2300 — the engine RNG (`frand`, seeded from the pinned clock at boot) agrees between the two; the machine glass's reflection map (the texgen fix) reads as the console's; the card matches |
+| `m414` | Long Claw of the Law | 0 | major | **major** | 99/8 97/32 98/25 · 45/100 54/92 49/92 53/100 · 97/31 | CONFIRMED (cause C): the console's four viewports show the WANTED! poster close-up at +60 and the saloon-front shooting gallery with the crowd of characters in the windows; the port's four quadrants are flat cyan with only the HUD (crosshairs, star meters, timer 49 to the frame, START! and the WON! banner); the console's game ended at +1981 (its +2300 is already the results), the port's at +2498; the card and the results match |
+| `m415` | Stamp Out! | 0 | minor | **match** | 99/8 97/35 97/25 · 97/30 96/39 90/55 87/68 · - | CONFIRMED FIXED (the 5th minor of §41, the texgen cause): the paper is white with the faint blue line art, the toys are textured and coloured, and each player has the console's soft shadow on the paper; the stamps, the timer (30 / 17) and the results match. One thing to keep an eye on: at +1200 (timer 17) the console's paper already carries ~30 stamps and the port's none — the port's COMs stamp late (by +2300 both papers are covered); the COMs' timing is the play's (RNG) unless it reads the coverage read-back — not a picture fault |
+| `m416` | Candlelight Flight | 1 | ok | **match** | 99/5 97/30 98/22 · 95/37 97/65 97/59 77/86 · - | card, lit intro, START! and the timer at 19 frame-for-frame with the console (sim 95-99% on the frame-exact pairs); +2300 differs only because the console's candle was out at 08 (LUIGI PEACH YOSHI WON!) while the port's burned to 01 — the play, not the picture; the port's darkness during the play is the console's |
+| `m417` | Makin' Waves | 1 | major | **major** | 99/5 97/34 97/25 · 78/99 52/99 61/98 70/100 · 96/36 | CONFIRMED (cause C) and worse than the first pass: the console's Makin' Waves is a pool with the lone player on a raft in the middle and the three others in inner tubes pounding the deck (+60 the raft, +400 START! over the pool, +1200 the timer at 18, +2300 FINISH!, ~2,600 frames); the port shows a beige stripe at +60, START! over a cream screen at +400, and its game is over at +846 — the scene is not drawn AND the play ends early (the raft rider falls at once?), so the module's logic diverges too, not only its picture; the card and the results match |
+| `m418` | Hide and Go BOOM! | 1 | ok | **match** | 99/5 97/35 97/24 · 98/26 98/32 98/29 98/29 · - | CONFIRMED ok: the cannon arena at dusk, START!, the timer (04 / 02), the same players in the same places to the frame; the card matches (the console's card reads "Hide and Go BOOM!" with the "!" the port's line-wrap drops at the card's edge — a text-layout difference of one glyph); the console's results captured (the port ran on) |
+| `m419` | Tree Stomp | 1 | ok | **match** | 99/5 97/35 97/27 · 98/29 96/58 92/72 97/20 · 96/41 | CONFIRMED ok: the dark intro close-up at +60, the Fight! banner and the stump arena, the timer (37), the stomper's shadow on the tiles (the texgen fix); both games ended with the same Slot A: Saving results-to-board transition and the results match; the card matches |
+| `m420` | Fish n' Drips | 1 | ok | **match** | 99/5 97/31 97/25 · 99/11 95/37 96/38 96/36 · · | CONFIRMED ok: the Lakitu close-up, START! on the docks, the tanks filling, the timer (49 / 31) — frame for frame; the card matches |
+| `m421` | Hop or Pop | 1 | minor? | **match** | 99/5 97/35 97/26 · 97/30 97/49 93/55 95/50 · · | OVERTURNED (minor? → match): the console's star floor is the same washed pale yellow — the arena's floor is lit that way by design (the console's +60 close-up is as near-white as the port's); the cage, the balloon backdrop, the spiky ball, the START! and the timer (33 / 15) line up; the card matches |
+| `m422` | Money Belts | 1 | ok | **match** | 99/5 97/36 97/27 · 96/47 95/70 95/72 96/66 · - | CONFIRMED ok: the machine's front at +60, START!, the belts with the sweets and the coins, the timer (18 / 00), FINISH!, the belts' reflection map (the texgen fix) as the console's; the card and the results match |
+| `m423` | GOOOOOOOAL!! | 1 | ok | **match** | 99/5 97/34 97/24 · 95/68 93/82 91/88 90/88 · 96/41 | CONFIRMED ok: the stadium (the big screen is a dark "LIVE" panel with a small picture on the console too — not a blank), START!, the goalie and the three shooters, the timer (19), the WON! banner, the results; the card matches except the title's trailing "!!" (see the card note, cause H) |
+| `m424` | Blame it on the Crane | 1 | ok | **match** | 99/5 97/34 97/25 · 75/100 93/72 91/75 71/100 · - | CONFIRMED ok: the turntable with the Shy Guys under their glass domes, the crane, the timer at 42 to the frame at +1200, the console's earlier results; at +60 the port's intro is ~10 frames behind the console's (its wipe-in still a white veil over the close-up, the camera a step earlier) — an intro-timing wobble, not a picture fault; the card matches |
+| `m425` | The Great Deflate | 2 | ok | **match** | 99/7 97/30 97/24 · 95/51 93/58 92/51 85/75 · - | CONFIRMED ok: the Thwomp close-up at +60 with its reflection map (the texgen fix), the beach with the two inflatable Thwomps, the timer (29 / 16), the WON! banner mid-zoom at +2300 on both; the card and the results match |
+| `m426` | Revers-a-Bomb | 2 | ok | **match** | 99/7 97/38 97/30 · 98/28 97/57 92/68 65/100 · 96/35 | CONFIRMED ok: the DANGER sign at +60, START!, the red/blue lanes with the Bob-ombs, the timer (18), the bomb counters, the results (the console's game ended by +2300); the card matches |
+| `m427` | Right Oar Left? | 2 | major | **major** | 99/7 97/30 97/23 · 85/43 47/89 47/93 56/94 · · | CONFIRMED (cause B): the console's cave is dark with each boat lit by its own headlamp cone on the water and the walls (the timer, the split and the lane markers match to the frame: 0'29"20 vs 0'29"25 at +2300); the port floods both views white-green from +400 on with the boats as black silhouettes — the lamp's projected texture lands on everything instead of a cone (+60, before the lamps, the port's river is dark green where the console's is near-black: the same texture already over the whole river); the card matches |
+| `m428` | Cliffhangers | 2 | ok | **minor** | 99/7 97/33 97/25 · 92/55 92/54 82/88 79/96 · · | NEW (cause H): the console draws the rope that ties each 2-vs-2 pair together (orange Mario–Luigi, blue Peach–Yoshi, a `GX_LINESTRIP` of width 16/6 px, player.c:2189-2199) at +60 and through the play; the port draws no rope at all (it maps GX_LINESTRIP to GL_LINE_STRIP and ignores GXSetLineWidth — a 1-px line, or none); the cliff face, the height markers, the snow and START! match to the frame; the port's snow at +2300 reads a shade lighter (the storm's whiteness), unchased; the card matches |
+| `m429` | Team Treasure Trek | 2 | ok | **match** | 99/7 97/35 97/25 · 96/33 96/36 87/90 83/93 · · | CONFIRMED ok: the treasure map at +60, START! in the four views, the maze walls and the "?" blocks, the timer (50); at +2300 the port's Peach/Luigi views carry a tall yellow beam that the console's frame does not — the plays differ by then (the console at 31 with no beam), so it is either the found-block light or m402's prism (cause G) — flagged, not settled; the card matches |
+| `m430` | Pair-a-sailing | 2 | major | **major** | 99/7 97/33 98/23 · 91/67 89/73 81/88 81/86 · · | CONFIRMED (cause D): the tall black rectangle stands in the right-hand view's upper half in every port play frame; the console's right view has the sky, the clouds and the parachute over it; everything else lines up to the frame (the timer at 33 / 14, the coins, the crates, the sea) — the one column is the whole difference; the card matches |
+| `m431` | Order Up | 2 | ok | **match** | 99/7 97/34 97/27 · 97/34 96/49 94/53 95/52 · · | CONFIRMED ok: the star-plate close-up, the diner with the two tables and Toad at the counter, the order bubbles, the timer (10 / 14 vs 09 / 12 — the play), the diners' shadows (the texgen fix); the card matches |
+| `m432` | Dungeon Duos | 2 | ok | **match** | 99/7 98/28 94/32 · 98/26 97/38 97/25 92/55 · · | CONFIRMED ok: the dungeon's two lanes with the obstacles, the clocks (2'00"00 / 0'14"9x / 0'33"2x to the frame), the pipes, the players; the card matches |
+| `m433` | Beach Volley Folly | 7 | ok | **match** | 99/8 97/36 93/37 · 92/40 95/77 94/78 94/77 · · | CONFIRMED ok: the net close-up with the Goomba at +60, the court, the umbrellas and the scores; the port's fix build has the players' shadows on the sand; the card matches |
+| `m434` | Cheep Cheep Sweep | 2 | major | **major** | 99/7 97/31 97/22 · 88/69 93/56 92/61 92/60 · · | CONFIRMED (cause B, the water surface): the console's pond has a translucent grey-blue water surface over the stone floor with the fish and the wading players seen through it (+60: the water already in the close-up, blue-grey at the bottom of the frame); the port's fix build shows the bare stone floor with the fish on it — the opaque black disc of M25 is gone, the surface is still not drawn; the timer (48 / 29) and the play line up; the card matches |
+| `m435` | Darts of Doom | 3 | ok | **minor** | 95/48 97/32 97/43 · 95/58 97/37 98/39 98/32 · · | NEW (cause I, the Bowser arena): the two pillars' blue flames are large translucent glowing spheres with a star flare inside on the console; the port draws the star flare only — the sphere is missing (all three Bowser games, m435–m437, the same arena); and the result bubble reads "has 101 points!" where the console's reads "Mario has 101 points!" — the player's name is dropped from the message (cause J, text); the throne, Bowser, the dart wheel, the cutscene and its bubbles otherwise match to the frame (no card: type 3, the walk frames 14200/14300/14400 are link +63/+163/+263 on both sides) |
+| `m436` | Fruits of Doom | 3 | ok | **minor** | 97/32 97/33 97/43 · 95/57 97/37 97/39 97/40 · · | as m435 (cause I): the pillar spheres missing; the fruit stalls, Bowser's bubbles ("What refreshing flavor do I long for…?") and the cutscene match to the frame |
+| `m437` | Balloon of Doom | 3 | ok | **minor** | 98/29 98/31 97/37 · 95/58 97/37 97/33 97/32 · · | as m435 (cause I): the pillar spheres missing; the balloon, the four players around the throne and the cutscene match to the frame |
+| `m438` | Chain Chomp Fever | 4 | ok | **match** | 99/7 97/31 97/23 · 98/30 97/53 95/52 - · 96/25 | CONFIRMED ok: the lava close-up, the arena with the Chain Chomp and START!, the play (the console's ended earlier, its battle results match the port's); the card matches |
+| `m439` | Paths of Peril | 4 | ok | **match** | 99/7 97/28 97/24 · 94/51 85/93 82/95 82/94 · · | CONFIRMED ok: the four START pads and the cliff paths in four viewports, the timer (48 vs 47, 29 vs 28 — the console's clock is ~1 s ahead: its 60 is already up at +400 where the port still shows START!, the same intro-timing wobble as m424); the card matches |
+| `m440` | Bowser's Bigger Blast | 4 | ok | **match** | 99/7 97/32 97/25 · 94/56 93/62 94/58 90/70 · · | CONFIRMED ok: the gear wall and the bomb at +60, Bowser's head over the switch table, START!, the timer (05); the card matches |
+| `m441` | Butterfly Blitz | 4 | ok | **match** | 99/7 97/33 97/27 · 96/30 93/85 93/83 92/84 · · | CONFIRMED ok: the butterfly over the flower field at +60, START! on the stone circle, the nets and the timer (49 / 30) to the frame; the card matches |
+| `m442` | Barrel Baron | 7 | ok | **oracle-failed** | 99/8 98/27 97/25 · - - - - · · | the console hangs at Barrel Baron's link three runs out of four (GlobalCounter frozen the frame `omcurovl` becomes m442dll, VCounter running on; fresh user dir each time, the pinned RTC — a race at the module's setup on the retail path forced through instDll, an Extra-room game the roulette never deals); the one run that played (18:16, entry +3400 of frames) lost its window to a tag-parsing bug in the chain before the picker ran; the card frames are from the fourth run and match the port's (the card is "Jigsaw Jitters"/"Mario" with m442's own picture — the Extra games' card strings, as m452/m454/m459–m463); the port's play frames stand unverified |
+| `m443` | Mario Speedwagons | 0 | ok | **match** | 99/8 97/32 97/25 · 89/62 85/69 95/50 72/100 · 97/32 | CONFIRMED ok: the grid close-up, the four cockpit views with the speedometers (000 / 20x km/h), the clocks to the frame; the port's game ended into the results (16386) and the console's results match; the card matches |
+| `m444` | Reversal of Fortune | 5 | ok | **match** | 99/16 99/20 99/21 · 99/15 99/20 85/78 90/50 · · | CONFIRMED ok (no card, type 5): Toad's welcome and "So, are we all ready?" bubbles to the frame, the pinball board with the character heads and its reflection (the texgen fix), the Boo at +2300 (the console's bubble "I love this trickery stuff!" is a few frames ahead of the port's); the board's own picture is the same |
+| `m445` | Bowser Bop | 6 | ok | **match** | 99/13 99/13 98/26 · 99/13 98/28 96/44 96/43 · · | CONFIRMED ok (no card, story type 6): the clock and the toy room, START!, the timer (48 / 30), the two players (Mario vs Peach on the port, Mario vs Luigi on the console — the casts differ in order: the port's walk seats Mario, Peach, Luigi, Yoshi as players 0–3, the oracle's pokes Mario, Luigi, Peach, Yoshi, which is also why the 2-vs-2 pairs and the 1-vs-3 places differ everywhere) |
+| `m446` | Mystic Match 'Em | 6 | ok | **match** | 100/2 98/20 97/33 · 100/2 91/45 93/64 90/68 · · | CONFIRMED ok (no card, story type 6): the dark parlour intro, the card-shuffle and the card grid with the same layout, the timer (05 / 04); the second player is Peach on the port and Luigi on the console (the cast order); frame for frame otherwise |
+| `m447` | Archaeologuess | 6 | ok | **match** | 98/20 92/73 98/27 · 98/20 97/37 96/40 96/38 · · | CONFIRMED ok (no card, story type 6): the tomb wall, the falling discs (the console's have a glossy rim highlight the port's flat blue lacks — a specular detail, unchased), the pentagon of orbs; the plays diverge by +1200 (the console's pentagon lit yellow with a star answer); the cast order as m445 |
+| `m448` | Goomba's Chip Flip | 6 | ok | **minor** | 98/43 98/46 98/47 · 98/43 92/67 92/74 92/75 · · | NEW (cause I's family, a surface): the console's table is dark-green felt lit by the stage lights, with a green star scoreboard plate at the bottom edge from +400 on; the port's table is black with only the grid lines and no scoreboard plate — a lit surface and a HUD plate not drawn; the Goomba's booth, the chips, the flips and the scores (35 / 10) match to the frame |
+| `m449` | Kareening Koopa | 6 | ok | **match** | 97/39 97/58 97/63 · 97/40 97/65 97/66 96/65 · · | CONFIRMED ok (no card, story type 6): the palm close-up, the two sand tables with the Koopas, START!, the play; the second player is Peach on the port and Luigi on the console (the cast order) |
+| `m450` | The Final Battle! | 8 | ok | **match** | 30/100 88/84 79/95 · 33/100 97/34 94/43 94/65 · · | CONFIRMED ok (no card, type 8): the lava cube, the arena with Bowser and the Koopa Kids, the cannon phase, the fire pits and the timer (58 / 57); the port's intro fades in ~60 frames later than the console's (its 14200 is still white, its +60 a faint cube where the console's is solid) and has caught up by +400 — the intro-timing wobble again |
+| `m451` | Jigsaw Jitters | 7 | ok | **match** | 99/8 97/32 97/29 · 98/27 95/31 95/34 94/40 · · | CONFIRMED ok: the group picture at +60, START!, the jigsaw pieces and the clock (0'11"38 vs 0'15"90, 0'29"71 vs 0'27"35 — the play); the card matches (its rules box is empty on both sides: mgInfoTbl[50] has no inst_mess for the Extra game) |
+| `m452` | The Final Battle! (variant 2, m450dll) | 7 | ok | **match** | 99/8 97/31 92/39 · 32/100 97/34 88/50 93/67 · · | CONFIRMED ok (m450dll, type 7 through the card): the same arena and play as m450 with the timer (59 / 58) and Bowser's "It's hopeless" bubble; the card is titled "Jigsaw Jitters" with m451's picture and a rules text reading "Mario" on both sides — mgInfoTbl[51]'s card strings are the game's own (as m459's); the port's intro lags ~40 frames at +60 (a faint cube vs the console's solid one) |
+| `m453` | Challenge Booksquirm | 7 | ok | **oracle-failed** | 99/8 97/32 92/40 · - - - - · - | the console hangs at the module's link in all three runs (GlobalCounter frozen at the frame `omcurovl` becomes m453dll, VCounter runs on — the OSPanic loop): Challenge Booksquirm with a four-character cast does not fit the retail HEAP_DVD (§29, §41: the port needs --dvdheap 5888 for it); the card frames match the port's ("Jigsaw Jitters"/"Mario", the Extra games' strings); the port's play frames stand unverified |
+| `m454` | The Final Battle! (variant 3, m450dll) | 7 | ok | **match** | 99/8 97/31 92/39 · 38/100 97/34 87/51 92/67 · · | CONFIRMED ok (m450dll variant 3, type 7 through the card): as m452 — the arena, Bowser, the fire pits and the timer (59 / 58) match; the port's intro cube lags ~40 frames at +60; the card is "Jigsaw Jitters"/"Mario" on both sides (the game's own strings) |
+| `m455` | Rumble Fishing | 4 | ok | **match** | 99/7 97/34 97/26 · 98/18 96/45 96/23 - · 95/28 | CONFIRMED ok: the lens flare at +60, the raft on the sea with the four anglers, the bomb-block results (the port's +2300 is already the next board's "number of coins" stage: its game ended earlier); the port's results frame is caught mid-wipe (the yellow/black split, no RESULTS plate yet — as m453's in §41: the port's frame is link+40 and resultDll's wipe-in is still running on it for m455/m460/m461, while the console's frame is its first drawn results frame +38); the rows and the coins match |
+| `m456` | Take a Breather | 0 | minor | **match** | 99/8 97/32 97/26 · 98/22 95/64 93/65 - · 96/40 | OVERTURNED (minor → match): the console's swimmers are just as low in the water — heads and hands at the surface (the console's +1200 shows FINISH! arriving at 0'04"80 with Mario, Luigi and Peach bobbing; the port's +1200 at 0'09"00 shows the same four bobbing, its run lasting longer); the rafts, the sea, the reef, the lens flare at +60 and the sky match; the card and the results match |
+| `m457` | Bowser Wrestling | 8 | ok | **match** | 95/33 97/38 98/31 · 95/35 97/40 96/45 98/30 · 69/67 | CONFIRMED ok (no card, type 8): the ring, the "Bowser Wrestling" plate, the two wrestlers and the "Alternate to Advance" prompt, the pips; two things: the console's ring carries Mario's and Bowser's drop shadows at +63 (the port's ring is bare — the texgen fix put shadows on the receivers that call Hu3DShadowCreate; this one uses another receiver path, unchased), and the console shows the intro's bubble "Now you must wrestle with Bowser!" where the port's bubble is empty (cause J, text) |
+| `m458` | Panels of Doom | 8 | faulted | **port-faulted** | 99/11 99/12 99/14 · 99/10 99/14 - - · - | the console plays Panels of Doom through (+60 the 3x3 panels, +400 the title plate, +1200 Mario and Bowser on the panels with the Roll prompt, +2300 panels dropped, then the results); the port's frames up to the fault (+56/+156/+256/+400) match the console's, then SIGBUS in the REL after the panel pick (§41 cause E) — a logic fault, not a picture fault |
+| `m459` | Mushroom Medic | 7 | faulted | **port-faulted** | 99/8 97/32 97/28 · - - - - · · | the console plays Mushroom Medic (a hospital room: Koopa, Shy Guys, a Goomba and Toad in a row, START!, the timer at 08 at +1200, +2300 the patients changed); the port dies in HEAP_HEAP at the module's setup (§41 cause E) so it has no play frame; the card is the same on both sides — and on both it is titled "Panels of Doom" with m458's picture and a rules text reading just "Mario": mgInfoTbl[58]'s card strings are wrong in the game's own data (an Extra-room game the roulette never deals), not a port fault |
+| `m460` | Doors of Doom | 7 | ok | **match** | 99/8 97/32 97/28 · 98/28 99/16 74/98 66/100 · 69/67 | CONFIRMED ok: the L/R doors and the ghost face, the corridor, the door chosen and the descent (the port's +1200 is already the Slot A saving of the board, its game ending earlier); the results match (the port's frame mid-wipe, see m455); the card matches |
+| `m461` | Bob-omb X-ing | 7 | ok | **match** | 99/8 97/32 97/28 · 92/28 95/46 91/92 - · 69/70 | CONFIRMED ok: Mario at the crossing with the Bob-ombs, the overhead view and the clock (0'00"00 / 0'07"96 to the frame), the results (the port's frame mid-wipe, see m455); the card matches |
+| `m462` | Goomba Stomp | 7 | ok | **match** | 99/8 97/32 97/28 · 98/27 97/29 96/30 97/30 · - | CONFIRMED ok: START! over the stump clearing, Mario on the stump with the Goombas, the timer (27 / 14), the stomp; the card is "Panels of Doom"/"Mario" on both sides (the game's own strings for the Extra games m459–m463); the console's results captured (the port ran on) |
+| `m463` | Panel Panic 9 Player | 7 | ok | **match** | 99/8 97/32 97/28 · 99/11 96/22 98/20 99/10 · - | CONFIRMED ok: the 3x3 numbered panels, the four players and the Select/Choose prompt, the panels flipped to portraits, the panels dropped with Peach standing; the card as m462; the console's results captured |
+
+### 41b.4 The instruction card's preview box
+
+The brief's question: the console is said to play a live demo of the
+minigame in the card's TV box; M26 found the port's box blank on every
+card until the texgen fix, and it shows a picture now — does the
+console's box *move*, and does the port's?
+
+**The console's box is a still picture, on every card.** Measured two
+ways on the console's frames of all 47 card games captured (the 12
+no-card types have no box; m442/m453 gave a card each too): (a) the box
+interior between the three card frames +64/+164/+264 differs by 43–141
+levels between the first two (the card's opening zoom) and 2–18 between
+the last two (Toad's zoom-in) — the same motion as the rest of the card;
+(b) with the camera still (the middle of the card: outside-the-box mean
+difference < 3 levels between frames four apart), the box's inner
+picture changes by **0.3–0.9 levels** — the polka-dot background seen
+past the picture's corners — on every one of the 47, across the whole
+card (77 samples a card, the 20-odd still ones all under 1 level; the
+handful over 1 are the card's slow settle at +24..+44, where the outside
+moves too). The code agrees: instDll loads `mgInfoTbl[].inst_pic` as one
+`ANIMDATA` bitmap and projects it with `HuSprTexLoad(instPicAnim, 0, 0,
+…)` every frame (instDll/main.c:1087) — bitmap 0, no frame counter, no
+THP. The demo the user remembers is the *Practice* option's, not the
+card's.
+
+**The port's box shows the same picture** (the fix build's 14300 against
+the console's +164, box crops side by side: Slime Time's arena, Three
+Throw's basket wall, Tree Stomp's stumps, Dungeon Duos' lift, Jigsaw
+Jitters' group photo, Paratrooper Plunge's island — the console's own
+pictures), and it is a still too, by the same code path; the mean
+difference inside the box (24–67 levels) is a one-to-three-pixel offset
+of a high-frequency picture (the projected texcoord's rounding, and
+`GX_NEAR`), not a different picture. m411's box differs (67) because the
+puzzle picture is `GWMGTypeSet(frandmod(3))`'s draw — a different
+picture each run on the console too.
+
+So there is no "still where the console animates" finding: **the list is
+empty.** The box was the texgen fault of §41.4 and it is done.
+
+### 41b.5 The cause table of §41.3, re-checked against the console
+
+| cause | §41 said | the console says |
+|---|---|---|
+| **A** (texgens, fixed in M26) | shadows, reflection maps, the card's picture, m405's water surface | **confirmed fixed** on every receiver the sweep photographed: the card's picture on 47 cards, the stamps' shadows (m415), the diners' (m431), the stomper's (m419), the sand (m433), the belts' and the machine glass's reflection (m422, m413), the pinball board's (m444), the Thwomp's (m425). One receiver still bare: **m457**'s wrestling ring (Mario's and Bowser's drop shadows on the console, none on the port) — a shadow path the fix did not reach, unchased |
+| **B** water and translucent surfaces | m405, m434, m427, m417 | **m405 downgraded to minor** (translucent now; the tint is grey-green vs the console's blue caustics); **m434 confirmed** (the console's pond has a translucent grey-blue surface over the floor; the port draws the floor bare); **m427 confirmed** (the headlamp cones are a projected light on the water and the walls; the port floods both views) — m427 is B *and* the projected-texture family; **m417 moves to C** (the console's Makin' Waves is a pool with a raft; the port draws no scene at all and its play ends at +846 — a logic divergence on top of the picture) |
+| **C** whole scenes missing | m408, m414, m417 | **all three confirmed**: m408's sky gradient and sea (white on the port), m414's four saloon views (cyan), m417's pool. m414's HUD, timer, START! and WON! are frame-exact, so the cameras run and the 3D pass is what is dropped |
+| **D** the black column | m430 | **confirmed**: everything else in the two views is frame-exact (timer 33/14, the crates, the sea); the console's right view has sky where the port stands the column |
+| **E** faults | m458, m459 | **confirmed port-only**: the console plays both through (Panels of Doom to its results; Mushroom Medic's hospital room). m458's frames before the fault match the console's; m459 has the same card |
+| **F** unverified minor | m402, m404, m421, m456 | **m402 → major, new cause G** (a tall yellow hexagonal prism through the arena on every play frame; the console draws no such thing); **m404 → minor, confirmed** (the wavy guide line each lane carries on the console — the objective — is not drawn; the players' own traces are); **m421 → match** (the star floor is that pale on the console); **m456 → match** (the swimmers are that low on the console) |
+| **G** *(new)* a piece of geometry the console does not draw | m402 (the yellow prism); m429's +2300 yellow beam in two views is the suspect's cousin but the plays differ by then | to read: what m402's outer ring draws at that size — a scaled model (a `Hu3DModelScaleSet` the port applies twice?) or a billboard |
+| **H** *(new)* lines | m428 (the 2-vs-2 rope, a `GX_LINESTRIP` with `GXSetLineWidth(16)`, drawn on the console, absent on the port); the other line users — m404's guide line (a textured strip, not a line), m423, m427, m430, m440, m444, m455 — to audit | the port maps `GX_LINESTRIP` to `GL_LINE_STRIP` and has no `GXSetLineWidth` (a 1-px line, or none where the line's own TEV expects a texture) |
+| **I** *(new)* the Bowser arena's pillar flames | m435–m437: the console's pillars carry large translucent blue spheres around the star flares; the port draws the flares only. m448's felt table (dark green, lit, with a scoreboard plate) is drawn black with grid lines only — a lit-surface material in the same family | an additive/translucent material dropped (the sphere), a lit surface's colour lost (the felt) |
+| **J** *(new)* text | m435's result bubble reads "has 101 points!" without the name; m457's intro bubble is empty where the console's reads "Now you must wrestle with Bowser!" — a message with a substituted player name, dropped; the card titles' trailing punctuation ("Stamp Out!", "Hide and Go BOOM!", "GOOOOOOOAL!!", "Right Oar Left?") is cut on the port where the console draws it | the message layer's name substitution and the title's last glyph at the card's edge (a width or clipping rule) |
+
+Not a cause but a rule for reading the sweep: the port's intro lags the
+console's by 10–60 frames on a few games (m424's wipe-in still on at
++60, m450/m452/m454's cube still faint at +60, m439's clock a second
+behind) and leads on none — the module's first frames wait on a load
+the port does at a different speed; by +400 they agree. And the
+results frame is caught mid-wipe on the port for m453, m455, m460 and
+m461 (link +40 falls inside resultDll's wipe-in there), which is why
+those four port frames have no RESULTS plate — the plate is there on
+m403, m412, m414, m419, m426, m443 and m456.
+
+### 41b.6 What the console overturned
+
+| game | §41 | M26b | why |
+|---|---|---|---|
+| m402 Slime Time | minor? | **major** | the yellow prism is not the console's (G); the console ran the game this time (the `mgNext` poke) |
+| m405 Mario Medley | major | **minor** | translucent since the fix; the tint remains (B) |
+| m417 Makin' Waves | major (B) | **major (C, plus a logic divergence)** | the console's game is a pool with a raft and runs ~2,600 frames; the port's shows nothing and ends at +846 |
+| m421 Hop or Pop | minor? | **match** | the floor is that pale on the console |
+| m456 Take a Breather | minor | **match** | the swimmers are that low on the console |
+| m404 Trace Race | minor? | **minor** (verified) | the guide line is missing; the console dealt Trace Race with the fresh card |
+| m428 Cliffhangers | ok | **minor** | the pair's rope (H) |
+| m435 / m436 / m437 Bowser games | ok | **minor** | the pillar spheres (I), the name in m435's bubble (J) |
+| m448 Goomba's Chip Flip | ok | **minor** | the felt table and its plate (I) |
+| m442 Barrel Baron, m453 Challenge Booksquirm | ok | **oracle-failed** | the console hangs at the module's link on the retail heap (m453 = §29's four-character cast; m442 the same shape — both Extra games the roulette never deals, forced through instDll); the port's frames stand unverified |
+
+### 41b.7 What M26b shipped, and what it did not
+
+| shipped | witness |
+|---|---|
+| 70 Dolphin runs for 63 games (61 to their play, 2 to the card only), 453 console frames at 320×240 in `port/docs/gallery/oracle/` (8.8 MB) | `compare.html` |
+| the schedule with the `mgNext` poke (m402 and m404 on the console at last), the MemoryWatcher stop, the event picker; the calibration (§41b.2) | `port/ref/notes.md` |
+| `port/docs/gallery/compare.html`: 63 rows × 8 pairs with sim / >8 numbers, the verdict and one line each | |
+| the verdicts: 45 match, 7 minor, 7 major, 2 port-faulted, 2 oracle-failed; twelve rows changed (§41b.6); four new causes G–J | the table above |
+| the preview box: a still on both sides, by code and by measurement; no finding | §41b.4 |
+
+**Not done, and why:**
+
+* m442 and m453 on the console: they hang at the module's link on the
+  retail heap under this schedule (m453 is §29's known case; m442 is
+  new). A capture of either needs a smaller cast or a poke that frees
+  the board's directory first — not this milestone's.
+* The port's frames of the fix build are the *G4's* run of 06:26–09:35
+  (the final build re-ran only nine games); the eight games where the
+  final build differs from the fix build (the normal shift) are in the
+  sheet's second strip and this page uses those where they exist.
+* The play frames are not pixel comparisons (§41b.2): the boards seed
+  from the clock at different frames. A frame-exact play would need
+  the port's `--rtc` to land the board on the console's `OSGetTime`,
+  or a poke of `boardRandSeed` on both sides — worth doing once for a
+  2-vs-2 game so the pairs match too.
+* Causes G–J are named, not read: G's model in `m402Dll`, H's
+  `GXSetLineWidth` in `gx_draw.c`, I's material in `m435Dll`'s arena
+  (shared by the three), J's message substitution — each an M27+ item
+  with its console frame on the page.
