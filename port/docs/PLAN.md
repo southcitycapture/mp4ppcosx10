@@ -13442,3 +13442,240 @@ moving the decode, the TEV mapping or the texture decode off the game
 thread (§39.5 and §39.3 said why); Apple's `kCGLCEMPEngine`. The
 command stream is the port's own, ~60 opcodes, and it is complete by
 construction because the wrappers are the only way to reach GL.
+
+### 42.2 The soak, read
+
+§41.8's leave-behind — `g4 run --soak --com4 --rtc dolphin --freshcard
+--realtime --snap-every 5000 --snap-keep 3 --status --ovllog --stuckwatch
+200` on the M26 build (`dee221ea…`), 10:23 to 11:35 G4 time, ended through
+Escape at the mode select after the board: **72 minutes, 257,700 frames**
+(`docs/soak/m27-soak17-m26-leave.log.gz`).
+
+| | |
+|---|---|
+| speed / presented fps | **100.0%** mean over 4,295 status lines (`cpu 2`, `machine ok` on every one); 20.9 fps |
+| where it got | **a full 20-turn board → the results → `modeseldll`** — the first M26-build soak, with the texgens reading the raw row for the whole game |
+| minigames dealt | 28: the first 24 **the same modules in the same order** as soaks 13–16 (m412 m428 m420 m444 m423 m438 m429 m444 m430 m406 m416 m405 m438 m431 m422 m410 m407 m421 m424 m436 m404 m427 m455 m401), then m414 m418 m404 m402; m415 not dealt |
+| `split frames` | 859,929 halves each side, 257,824 joins, **0 position mismatches** |
+| resyncs / faults / STUCK / guard hits | **1 / 0 / 0 / 0** — the resync is `retrace 75120, 1532 ms behind`, on the *board* at turn 6 (`w01dll`, a player paying 5 coins), two seconds after `f075000.snap` was taken (41 MB, "written in 6.33 s behind it"); not the results screen this time, and without `--perf` there is no `stall:` line for it. The reproduction is the soak's own cadence (`--snap-every 5000` lands a write at 75,000); this soak carries `--perf` |
+| `worker mixer` | 257,691 jobs, 5 late (11 ms), 211 waited for (98 ms, worst 5.2 ms); 361.9 s of work on the second core |
+| audio | `aud` 0.2–0.4 ms; 159 underruns / 2.45 s over the 72 minutes; `resampler linear, depop on` |
+| `REL .data` / `skin: lifetime` / `EFB copies` | 83 re-opens, 60 reset / 705 dropped, 0 guard hits / 90,161 (17,314 whole-screen + 4,400 region from the front buffer on consumed frames; 54,429 half-scale) |
+| `tex` / `rss` at the end | 805 KB / 40,950 KB budget; 130 MB |
+
+Nothing in it outranks the milestone.
+
+### 42.3 The build, and the four stages on the G4
+
+What §42.1 describes is `src/gx/gx_rt.h` and `src/gx/rt.c` (1,000 lines
+between them), plus one-line changes where the port reached GL through a
+function pointer (the VAR and fence calls in gl13.c, the program binds and
+parameter uploads in gx_vprog.c, the fog-coordinate array), the four upload
+sites in gx_tex.c handing their texels to the stream, the vertex program's
+compile rewritten as a `RtCompile` request answered on the GL thread, the
+gate's rule 5 in framemode.c, the snapshot's join, the `rt` sample in
+perf.c's windows and CSV, the status line's `rt N ms`, and
+`gl13_rt_start()` from main.c after the workers come up. The stream is 16
+MB (a drawn frame is ~220 KB of records at 26 bytes each; a CPU-path draw
+can stash up to 5 MB of transformed vertices); a record is `{op, len}` +
+arguments; the writer publishes at every draw, upload, present, call or
+read and at every 32nd state record, the reader publishes after every
+record and shakes hands every 16th. Three things the design did not say
+and the build found:
+
+* **`--frames N` ends before frame N is presented**: the first MacBook walk
+  asked for `--frames 7001 --dumpframe …7000` and got two frames.
+* **The reuse of a ring chunk has two waits** (§42.1c said so; the first
+  build did one). Waiting for the *issue* alone would let the writer
+  overwrite vertices the GPU was still DMAing; the reader now tests its
+  pending fences after every present, every 256 records and while idle,
+  and publishes a per-chunk epoch the writer waits on (`rt_ring_enter`).
+* **A per-record instrument belongs behind its own flag**: `--gxsplit`'s
+  class timing on the replay (two timer reads a record) inflated the
+  MacBook's inline walk by a quarter; it is `--rtsplit` now.
+
+**The MacBook first** (`~/m27/mbp_run.sh`, `~/MarioParty4-m27.app`,
+`--force`): frames 800 and 3000 of the 7,000-frame turbo walk are
+byte-identical in `--renderthread 0`, `1` and `3` (`67423d42…` /
+`ce20dfea…`, the MacBook's own values), with the GL context on the pthread
+under 10.6's Intel driver.
+
+**The four stages on the G4**, `port/tools/m27_chain.sh` as
+`~/MarioParty4-chain.app` (the console runner's job; every run has a
+wall-clock ceiling): the 9,000-frame turbo walk of §31.2, each stage a
+`--renderthread` value on the same binary (`edc31003…`, the first G4
+build):
+
+| stage | walk | frame 800 / 3000 / 7000 | game thread gx per drawn frame (`--gxsplit`) | of which decode / state / texbind / issue | render thread per drawn frame | board (6000–8900) |
+|---|---:|---|---:|---|---:|---:|
+| 0 the direct path (`--renderthread 0`) | 377 s | **`0b58c5ee` / `c58a046d` / `021d58fb`** | 30.82 ms | 7.95 / 2.11 / 1.77 / 15.13 | — | 21.6 fps, 46.2 ms/frame |
+| 1 the stream replayed inline (`1`) | 376 s | identical | 31.61 | 7.06 / 2.60 / 2.06 / 16.31 | (the same thread) | 22.6, 44.3 |
+| 2 the thread, joined at every frame's end (`2`) | 266 s | identical | 18.14 | 8.95 / 1.89 / 1.67 / 2.26 | 15.63 ms | 32.5, 30.8 |
+| 3 the thread, overlapped (`3`) | 255 s | identical | 18.35 | 8.96 / 1.88 / 1.66 / 2.31 | 15.23 | 33.2, 30.2 |
+| 3 on the final build (`44152d1f…`) | 248 s | identical | 18.01 | 8.92 / 1.68 / 1.49 / 2.43 | 15.04 | 34.2, 29.3 |
+
+(`docs/soak/m27-walk-turbo-T*-stage.log.gz`.) Every stage holds the three
+M26 references, so nothing is re-based. What the columns say: the
+recording costs the game thread **+0.8 ms** of gx per drawn frame when the
+replay is inline (stage 1: the walk is a second faster, which is the
+noise); moving the replay to the thread takes **12.7 ms** off the game
+thread's gx (the `issue` region, 15.1 → 2.3 ms, is now the records and
+`gx_vprog_bind`'s own arithmetic); the stage-2 join at every frame costs
+only the tail the render thread has left when the game's frame ends (266
+against 255 s), because the reader trails the writer by a chunk, not a
+frame; and the decode grew by a millisecond with the second core busy
+(7.95 → 8.95 ms), the first sign of the contention §42.5 measures. The
+compile joins (42 on the walk, worst 0.8 s under `--turbo` where the
+stream runs a hundred frames ahead) are the vertex program variants'
+first use; at real time (below) the worst is 70 ms.
+
+### 42.4 The real-time walk, both modes, three runs
+
+§39.4's walk (`--soak --com4 --rtc dolphin --freshcard --realtime --frames
+16000 --perf --status --ovllog --perfwin … --dumpframe 800,3000,7000`), the
+final build (`44152d1f…`), every run in the chain, ninety seconds or more
+after the install; the direct path and the inline twin once each (the
+first build's direct and inline walks agree with them to a tenth, and are
+in the same directory), the render thread three times
+(`docs/soak/m27-walk-rt-*-final.log.gz`, the CSVs' medians by
+`port/tools/m27_perfstat.py`). `consumed` and `drawn` are the game
+thread's frame; `rt` is the render thread's replay of a drawn frame.
+
+| arm | board: consumed (aud) | drawn (game / gx / **rt**) | **presented** | character select: consumed | drawn (game / gx / rt) | **presented** | title drawn (rt) | **presented** | whole walk | underruns / resyncs |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `--renderthread 0` (the direct path; M24's 19.6 was this arm on that build) | 6.47 ms (0.29) | 40.8 (11.4 / 28.4 / —) | **18.35** | 4.42 | 54.1 (11.6 / 41.7 / —) | **14.49** | 37.1 | 20.99 | 19.1 | 77 / 0 |
+| `--renderthread 1` (the inline twin, the single-core path) | 6.40 | 41.7 (11.4 / 29.4 / —) | 17.88 | 4.40 | 55.2 (11.6 / 42.6 / —) | 14.18 | 37.2 | 21.17 | 18.7 | 78 / 0 |
+| **`--renderthread 3`** (the default on `cpu 2`), three times | **6.70 / 6.67 / 6.71** (0.29) | **28.5 / 28.6 / 28.6** (11.5 / 16.4 / **15.4**) | **26.64 / 26.68 / 26.54** | 4.65 / 4.64 / 4.66 | **40.0 / 40.1 / 40.2** (12.2 / 27.0 / **25.3**) | **19.34 / 19.15 / 19.21** | 29.7 / 29.5 / 30.0 (14.0) | **25.82 / 25.81 / 25.80** | **24.9 / 24.7 / 24.8** | 68 / 189 / 154, 0 / 1 / 1 |
+| `--renderthread 2` (joined at every frame's end; the first build) | 6.69 | 30.1 (12.4 / 17.2 / 15.6) | 24.78 | 4.66 | 42.0 (12.8 / 27.4 / 25.4) | 18.74 | 31.3 | 24.71 | 23.6 | 83 / 0 |
+
+**What the table says.**
+
+* **The board goes from 18.4 to 26.6 presented fps (+45%), the character
+  select from 14.5 to 19.2 (+33%), the title from 21.0 to 25.8 (+23%), the
+  whole walk from 19.1 to 24.8**, at 100.0% speed, the three frames
+  byte-identical, three runs within 0.2 fps of each other.
+* **The game thread's drawn frame on the board is 40.8 → 28.5 ms**: gx
+  28.4 → 16.4 (the 12 ms of driver work that moved), the game's own 11.4
+  → 11.5. The render thread replays it in **15.4 ms** and is idle the
+  rest of the time: the gate found it drained 6,582 times of 6,600, waited
+  10 times (17 ms in all, worst 6 ms) and consumed a frame instead 11
+  times over the walk. The present's tail — the swap executed minus the
+  swap recorded — is **0.4 ms** mean: the latency the design added is a
+  chunk of the stream, not a frame.
+* **The consumed frame pays 0.23 ms for the second core being busy**
+  (6.47 → 6.70): the game's logic runs 4% slower beside the render thread
+  (`game` 6.08 → 6.31; the mixer's worker is unchanged, 13 joins waited
+  for, 7 ms). The drawn frame's `game` shows the same +0.1–0.6 ms, and the
+  decode +1 ms (§42.3): a dual G4 shares one bus.
+* **The inline twin costs 0.9 ms on the board's drawn frame** (40.8 →
+  41.7, gx 28.4 → 29.4) and 1.1 on the character select's, 0.47 fps on
+  the board — within the brief's millisecond, and the single-core machine
+  runs the same recording and the same replay switch as the dual.
+* **Stage 2 is within a frame of stage 3** (24.8 against 26.6 on the
+  board): the join at the frame's end waits only for the reader's tail
+  (6,294 joins, 6.9 s in all, 1.1 ms each).
+* **Underruns and resyncs are the loads' and §38.3's**: the two runs with
+  154–189 underruns and one resync each are the results-screen stall at
+  retrace 14,203 (1.73 / 1.75 s, `game`, in 2 of the 3 render-thread runs
+  and in neither of the other two — M24's 10-of-17 lottery, unchanged);
+  the `stall:` lines of every run are the scene loads (frame 1,962 the
+  character select's 100 decodes, 10,832 the minigame's 62) and are the
+  same in every arm.
+* **The joins**: 45 compiles (the vertex program variants' first use, 430
+  ms in all, worst 68 ms — at the scene where the variant first appears),
+  3 `glReadPixels` (the `--dumpframe` frames, 110 ms), 75–90 forced-frame
+  joins at the gate (`--dumpframe`'s and the skip cap's, 90–110 ms in
+  all), 0 ring waits, 0 full-stream waits; 824 names handed out, 840 owned
+  uploads freed on the render thread.
+
+The board at real time on the final build, the render thread on
+(`screenshots/m27-board-realtime-rt.png`), and its status lines from the
+soak's first turn:
+
+```
+port> status f6780    w01dll       board 0 turn 1/20  mg 65936 ((none))  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.29 ms  speed 100%  23.9 fps presented  tex 535/40949 KB  rss 131 MB  cpu 2  rt 15.2 ms  machine ok
+port> status f10260   w01dll       board 0 turn 1/20  mg 65936 ((none))  coins/stars 10/0c 13/0c 13/0c 13/0c  aud 0.32 ms  speed 102%  28.5 fps presented  tex 557/40861 KB  rss 131 MB  cpu 2  rt 14.7 ms  machine ok
+```
+
+![the board at real time, the render thread on](screenshots/m27-board-realtime-rt.png)
+
+### 42.5 The wall
+
+The board does **not** reach the 30 cap; it reaches 26.6. §32.1's rule is
+that a drawn frame is presented every second retrace only when the drawn
+frame and the consumed one that pays for it fit two retraces: drawn +
+consumed ≤ 33.3 ms. Measured on the final build: **28.5 + 6.7 = 35.2 ms**,
+1.9 ms over. (The rate is 26.6 and not 20 because the gate's rule 2 draws
+a frame that is up to half a period late — a cycle that overruns by 1.9 ms
+is still drawn, the schedule slips by that much, and every few cycles a
+third consumed frame takes the slip back: 2, 2, 2, 3.)
+
+The render thread is not the wall: its frame is 15.4 ms, under one
+retrace, and the gate waited for it 10 times in 16,000. **The wall is the
+game thread's drawn frame, 28.5 ms against a budget of 33.3 − 6.7 =
+26.6**, and its parts are now: the game's own logic 11.5 ms, the decode of
+the display lists into the ring ~9 (8.9 at `--turbo`, up from 7.95 with
+the second core idle), the state walk and the texture binds ~3.2, the
+records and `gx_vprog_bind` ~2.4, the list walk and the copies ~2.3.
+Nothing in the second half of that list is 1.9 ms; the decode is, and the
+decode is what §39.5 argued cannot move a frame later because the game
+rewrites its arrays in place. What §39.5 did not consider is a decode that
+moves a *thread* over, not a frame: the render thread has 18 ms of every
+33 idle, the game's arrays are stable from the draw call that names them
+until the game's *next* frame rewrites them (the skinning and the sprite
+rebuilds run in the game's logic, before its draws), so a record that
+says "decode this list into ring offset X" replayed by the render thread
+before it issues the draw reads memory nobody is writing — provided the
+game's next frame does not start until the render thread has finished
+*decoding* (not drawing) the current one. That is a join on the decode
+position at the retrace, and its cost is the render thread's tail beyond
+the game thread's frame end: with 15.4 + 9 = 24.4 ms of render thread
+against a game thread of 28.5 − 9 = 19.5, the game thread would wait ~5
+ms at the retrace and its frame would be ~24.5 ms — under 26.6. That is
+one design for M28, on paper; the other lever of the same size is the
+game's own 11.5 ms, which only the compiler touches. The character select
+(drawn 40 ms, of which the render thread's 25.3 is the long pole: a frame
+of 3,000 batches under 30,000 records) has a different wall, the driver's
+per-batch cost, and stays at 19.
+
+### 42.6 What M27 shipped, and what it did not
+
+| shipped, with a witness | |
+|---|---|
+| the design (§42.1), written before the code | |
+| the stream and its twins (`gx_rt.h`, `rt.c`): every GL call the port makes recorded by value, uploads owning their texels, names from a counter, reads and the compile as joins, the ring's two fences by epoch, the gate's rule 5, the snapshot's join, the report (`port> render thread:` — records, bytes, frames, replay per frame, the tail, the gate, the ring, every join by name), the status line's `rt N ms` | the three md5s on every stage and every real-time run, 24 walks in all on two machines |
+| the four stages (§42.3): inline / joined per frame / overlapped, `--renderthread 0..3` | the table; 377 → 376 → 266 → 255 s |
+| the render thread on by default on `cpu 2` (`--renderthread 3`), the inline twin on one core (`1`), the direct path kept (`0`, `--norenderthread`) | §42.4: board **18.4 → 26.6** presented fps, character select 14.5 → 19.2, title 21.0 → 25.8, whole walk 19.1 → 24.8; the single-core cost 0.9 ms a drawn frame |
+| the GL context on a pthread under SDL 2.0.3 (§42.1g), on the Radeon 9000 under 10.5 and the MacBook under 10.6 | every threaded run |
+| `--rtgate MS`, `--rtsplit`, the `rt` column in `--perfwin` and `--perfdump`, `port/tools/m27_chain.sh`, `port/tools/m27_perfstat.py` | |
+| the soak read (§42.2), `docs/soak/m27-*`, `docs/screenshots/m27-*`, witness 0p | |
+
+**Not done, and why:**
+
+* **The 30 cap on the board**: 26.6, the wall is the game thread's drawn
+  frame at 28.5 ms against 26.6 (§42.5); the decode on the render thread
+  is the next lever and is designed, not built.
+* **The board-side resync of soak 17** (retrace 75,120, two seconds after
+  a 41 MB snapshot's background write): the reproduction is the cadence
+  itself; this soak's `--perf` will put a `stall:` line under it.
+* **The results-screen stall** (§38.3) stands as before: 2 of 3
+  render-thread walks, 0 of 2 others, the same lottery.
+* The M24–M26 leftovers stand: the two mixer timers, the selected box's
+  specular, the launcher, causes B–F of §41.8.
+
+### 42.7 What M28 starts with
+
+Left running: `g4 run --soak --com4 --rtc dolphin --freshcard --realtime
+--snap-every 5000 --snap-keep 3 --status --ovllog --stuckwatch 200 --perf`
+on the final build (`isle` md5 `44152d1f…`), the render thread on (`cpu 2
+rt N ms` on every status line) — the first soak of the stream. Read it
+first: the `port> render thread:` block (the gate's `busy` count, the ring's
+waits, the joins by name, the present tail), `rt` on the status lines
+through the minigames (a game whose replay is over a retrace shows there),
+the `stall:` lines under any resync, and `tex`/`rss` past turn 12 (the
+owned uploads are freed on the render thread; a leak would show as `rss`).
+Then §42.5's decode-on-the-render-thread, with the join on the decode
+position at the retrace and §39.5's in-place-rewrite argument re-checked
+against the sprite path and `EnvelopeProc` before a line is written; the
+M26 gallery (`gallery_chain.sh`) on the final build as the picture-level
+witness of the stream across all 63 games.
