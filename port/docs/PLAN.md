@@ -14220,6 +14220,12 @@ flags on the flag build an hour earlier and reads the same to a tenth).
 * The M24–M27 leftovers stand: the two mixer timers, the selected box's
   specular, the launcher, causes B–F of §41.8.
 
+The board at real time on the final build, the soak's first turn
+(`screenshots/m28-board-realtime-final.png`; its status line read
+`speed 100%  29.9 fps presented … rt 12.2 ms` at frame 9,240):
+
+![the board at real time on the M28 build](screenshots/m28-board-realtime-final.png)
+
 ### 43.13 What M29 starts with
 
 Left running: `g4 run --soak --com4 --rtc dolphin --freshcard --realtime
