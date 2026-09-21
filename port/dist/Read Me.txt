@@ -1,0 +1,176 @@
+Mario Party 4 PowerPC Edition
+=============================
+Version 0.9
+
+
+WHAT THIS IS
+
+A native PowerPC port of Mario Party 4, built from the mariopartyrd
+decompilation and running as a real Mac OS X application on a Power Mac G4.
+This is not an emulator: the game's own C code is compiled for the G4's
+processor, its 99 code modules load as native bundles, and the GameCube's
+GX graphics commands are translated into OpenGL 1.3 for the Radeon 9000
+as the game produces them, with the transform and lighting on the card's
+vertex unit and the audio mixed on the CPU.  A board plays at the console's
+speed with the picture at 30 frames a second.
+
+Drag the application into your Applications folder.
+
+
+WHAT IT NEEDS
+
+The game checks the machine every time it starts, before the window opens,
+and says what it found in the window's title and on the log.
+
+Minimum: a PowerPC G4 Mac running Mac OS X 10.4 or later, 256 MB of
+memory, and a graphics card of the Radeon 9000 class or better -- four or
+more texture units with ATI's combiner extensions -- on which the game
+runs, slower than a console on anything under 800 MHz.
+
+Recommended: a dual 1 GHz G4 (or better) with a 64 MB Radeon 9000 or
+better and Mac OS X 10.5.  That is the machine the port was built on, where
+it runs at console speed.
+
+By card, as far as the drivers' extension lists say (only the first line
+has been run on real hardware):
+
+    ATI Radeon 9000 / 9000 Pro, 64 MB         runs at full speed (the
+    (Power Mac G4 2002-03)                    reference card)
+    ATI Radeon 9000 / 9200 / Mobility 9200,   runs; the texture cache is
+    32 MB (eMac 2004, iBook G4, PowerBook     sized down to the card, and
+    12"/15" 2003)                             a first run says so
+    ATI Radeon 9600 / 9700 / 9800 and their   expected to run at full
+    Mobility versions (PowerBook G4 2004+,    speed; not yet tried
+    Power Mac G4 / G5)
+    NVIDIA GeForce FX 5200 / 6600             unknown: it depends on whether
+                                              Apple's driver lists the ATI
+                                              combiner extension
+    NVIDIA GeForce4 MX / GeForce2 MX,         refused: two or three texture
+    ATI Radeon 7500 / 7000 / Rage 128         units cannot draw the picture
+
+A machine below the minimum gets a dialog saying why, and the game does not
+start.  A machine that runs but below what the port was built for gets that
+dialog once, then runs.  An Intel Mac is refused: the PowerPC binary does run
+under Rosetta, but slowly and with a different picture, and it is not what
+this is built for.
+
+SDL2 is inside the application; there is nothing else to install.
+
+
+YOU BRING THE DISC IMAGE
+
+No game data is included.  You need your own dump of your Mario Party 4 disc
+-- the USA release, revision 1 (game id GMPE01) -- as a .iso; a trimmed NKit
+.iso is fine, and so is a folder holding the disc's extracted files/ tree.
+
+The first time you open the game it asks for that file with a standard Open
+dialog, checks that it is the right disc, and remembers where it is.  You are
+not asked again.  If you move the image the game asks once more; to point it
+at a different image, move the old one out of the way or delete the `image`
+line from the config file (see WHERE YOUR THINGS LIVE).
+
+Two ways to skip the dialog altogether: put the .iso in a folder named
+MarioParty4 in your home folder (~/MarioParty4/), where the game looks
+before asking; or run it from the Terminal with --image and the path.
+
+
+THE SCREEN
+
+A first run comes up fullscreen: the 640x480 picture scaled to the largest
+4:3 rectangle that fits your display, letterboxed black at the sides, and the
+choice is remembered.  For a window instead, run it once from the Terminal:
+
+    open -a "Mario Party 4" --args --windowed
+
+or change `fullscreen = 1` to `fullscreen = 0` in the config file.  Either is
+remembered from then on; --fullscreen puts it back.
+
+
+CONTROLS
+
+Keyboard (always active, beside a pad too)
+
+    Arrow keys / WASD       control stick
+    I K J L                 C stick
+    T G F H                 D-pad up / down / left / right
+    Z  X  C  V              A  B  X  Y
+    Q  E                    L  R
+    Shift or Tab            Z
+    Return                  Start (the game's own pause, in a minigame)
+    F5 (or F12)             screenshot onto the Desktop, as a PNG named by
+                            the frame (Mac OS X 10.5 gives F12 to Dashboard
+                            unless you change that in System Preferences)
+    Esc                     quit
+    Cmd+Q                   quit
+
+Game pad: an Xbox One controller over USB is driven directly (no driver
+to install); any other pad SDL recognises works through its own mapping.
+
+    Left stick              control stick
+    Right stick             C stick
+    A B X Y                 A B X Y
+    LT / RT                 L / R (analogue, with the click near the end)
+    LB                      Z
+    Menu (Start)            Start
+    D-pad                   D-pad
+
+Rumble works on a pad that has it.
+
+Quitting -- Esc, Cmd-Q or the window's close button -- goes through the
+game's own reset, as the console's Reset button does: the game fades, the
+memory card is written, and the application leaves.  There is no separate
+pause outside the game's own (Start, in a minigame).
+
+For a bug report:  open -a "Mario Party 4" --args --defaults   prints every
+setting the game would run with;  --keys  prints the table above.  The log
+of the last run is in the folder below.
+
+
+WHERE YOUR THINGS LIVE
+
+    ~/Library/Application Support/MarioParty4/
+        memcard-slot-a.raw    the memory card (a 59-block card image, the
+                              same layout Dolphin uses, so a save moves
+                              either way)
+        config                the disc image's path, the fullscreen choice
+        MarioParty4.log       the log of the last run
+
+Deleting the folder loses your save file, so that is the folder to back up.
+The disc image stays wherever you keep it.
+
+
+WHAT IS NOT QUITE RIGHT YET
+
+Every minigame has been compared against the real game frame by frame;
+seven differ in ways a player can see:
+
+    Trace Race          the guide line you trace is missing
+    Mario Medley        the pool's light ripple is a flat tint
+    Paratrooper Plunge  the tunnel's cap is white
+    Makin' Waves        the pool has a flat tint where the console
+                        ripples it; a few thin light streaks near the raft
+    Darts of Doom,      the glowing spheres on Bowser's pillars are not
+    Fruits of Doom,     drawn
+    Balloon of Doom
+
+The character select screen runs at about 20 frames a second on the
+reference machine (the board and most minigames run at the 30 cap).
+Intro movies are skipped.  The game's memory card is one card in slot A;
+slot B is always empty.  Controllers 2-4 are not connected: players 2-4
+are computer players, as they are with one controller on a console.
+
+
+LICENCE AND CREDITS
+
+The game is the property of its rightsholders.  Nothing in this package
+contains any of its data: you supply your own disc image, and the source
+repository has never contained one.
+
+The game's code comes from the mariopartyrd/marioparty4 decompilation,
+compiled as is.  The MusyX audio library is Axiomatic Data Laboratories'
+reimplementation (MIT).  SDL2 is under the zlib licence.  The licence texts
+are in the Licences folder beside this file, with a note on the port layer
+itself.
+
+This package is built for one person's own Power Mac and is not for
+redistribution.

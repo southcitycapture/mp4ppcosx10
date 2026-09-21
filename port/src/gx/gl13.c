@@ -25,6 +25,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/stat.h>
 #include <string.h>
 #include "gx_skin.h"
 
@@ -994,6 +995,12 @@ int gl13_init(void) {
         port_log("port> SDL_Init failed (%s); running headless\n", SDL_GetError());
         return 0;
     }
+    /* M32: SDL 2.0.3 minimises a fullscreen window when the application
+     * loses focus (Dashboard on F12, a Cmd-Tab, a dialog) and nothing on
+     * Leopard brings it back but the Dock; the M32 walk lost the picture to
+     * Dashboard that way.  The window is a desktop-sized borderless one
+     * (SDL_WINDOW_FULLSCREEN_DESKTOP), so leaving it up costs nothing. */
+    SDL_SetHint(SDL_HINT_VIDEO_MINIMIZE_ON_FOCUS_LOSS, "0");
     /* No core profile: the whole backend is fixed function, which is what the
      * Radeon 9000 has and all it has. */
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
@@ -1589,6 +1596,32 @@ void gl13_write_ppm(const char* path) {
 #endif
 }
 
+/* M32: the same frame as a PNG (png_write.c) -- the F12 screenshot's format,
+ * a file the Finder previews; the lab's PPMs stay PPMs. */
+void gl13_write_png(const char* path) {
+#ifndef PORT_NO_SDL
+    unsigned char* buf;
+    int w = EFB_W, h = EFB_H;
+    if (!gl_on) {
+        return;
+    }
+    buf = (unsigned char*)malloc((size_t)w * h * 3);
+    if (!buf) {
+        return;
+    }
+    GL(glPixelStorei)(GL_PACK_ALIGNMENT, 1);
+    GL(glReadPixels)(0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, buf);
+    if (port_write_png(path, w, h, buf)) {
+        port_log("port> screenshot: wrote %s\n", path);
+    } else {
+        port_log("port> screenshot: cannot write %s\n", path);
+    }
+    free(buf);
+#else
+    (void)path;
+#endif
+}
+
 /* --dumpframe's argument is a frame *set*, not a frame: "187", "1,90,186" or
  * "1-400/20" (first-last/step), and any comma-separated mixture of the three.
  * A spread is what the comparison against Dolphin actually needs -- the two
@@ -1773,6 +1806,27 @@ static void fs_blit_back(void) {
     fs_quad_end();
 }
 
+/* M32: a quit from the window (Cmd-Q, Escape, the close button) goes through
+ * the game's own reset path (sreset_poll.c: the fade, the save, OSResetSystem
+ * -> port_shutdown), which is what a console's Reset button does.  If the
+ * game has not got there within 300 drawn frames (ten seconds at 30 fps: a
+ * screen whose loop never polls the watcher), a second ask leaves directly
+ * through port_shutdown, which still flushes the card image and writes the
+ * reports. */
+static unsigned quit_asked_at;
+static void gl13_quit_asked(void) {
+    if (port_reset_requested() && quit_asked_at && frame_no > quit_asked_at + 300) {
+        port_log("port> quit: the game's reset path did not finish in %u frames; "
+                 "leaving directly (the card image is flushed on the way out)\n",
+                 frame_no - quit_asked_at);
+        port_shutdown(0);
+    }
+    if (!quit_asked_at) {
+        quit_asked_at = frame_no ? frame_no : 1;
+    }
+    port_request_reset();
+}
+
 void gl13_present(void) {
 #ifndef PORT_NO_SDL
     /* Nothing after the last draw of a frame -- the readback, the swap, the
@@ -1801,7 +1855,7 @@ void gl13_present(void) {
     if (pending_shot && !draw_off) {
         /* a consumed frame's EFB is not this frame; frame mode draws the
          * next one (gl13_shot_pending) and the shot is taken then */
-        gl13_write_ppm(pending_shot);
+        gl13_write_png(pending_shot);
         pending_shot = NULL;
     }
     if (!gl_on || draw_off) {
@@ -1828,16 +1882,38 @@ void gl13_present(void) {
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_QUIT) {
-                port_request_reset();
+                gl13_quit_asked(); /* Cmd-Q, the red button, the Dock's Quit */
             } else if (e.type == SDL_KEYDOWN) {
+                if (e.key.keysym.sym == SDLK_q && (e.key.keysym.mod & KMOD_GUI)) {
+                    /* Cmd-Q as a key, for a session where the application
+                     * menu's Quit is not the route (M32: System Events on
+                     * the MacBook delivered the keystroke and no SDL_QUIT) */
+                    gl13_quit_asked();
+                    continue;
+                }
                 switch (e.key.keysym.sym) {
                     case SDLK_ESCAPE:
-                        port_request_reset();
+                        gl13_quit_asked();
                         break;
+                    case SDLK_F5:
                     case SDLK_F12: {
+                        /* M32: a PNG on the Desktop, numbered by the drawn
+                         * frame, so a player's bug report can carry a
+                         * picture (--shotdir points it elsewhere).  F5 as
+                         * well as F12 because Leopard gives F12 to Dashboard
+                         * by default and the key never reaches the game. */
                         static char path[1024];
-                        snprintf(path, sizeof(path), "%s/shot-%05u.ppm",
-                                 port_opt.shotdir ? port_opt.shotdir : ".", frame_no);
+                        const char* home = getenv("HOME");
+                        if (port_opt.shotdir) {
+                            snprintf(path, sizeof(path), "%s/Mario Party 4 %05u.png",
+                                     port_opt.shotdir, frame_no);
+                        } else {
+                            char desk[1024];
+                            snprintf(desk, sizeof(desk), "%s/Desktop", home && *home ? home : ".");
+                            mkdir(desk, 0755); /* a test user's home may lack one */
+                            snprintf(path, sizeof(path), "%s/Mario Party 4 %05u.png", desk,
+                                     frame_no);
+                        }
                         pending_shot = path;
                         break;
                     }

@@ -136,10 +136,16 @@ if [ -n "$sdl_ref" ]; then
 fi
 [ -f "$here/../resources/MarioParty4.icns" ] && \
     cp "$here/../resources/MarioParty4.icns" "$out/Contents/Resources/MarioParty4.icns"
-# M25: the bundle's version is the milestone (CFBundleShortVersionString
-# 0.25 = M25; CFBundleVersion the bare number), the minimum system 10.4 --
-# what the binary is built for (-mmacosx-version-min=10.4).
-MILESTONE=${MILESTONE:-M25}
+# M25: the bundle's build number is the milestone (CFBundleVersion 32 = M32),
+# the minimum system 10.4 -- what the binary is built for
+# (-mmacosx-version-min=10.4).  M32: the version a player sees
+# (CFBundleShortVersionString, the dmg's name) is PORT_VERSION_STRING in
+# include/port.h -- 0.9 for the v1 candidate -- read from there so the app,
+# the --defaults header and the disk image agree.
+MILESTONE=${MILESTONE:-$(sed -n 's/^#define PORT_MILESTONE "\(.*\)"/\1/p' "$here/../include/port.h")}
+MILESTONE=${MILESTONE:-M32}
+VERSION=${VERSION:-$(sed -n 's/^#define PORT_VERSION_STRING "\(.*\)"/\1/p' "$here/../include/port.h")}
+VERSION=${VERSION:-0.9}
 ver_num=${MILESTONE#M}
 cat > "$out/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -155,9 +161,9 @@ cat > "$out/Contents/Info.plist" <<PLIST
 	<key>CFBundleDisplayName</key><string>Mario Party 4</string>
 	<key>CFBundlePackageType</key><string>APPL</string>
 	<key>CFBundleSignature</key><string>????</string>
-	<key>CFBundleShortVersionString</key><string>0.${ver_num}</string>
+	<key>CFBundleShortVersionString</key><string>${VERSION}</string>
 	<key>CFBundleVersion</key><string>${ver_num}</string>
-	<key>CFBundleGetInfoString</key><string>Mario Party 4 PowerPC Edition, milestone ${MILESTONE}</string>
+	<key>CFBundleGetInfoString</key><string>Mario Party 4 PowerPC Edition ${VERSION} (milestone ${MILESTONE})</string>
 	<key>LSMinimumSystemVersion</key><string>10.4.0</string>
 	<key>LSRequiresNativeExecution</key><true/>
 	<key>LSApplicationCategoryType</key><string>public.app-category.games</string>

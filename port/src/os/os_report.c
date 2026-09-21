@@ -33,12 +33,22 @@ void port_log(const char* fmt, ...) {
 
 void port_fatal(const char* fmt, ...) {
     va_list ap;
-    port_log("\n*** port: fatal: ");
+    char msg[900];
     va_start(ap, fmt);
-    port_logv(fmt, ap);
+    vsnprintf(msg, sizeof(msg), fmt, ap);
     va_end(ap);
-    port_log("\n");
+    port_log("\n*** port: fatal: %s\n", msg);
     port_stub_report();
+    /* M32: a player who double-clicked sees a silent exit otherwise; the same
+     * text is on the log (the dialog needs a window server -- from an ssh
+     * exec it fails harmlessly, config.c) */
+    if (!port_opt.headless && !port_opt.machinecheck) {
+        char text[1100];
+        snprintf(text, sizeof(text),
+                 "%s\n\nThe log has the details:\n%s", msg,
+                 port_opt.log ? port_opt.log : "(the Terminal's output)");
+        port_dialog_notice("Mario Party 4 could not start", text);
+    }
     exit(1);
 }
 

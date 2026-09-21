@@ -1,0 +1,26 @@
+Mario Party 4 PowerPC Edition -- the port layer
+================================================
+
+The port layer (everything under port/ in the source tree: the host loop,
+the module loader, the disc, the memory card, the controller, the CPU
+audio mixer, the GX-to-OpenGL renderer and the render thread) was written
+for one person's own Power Mac G4.  It is not for redistribution, and it
+carries no game data: the disc image is the player's own.
+
+Source: https://github.com/southcitycapture/mp4ppcosx10 (branch ppc-port)
+
+The game's own code is compiled as is from the mariopartyrd/marioparty4
+decompilation (https://github.com/mariopartyrd/marioparty4), whose
+repository carries no licence file; nothing of the decompilation's source
+is edited in this port, and where the game's behaviour has to change for
+the port it is changed through exact-text substitutions applied at build
+time (port/patches.txt).  Mario Party 4 is the property of Nintendo and
+Hudson Soft.
+
+The MusyX audio library is Axiomatic Data Laboratories' reimplementation,
+under the MIT licence (see "MusyX (MIT).txt").  SDL2 is under the zlib
+licence (see "SDL2 (zlib).txt"); the copy in the application is built
+from the panther-sdl2 tree for Mac OS X 10.4 on PowerPC.
+
+No Dolphin emulator code is used.  Dolphin was the reference the port's
+pictures were compared against.

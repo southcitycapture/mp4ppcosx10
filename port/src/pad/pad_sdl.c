@@ -4,9 +4,14 @@
  * playable and testable with no pad plugged in at all):
  *
  *   arrows / WASD    main stick        Return        Start
- *   Z X C V          A B X Y           Q             Z trigger
- *   T F G H          the GC pad's own digital dpad    Escape  quit (SDL event,
- *                                                       handled in gl13.c)
+ *   Z X C V          A B X Y           Q / E         L / R triggers
+ *   I J K L          C stick           Shift or Tab  Z trigger
+ *   T F G H          the GC pad's own digital dpad
+ *   F5 or F12  a screenshot onto the Desktop  Escape / Cmd-Q  quit (SDL events,
+ *                                                            handled in gl13.c)
+ *
+ * (M32 settled this table for the shipped app -- `--keys` prints it; before
+ * M32 Q was the Z trigger and there were no L/R or C-stick keys.)
  *
  * SDL pad: any controller SDL's own mapping table (or SDL_GAMECONTROLLERCONFIG)
  * recognises maps
@@ -158,8 +163,16 @@ void pad_sdl_poll(PortPadRaw* out) {
     if (k[SDL_SCANCODE_V]) {
         b |= PAD_BUTTON_Y;
     }
-    if (k[SDL_SCANCODE_Q]) {
+    if (k[SDL_SCANCODE_LSHIFT] || k[SDL_SCANCODE_RSHIFT] || k[SDL_SCANCODE_TAB]) {
         b |= PAD_TRIGGER_Z;
+    }
+    if (k[SDL_SCANCODE_Q]) {
+        b |= PAD_TRIGGER_L;
+        out->triggerL = 255;
+    }
+    if (k[SDL_SCANCODE_E]) {
+        b |= PAD_TRIGGER_R;
+        out->triggerR = 255;
     }
     if (k[SDL_SCANCODE_RETURN] || k[SDL_SCANCODE_KP_ENTER]) {
         b |= PAD_BUTTON_START;
@@ -179,6 +192,8 @@ void pad_sdl_poll(PortPadRaw* out) {
 
     out->stickX = axis_key(k, SDL_SCANCODE_LEFT, SDL_SCANCODE_RIGHT, SDL_SCANCODE_A, SDL_SCANCODE_D);
     out->stickY = axis_key(k, SDL_SCANCODE_DOWN, SDL_SCANCODE_UP, SDL_SCANCODE_S, SDL_SCANCODE_W);
+    out->substickX = axis_key(k, SDL_SCANCODE_J, SDL_SCANCODE_L, SDL_SCANCODE_J, SDL_SCANCODE_L);
+    out->substickY = axis_key(k, SDL_SCANCODE_K, SDL_SCANCODE_I, SDL_SCANCODE_K, SDL_SCANCODE_I);
 
     if (pad != NULL) {
         int rx, ry;

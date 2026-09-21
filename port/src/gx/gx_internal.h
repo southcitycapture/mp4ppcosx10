@@ -331,6 +331,7 @@ int port_framemode_active(void); /* src/platform/framemode.c */
  * to the snapshot's MEM1). */
 void gx_tex_flush_all(void);
 void gl13_write_ppm(const char* path);
+void gl13_write_png(const char* path); /* M32: the F12 screenshot */
 extern int gl13_have_combine3;
 extern int gl13_have_crossbar;
 extern int gl13_have_s3tc;

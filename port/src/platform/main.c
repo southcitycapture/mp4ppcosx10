@@ -64,7 +64,7 @@ void port_deadcode_probe(void) { port_log("port> dead code, never printed\n"); }
 
 static void usage(const char* argv0) {
     fprintf(stderr,
-            "Mario Party 4, native port (milestone M1: it links and it talks)\n"
+            "Mario Party 4 PowerPC Edition " PORT_VERSION_STRING " (milestone " PORT_MILESTONE ")\n"
             "\n"
             "usage: %s --image <disc.iso | dir> [options]\n"
             "\n"
@@ -297,7 +297,12 @@ static void usage(const char* argv0) {
             "                    fit and letterboxed; remembered in the config file\n"
             "  --windowed        M25: the 640x480 window (clears a remembered --fullscreen)\n"
             "  --noconfig        M25: neither read nor write ~/Library/Application\n"
-            "                    Support/MarioParty4/config (the lab's runs)\n"
+            "                    Support/MarioParty4/config (the lab's runs; windowed\n"
+            "                    unless --fullscreen, where a first run from the\n"
+            "                    Finder is fullscreen and remembers it)\n"
+            "  --defaults        M32: print every option's effective value (the block\n"
+            "                    the log starts with) and exit -- for a bug report\n"
+            "  --keys            M32: print the keyboard and pad table and exit\n"
             "\n"
             "  --nopad           no controller 1 at all, not even the keyboard\n"
             "  --paddbg          log raw pad reports/buttons/axes as they arrive\n"
@@ -438,6 +443,60 @@ static int dir_holds_disc(const char* dir) {
     return 0;
 }
 
+/* M32: is this the disc?  A GameCube image starts with its game id -- GMPE01
+ * for Mario Party 4 (USA) -- and carries the FST pointer at 0x424; an
+ * extracted tree is a folder with files/ (or the files themselves) in it.
+ * dvd_fs.c does the real open; this is the chooser's quick look. */
+static int image_looks_right(const char* path, char* why, size_t n) {
+    struct stat st;
+    FILE* f;
+    unsigned char hdr[8];
+    if (stat(path, &st) != 0) {
+        snprintf(why, n, "it cannot be read");
+        return 0;
+    }
+    if (S_ISDIR(st.st_mode)) {
+        char probe[1100];
+        snprintf(probe, sizeof(probe), "%s/files", path);
+        if (stat(probe, &st) == 0 && S_ISDIR(st.st_mode)) {
+            return 1;
+        }
+        snprintf(probe, sizeof(probe), "%s/data", path);
+        if (stat(probe, &st) == 0 && S_ISDIR(st.st_mode)) {
+            return 1;
+        }
+        snprintf(why, n, "a folder, but with no files/ tree in it");
+        return 0;
+    }
+    if (st.st_size < 0x460) {
+        snprintf(why, n, "too small to be a disc image");
+        return 0;
+    }
+    f = fopen(path, "rb");
+    if (!f) {
+        snprintf(why, n, "it cannot be opened");
+        return 0;
+    }
+    if (fread(hdr, 1, 6, f) != 6) {
+        fclose(f);
+        snprintf(why, n, "it cannot be read");
+        return 0;
+    }
+    fclose(f);
+    hdr[6] = '\0';
+    if (memcmp(hdr, "GMPE01", 6) != 0) {
+        if (memcmp(hdr, "GMP", 3) == 0) {
+            snprintf(why, n, "a Mario Party 4 disc, but not the USA release (its id reads %s; "
+                             "the port is built from GMPE01)", hdr);
+        } else {
+            snprintf(why, n, "not a GameCube disc image of Mario Party 4 (the first bytes read "
+                             "\"%.6s\", not GMPE01)", hdr);
+        }
+        return 0;
+    }
+    return 1;
+}
+
 static const char* port_find_default_image(void) {
     const char* env = getenv("MARIOPARTY4_IMAGE");
     const char* home;
@@ -494,11 +553,27 @@ static const char* port_find_default_image(void) {
      * dialog nobody can see). */
     if (!port_opt.headless && !port_opt.machinecheck && !port_opt.noconfig &&
         !port_opt.reltest && !port_opt.gxdemo) {
-        if (port_dialog_choose_image(default_image, sizeof(default_image))) {
-            port_config_set("image", default_image);
-            port_config_save();
-            port_log("port> config: disc image %s (chosen; remembered)\n", default_image);
-            return default_image;
+        /* M32: until the choice is a Mario Party 4 disc image (or cancelled);
+         * a wrong file gets a notice and the chooser again, not a panic at
+         * the first missing data file */
+        while (port_dialog_choose_image(default_image, sizeof(default_image))) {
+            char why[256];
+            if (image_looks_right(default_image, why, sizeof(why))) {
+                port_config_set("image", default_image);
+                port_config_save();
+                port_log("port> config: disc image %s (chosen; remembered)\n", default_image);
+                return default_image;
+            }
+            port_log("port> chooser: %s is not the disc image: %s\n", default_image, why);
+            {
+                char text[1600];
+                snprintf(text, sizeof(text),
+                         "%s\n\n%s\n\nThe game wants your own dump of Mario Party 4 "
+                         "(USA, Rev 1) as a .iso (an NKit .iso is fine), or a folder "
+                         "holding its extracted files/ tree.  Choose again.",
+                         default_image, why);
+                port_dialog_notice("Mario Party 4: that is not the disc image", text);
+            }
         }
     }
     return NULL;
@@ -657,6 +732,10 @@ int port_parse_args(int argc, char** argv) {
             port_opt.fullscreen_set = 1;
         } else if (!strcmp(a, "--noconfig")) {
             port_opt.noconfig = 1;
+        } else if (!strcmp(a, "--defaults")) {
+            port_opt.print_defaults = 1;
+        } else if (!strcmp(a, "--keys")) {
+            port_opt.print_keys = 1;
         } else if (!strcmp(a, "--noprefetch")) {
             port_opt.noprefetch = 1;
         } else if (!strcmp(a, "--olddecode3")) {
@@ -955,6 +1034,12 @@ int port_parse_args(int argc, char** argv) {
         } else if (!strcmp(a, "--help") || !strcmp(a, "-h")) {
             usage(argv[0]);
             return 0;
+        } else if (!strncmp(a, "-psn_", 5)) {
+            /* M32: LaunchServices hands a double-clicked application its
+             * process serial number as an argument (-psn_0_2146828); the
+             * first Finder launch of the bundle printed the usage and
+             * exited on it */
+            continue;
         } else {
             fprintf(stderr, "unknown option %s\n", a);
             usage(argv[0]);
@@ -1077,7 +1162,17 @@ int main(int argc, char** argv) {
             port_config_set("fullscreen", port_opt.fullscreen ? "1" : "0");
         } else {
             const char* fs = port_config_get("fullscreen");
-            port_opt.fullscreen = fs && atoi(fs) != 0;
+            if (fs) {
+                port_opt.fullscreen = atoi(fs) != 0;
+            } else {
+                /* M32: a first run from the Finder comes up fullscreen, as
+                 * the Snowboard Kids apps do, and the config remembers it
+                 * from then on (--windowed clears it).  The lab's config on
+                 * the G4 carries `fullscreen = 0', so its runs stay windowed
+                 * -- the md5s are windowed frames (PLAN.md 40.6). */
+                port_opt.fullscreen = 1;
+                port_config_set("fullscreen", "1");
+            }
         }
         if (!port_opt.log) {
             snprintf(default_log, sizeof(default_log), "%s/MarioParty4.log",
@@ -1086,8 +1181,9 @@ int main(int argc, char** argv) {
         }
         port_config_save();
     }
-    if (!port_opt.image) {
-        port_opt.image = port_find_default_image();
+    if (port_opt.print_keys) {
+        port_print_keys(stdout);
+        return 0;
     }
     port_log_open(port_opt.log);
     if (port_opt.log) {
@@ -1097,11 +1193,35 @@ int main(int argc, char** argv) {
     if (port_opt.watchdog) {
         port_watchdog_arm(port_opt.watchdog);
     }
-    port_log("Mario Party 4 -- native port, milestone M2a\n");
+    port_log("Mario Party 4 -- native port, PowerPC Edition %s (milestone %s)\n",
+             PORT_VERSION_STRING, PORT_MILESTONE);
     /* M25: the machine check, before anything opens a window: the inventory,
      * the verdict and the settings it implies (or the exit, under
      * --machinecheck / an unsupported machine without --force). */
     port_machine_check();
+    if (port_opt.print_defaults) {
+        port_print_effective(stdout, 0);
+        return 0;
+    }
+    /* M32: the disc image after the check, so a player on an unsupported Mac
+     * gets the refusal and not a file dialog; the chooser asks until it is
+     * given a disc image or cancelled (port_find_default_image). */
+    if (!port_opt.image) {
+        port_opt.image = port_find_default_image();
+        if (!port_opt.image && !port_opt.reltest && !port_opt.gxdemo && !port_opt.guardtest &&
+            !port_opt.memmap) {
+            port_log("port> no disc image: nothing chosen; quitting\n");
+            if (!port_opt.headless) {
+                port_dialog_notice("Mario Party 4: no disc image",
+                                   "Mario Party 4 needs your own disc image of the game "
+                                   "(Mario Party 4, USA, Rev 1, as a .iso) and none was "
+                                   "chosen.\n\nOpen the game again to choose it, or put "
+                                   "the .iso in a folder named MarioParty4 in your home "
+                                   "folder, where it is found without asking.");
+            }
+            return 0;
+        }
+    }
     if (port_opt.reltest) {
         port_opt.reldlclose = 1; /* the self-test is *about* the unload path */
         return port_dll_selftest();
@@ -1133,6 +1253,7 @@ int main(int argc, char** argv) {
     port_gx_init();
     port_workers_init(); /* M24: the second core, if there is one */
     gl13_rt_start();     /* M27: GL to the render thread (or the inline replay) */
+    port_print_effective(NULL, 1); /* M32: the block a bug report is asked for */
     /* After port_gx_init, which is what brings SDL up.  --noaudio keeps the
      * whole path switched off, including the tick, so the boot behaves exactly
      * as it did before M6 -- which is what makes an audio regression bisectable

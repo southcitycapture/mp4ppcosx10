@@ -44,6 +44,10 @@ const char* port_app_support_dir(void) {
     if (!app_dir[0]) {
         const char* home = getenv("HOME");
         char buf[700];
+        /* every level, in case a home has no Library yet (a test user's;
+         * M32's fresh-user walk had none and the card could not be written) */
+        snprintf(buf, sizeof(buf), "%s/Library", home && *home ? home : ".");
+        mkdir(buf, 0755);
         snprintf(buf, sizeof(buf), "%s/Library/Application Support",
                  home && *home ? home : ".");
         mkdir(buf, 0755);
@@ -227,6 +231,16 @@ int port_dialog_choose_image(char* out, size_t n) {
     opts.message = CFSTR("Choose the Mario Party 4 (USA, Rev 1) disc image (.iso), "
                          "or a folder holding an extracted files/ tree.");
     opts.modality = kWindowModalityAppModal;
+    /* M32: a process started from a shell (the lab's runner, an ssh exec) is
+     * not a foreground application until SDL makes it one, and a dialog it
+     * runs before that is behind everything and gets no keys -- which is
+     * why M25 could not drive this one.  A Finder launch is already
+     * foreground; this is a no-op there. */
+    {
+        ProcessSerialNumber psn = {0, kCurrentProcess};
+        TransformProcessType(&psn, kProcessTransformToForegroundApplication);
+        SetFrontProcess(&psn);
+    }
     err = NavCreateChooseFileDialog(&opts, NULL, NULL, NULL, NULL, NULL, &dlg);
     if (err != noErr || !dlg) {
         port_log("port> dialog: NavCreateChooseFileDialog failed (%d)\n", (int)err);

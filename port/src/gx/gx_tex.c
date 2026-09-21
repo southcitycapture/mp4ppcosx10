@@ -451,6 +451,7 @@ static size_t stat_budget_evict_bytes;
 static unsigned cache_frame;  /* the frame gx_tex_bind last saw */
 
 void gx_tex_set_budget_mb(int mb) { tex_budget_bytes = (size_t)(mb > 0 ? mb : 0) << 20; }
+int gx_tex_budget_mb(void) { return (int)(tex_budget_bytes >> 20); } /* M32: for --defaults */
 
 static void cache_free_slot(int slot) {
     hash_remove(slot);

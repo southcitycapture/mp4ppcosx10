@@ -762,8 +762,9 @@ void port_machine_check(void) {
         exit(verdict);
     }
     if (verdict == V_UNSUPPORTED) {
-        if (port_opt.force) {
-            port_log("port> machine: unsupported, running anyway (--force)\n");
+        if (port_opt.force || port_opt.print_defaults) {
+            port_log("port> machine: unsupported, %s\n",
+                     port_opt.force ? "running anyway (--force)" : "printing --defaults anyway");
         } else {
             char text[2400];
             int i, n = 0;

@@ -135,7 +135,27 @@ u32 PADRead(PADStatus* status) {
         memset(&raw, 0, sizeof(raw));
         if (!port_opt.nopad) {
             if (use_xone) {
+                /* M32: the keyboard under the Xbox pad too -- a player at the
+                 * desk can press Start on either.  The pad's sticks win when
+                 * they are off centre; the keys' stick only when they rest. */
+                PortPadRaw kb;
+                pad_sdl_poll(&kb);
                 pad_xone_poll(&raw);
+                raw.button |= kb.button;
+                if (raw.stickX == 0 && raw.stickY == 0) {
+                    raw.stickX = kb.stickX;
+                    raw.stickY = kb.stickY;
+                }
+                if (raw.substickX == 0 && raw.substickY == 0) {
+                    raw.substickX = kb.substickX;
+                    raw.substickY = kb.substickY;
+                }
+                if (kb.triggerL > raw.triggerL) {
+                    raw.triggerL = kb.triggerL;
+                }
+                if (kb.triggerR > raw.triggerR) {
+                    raw.triggerR = kb.triggerR;
+                }
             } else {
                 pad_sdl_poll(&raw); /* keyboard, OR'd under an SDL pad if one is open */
             }

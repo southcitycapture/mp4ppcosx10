@@ -9,6 +9,7 @@
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h> /* M32: FILE in the --defaults printers */
 
 #ifdef __cplusplus
 extern "C" {
@@ -28,6 +29,11 @@ extern "C" {
 #define PORT_RTC_DOLPHIN 1041472800LL /* 2003-01-02T00:00:00Z */
 
 /* ---- settings, from argv ------------------------------------------------- */
+/* M32: the shipped version (the dmg's name, the plist, the --defaults header)
+ * and the milestone that built it. */
+#define PORT_VERSION_STRING "0.9"
+#define PORT_MILESTONE "M32"
+
 typedef struct PortOptions {
     const char* image;      /* --image  disc image or extracted files/ tree   */
     const char* log;        /* --log    copy of the OSReport narration        */
@@ -294,6 +300,8 @@ typedef struct PortOptions {
                              *   clears it; remembered in the config (M25)  */
     int fullscreen_set;     /* --fullscreen or --windowed was given          */
     int noconfig;           /* --noconfig  neither read nor write the config  */
+    int print_defaults;     /* --defaults: print every effective option and exit (M32) */
+    int print_keys;         /* --keys: print the key/pad table and exit (M32) */
     int texbudget_set;      /* --texbudget was given: the check leaves it alone */
     int predecode;          /* --predecode  M24: the texture decode staged on the
                              *   worker from consumed frames; built, measured
@@ -434,6 +442,10 @@ void port_log(const char* fmt, ...);
 void port_logv(const char* fmt, va_list ap);
 void port_fatal(const char* fmt, ...);
 void port_shutdown(int code); /* the one exit path: report, flush, close SDL */
+int port_write_png(const char* path, int w, int h, const unsigned char* rgb_bottom_up); /* M32 */
+void port_print_effective(FILE* f, int live); /* M32: every option's effective value (f NULL = the log;
+                                               * live = the workers and render thread have started) */
+void port_print_keys(FILE* f);      /* M32: the key and pad table */
 
 /* M25: the machine check (src/platform/machine.c).  Runs once at boot before
  * the window opens; the title is what the window shows until the first drawn

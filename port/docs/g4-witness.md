@@ -831,3 +831,51 @@ is either ready to offer upstream or has a case to remove.
   bus. A cold 1.3 MB module read is 100 ms, a rename over an existing
   file up to 1.8 s. Not a fault and not a setting; anything that must
   be quick stays in the page cache or on a thread.
+
+## 0u. Six things M32 paid for *(2026-09-21)*
+
+* **LaunchServices hands a double-clicked app `-psn_0_NNNNN`.** The
+  first Finder launch of the bundle printed the usage and exited on it
+  (`open` says `LSOpenURLsWithRole() failed with error -10810`, which is
+  "the app exited at once", not a launch failure).  The parser skips
+  `-psn_*` now; a runner launch never passes one, which is why thirty
+  milestones never saw it.
+* **The Navigation Services chooser answers a real click, not a
+  keystroke, when its process is not foreground.** M25 could not drive it
+  from System Events because a shell-launched process is not a foreground
+  application until SDL makes it one, and the dialog runs before SDL.  The
+  chooser now `TransformProcessType`s itself, and a keystroke reaches the
+  *first* dialog; a second dialog after a CFUserNotification does not get
+  key focus until something clicks it.  `~/click.py X Y` on the G4 posts a
+  Quartz mouse click (Leopard's PyObjC, Python 2.5) and `~/key.py CODE
+  [HOLD]` a held key -- an osascript `key code` is released within a
+  millisecond and the game samples the keyboard once per retrace, so it
+  never sees a `keystroke`; F5/F12 go through the event queue and do.
+  `g4 key`/`g4 keys` are fine for the CFUserNotification dialogs
+  (UserNotificationCenter, key code 36 on the frontmost process).
+* **F12 is Dashboard on Leopard.** The screenshot key never reached the
+  game, Dashboard came up, and SDL 2.0.3 minimised the fullscreen window
+  on the focus loss with nothing to bring it back (the wrapper app had no
+  Dock icon).  The port sets `SDL_HINT_VIDEO_MINIMIZE_ON_FOCUS_LOSS` to 0
+  and takes F5 as well as F12; a fullscreen game that loses focus stays on
+  screen.
+* **A fresh user is `HOME`, not a new account.** `~/MarioParty4-fresh.app`
+  is a wrapper whose executable is a shell script exporting
+  `HOME=/Users/zach/mp4-fresh-home` and exec'ing the real
+  `~/MarioParty4.app/Contents/MacOS/isle` with stdout to
+  `~/mp4-fresh.out`; `open ~/MarioParty4-fresh.app` from ssh is a
+  LaunchServices launch (`-psn`, foreground, the Dock).  The wrapper's plist
+  needs its own `CFBundleIdentifier` and an `lsregister -f`
+  (`/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister`
+  on Leopard).  The player's own Application Support was never touched.
+  A test home has no `Library` and no `Desktop`: the port creates every
+  level now.
+* **`screencapture` from ssh works on the MacBook (10.6)**, unlike the
+  G4's Leopard, so the MacBook's fresh-user walk photographs itself.  Its
+  `open` needs the bundle's `LSRequiresNativeExecution` removed and the
+  binary `--force`d (the wrapper does both) -- and `open` on 10.6 also
+  passes `-psn`.
+* **`make_dmg.sh` builds on the G4 and fetches with `ssh cat`**: scp
+  mangles a remote path with spaces (`Mario Party 4 PowerPC Edition
+  0.9.dmg`), and `hdiutil` is a Mac tool; the staged folder goes over as
+  a ustar stream, the image comes back through a pipe.

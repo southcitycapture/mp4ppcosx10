@@ -1524,6 +1524,7 @@ static void* thread_main(void* arg) {
 /* ---- lifecycle -------------------------------------------------------------------- */
 
 int rt_mode(void) { return mode; }
+int rt_decode_mode(void) { return decmode; } /* M32: for --defaults */
 int rt_on(void) { return mode >= 2 && thread_up; }
 
 void rt_start(void* sdl_window, void* sdl_glcontext) {
@@ -1701,6 +1702,7 @@ void rt_start(void* w, void* c) { (void)w; (void)c; }
 void rt_stop(void) {}
 int rt_on(void) { return 0; }
 int rt_mode(void) { return 0; }
+int rt_decode_mode(void) { return 0; }
 void rt_frame_end(void) {}
 void rt_report(void) {}
 void rt_status(char* buf, size_t n) { (void)n; buf[0] = '\0'; }
