@@ -879,3 +879,28 @@ is either ready to offer upstream or has a case to remove.
   mangles a remote path with spaces (`Mario Party 4 PowerPC Edition
   0.9.dmg`), and `hdiutil` is a Mac tool; the staged folder goes over as
   a ustar stream, the image comes back through a pipe.
+
+## 0v. Five things M33 paid for *(2026-09-21)*
+
+* **`--forceobj` never matched a draw on its own.** The pointer the
+  object names come from (`gx_last_posmtx_arg`) was captured under
+  `--drawlog` only; every M31/M32 `--forceobj` run happened to carry
+  `--drawlog`.  Three bench runs of a probe that printed nothing before
+  the trace of names said "(null)" for every draw.  Captured under
+  `--forceobj`/`--skipobj`/`--probeobj` now.  A diagnostic's first run
+  should prove it fires (a count line) before its result is read.
+* **A forced GL state has to go through the shadow.** `--forceobj` bit
+  32 (the z write) set the shadow's `depth_mask` and then emitted
+  `gx.z_update` — the probe's `DEPTH_WRITEMASK 0` line was the only thing
+  that said so.  Emit the shadow's value, and read the probe's state
+  block before trusting a picture.
+* **A per-call trace with `dladdr` under `--ffto` is a 50 MB log and a
+  ten-minute run.** Gate a trace on drawn frames (`!gl13_draw_off()`); the
+  fast-forward runs the same GX calls with nothing drawn.
+* **`--frames` after `--ffto` needs ten retraces before a frame is
+  presented** (the present count runs behind, §0s): `--ffto 14500
+  --frames 14504` drew nothing; `14508`/`14510` draws two to four frames.
+* **`scp` to the MacBook takes half a minute a file** (its disk throttles:
+  `ThrottleProcessIO`); a run's frames come back faster as one `tar`
+  stream than as four `scp`s, and a bench script that copies inside the
+  120 s tool timeout goes to the background.

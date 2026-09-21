@@ -12,6 +12,9 @@
  */
 #include "gx_internal.h"
 
+#include <dlfcn.h>
+unsigned gl13_frame_number(void);
+int gl13_draw_off(void);
 #include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -241,7 +244,10 @@ void GXLoadPosMtxImm(const void* mtx, u32 id) {
     u32 slot = id / 3;
     GX_STATE_TOUCH_IF(GX_CMP_MATRIX, !gx_batch_spans &&
                                          (slot >= 10 || memcmp(gx.pos_mtx[slot], mtx, 48) != 0));
-    if (port_opt.drawlog) {
+    if (port_opt.drawlog || port_opt.forceobj || port_opt.skipobj || port_opt.probeobj) {
+        /* M33: the object diagnostics name draws through this pointer too
+         * (--forceobj alone never matched anything before; M32's runs all
+         * carried --drawlog) */
         gx_last_posmtx_caller = __builtin_return_address(0);
         gx_last_posmtx_arg = mtx;
     }
@@ -928,7 +934,17 @@ void GXSetZMode(GXBool compare, GXCompare func, GXBool update) {
     gx.z_update = (u8)(update ? 1 : 0);
 }
 
-void GXSetZCompLoc(GXBool before_tex) { GX_STATE_TOUCH_IF(32, gx.z_comploc != (u8)(before_tex ? 1 : 0)); gx.z_comploc = (u8)(before_tex ? 1 : 0); }
+void GXSetZCompLoc(GXBool before_tex) {
+    GX_STATE_TOUCH_IF(32, gx.z_comploc != (u8)(before_tex ? 1 : 0));
+    gx.z_comploc = (u8)(before_tex ? 1 : 0);
+    if (port_opt.probeobj && port_opt.probeobj[0] == 0x3f && !gl13_draw_off()) {
+        Dl_info di;
+        const void* ra = __builtin_return_address(0);
+        port_log("port> GXSetZCompLoc(%d) frame %u from %p %s+%ld\n", before_tex ? 1 : 0, gl13_frame_number(), ra,
+                 dladdr(ra, &di) && di.dli_sname ? di.dli_sname : "?",
+                 dladdr(ra, &di) && di.dli_saddr ? (long)((const char*)ra - (const char*)di.dli_saddr) : 0L);
+    }
+}
 
 void GXSetBlendMode(GXBlendMode type, GXBlendFactor src, GXBlendFactor dst,
                     GXLogicOp op) {

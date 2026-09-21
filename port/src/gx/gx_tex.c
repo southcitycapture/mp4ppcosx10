@@ -350,6 +350,8 @@ static u32 fnv(const void* p, size_t n, u32 h) {
 
 /* ---- the cache ------------------------------------------------------------ */
 
+u8 gx_unit_alpha_min[8] = { 255, 255, 255, 255, 255, 255, 255, 255 }; /* M33: per texture unit at bind */
+
 typedef struct CacheEntry {
     const void* image;
     const void* lut;
@@ -366,6 +368,8 @@ typedef struct CacheEntry {
     u32 content_full;
     unsigned gl_name;
     u8 wrap_s, wrap_t, min_filt, mag_filt;
+    u8 alpha_min;  /* M33: the smallest alpha the decode produced (255 for an
+                    * opaque format) -- whether an alpha test can kill anything */
     /* GXSetTevSwapModeTable, packed two bits per output channel (see
      * GX_SWAP_IDENTITY).  It is part of the key, not of the bind: two stages
      * can sample the same texels through two different swap tables in the
@@ -835,8 +839,17 @@ static void tex_bind_decode_and_upload(int slot, int unit, const GXTexObjPort* o
     double t0 = port_now_seconds(), t1;
     u8* rgba = decode(o, tlut, &w, &h);
     cache[slot].su = cache[slot].sv = 1.0f;
+    cache[slot].alpha_min = 255;
     if (rgba) {
+        size_t k, n = (size_t)w * h;
+        u8 amin = 255;
         swizzle_rgba(rgba, w, h, cache[slot].swap);
+        for (k = 0; k < n && amin; k++) {
+            if (rgba[k * 4 + 3] < amin) {
+                amin = rgba[k * 4 + 3];
+            }
+        }
+        cache[slot].alpha_min = amin;
     }
     t1 = port_now_seconds();
     frame_decodes++;
@@ -1041,6 +1054,7 @@ static void tex_bind_finish(int unit, GXTexObjPort* o, int slot) {
                  (unsigned)cache[slot].swap, slot, cache[slot].gl_name);
     }
     o->gl_name = cache[slot].gl_name;
+    gx_unit_alpha_min[unit & 7] = cache[slot].alpha_min;
     if (!gl13_live() || !o->gl_name) {
         return;
     }
@@ -1172,6 +1186,7 @@ static void tex_bind_body(int unit, GXTexObjPort* o, u8 swap) {
          * GL texture the copy already filled. */
         o->gl_name = cache[slot].gl_name;
         cache[slot].last_used = frame;
+        gx_unit_alpha_min[unit & 7] = 0; /* an EFB copy: unknown, assume it can */
         if (!gl13_live() || !o->gl_name) {
             return;
         }

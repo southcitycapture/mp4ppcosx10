@@ -16276,3 +16276,313 @@ final build (`2a52c786…`, `~/MarioParty4.app`; the M31 bundle kept as
 lab's flags. The G4's own config carries `fullscreen = 0`, so the soak's
 window is the window. Read it first: the same lines as §47.1's table,
 plus nothing new — a packaging milestone's soak is a regression check.
+
+## 48. M33 log: the Read Me's imperfections, one by one, and the character select's frame *(2026-09-21, littlejelly)*
+
+M33's brief was the list a player is told about: the character select at
+about 20 fps (§47.5 named its lever, the per-frame decode placement) and
+the seven `minor` rows of `compare.html`, in the Read Me's own order,
+each closed item to come off the list. The soak M32 left was short and
+clean (§48.1). The lever was built and measured: **the character select
+presents 23.4 fps from 20.0 with the decode split per drawn frame between
+the two threads, the board and the title held** (§48.2), and `--rtdecode
+auto` is the default with the overlapped render thread. The pillar sphere
+of the three Bowser games was read to its cause (§48.3): **the sphere is
+drawn, correctly, and the two cloud domes the game draws after it paint
+over it**; on the console the flare's quad holds the clouds off with the Z
+its alpha-killed fragments still write. A depth pre-pass reproduces the
+console's frame on m435 but moves 105 pixels of the title logo that no
+frame-exact console reference exists for, so it ships **off** (`--zprepass
+2`) and the Read Me says so. m408's tunnel was read part way (§48.4) and
+m404, m405 and m417 were not reached (§48.5). The second controller is a
+paragraph (§48.6). The disk image is 0.9.1 (§48.7).
+
+### 48.1 The soak, read
+
+§47.8's leave-behind — `g4 run --soak --com4 --rtc dolphin --freshcard
+--realtime --snap-every 5000 --snap-keep 3 --status --ovllog --stuckwatch
+200 --perf` on the M32 build (`2a52c786…`, the packaged code) — ran 09:46
+to 10:11 G4 time and was ended through `g4 key esc` when the milestone
+needed the machine: **24 minutes, 86,940 frames, 1,449 status lines**
+(`docs/soak/m33-soak23-m32-leave.log.gz`, `soak_read.py`).
+
+| | |
+|---|---|
+| speed / presented fps | **100.0%** mean (`machine ok`, `cpu 2`); 27.9 fps overall; the board's `w01dll` turns 28.8–29.4, `rt` 15.1–16.6 ms, `dec` 5.3–6.8 |
+| where it got | board 0, turn 7 of 20 |
+| minigames | 10 plays of 9 modules, **M25's order** (m412 m428 m420 m444 m423 m438 m429 m444 m430 m406); presented 21.3 (m444) to 29.7 (m428) |
+| `stack overlap error` / faults / guard hits / mismatches / STUCK | **none / 0 / 0 / 0 / 0** |
+| resyncs | **1**: `stall: frame 80349 took 1444 ms (game 1434 gx 10 …)` inside m430, 349 frames after the frame-80,000 snapshot write — no `dll`, no free, no disc read over 100 ms, the module's own `X> Z>` OSReports around it; the shape of §44.6's `R2e` (a disk-bound frame of the game thread while the writer thread's 40 MB is still going to the shingled disk, §0t) under a lab flag the shipped build does not carry (`--snap-every`) |
+| stalls | 61 `stall:` lines, the rest ≤ 425 ms: the snapshot copies every 5,000 frames, module links, the results screens |
+| render thread | mode 3; replay 15.68 ms mean a presented frame; decode 21.4 M runs, **0 late**; gate 2,937 waited (6.8 s, worst 12.5 ms), 4,003 busy; ring 1 GPU wait (7 ms) |
+| card / DVD | flushes 117 ms on the game thread in all, 374 ms behind (worst 39); `DVD: 580 reads, 0 over 100 ms` |
+| audio / rss / tex | 120 underruns, 1.79 s; rss 82–179 MB; 627 entries / 40 MB |
+| the stub report | `THPInit 3` only |
+
+Nothing outranks the milestone.
+
+### 48.2 The character select: the decode placed per frame
+
+**What §47.5's arithmetic got wrong, before the lever.** It read the game
+thread at "15 ms a retrace" and the render thread at 44.5 ms a drawn frame
+and put the ceiling at 32 fps. The 15 ms was the *average over a
+three-retrace cycle*; the CSV (§47.5's `m32-charsel-perf.csv.gz`, read
+again) says the cycle is drawn 30.0 ms + consumed 6.9 + consumed 6.9 =
+44.5 ms of game-thread work in 50 ms, against 28.2 + 15.4 = 43.6 on the
+render thread — two threads each three-quarters full. A two-retrace cycle
+(33.3 ms) is out of reach for the game thread alone (30.0 + 6.9 = 36.9
+with *no* decode on it), so 30 fps is not this lever's; the whole work is
+30.0 + 6.9 + 28.2 + 15.4 = 80.5 ms a drawn frame over two cores, 40.3 ms
+each if perfectly balanced, **24.8 presented fps at best**, 20 today.
+
+**The design** (`port/src/gx/rt.c`, `rt_auto_*`; `gx_draw.c`'s handover;
+`vi.c`'s two calls): `--rtdecode auto` (3), the default with the
+overlapped render thread. At every retrace `vi.c` hands the planner the
+frame that just ended — drawn or consumed, and the game thread's seconds
+on it from the previous retrace's exit to this one's entry, before the
+retrace's decode join (a wait, not work). For a drawn frame the planner
+keeps an EMA (½) of the game thread's drawn frame *less its own decode*
+(`gd`), of the consumed frame (`cc`), and of the decode's cost per vertex
+on each side (`rg` from its own timers, `rr` from the reader's
+`st_last_dec_ms` over the vertices handed over — read at the next drawn
+frame's start, when the gate has drained the reader, so the two numbers
+are the same frame's). When the next frame is drawn it solves the
+balance for the game thread's share `v` of the vertices:
+
+```
+gd + v·rg + cc  =  r + (V − v)·rr        →  v = (r + V·rr − gd − cc) / (rg + rr)
+```
+
+(`r` the reader's replay of the last frame, `V` the last frame's
+vertices), clamped to [0, `--rtauto-max` 0.75], zero when the render
+thread's frame `r + V·rr` is under `--rtauto-fit` 30 ms (two retraces
+with margin: the board), zero under a millisecond. The share is spread
+over the frame's runs by vertex count (a Bresenham accumulator in
+`rt_decode_want`, so a share of a third takes about every third run's
+worth rather than the first third of the frame). A run kept on the game
+thread goes through the M28 loops as `--rtdecode 0` would, timed and
+counted (`rt_decode_here`); a run handed over is M29's record. Exactness
+is by construction — a run decoded on the game thread reads the arrays at
+issue time, as every run did before M29; a run handed over keeps M29's
+joins — and the md5s are the witness. `dec 9.9+8.6` on the status line is
+the two halves; `gdec_ms` is the CSV's new column; the report's `auto`
+line is the plan's last inputs and the season's split.
+
+**The A/B** (`port/tools/m33_chain.sh` as `~/MarioParty4-chain.app`, one
+binary `ebbf535b…`, the 16,000-frame real-time walk three times per arm,
+medians by `m33_perfstat.py`; `docs/soak/m33-walk-*.log.gz`,
+`m33-chain-index.txt`):
+
+| arm | charsel: consumed | drawn (game / gx / rt + dec) | cycle | **presented** | board: drawn (rt + dec) | **presented** | title: drawn (rt + dec) | **presented** |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `--rtdecode 2` (M29's default) `R2` / `R2a` / `R2b` | 7.37 / 7.48 / 7.39 | 26.8 / 27.2 / 27.1 (12.6 / 13.3 / **24.6 + 15.8**) | 3.0 retraces | **20.00 / 20.12 / 20.01** | 21.5 (15.9 + 7.9) | 29.79 / 29.76 / 29.69 | 21.5 (11.5 + 18.1) | 25.24 / 25.24 / 25.20 |
+| **`--rtdecode auto`** `RA` / `RAa` / `RAb` | 4.61 / 4.60 / 4.54 | 33.7 / 34.1 / 33.9 (13.7 / 19.3 / **24.0 + 11.0**) | 2.6 | **23.41 / 23.03 / 23.51** | 21.1 (16.0 + 7.8) | **29.80 / 29.78 / 29.80** | 25.6 (15.5 + 10.5) | **25.52 / 25.48 / 25.50** |
+
+**The character select: 20.0 → 23.3 fps** (+17%; the ceiling above is
+24.8). The game thread's drawn frame took 6.9 ms of decode (gx 13.3 →
+19.3), the render thread's decode fell 15.8 → 11.0, the consumed frame
+7.4 → 4.6 (the gate's wait, §44.5, mostly gone), the cycle 3.0 → 2.6
+retraces; over the walk the plan split 2,574 of 7,455 drawn frames (share
+mean 0.34, max 0.75), 64 M vertices decoded on the game thread against
+282 M on the render thread, `0 late`, speed 100.0%, no resync. **The
+board holds the cap** (the dead band: its render thread is 23.8 ms) and
+the title gains a quarter of a frame. The md5s hold on every arm: `T0`,
+`T2`, `TA` and `TD` (the new default) on the M33 binary and `TDf` on the
+final build all read **0b58c5ee / c58a046d / 4a9a640c**.
+
+### 48.3 m435–m437's pillar sphere: drawn, and painted over
+
+§47.5 ended with two objects per pillar and "the bytes at issue time".
+Two diagnostics were built for it (gx_draw.c): `--skipobj NAME` (the
+object's draws not issued) and `--probeobj NAME` (each of the object's
+draws bracketed by a read-back of the viewport — pixels changed, their
+box, the mean change — with the GL state the draw is issued under, the
+array pointers and the first vertices' bytes; `--probeobj '*'
+--probebox X0,Y0,X1,Y1` probes every draw that touches a box, printing the
+depth at its centre after each). The first finding was the diagnostics'
+own: `gx_last_posmtx_arg`, the pointer the object names come from, was
+captured under `--drawlog` only, so `--forceobj` without it never matched
+a draw — M32's runs all carried `--drawlog`; captured under the object
+options now.
+
+**The read, on the bench** (`~/m33/run.sh` on the MacBook, the M32 park
+`--minigame m435 --ffto 14500 … --lockstep`, frame 14,498 = the first
+drawn one, the same scene as §46.4's 14,544):
+
+1. **The sphere lands.** `--probeobj sphere1`: the post-pass draw (48
+   triangle + 128 quad vertices, the vertex-program path, `VERTEX_ARRAY
+   size 3 type FLOAT stride 36`, the ring's bytes model-space positions of
+   radius 65 with S8 normals of length 1.98 and the material colour 178
+   178 255) **changes 3,907 pixels in the box x 484..557, y 374..442 (GL
+   rows) by 45 levels mean** — a 73-pixel disc centred (520, 72) from the
+   top, where the console draws the ball — and the read-back after it is
+   the console's ball: dark blue, translucent, the plasma texture, on a
+   *black* sky (`screenshots/m33-m435-sphere-probe-after-draw66.jpg`).
+2. **Then the clouds paint over it.** `--probeobj '*' --probebox
+   484,374,557,442` lists every draw that touches the disc after it: the
+   flare (`sphere18`, 539 px, the star), then **`annun02` (model 18,
+   2,301 px) and `annun03` (model 17, 4,480 px — the whole box)**: the two
+   cloud domes (暗雲, the dark clouds; models 17–19 are m435's data 36–38,
+   main.c:979–990), 2 TEV stages of two RGB5A3 cloud textures whose alpha
+   is 255 but for a fade at the bottom row, `z test 1 write 0`, blend
+   SRC_ALPHA/INV_SRC_ALPHA, drawn from `Hu3DDrawPost` after the sphere
+   because the game's post list sorts by the object origin's distance
+   from the camera (hsfdraw.c:306–314, `VECMag` of the drawobj's
+   translation, far first): the domes' origins are 755 and 718 units
+   away, the sphere's 1,833. The same code on the same data sorts the
+   same way on the console. Skipping `annun03` shows the top half of the
+   ball; skipping both would show it all.
+3. **Why the console keeps the ball.** The sphere writes no Z (the
+   material is translucent: `SetupGX` → `GXSetZMode(…, GX_FALSE)`), so
+   nothing holds the clouds off — unless something drawn between them
+   wrote Z under the disc. Forcing the sphere's own z write (`--forceobj
+   sphere1:32`, a new bit; the mask emission in `gl13_apply_raster_state`
+   read `gx.z_update` rather than the shadow and had to be fixed for it)
+   brings the ball back but hides the flare inside it (the flare is
+   drawn after the sphere and 100 units behind its front), which is not
+   the console's picture either: the console shows the star *through*
+   the ball. What is drawn between the sphere and the clouds is **the
+   flare**: a 24-vertex fan, an octagon of radius 102 units (39 px, the
+   ball's disc is 36), `z test 1 write 1`, additive, `alpha GEQUAL 128`
+   on an IA8 texture whose *alpha* carries the star (2,085 of 16,384
+   texels ≥ 128, `screenshots/m33-m435-flare-and-cloud-textures.png`).
+   On GL the alpha test discards the fragment, depth and all; **on the
+   hardware the fragment the alpha test kills still writes its Z**, so
+   the flare's octagon lays a Z at 1,687 units under the whole ball, the
+   domes behind it fail LEQUAL there, the ball stays, the star adds on
+   top — and a black halo of the octagon's width shows around the ball
+   where the clouds are held off, which the console frame has.
+4. **The witness.** `--zprepass 2` (gl13.c `gl13_zprepass_*`, gx_draw.c):
+   a draw with the z test and z write on and a live alpha test is issued
+   twice, first with the colour writes and the alpha test off, then as
+   itself — only when a bound texture's smallest alpha (`alpha_min`, kept
+   per cache entry from the decode, per unit at the bind) can fail the
+   test, so the game's `GEQUAL 1` idiom on an opaque texture costs
+   nothing (432 draws doubled over the 50-frame bench run, 9 a frame,
+   against 1,108 ungated; the two frames byte-identical). **The port's
+   frame is then the console's**: the ball, the star through it, the
+   clouds held off (`screenshots/m33-m435-sphere-console-port-zprepass.jpg`,
+   `m33-m435-f014544-default-zprepass-console.jpg`).
+
+**Why it ships off.** Dolphin gates this behaviour on `GXSetZCompLoc(GX_TRUE)`
+(the early-Z hack in its pixel shader), and `--zprepass 1` is that rule —
+and it changes nothing here, because the flare's material is textured
+and hsfdraw.c sets `GXSetZCompLoc(0)` for it (traced: `GXSetZCompLoc`
+from `FaceDraw+8516`, every textured object of the post pass; `(1)` only
+for the two untextured tori). So either the hardware writes the Z late
+too, or the oracle's frame came by a route this read did not find. On the
+G4 (`TDz2`, `RDz2`) the ungated rule holds frame 3000 and moves **105
+pixels of frame 800 (the title logo's letter edges, over the present's
+ribbon) and one pixel of 7000** (`screenshots/m33-title-f00800-default-vs-zprepass.jpg`);
+`port/ref/frames/title.png` is a different moment of the attract loop
+and cannot say which is right, and §0's rule for a re-base is the
+console's agreement. The lever is in the tree, off, documented in the
+Read Me; the question for M34 is one frame-exact Dolphin capture of the
+title at 800 (the sweep rig, §41b) — if the logo agrees with `--zprepass
+2`, the default flips and the three Bowser rows come off the list. The
+snapshot stands: `snaps/lib/m435-sphere-f015200.snap`.
+
+### 48.4 m408's white tunnel cap: read part way
+
+The bench at +1200 (`--ffto 15600 --frames 15700 --dumpframe 15677`,
+the drawlog and `--cpuxf`; `docs/soak/m33-m408-drawlog-f015677.log.gz`):
+the tunnel is two coaxial cylinders around the camera, `tutu` (筒, the
+tube: 128 quad vertices, 2 stages, the cloud texture repeated six times
+along it, z write off) and **`fusagi`** (塞ぎ, the plug: 128 quad
+vertices, one stage, the same cloud texture, `z test 1 write 1`, opaque
+RGB565), both from view z +5,900 (behind the camera) to −3,919, with the
+island billboard (`rend_sima3`) at −8,800 beyond the open end and the
+cloud blobs (`km_b`) and the gradient ring (`in`) at the end. **The white
+octagon is `fusagi`'s far end seen from inside**: `--skipobj fusagi`
+removes it (`screenshots/m33-m408-f015677-default-skipfusagi-console.jpg`)
+and shows what it hid — a large tilted translucent yellow quad and the
+island billboard, neither of which the console shows at this size
+either. The console's frame at the same dump index is a *longer* tunnel
+(the vortex converges to the island as a point), and its +2300 frame is
+still falling where the port's has landed on the beach: the port's fall
+runs ahead of the console's, so the pair is a timing question first (the
+tube's motion or the fall's clock) and a rendering one second (whether
+`fusagi`'s far end is meant to show as a disc at all: the vertices say
+an open cylinder, the picture says a filled octagon — the winding or a
+cap face the decoder folds). Not fixed; the Read Me line stays. No
+snapshot was taken (the park reproduces it in 100 s on the bench).
+
+### 48.5 m404, m405, m417: not reached
+
+The budget went to §48.2 and §48.3. Trace Race's guide line, the
+indirect warp (m405's caustic, m417's ripple, the mode-select bubbles —
+§17's one shape, the `ATI_text_fragment_shader` question) and m417's
+streaks keep their Read Me lines and their snapshots
+(`snaps/lib/m417-streaks-f016000.snap`; m404 and m405 park in 100 s).
+
+### 48.6 The second controller
+
+Measured, not built. On the G4 one pad is on the bus (`ioreg -p IOUSB`:
+the Apple keyboard's hub, a Dynex mouse, one `Controller` 045e:02ea) so a
+second pad's enumeration could not be tried; the code says what would
+happen: `pad_xone_open` (pad_xone.c) walks the IOUSB iterator until the
+*first* Xbox One match and stops, `pad_sdl` opens the first joystick
+`SDL_NumJoysticks` reports (`for (i = 0; … && joy == NULL; i++)`), and
+`PADRead` (pad.c) fills `status[0]` only — channels 1–3 are
+`PAD_ERR_NO_CONTROLLER` every retrace. A second Xbox pad would be seen by
+SDL's joystick subsystem (it is initialised with `SDL_INIT_JOYSTICK`) and
+ignored; a second pad of any kind through the IOUSBLib driver needs its
+own device handle and state. Handing pad 2 to player 2 is a second
+`PortPadRaw` source per channel and `status[1]` filled from it — about
+forty lines across pad.c/pad_sdl.c, more for a second IOUSBLib pad — not
+the ten-line mapping the brief allowed, so not built. The Read Me's line
+stands.
+
+### 48.7 The disk image, 0.9.1
+
+`PORT_VERSION_STRING` 0.9.1 / `PORT_MILESTONE` M33 (the plist reads
+0.9.1, build 33); the Read Me: 0.9.1, the character select "about 23
+frames a second", the Bowser rows re-worded (painted over by the sky;
+`--zprepass 2` shows them; why it is off). Built by `make_dmg.sh` on the
+G4 from the final build `d1f5f8f9…` (its md5 walk `TDf`: 0b58c5ee /
+c58a046d / 4a9a640c):
+
+| | |
+|---|---|
+| name | `Mario Party 4 PowerPC Edition 0.9.1.dmg` |
+| size / md5 | **4,220,871 bytes** (4.0 MB) / `86f62d4aa82c160f10cbb989e6d399ec`, built 12:22 G4 time |
+| copies | `littlejelly:~/MarioParty4-PowerPC-0.9.1.dmg`, the G4's `~/Mario Party 4 PowerPC Edition 0.9.1.dmg`, `port/build-ppc-darwin/` |
+
+### 48.8 The Read Me's list, before and after
+
+| line | M32 | M33 |
+|---|---|---|
+| Trace Race's guide line | on | on (not reached) |
+| Mario Medley's caustic | on | on (not reached) |
+| Paratrooper Plunge's white cap | on | on (read part way, §48.4) |
+| Makin' Waves' ripple and streaks | on | on (not reached) |
+| the three Bowser games' pillar spheres | "not drawn" | "painted over by the sky", the switch that shows them named, and why it is off (§48.3) |
+| the character select at about 20 fps | on | **about 23 fps** (§48.2) |
+| intro movies skipped; one card; controllers 2–4 absent | on | on (§48.6) |
+
+### 48.9 What M33 shipped, and what it did not
+
+| shipped, with a witness | |
+|---|---|
+| **`--rtdecode auto`, the default**: the character select 20.0 → 23.3 presented, the board at the cap, the title +0.3 (§48.2) | six real-time walks, five md5 walks, `docs/soak/m33-walk-*` |
+| **the pillar sphere's cause** (§48.3): drawn, painted over by the cloud domes; the flare's alpha-killed Z; `--zprepass 1/2`, `--skipobj`, `--probeobj`/`--probebox`, `--forceobj` bit 32, the object names captured under the object options, `alpha_min` per texture | the probe logs, the three-panel pairs |
+| the tunnel read part way (§48.4), the controller paragraph (§48.6), the Read Me's list (§48.8), 0.9.1 (§48.7) | |
+| soak 23 read (§48.1), `docs/soak/m33-*`, `docs/screenshots/m33-*`, witness 0v | |
+
+**Not done, and why:** the sphere's fix is off (no frame-exact console
+reference for the title logo's 105 pixels — §48.3 says what would flip
+it); m408 is a timing question before a rendering one (§48.4); m404,
+m405, m417 not reached (§48.5); the second controller is forty lines, not
+ten (§48.6).
+
+### 48.10 What is left running
+
+`g4 run --soak --com4 --rtc dolphin --freshcard --realtime --snap-every
+5000 --snap-keep 3 --status --ovllog --stuckwatch 200 --perf` on the
+final build (`d1f5f8f9…`, `~/MarioParty4.app`; the M32 bundle kept as
+`~/MarioParty4-m32.app`) — the first soak with the decode placed per
+frame. Read it first: `dec A+B` on the status lines (B is the game
+thread's share; the board should read `+0.0` and `30.0 fps presented`,
+the character select and m431/m444 a share), the `auto` line of the
+`render thread:` block, `late` 0 in the decode line, and the m430 frame
+near 80,000 + 350 again (the snapshot writer's disk).

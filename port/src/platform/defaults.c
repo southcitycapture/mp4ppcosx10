@@ -66,11 +66,11 @@ void port_print_effective(FILE* f, int live) {
         if (rtm >= 2 && !threads) {
             rtm = 1;
         }
-        dec = port_opt.rtdecode < 0 ? (rtm >= 2 ? 2 : 0) : port_opt.rtdecode;
+        dec = port_opt.rtdecode < 0 ? (rtm >= 3 ? 3 : rtm >= 2 ? 2 : 0) : port_opt.rtdecode;
     }
     emitf(f, "%scores         %d; workers %s (--threads %d); render thread mode %d "
           "(--renderthread %d: 0 direct, 1 inline twin, 2 joined, 3 overlapped); "
-          "decode on it %d (--rtdecode)%s\n",
+          "decode on it %d (--rtdecode; 3 = auto)%s\n",
           pre, port_ncpu(), threads ? "on" : "off", port_opt.threads, rtm,
           port_opt.renderthread, dec, live ? "" : "  [as they will be decided at start]");
     emitf(f, "%spacing        %s%s; stack multiplier x%d; texture budget %d MB; resampler %s, "

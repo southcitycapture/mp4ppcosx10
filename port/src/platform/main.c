@@ -137,8 +137,12 @@ static void usage(const char* argv0) {
             "  --norenderthread  M27: --renderthread 0\n"
             "  --rtgate MS       M27: the gate waits this long for the render thread (4)\n"
             "  --rtdecode N      M29: the display-list decode 0 on the game thread, 1 on the\n"
+            "                    render thread joined at once, 2 joined at the retrace, auto (M33:\n"
+            "                    a share per drawn frame on the game thread so the two threads'\n"
+            "                    frames balance; the default with a render thread)\n"
+            "  --rtauto-fit MS   M33: auto moves nothing while the render thread's frame is under MS (30)\n"
+            "  --rtauto-max F    M33: the largest share auto moves to the game thread (0.75)\n"
             "  --stackmul N      M29: the coroutine stacks' multiplier over the game's sizes (2; M31 soak)\n"
-            "                    render thread joined at once, 2 joined at the retrace (2 with a thread)\n"
             "  --rtsplit         M27: the replay timed by record class (an instrument)\n"
             "  --predecode       M24: the texture decode staged on the worker from\n"
             "                    consumed frames (measured, off: PLAN.md 39.3)\n"
@@ -265,6 +269,12 @@ static void usage(const char* argv0) {
             "                    (m427's flooded cave), for the A/B\n"
             "  --nocarry         M31: no scalar-in-alpha fold (m417's pool: the water black)\n"
             "  --forceobj N[:f]  M31 diagnostic: object N's draws without cull 1 / z test 2 / alpha test 4\n"
+            "  --zprepass N      M33: a depth-only pass before a z-writing draw whose alpha test\n"
+            "                    kills fragments (the hardware writes their Z; m435's sphere): 1 =\n"
+            "                    only under GXSetZCompLoc(TRUE), 2 = every such draw (off: PLAN.md 48.3)\n"
+            "  --skipobj N       M33 diagnostic: object N's draws are not issued at all\n"
+            "  --probeobj N      M33 diagnostic: object N's draws bracketed by a framebuffer read-back\n"
+            "                    (pixels changed) and a print of the GL state and vertices as issued\n"
             "                    (M32: blend off 8, colour+alpha update forced on 16)\n"
             "  --nolinewidth     M30: ignore GXSetLineWidth, every line one pixel\n"
             "                    wide as before (m428's rope), for the A/B\n"
@@ -596,6 +606,8 @@ int port_parse_args(int argc, char** argv) {
     port_opt.nofastsqrt = 1;
     port_opt.rtgate_ms = 4;
     port_opt.rtdecode = -1; /* M29: the decode on the render thread when there is one */
+    port_opt.rtauto_fit_ms = 30.0; /* M33: auto's dead band, two retraces less a margin */
+    port_opt.rtauto_max = 0.75;
     port_opt.stackmul = PORT_PRC_STACK_MUL;
     /* Linear, since the G4 measured both on the same walk (PLAN.md §20.5):
      * 1.75 ms mean against the 4-tap's 2.00, a worst frame of 10.92 ms against
@@ -694,7 +706,12 @@ int port_parse_args(int argc, char** argv) {
         } else if (!strcmp(a, "--rtgate") && i + 1 < argc) {
             port_opt.rtgate_ms = atoi(argv[++i]);
         } else if (!strcmp(a, "--rtdecode") && i + 1 < argc) {
-            port_opt.rtdecode = atoi(argv[++i]);
+            i++;
+            port_opt.rtdecode = !strcmp(argv[i], "auto") ? 3 : atoi(argv[i]);
+        } else if (!strcmp(a, "--rtauto-fit") && i + 1 < argc) {
+            port_opt.rtauto_fit_ms = atof(argv[++i]);
+        } else if (!strcmp(a, "--rtauto-max") && i + 1 < argc) {
+            port_opt.rtauto_max = atof(argv[++i]);
         } else if (!strcmp(a, "--stackmul") && i + 1 < argc) {
             port_opt.stackmul = atoi(argv[++i]);
             if (port_opt.stackmul < 1) {
@@ -982,6 +999,15 @@ int port_parse_args(int argc, char** argv) {
             port_opt.noregchain = 1;
         } else if (!strcmp(a, "--nocarry")) {
             port_opt.nocarry = 1;
+        } else if (!strcmp(a, "--skipobj") && i + 1 < argc) {
+            port_opt.skipobj = argv[++i];
+        } else if (!strcmp(a, "--probeobj") && i + 1 < argc) {
+            port_opt.probeobj = argv[++i];
+        } else if (!strcmp(a, "--zprepass") && i + 1 < argc) {
+            port_opt.zprepass = atoi(argv[++i]);
+        } else if (!strcmp(a, "--probebox") && i + 1 < argc) {
+            sscanf(argv[++i], "%d,%d,%d,%d", &port_opt.probebox[0], &port_opt.probebox[1],
+                   &port_opt.probebox[2], &port_opt.probebox[3]);
         } else if (!strcmp(a, "--forceobj") && i + 1 < argc) {
             char* colon;
             port_opt.forceobj = argv[++i];

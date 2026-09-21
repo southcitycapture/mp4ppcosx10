@@ -31,8 +31,8 @@ extern "C" {
 /* ---- settings, from argv ------------------------------------------------- */
 /* M32: the shipped version (the dmg's name, the plist, the --defaults header)
  * and the milestone that built it. */
-#define PORT_VERSION_STRING "0.9"
-#define PORT_MILESTONE "M32"
+#define PORT_VERSION_STRING "0.9.1"
+#define PORT_MILESTONE "M33"
 
 typedef struct PortOptions {
     const char* image;      /* --image  disc image or extracted files/ tree   */
@@ -269,12 +269,18 @@ typedef struct PortOptions {
     /* ---- M29: the decode on the render thread (PLAN.md 44) ---- */
     int stackmul;           /* --stackmul N  the coroutine stacks' multiplier over
                              *   the game's own sizes (PORT_PRC_STACK_MUL = 2 since M31; 4 before) */
-    int rtdecode;           /* --rtdecode N  -1: 2 with the render thread on, else 0
+    int rtdecode;           /* --rtdecode N  -1: auto (3) with the overlapped render thread, 2 joined, else 0
                              *   (the default); 0: the display lists decoded on the
                              *   game thread (the inline twin); 1: decoded by the
                              *   render thread, the game thread joined right after
                              *   each record (stage 1, no overlap); 2: joined at the
-                             *   retrace (stage 2, the overlap)                */
+                             *   retrace (stage 2, the overlap); 3 (`auto`): M33, a
+                             *   share of each drawn frame's decode kept on the game
+                             *   thread so the two threads' frames balance (PLAN.md 48) */
+    double rtauto_fit_ms;   /* --rtauto-fit MS  auto leaves the whole decode on the
+                             *   render thread while its frame (replay + decode) is
+                             *   under this (30: two retraces with margin)      */
+    double rtauto_max;      /* --rtauto-max F  the largest share auto moves (0.75) */
     /* ---- M25: the machine check (src/platform/machine.c, PLAN.md 40) ---- */
     const char* fake_machine; /* --fake-machine FILE  key=value overrides of the
                              *   probes: argue another machine on this one   */
@@ -333,6 +339,14 @@ typedef struct PortOptions {
     int nocarry;            /* --nocarry  M31: no scalar-in-alpha fold for m417's pool shape (PLAN.md 46) */
     const char* forceobj;   /* --forceobj NAME[:flags]  M31 diagnostic: the object's draws without cull (1) / z test (2) / alpha test (4) */
     int forceobj_flags;
+    const char* skipobj;    /* --skipobj NAME  M33 diagnostic: the object's draws not issued */
+    int zprepass;           /* --zprepass N  M33: a depth-only pass before a draw whose alpha
+                             *   test kills fragments the hardware still writes Z for: 1 = with
+                             *   GXSetZCompLoc(TRUE) only, 2 = every alpha-tested z-writing draw */
+    int probebox[4];        /* --probebox X0,Y0,X1,Y1  M33: --probeobj counts only that box (GL rows) */
+    const char* probeobj;   /* --probeobj NAME  M33 diagnostic: the object's draws bracketed by a
+                             *   read-back of the framebuffer (pixels changed, their box) and a
+                             *   print of the GL state and the first vertices as issued */
     int nolinewidth;        /* --nolinewidth  M30: GXSetLineWidth ignored, every line 1 px (PLAN.md 45 H) */
     int noregfix;           /* --noregfix  fold a stage's GX_TEVREG write to
                              *   PREV the way every build before M16 did (the
@@ -670,6 +684,19 @@ unsigned rt_pos(void);
 void rt_decode_join(const char* why);
 void rt_decode_join_pos(unsigned pos, const char* why); /* up to a stamped position */
 double rt_last_dec_ms(void);
+/* M33 (PLAN.md 48): --rtdecode auto.  rt_decode_want says whether this run is
+ * the render thread's (the frame's share, spread by vertices); a run decoded
+ * on the game thread is reported with rt_decode_here (timed), one handed over
+ * with rt_decode_there; vi.c tells the planner each frame's end (drawn or
+ * consumed, the game thread's seconds on it) and a drawn frame's start. */
+int rt_decode_mode(void);           /* 0/1/2/3 as decided at start */
+int rt_decode_want(unsigned verts);
+void rt_decode_here(unsigned verts, double seconds);
+void rt_decode_there(unsigned verts);
+void rt_auto_frame_end(int drawn, double seconds);
+void rt_auto_frame_begin(void);
+double rt_auto_last_share(void);
+double rt_auto_frame_gdec_ms(void);
 void port_vtx_rewrite(const char* who); /* ShapeProc/ClusterProc (patches.txt): the join */
 extern int rt_recording;
 void port_workers_init(void);       /* after the options: reads --threads and hw.ncpu */

@@ -137,7 +137,15 @@ void port_vi_rebase_schedule(void) {
 }
 static double first_retrace_at;
 
+static double last_exit_at; /* M33: the game thread's work on a frame, entry to exit */
+
 void VIWaitForRetrace(void) {
+    /* M33 (PLAN.md 48.2): the frame that just ended and what the game thread
+     * spent on it -- before the join below, which is a wait on the render
+     * thread and not work of this thread's */
+    if (last_exit_at != 0.0) {
+        rt_auto_frame_end(port_framemode_next_drawn(), now_seconds() - last_exit_at);
+    }
     /* M29 (PLAN.md 44.1 rule 1): every display-list run this frame handed
      * the render thread is decoded before the game's next frame can rewrite
      * the arrays it reads.  Before the sleep, so it costs only what exceeds
@@ -214,6 +222,10 @@ void VIWaitForRetrace(void) {
         if (!port_framemode_active()) {
             gl13_begin_frame();
         }
+        if (port_framemode_next_drawn()) {
+            rt_auto_frame_begin(); /* M33: the share for the frame about to be built */
+        }
+        last_exit_at = now_seconds();
     }
 
     retrace_count++;

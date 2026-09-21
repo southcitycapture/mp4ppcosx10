@@ -250,6 +250,7 @@ void gx_tex_bind_swapped(int unit, GXTexObjPort* obj, u8 swap);
 int gx_tex_bind_tiled(int unit, GXTexObjPort* sheet, GXTexObjPort* map,
                       const GXIndTile* tile);
 GXTexObjPort* gx_bound_tex(unsigned id);
+extern u8 gx_unit_alpha_min[8]; /* M33: the bound texture's smallest alpha, per unit */
 const GXTexObjPort* gx_bound_tex_of(const GXState* st, unsigned id); /* M22 */ /* NULL unless the unit holds a real object */
 void gx_tex_copy(void* dest, int clear);
 void gx_tex_report(void);

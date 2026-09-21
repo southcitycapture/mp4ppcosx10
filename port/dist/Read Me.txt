@@ -1,6 +1,6 @@
 Mario Party 4 PowerPC Edition
 =============================
-Version 0.9
+Version 0.9.1
 
 
 WHAT THIS IS
@@ -149,11 +149,14 @@ seven differ in ways a player can see:
     Paratrooper Plunge  the tunnel's cap is white
     Makin' Waves        the pool has a flat tint where the console
                         ripples it; a few thin light streaks near the raft
-    Darts of Doom,      the glowing spheres on Bowser's pillars are not
-    Fruits of Doom,     drawn
-    Balloon of Doom
+    Darts of Doom,      the glowing spheres on Bowser's pillars are
+    Fruits of Doom,     painted over by the sky (run it once from the
+    Balloon of Doom     Terminal with --zprepass 2 to see them; that
+                        switch is off because it also moves a few pixels
+                        of the title logo that have not been checked
+                        against the console yet)
 
-The character select screen runs at about 20 frames a second on the
+The character select screen runs at about 23 frames a second on the
 reference machine (the board and most minigames run at the 30 cap).
 Intro movies are skipped.  The game's memory card is one card in slot A;
 slot B is always empty.  Controllers 2-4 are not connected: players 2-4

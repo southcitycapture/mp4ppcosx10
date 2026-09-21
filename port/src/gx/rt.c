@@ -183,6 +183,21 @@ static volatile u32 rd;       /* published by the reader */
 static u32 dec;
 static volatile u32 dec_pub;
 static int decmode;           /* --rtdecode: 0 off, 1 joined at once, 2 at the retrace */
+/* M33: --rtdecode auto (3).  Per drawn frame a share of the display-list
+ * decode stays on the game thread, sized from the last drawn frame's two
+ * halves so that the game thread's cycle (its drawn frame + a consumed one)
+ * and the render thread's (replay + the decode left to it) come out equal
+ * (PLAN.md 48.2).  Everything here is the game thread's except what the
+ * reader publishes at the present (st_last_frame_ms, st_last_dec_ms). */
+static double au_share;        /* of this frame's vertices, the game thread's fraction */
+static double au_acc;          /* the spread: an accumulator in vertices */
+static unsigned long au_fr_gverts, au_fr_rverts; /* this frame's split, in vertices */
+static double au_fr_gdec_s;    /* this frame's decode time on the game thread */
+static double au_gd_ms, au_cc_ms; /* the game thread's drawn frame (less its decode), consumed frame */
+static double au_rate_g, au_rate_r; /* ms a vertex, each side (a running mean) */
+static double au_last_gd, au_last_cc, au_last_r, au_last_d, au_last_want; /* the last plan's inputs */
+static unsigned long au_frames, au_frames_split, au_gverts, au_rverts;
+static double au_gdec_s, au_share_sum, au_share_max;
 static int mode;              /* 0 direct, 1 inline, 2 join per frame, 3 overlap */
 static pthread_t thread;
 static int thread_up, quit;
@@ -927,6 +942,119 @@ void rt_call(void (*fn)(void*), const void* args, size_t n, int sync) {
 int rt_decode_on(void) { return rt_recording && decmode > 0; }
 unsigned rt_pos(void) { return wr; }
 
+/* M33: is this run the render thread's?  Modes 1 and 2: always.  Auto: the
+ * frame's share is spread over its runs by vertex count (a Bresenham
+ * accumulator, so a share of 0.3 takes about every third run's worth of
+ * vertices rather than the first 30% of the frame -- the render thread's
+ * backlog is what the balance is about, not where in the frame it sits). */
+int rt_decode_want(unsigned verts) {
+    if (!rt_recording || decmode == 0) {
+        return 0;
+    }
+    if (decmode != 3 || au_share <= 0.0) {
+        return 1;
+    }
+    au_acc += au_share * (double)verts;
+    if (au_acc >= (double)verts) {
+        au_acc -= (double)verts;
+        return 0;
+    }
+    return 1;
+}
+
+/* the game thread decoded a run itself under auto (timed by the caller) */
+void rt_decode_here(unsigned verts, double seconds) {
+    au_fr_gverts += verts;
+    au_fr_gdec_s += seconds;
+}
+void rt_decode_there(unsigned verts) { au_fr_rverts += verts; }
+
+/* The retrace: the frame that just ended, drawn or consumed, and what the
+ * game thread spent on it (entry to entry, the sleep and the joins out).
+ * Then, for a drawn frame about to start, the plan.  Both from vi.c. */
+#define AU_EMA(v, x) ((v) = (v) > 0.0 ? 0.5 * (v) + 0.5 * (x) : (x))
+void rt_auto_frame_end(int drawn, double seconds) {
+    if (decmode != 3) {
+        return;
+    }
+    if (drawn) {
+        double ms = seconds * 1000.0;
+        double gd = ms - au_fr_gdec_s * 1000.0;
+        if (gd < 0.0) {
+            gd = 0.0;
+        }
+        AU_EMA(au_gd_ms, gd);
+        if (au_fr_gverts) {
+            AU_EMA(au_rate_g, au_fr_gdec_s * 1000.0 / (double)au_fr_gverts);
+        }
+        au_gverts += au_fr_gverts;
+        au_rverts += au_fr_rverts;
+        au_gdec_s += au_fr_gdec_s;
+    } else {
+        AU_EMA(au_cc_ms, seconds * 1000.0);
+    }
+}
+void rt_auto_frame_begin(void) {
+    double v, want, rg, rr, r, d;
+    unsigned long vtot;
+    if (decmode != 3) {
+        return;
+    }
+    /* the gate drained the reader before this frame was allowed, so the
+     * reader's last presented frame is the last drawn one: its decode time
+     * over the vertices handed to it is the render thread's rate */
+    if (au_fr_rverts && st_last_dec_ms > 0.0) {
+        AU_EMA(au_rate_r, st_last_dec_ms / (double)au_fr_rverts);
+    }
+    vtot = au_fr_gverts + au_fr_rverts;
+    au_fr_gverts = au_fr_rverts = 0;
+    au_fr_gdec_s = 0.0;
+    au_acc = 0.0;
+    au_frames++;
+    /* the rates: a side that decoded nothing lately borrows the other's */
+    rg = au_rate_g > 0.0 ? au_rate_g : au_rate_r;
+    rr = au_rate_r > 0.0 ? au_rate_r : au_rate_g;
+    r = st_last_frame_ms;      /* the reader's replay of the last presented frame */
+    if (vtot == 0 || rr <= 0.0 || rg <= 0.0 || au_gd_ms <= 0.0) {
+        au_share = 0.0;
+        return;
+    }
+    d = (double)vtot * rr;     /* the whole decode, were it all the render thread's */
+    au_last_gd = au_gd_ms;
+    au_last_cc = au_cc_ms;
+    au_last_r = r;
+    au_last_d = d;
+    /* the render thread's frame fits two retraces with room: leave it */
+    if (r + d <= port_opt.rtauto_fit_ms) {
+        au_share = 0.0;
+        au_last_want = 0.0;
+        return;
+    }
+    /* balance: gd + v*rg + cc = r + (vtot - v)*rr  ->  v */
+    want = (r + d - au_gd_ms - au_cc_ms) / (rg + rr);
+    au_last_want = want * rg;
+    if (want <= 0.0) {
+        au_share = 0.0;
+        return;
+    }
+    v = want / (double)vtot;
+    if (v > port_opt.rtauto_max) {
+        v = port_opt.rtauto_max;
+    }
+    if (v * d < 1.0) {
+        au_share = 0.0; /* under a millisecond: not worth the timers */
+        return;
+    }
+    au_share = v;
+    au_frames_split++;
+    au_share_sum += v;
+    if (v > au_share_max) {
+        au_share_max = v;
+    }
+}
+double rt_auto_last_share(void) { return decmode == 3 ? au_share : 0.0; }
+double rt_auto_frame_gdec_ms(void) { return au_fr_gdec_s * 1000.0; }
+
 /* the game thread hands a run to the render thread; the record is published
  * at once (the reader's decode cursor is what waits for it) */
 void rt_decode_record(const GxDecJob* j) {
@@ -1545,7 +1673,9 @@ void rt_start(void* sdl_window, void* sdl_glcontext) {
     }
     decmode = port_opt.rtdecode;
     if (decmode < 0) {
-        decmode = mode >= 2 ? 2 : 0;
+        /* M33: auto with an overlapped render thread (PLAN.md 48.2: the
+         * character select 20.0 -> 23.4 fps, the board and the title held) */
+        decmode = mode >= 3 ? 3 : mode >= 2 ? 2 : 0;
     }
     if (mode == 0) {
         decmode = 0;
@@ -1601,10 +1731,14 @@ void rt_start(void* sdl_window, void* sdl_glcontext) {
              : mode == 2 ? "on, joined at every frame's end (no overlap)"
                          : "on, overlapped (the join at the gate)",
              mode, RT_BYTES / 1024);
+    if (decmode == 3 && mode < 3) {
+        decmode = mode >= 2 ? 2 : 0; /* auto balances against an overlapped reader only */
+    }
     port_log("port> render thread: the display-list decode %s (--rtdecode %d)\n",
              decmode == 0 ? "on the game thread" :
              decmode == 1 ? "as records, the game thread joined after each (stage 1)" :
-                            "as records, the game thread joined at the retrace (stage 2)",
+             decmode == 2 ? "as records, the game thread joined at the retrace (stage 2)" :
+                            "split per drawn frame between the two threads (auto, M33)",
              decmode);
 }
 
@@ -1632,7 +1766,10 @@ void rt_status(char* out, size_t n) {
         out[0] = '\0';
         return;
     }
-    if (decmode) {
+    if (decmode == 3) {
+        snprintf(out, n, "  rt %.1f ms dec %.1f+%.1f", st_last_frame_ms, st_last_dec_ms,
+                 au_fr_gdec_s * 1000.0);
+    } else if (decmode) {
         snprintf(out, n, "  rt %.1f ms dec %.1f", st_last_frame_ms, st_last_dec_ms);
     } else {
         snprintf(out, n, "  rt %.1f ms", st_last_frame_ms);
@@ -1663,6 +1800,15 @@ void rt_report(void) {
                  st_dec_records, st_dec_ahead, st_dec_late, st_dec_verts, st_dec_s * 1000.0,
                  st_frame_ms_n ? st_dec_ms_sum / (double)st_frame_ms_n : 0.0, st_dec_ms_max,
                  decmode);
+    }
+    if (decmode == 3) {
+        port_log("  auto     %lu drawn frames planned, %lu split (share mean %.2f, max %.2f); "
+                 "%lu vertices decoded on the game thread (%.0f ms) vs %lu on the render thread; "
+                 "last plan: game %.1f + consumed %.1f vs replay %.1f + decode %.1f -> %.1f ms "
+                 "moved (--rtdecode auto, fit %.0f ms, max share %.2f)\n",
+                 au_frames, au_frames_split, au_frames_split ? au_share_sum / (double)au_frames_split : 0.0,
+                 au_share_max, au_gverts, au_gdec_s * 1000.0, au_rverts, au_last_gd, au_last_cc,
+                 au_last_r, au_last_d, au_last_want, port_opt.rtauto_fit_ms, port_opt.rtauto_max);
     }
     if (port_opt.rtsplit) {
         port_log("  split    ");
@@ -1708,6 +1854,13 @@ void rt_report(void) {}
 void rt_status(char* buf, size_t n) { (void)n; buf[0] = '\0'; }
 void rt_join(const char* why) { (void)why; }
 int rt_gate(double s) { (void)s; return 1; }
+int rt_decode_want(unsigned v) { (void)v; return 0; }
+void rt_decode_here(unsigned v, double s) { (void)v; (void)s; }
+void rt_decode_there(unsigned v) { (void)v; }
+void rt_auto_frame_end(int d, double s) { (void)d; (void)s; }
+void rt_auto_frame_begin(void) {}
+double rt_auto_last_share(void) { return 0.0; }
+double rt_auto_frame_gdec_ms(void) { return 0.0; }
 void rt_ring_enter(int c) { (void)c; }
 void rt_call(void (*fn)(void*), const void* args, size_t n, int sync) {
     void* copy = malloc(n ? n : 1);

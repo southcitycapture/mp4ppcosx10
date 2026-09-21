@@ -483,6 +483,46 @@ static void glc_enable(GLenum cap, int on, signed char* shadow) {
     }
 }
 
+/* M33 (PLAN.md 48.3): the depth pre-pass for a draw whose alpha test would
+ * kill fragments that the hardware still writes Z for (m435's pillar
+ * sphere: the flare's quad holds the clouds off).  Between begin and end
+ * the caller issues the draw once with the colour writes off and the alpha
+ * test off; end puts the cache's idea of both back so the real draw's
+ * apply re-emits them. */
+int gl13_zprepass_wanted(void) {
+    int u, ref, can_kill = 0;
+    if (!port_opt.zprepass || !gx.z_enable || !gx.z_update || glc.alpha_on != 1) {
+        return 0;
+    }
+    if (port_opt.zprepass == 1 && !gx.z_comploc) {
+        return 0; /* Dolphin's rule: only with GXSetZCompLoc(GX_TRUE) */
+    }
+    /* only when a bound texture's alpha can fail the test (a cut-out); the
+     * game's `GEQUAL 1' idiom on an opaque texture kills nothing */
+    ref = (int)(glc.alpha_ref * 255.0f + 0.5f);
+    for (u = 0; u < gl13_max_tex_units && u < 8; u++) {
+        int stage = u < gx.num_tev ? gx_tev_unit_stage(u) : -1;
+        if (stage >= 0 && gx_bound_tex(gx.tev[stage].map) != NULL) {
+            int amin = (int)gx_unit_alpha_min[u];
+            if (glc.alpha_func == GL_GEQUAL ? amin < ref
+                : glc.alpha_func == GL_GREATER ? amin <= ref
+                                               : 1) {
+                can_kill = 1;
+            }
+        }
+    }
+    return can_kill;
+}
+void gl13_zprepass_begin(void) {
+    GL(glColorMask)(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+    GL(glDisable)(GL_ALPHA_TEST);
+}
+void gl13_zprepass_end(void) {
+    GL(glColorMask)(glc.color_mask[0] ? GL_TRUE : GL_FALSE, glc.color_mask[1] ? GL_TRUE : GL_FALSE,
+                    glc.color_mask[2] ? GL_TRUE : GL_FALSE, glc.color_mask[3] ? GL_TRUE : GL_FALSE);
+    GL(glEnable)(GL_ALPHA_TEST);
+}
+
 /* M21: the colour sum (GL 1.4 core, GL_EXT_secondary_color on GL 1.3 -- the
  * token is the same, 0x8458, and g4-glinfo.log lists the extension).  Adds
  * the fragment's secondary colour after the texture units; the vertex
@@ -1296,10 +1336,11 @@ void gl13_apply_raster_state(void) {
             glc_elided++;
         }
     }
-    if (glc.depth_mask != (signed char)(gx.z_update ? 1 : 0)) {
-        glc.depth_mask = (signed char)(gx.z_update ? 1 : 0);
+    /* M33: --forceobj bit 32 = the z write forced on (m435's sphere read) */
+    if (glc.depth_mask != (signed char)((gx.z_update || (gx_force_flags & 32)) ? 1 : 0)) {
+        glc.depth_mask = (signed char)((gx.z_update || (gx_force_flags & 32)) ? 1 : 0);
         glc_emitted++;
-        GL(glDepthMask)(gx.z_update ? GL_TRUE : GL_FALSE);
+        GL(glDepthMask)(glc.depth_mask ? GL_TRUE : GL_FALSE);
     } else {
         glc_elided++;
     }

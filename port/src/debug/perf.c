@@ -42,6 +42,7 @@ static int gx_depth;
 static float s_frame[PERF_MAX], s_gx[PERF_MAX], s_present[PERF_MAX], s_game[PERF_MAX];
 static float s_rt[PERF_MAX]; /* M27: the render thread's replay of the last presented frame */
 static float s_dec[PERF_MAX]; /* M29: its decode of that frame (--rtdecode) */
+static float s_gdec[PERF_MAX]; /* M33: the game thread's own decode of the frame (--rtdecode auto) */
 static float s_audio[PERF_MAX];
 static float s_wall[PERF_MAX];      /* with the sleep: real elapsed time */
 static unsigned char s_drawn[PERF_MAX];
@@ -240,6 +241,7 @@ void port_perf_frame(int drawn) {
         s_game[n_samples] = (float)(game * 1000.0);
         s_rt[n_samples] = (float)rt_last_frame_ms();
         s_dec[n_samples] = (float)rt_last_dec_ms();
+        s_gdec[n_samples] = (float)rt_auto_frame_gdec_ms();
         n_samples++;
     }
     t_frame_start = now;
@@ -391,10 +393,10 @@ static void perf_dump(void) {
         port_log("port> --perfdump: cannot write %s\n", port_opt.perfdump);
         return;
     }
-    fprintf(f, "frame,wall_ms,work_ms,game_ms,gx_ms,present_ms,aud_ms,drawn,rt_ms,dec_ms\n");
+    fprintf(f, "frame,wall_ms,work_ms,game_ms,gx_ms,present_ms,aud_ms,drawn,rt_ms,dec_ms,gdec_ms\n");
     for (i = 0; i < n_samples; i++) {
-        fprintf(f, "%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%d,%.3f,%.3f\n", i, s_wall[i], s_frame[i],
-                s_game[i], s_gx[i], s_present[i], s_audio[i], s_drawn[i], s_rt[i], s_dec[i]);
+        fprintf(f, "%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%d,%.3f,%.3f,%.3f\n", i, s_wall[i], s_frame[i],
+                s_game[i], s_gx[i], s_present[i], s_audio[i], s_drawn[i], s_rt[i], s_dec[i], s_gdec[i]);
     }
     fclose(f);
     port_log("port> --perfdump: %d frames written to %s\n", n_samples, port_opt.perfdump);

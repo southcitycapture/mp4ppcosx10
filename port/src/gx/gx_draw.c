@@ -335,6 +335,10 @@ static float byte_scale[256];
 static unsigned stat_prims, stat_verts, stat_draws, stat_dls;
 static unsigned long stat_fast_verts; /* through the specialised loops (M17) */
 static unsigned long stat_rtdec_runs, stat_rtdec_verts, stat_rtdec_refused; /* M29 */
+static unsigned long stat_rtdec_here; /* M33: auto's runs decoded on the game thread */
+static unsigned long stat_zprepass;   /* M33: draws issued twice for the Z of alpha-killed fragments */
+int gl13_zprepass_wanted(void); void gl13_zprepass_begin(void); void gl13_zprepass_end(void);
+static int rt_auto_on;                /* M33: --rtdecode auto, cached per list */
 /* --submitstats (M16): what the batching actually found in the lists */
 static unsigned stat_indexed_batches, stat_indexed_tris, stat_indexed_u32; /* M21 */
 static unsigned stat_mergeable, stat_mergeable_small, stat_mergeable_verts; /* M21 */
@@ -397,12 +401,17 @@ void gx_draw_report(void) {
     port_log("port> GX draw: %lu vertices through the specialised decode loops "
              "(%.1f%%)\n",
              stat_fast_verts, stat_verts ? 100.0 * (double)stat_fast_verts / stat_verts : 0.0);
-    if (stat_rtdec_runs || stat_rtdec_refused) {
+    if (stat_rtdec_runs || stat_rtdec_refused || stat_rtdec_here) {
         port_log("port> GX draw: M29: %lu display-list runs (%lu vertices, %.1f%%) handed to the "
-                 "render thread's decode, %lu runs decoded here instead\n",
+                 "render thread's decode, %lu runs decoded here instead, %lu kept here by "
+                 "--rtdecode auto (M33)\n",
                  stat_rtdec_runs, stat_rtdec_verts,
                  stat_verts ? 100.0 * (double)stat_rtdec_verts / stat_verts : 0.0,
-                 stat_rtdec_refused);
+                 stat_rtdec_refused, stat_rtdec_here);
+    }
+    if (stat_zprepass) {
+        port_log("port> GX draw: M33: %lu draw(s) issued twice, depth first, for the Z of "
+                 "alpha-killed fragments (--zprepass %d)\n", stat_zprepass, port_opt.zprepass);
     }
     port_log("port> GX draw: %u primitive(s) off-world (|position matrix "
              "translation| over %.0f)\n",
@@ -3170,9 +3179,27 @@ static void issue_indexed(u32 nidx, u32 lo, u32 hi) {
  * draw_submit is the two in a row; the lazy flush runs the first at the
  * setter that would have ended the batch and the second when the batch
  * really ends. */
+/* M33 (PLAN.md 48): --skipobj / --probeobj, diagnostics for a draw that
+ * the drawlog says is sane and the picture never shows (m435's sphere).
+ * The probe reads the viewport back before and after the object's draw
+ * calls (the twins are joins, so it works under the render thread too),
+ * counts the pixels the draw changed and their box, and prints the GL
+ * state the draw is issued under -- the enables, the program binding, the
+ * vertex array as bound -- with the first vertices' bytes as GL sees them. */
+static int obj_named(const char* want) {
+    int mdl = -1;
+    const char* nm;
+    if (want && !strcmp(want, "*")) {
+        return 1; /* every draw (with --probebox: only those that touch the box) */
+    }
+    nm = want ? port_drawobj_name(gx_last_posmtx_arg, &mdl) : NULL;
+    return nm && !strcmp(nm, want);
+}
 static GxXfDesc app_xfd;  /* what draw_apply settled, for draw_issue */
 static int app_on_gpu;
 static u32 app_bias;
+static int app_skip, app_probe; /* M33: --skipobj / --probeobj, named at the apply (the
+                                 * lazy flush issues after the matrix pointer has moved on) */
 
 static int draw_apply(const u8* s, int n, int in_ring) {
     GxXfDesc* xfd = &app_xfd;
@@ -3227,6 +3254,21 @@ static int draw_apply(const u8* s, int n, int in_ring) {
             gx_force_flags = port_opt.forceobj_flags ? port_opt.forceobj_flags : 7;
         }
     }
+    app_skip = port_opt.skipobj && obj_named(port_opt.skipobj);
+    app_probe = port_opt.probeobj && obj_named(port_opt.probeobj);
+    if (port_opt.probeobj && !strcmp(port_opt.probeobj, "?")) {
+        /* the names the lookup sees this frame, once each per frame */
+        static unsigned last_fr; static char seen[64][32]; static int nseen;
+        int mdl = -1, k;
+        const char* nm = port_drawobj_name(gx_last_posmtx_arg, &mdl);
+        unsigned fr = gl13_frame_number();
+        if (fr != last_fr) { last_fr = fr; nseen = 0; }
+        for (k = 0; k < nseen; k++) { if (!strcmp(seen[k], nm ? nm : "(null)")) break; }
+        if (k == nseen && nseen < 64) {
+            snprintf(seen[nseen++], 32, "%s", nm ? nm : "(null)");
+            port_log("port> probeobj: frame %u model %d name \"%s\" (%d verts)\n", fr, mdl, nm ? nm : "(null)", n);
+        }
+    }
     gl13_apply_transform();
     gl13_apply_raster_state();
     gx_tev_apply();
@@ -3276,11 +3318,187 @@ static int draw_apply(const u8* s, int n, int in_ring) {
     return on_gpu;
 }
 
+static u8* probe_a;
+static u8* probe_b;
+static GLint probe_vp[4];
+static void probe_begin(const u8* s, int n, const Seg* segs, int nsegs, int on_gpu) {
+    GLint v[4];
+    int i;
+    glGetIntegerv(GL_VIEWPORT, probe_vp);
+    if (!probe_a) {
+        probe_a = (u8*)malloc(2048 * 2048 * 3);
+        probe_b = (u8*)malloc(2048 * 2048 * 3);
+    }
+    {
+        int mdl = -1;
+        const char* nm = port_drawobj_name(gx_last_posmtx_arg, &mdl);
+        port_log("port> probeobj: frame %u draw %lu: model %d \"%s\", %d tev stage(s), %d texgen(s); "
+                 "z test %d fn %d write %d comploc %d, alpha %d/%d op %d %d/%d, blend %d %d %d, cull %d\n",
+                 gl13_frame_number(), (unsigned long)stat_draws, mdl, nm ? nm : "?", gx.num_tev,
+                 gx.num_texgens, gx.z_enable, gx.z_func, gx.z_update, gx.z_comploc, gx.alpha_comp0,
+                 gx.alpha_ref0, gx.alpha_op, gx.alpha_comp1, gx.alpha_ref1, gx.blend_mode,
+                 gx.blend_src, gx.blend_dst, gx.cull);
+    }
+    port_log("port> probeobj: draw of %d verts in %d segment(s), %s path, batch at ring+%ld "
+             "stride %d (pos 0 nrm %d clr %d tex %d, %d texcoords); viewport %d %d %d %d\n",
+             n, nsegs, on_gpu ? "vertex-program" : "CPU", src_buf ? (long)(s - src_buf) : -1L,
+             sl.stride, sl.off_nrm, sl.off_clr, sl.off_tex, sl.ntex, probe_vp[0], probe_vp[1],
+             probe_vp[2], probe_vp[3]);
+    for (i = 0; i < nsegs; i++) {
+        port_log("port> probeobj:   segment %d: prim 0x%02x first %u count %u\n", i, segs[i].prim,
+                 segs[i].first, segs[i].count);
+    }
+#define PG(name, e) do { v[0] = v[1] = v[2] = v[3] = 0; glGetIntegerv(e, v); \
+        port_log("port> probeobj:   %-28s %d %d %d %d\n", name, v[0], v[1], v[2], v[3]); } while (0)
+    PG("VERTEX_PROGRAM_ARB", 0x8620);
+    PG("PROGRAM_BINDING_ARB", 0x8677);
+    PG("VERTEX_ARRAY", 0x8074);
+    PG("VERTEX_ARRAY_SIZE/TYPE/STRIDE", 0x807A);
+    PG("  type", 0x807B);
+    PG("  stride", 0x807C);
+    PG("NORMAL_ARRAY", 0x8075);
+    PG("COLOR_ARRAY", 0x8076);
+    PG("TEXTURE_COORD_ARRAY", 0x8078);
+    PG("CULL_FACE", GL_CULL_FACE);
+    PG("DEPTH_TEST", GL_DEPTH_TEST);
+    PG("DEPTH_WRITEMASK", GL_DEPTH_WRITEMASK);
+    PG("DEPTH_FUNC", GL_DEPTH_FUNC);
+    PG("ALPHA_TEST", GL_ALPHA_TEST);
+    PG("BLEND", GL_BLEND);
+    PG("SCISSOR_TEST", GL_SCISSOR_TEST);
+    PG("SCISSOR_BOX", GL_SCISSOR_BOX);
+    PG("COLOR_WRITEMASK", GL_COLOR_WRITEMASK);
+    PG("STENCIL_TEST", GL_STENCIL_TEST);
+    PG("POLYGON_MODE", GL_POLYGON_MODE);
+    PG("CLIP_PLANE0", 0x3000);
+    PG("LIGHTING", GL_LIGHTING);
+    PG("MATRIX_MODE", GL_MATRIX_MODE);
+    PG("ACTIVE_TEXTURE", 0x84E0);
+    PG("CLIENT_ACTIVE_TEXTURE", 0x84E1);
+    PG("DRAW_BUFFER", GL_DRAW_BUFFER);
+#undef PG
+    {
+        /* the first vertices as bound: the ring's bytes at the array base */
+        int k, lim = n < 6 ? n : 6;
+        for (k = 0; k < lim; k++) {
+            const u8* vb = s + (size_t)k * sl.stride;
+            const f32* pf = (const f32*)vb;
+            port_log("port> probeobj:   v%d pos %.2f %.2f %.2f", k, pf[0], pf[1], pf[2]);
+            if (sl.off_nrm >= 0) {
+                const f32* nf = (const f32*)(vb + sl.off_nrm);
+                port_log("  nrm %.3f %.3f %.3f", nf[0], nf[1], nf[2]);
+            }
+            if (sl.off_clr >= 0) {
+                const u8* c = vb + sl.off_clr;
+                port_log("  clr %d %d %d %d", c[0], c[1], c[2], c[3]);
+            }
+            if (sl.off_tex >= 0) {
+                const f32* t = (const f32*)(vb + sl.off_tex);
+                port_log("  st %.3f %.3f", t[0], t[1]);
+            }
+            port_log("\n");
+        }
+    }
+    glFinish();
+    glReadPixels(probe_vp[0], probe_vp[1], probe_vp[2], probe_vp[3], GL_RGB, GL_UNSIGNED_BYTE, probe_a);
+}
+static void probe_end(void) {
+    GLint w = probe_vp[2], h = probe_vp[3];
+    long i, npx = (long)w * h, changed = 0;
+    int x0 = w, y0 = h, x1 = -1, y1 = -1;
+    GLenum err;
+    glFinish();
+    glReadPixels(probe_vp[0], probe_vp[1], w, h, GL_RGB, GL_UNSIGNED_BYTE, probe_b);
+    for (i = 0; i < npx; i++) {
+        if (probe_a[i * 3] != probe_b[i * 3] || probe_a[i * 3 + 1] != probe_b[i * 3 + 1] ||
+            probe_a[i * 3 + 2] != probe_b[i * 3 + 2]) {
+            int x = (int)(i % w), y = (int)(i / w);
+            if (port_opt.probebox[2] > 0 && (x < port_opt.probebox[0] || x > port_opt.probebox[2] ||
+                                             y < port_opt.probebox[1] || y > port_opt.probebox[3])) {
+                continue;
+            }
+            changed++;
+            if (x < x0) x0 = x;
+            if (x > x1) x1 = x;
+            if (y < y0) y0 = y;
+            if (y > y1) y1 = y;
+        }
+    }
+    glGetIntegerv(GL_VIEWPORT, probe_vp); /* a join: every record before it is done */
+    err = glGetError();
+    if (port_opt.probebox[2] > 0) {
+        /* the depth at the box's centre, after the draw */
+        GLfloat z = -1.0f;
+        glReadPixels((port_opt.probebox[0] + port_opt.probebox[2]) / 2,
+                     (port_opt.probebox[1] + port_opt.probebox[3]) / 2, 1, 1, GL_DEPTH_COMPONENT,
+                     GL_FLOAT, &z);
+        port_log("port> probeobj:   depth at the box centre after the draw: %.6f\n", (double)z);
+    }
+    if (port_opt.probebox[2] > 0 && !changed) {
+        port_log("port> probeobj:   -> nothing in the box\n");
+        return;
+    }
+    port_log("port> probeobj:   -> %ld pixel(s) changed%s, glGetError 0x%x\n", changed,
+             changed ? "" : " (the draw landed nothing)", (unsigned)err);
+    if (changed) {
+        /* how much: the mean and largest per-channel change, and the two
+         * pictures (before, after, the difference x8) into --shotdir */
+        long sum = 0; int mx = 0;
+        static int nprobe;
+        char path[512];
+        FILE* f;
+        for (i = 0; i < npx; i++) {
+            int c;
+            for (c = 0; c < 3; c++) {
+                int d = abs((int)probe_a[i * 3 + c] - (int)probe_b[i * 3 + c]);
+                sum += d;
+                if (d > mx) mx = d;
+            }
+        }
+        port_log("port> probeobj:      box x %d..%d y %d..%d (GL rows, bottom up); mean change over "
+                 "the changed pixels %.1f levels, largest %d\n", x0, x1, y0, y1,
+                 (double)sum / (double)(changed * 3), mx);
+        if (port_opt.shotdir && nprobe < 40) {
+            int pass;
+            for (pass = 0; pass < 3; pass++) {
+                snprintf(path, sizeof path, "%s/probe-%05u-%02d-%s.ppm", port_opt.shotdir,
+                         gl13_frame_number(), nprobe, pass == 0 ? "before" : pass == 1 ? "after" : "diffx8");
+                f = fopen(path, "wb");
+                if (f) {
+                    int y;
+                    fprintf(f, "P6\n%d %d\n255\n", (int)w, (int)h);
+                    for (y = (int)h - 1; y >= 0; y--) {
+                        if (pass < 2) {
+                            fwrite((pass == 0 ? probe_a : probe_b) + (size_t)y * w * 3, 1, (size_t)w * 3, f);
+                        } else {
+                            long k;
+                            for (k = (long)y * w * 3; k < (long)(y + 1) * w * 3; k++) {
+                                int d = abs((int)probe_a[k] - (int)probe_b[k]) * 8;
+                                fputc(d > 255 ? 255 : d, f);
+                            }
+                        }
+                    }
+                    fclose(f);
+                }
+            }
+            nprobe++;
+        }
+    }
+}
+
 static void draw_issue(const u8* s, int n, const Seg* segs, int nsegs, int in_ring) {
     int on_gpu = app_on_gpu;
     u32 bias = app_bias;
+    int probing = 0;
     stat_prims += (unsigned)nsegs;
     stat_verts += (unsigned)n;
+    if (app_skip) {
+        return;
+    }
+    if (app_probe) {
+        probing = 1;
+        probe_begin(s, n, segs, nsegs, on_gpu);
+    }
     /* After the state is applied, not before: the texture cache fills in
      * gl_name at bind time, so a log taken earlier reports a stale 0 and
      * sends you hunting for a texture upload that already happened. */
@@ -3324,6 +3542,7 @@ static void draw_issue(const u8* s, int n, const Seg* segs, int nsegs, int in_ri
             stat_draws++;
         }
         port_perf_sub_leave();
+        if (probing) probe_end();
         return;
     }
     if (!port_opt.noindexed && !port_opt.oldsubmit) {
@@ -3334,6 +3553,7 @@ static void draw_issue(const u8* s, int n, const Seg* segs, int nsegs, int in_ri
         if (nidx) {
             issue_indexed(nidx, lo, hi);
             port_perf_sub_leave();
+            if (probing) probe_end();
             return;
         }
     }
@@ -3346,11 +3566,24 @@ static void draw_issue(const u8* s, int n, const Seg* segs, int nsegs, int in_ri
             biased[i] = segs[i];
             biased[i].first += bias;
         }
+        if (gl13_zprepass_wanted()) {
+            gl13_zprepass_begin();
+            issue_segments(biased, nsegs);
+            gl13_zprepass_end();
+            stat_zprepass++;
+        }
         issue_segments(biased, nsegs);
     } else {
+        if (gl13_zprepass_wanted()) {
+            gl13_zprepass_begin();
+            issue_segments(segs, nsegs);
+            gl13_zprepass_end();
+            stat_zprepass++;
+        }
         issue_segments(segs, nsegs);
     }
     port_perf_sub_leave();
+    if (probing) probe_end();
 }
 
 static void draw_submit(const u8* s, int n, const Seg* segs, int nsegs, int in_ring) {
@@ -4618,7 +4851,7 @@ static void decode_pending_last(const GxDecJob* j, u32 n, u32 vbytes) {
  * the display-list cache's index tracking, --decodestats, the premerge),
  * or a run that would not fit the ring (the sink). */
 static int rtdec_build(GxDecJob* j, const u8* p, const u8* end, u32 count) {
-    if (!rt_decode_on() || sl.off_skin >= 0 || premerge_on || port_opt.decodestats ||
+    if (!rt_decode_want(count) || sl.off_skin >= 0 || premerge_on || port_opt.decodestats ||
         nplan > GX_MAX_ATTR || plan_nfill > GX_DEC_FILL_MAX ||
         run_pos + (size_t)count * sl.stride > src_cap || count >= MAX_VERTS) {
         return 0;
@@ -4678,6 +4911,7 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
     port_perf_gx_begin();
     frame = gl13_frame_number();
     caching = port_opt.dlcache && nbytes > 0;
+    rt_auto_on = rt_recording && rt_decode_mode() == 3;
     /* A scene change strands every entry it had; sweep on a slow cadence so
      * the table does not grow to hold every model the walk has ever passed. */
     if (caching && frame != dlc_last_sweep_frame && (frame & 255) == 0) {
@@ -4868,6 +5102,7 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
                 rt_decode_record(&rtjob);
                 gx_skin_stamp_decode(rt_pos()); /* the skin body's join (PLAN.md 44.1) */
                 decode_pending_last(&rtjob, n, vb);
+                rt_decode_there(n);
                 nverts = (int)n;
                 p += (size_t)n * vb;
                 stat_rtdec_runs++;
@@ -4876,13 +5111,25 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
                     stat_fast_verts += count;
                 }
             } else if (plan_fast && !caching && !port_opt.decodestats) {
+                /* M33: under --rtdecode auto this is the game thread's share
+                 * (timed for the next frame's plan); under 1/2 a refusal */
+                double t0 = rt_auto_on ? port_now_seconds() : 0.0;
                 stat_fast_verts += count;
-                stat_rtdec_refused += rt_decode_on() ? 1 : 0;
+                stat_rtdec_refused += (rt_decode_on() && !rt_auto_on) ? 1 : 0;
                 p = plan_fast(p, end, count);
+                if (rt_auto_on) {
+                    rt_decode_here((unsigned)nverts, port_now_seconds() - t0);
+                    stat_rtdec_here++;
+                }
             } else {
-                stat_rtdec_refused += rt_decode_on() ? 1 : 0;
+                double t0 = rt_auto_on ? port_now_seconds() : 0.0;
+                stat_rtdec_refused += (rt_decode_on() && !rt_auto_on) ? 1 : 0;
                 p = (caching || port_opt.decodestats) ? decode_run_tracked(p, end, count)
                                                       : decode_run(p, end, count);
+                if (rt_auto_on) {
+                    rt_decode_here((unsigned)nverts, port_now_seconds() - t0);
+                    stat_rtdec_here++;
+                }
             }
             port_perf_sub_leave();
         } else {

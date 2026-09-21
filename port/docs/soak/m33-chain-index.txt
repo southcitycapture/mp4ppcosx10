@@ -1,0 +1,22 @@
+# m33 chain start Mon Sep 21 10:14:10 EDT 2026  isle md5 ebbf535b9724b8c28393a7c32f4eb4fd
+TA EXIT=0 wall=229s md5 800:0b58c5ee 3000:c58a046d 7000:4a9a640c args='--turbo --play board-start-com4.play --frames 9000 --rtdecode auto'
+T2 EXIT=0 wall=243s md5 800:0b58c5ee 3000:c58a046d 7000:4a9a640c args='--turbo --play board-start-com4.play --frames 9000 --rtdecode 2'
+T0 EXIT=0 wall=235s md5 800:0b58c5ee 3000:c58a046d 7000:4a9a640c args='--turbo --play board-start-com4.play --frames 9000 --rtdecode 0'
+RA EXIT=0 wall=273s md5 800:0b58c5ee 3000:c58a046d 7000:4a9a640c args='--soak --realtime --frames 16000 --rtdecode auto'
+R2 EXIT=0 wall=273s md5 800:0b58c5ee 3000:c58a046d 7000:4a9a640c args='--soak --realtime --frames 16000 --rtdecode 2'
+RAa EXIT=0 wall=274s md5 800:0b58c5ee 3000:c58a046d 7000:4a9a640c args='--soak --realtime --frames 16000 --rtdecode auto'
+R2a EXIT=0 wall=272s md5 800:0b58c5ee 3000:c58a046d 7000:4a9a640c args='--soak --realtime --frames 16000 --rtdecode 2'
+RAb EXIT=0 wall=268s md5 800:0b58c5ee 3000:c58a046d 7000:4a9a640c args='--soak --realtime --frames 16000 --rtdecode auto'
+R2b EXIT=0 wall=273s md5 800:0b58c5ee 3000:c58a046d 7000:4a9a640c args='--soak --realtime --frames 16000 --rtdecode 2'
+# m33 chain all done Mon Sep 21 10:53:56 EDT 2026
+# m33 chain start Mon Sep 21 11:54:57 EDT 2026  isle md5 020187aff6c216b92c5d37e050de2764
+TD EXIT=0 wall=225s md5 800:0b58c5ee 3000:c58a046d 7000:4a9a640c args='--turbo --play board-start-com4.play --frames 9000'
+TDz2 EXIT=0 wall=240s md5 800:b0224197 3000:c58a046d 7000:62d3c0fe args='--turbo --play board-start-com4.play --frames 9000 --zprepass 2'
+RDz2 EXIT=0 wall=269s md5 800:b0224197 3000:c58a046d 7000:62d3c0fe args='--soak --realtime --frames 16000 --zprepass 2'
+RD EXIT=0 wall=269s md5 800:0b58c5ee 3000:c58a046d 7000:4a9a640c args='--soak --realtime --frames 16000'
+# m33 chain all done Mon Sep 21 12:12:00 EDT 2026
+# m33 chain start Mon Sep 21 12:17:58 EDT 2026  isle md5 d1f5f8f96bcc780625f5ae2da2371569
+# m33 chain all done Mon Sep 21 12:17:58 EDT 2026
+# m33 chain start Mon Sep 21 12:18:09 EDT 2026  isle md5 d1f5f8f96bcc780625f5ae2da2371569
+TDf EXIT=0 wall=229s md5 800:0b58c5ee 3000:c58a046d 7000:4a9a640c args='--turbo --play board-start-com4.play --frames 9000'
+# m33 chain all done Mon Sep 21 12:22:03 EDT 2026
