@@ -800,3 +800,34 @@ is either ready to offer upstream or has a case to remove.
   three minutes lost.
 * **`scp host:a host:b local/` hangs** (it tries a remote-to-remote
   copy); one remote path per scp.
+
+## 0t. Five things M31 paid for *(2026-09-21)*
+
+* **Read the stub report before reading the game.** Every run ends with
+  `---- SDK surface hit at boot: N distinct stubs ----`; m417's said
+  `C_QUATMultiply 2532` and the whole "logic divergence" was there. M30
+  read the water shader, the play's end and m430's column for a day
+  with the answer on the last screen of each log. `gen_stubs.py` makes
+  a loud stub of anything the link cannot find, including a `static
+  inline` the mirrored header does not declare (`GXUnknownu16`, typed
+  `long f(void)`), and a stub returns without writing its outputs.
+* **A bundle made on littlejelly carries `LSRequiresNativeExecution`**,
+  which the Intel MacBook honours: `open` says "incorrect executable
+  format" and nothing runs. M30's bench bundles had the key deleted by
+  hand. `sed -i "" /LSRequiresNativeExecution/d Info.plist`, and
+  LaunchServices caches the old plist by path — copy to a new name and
+  `lsregister -f` it, or the deletion changes nothing.
+* **An edit after the build is not on the G4.** The J fix (portMessTag)
+  went in after the 06:22 build and before the 06:51 install with no
+  build between; the gallery's m435 row came back without the name and
+  the day lost a re-install and a re-run. `port/build-ppc.sh` is the
+  first word of the install line, every time.
+* **`GL_TEXTURE` is 0x1702.** Reading a `--gltrace` line
+  `glTexEnvi pname 8580 v 1702` as "SOURCE0_RGB = PRIMARY_COLOR" cost
+  twenty minutes; 0x8577 is PRIMARY_COLOR, 0x8578 PREVIOUS, 0x8576
+  CONSTANT, 0x1702 TEXTURE.
+* **The G4's disk reads at 13 MB/s** (`dd` of the disc image, page cache
+  cold, `mds` idle): a shingled 2.5" FireCuda on the Quicksilver's ATA
+  bus. A cold 1.3 MB module read is 100 ms, a rename over an existing
+  file up to 1.8 s. Not a fault and not a setting; anything that must
+  be quick stays in the page cache or on a thread.

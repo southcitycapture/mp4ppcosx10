@@ -1136,6 +1136,7 @@ static void build_decode_plan(void) {
 
 static void transform_and_store(void);
 static void finish_vertices(const u8* s, int n);
+int gx_force_flags; /* M31: --forceobj */
 
 /* **A writer's name does not say which attribute it fills.**
  *
@@ -1608,6 +1609,12 @@ IDX_WRITER(GXColor1x16, u16, dl_u16(index))
 IDX_WRITER(GXColor1x8, u8, dl_u8(index))
 IDX_WRITER(GXTexCoord1x16, u16, dl_u16(index))
 IDX_WRITER(GXTexCoord1x8, u8, dl_u8(index))
+/* M31 (PLAN.md 46): the decomp's name for a bare u16 store into the pipe
+ * (GXVert.h:180), which m430's rope and sail lists (player.c:1513,
+ * water.c:1151) use for every index; the same cursor as the named writers.
+ * It was an untyped stub until M31 -- the lists recorded nothing but their
+ * GXBegin, and the decoder read the heap after it as vertices. */
+IDX_WRITER(GXUnknownu16, u16, dl_u16(index))
 
 void GXPosition3f32(f32 x, f32 y, f32 z) {
     f32 v[3];
@@ -3201,6 +3208,18 @@ static int draw_apply(const u8* s, int n, int in_ring) {
         port_perf_sub_leave();
     }
     port_perf_sub_enter(PERF_SUB_STATE);
+    /* M31 (PLAN.md 46): --forceobj NAME[:flags], a diagnostic -- the named
+     * object's draws with the cull (1), the z test (2) and the alpha test
+     * (4) switched off (all three by default), to tell which of them hides a
+     * draw the drawlog says is sane (m435's pillar sphere). */
+    gx_force_flags = 0;
+    if (port_opt.forceobj) {
+        int mdl = -1;
+        const char* nm = port_drawobj_name(gx_last_posmtx_arg, &mdl);
+        if (nm && !strcmp(nm, port_opt.forceobj)) {
+            gx_force_flags = port_opt.forceobj_flags ? port_opt.forceobj_flags : 7;
+        }
+    }
     gl13_apply_transform();
     gl13_apply_raster_state();
     gx_tev_apply();

@@ -481,4 +481,8 @@ void gx_log_call(const char* name, const char* fmt, ...);
         }                                                                                \
     } while (0)
 
+/* M31: --forceobj's flags for the draw being applied (gx_draw.c); 0 normally */
+extern int gx_force_flags;
+const char* port_drawobj_name(const void* mtx, int* model_index);
+
 #endif

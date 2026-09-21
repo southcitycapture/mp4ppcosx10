@@ -796,3 +796,10 @@ src/game/hsfload.c	            rgba[i].r = new_mat->litColor[0];\n            rg
 # at the panel pick (frame ~15,560).  The same class as PLAN.md 20's bound.
 # The two become one array and keep their names.
 src/REL/m458Dll/main.c	OMOBJ *lbl_1_bss_C0;\nOMOBJ *lbl_1_bss_BC;\n	OMOBJ *lbl_1_bss_BC_arr[2];\n#define lbl_1_bss_BC (lbl_1_bss_BC_arr[0])\n#define lbl_1_bss_C0 (lbl_1_bss_BC_arr[1])\n
+
+# ------------------------------------------------------- include/dolphin/gx/GXVert.h
+# M31 (PLAN.md 46): the TARGET_PC block declares every immediate-mode writer
+# the port implements in gx_draw.c except GXUnknownu16 (the decomp's name for
+# a bare u16 store into the pipe, used by m430's rope and sail display lists).
+# Undeclared, it linked to an untyped stub and the lists recorded no indices.
+include/dolphin/gx/GXVert.h	void GXTexCoord1x16(u16 index);\nvoid GXTexCoord1x8(u8 index);\n	void GXTexCoord1x16(u16 index);\nvoid GXTexCoord1x8(u8 index);\nvoid GXUnknownu16(u16 x);\n

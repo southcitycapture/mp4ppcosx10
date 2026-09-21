@@ -1178,7 +1178,91 @@ static u8 rc_ren_c[GX_TEV_STAGES][4]; /* per stage, per colour input: 0 / 1 (PRE
 static u8 rc_ren_a[GX_TEV_STAGES][4]; /* per stage, per alpha input: 0 / 2 */
 static u8 rc_pass_c[GX_TEV_STAGES];   /* the unit's RGB is REPLACE(PREVIOUS): a dead register write */
 static u8 rc_pass_a[GX_TEV_STAGES];
+static u8 rc_carry[GX_TEV_STAGES];    /* M31: the unit's alpha is the stage's colour product (below) */
 static unsigned stat_rc_renamed, stat_rc_passed, stat_rc_unexpressible, stat_rc_chains;
+static unsigned stat_rc_carried;
+static int rc_live_after(int i, int reg, int side, int stages);
+
+/* M31 (PLAN.md 46): the scalar-in-alpha fold, m417's pool (water.c:826).
+ *
+ *     stage 3:  T_foam * RASA          -> REG2     (T_foam an I8: grey)
+ *     stage 4:  lerp(PREV, C1, C2)     -> PREV
+ *
+ * Stage 4 wants both GX's PREV (stage 2's result) and stage 3's, and GL has
+ * one carrier -- but stage 3's result is a *scalar* (a grey texture times an
+ * alpha), and the alpha channel is idle in this chain (every stage's alpha
+ * is KONST into a register nobody reads).  So unit 3 passes its RGB through
+ * and computes the product in its alpha (TEXTURE.a is the intensity: the
+ * port decodes I4/I8 with d[3] = I), and unit 4 reads C2 as PREVIOUS.a:
+ * INTERPOLATE(C1, PREVIOUS, PREVIOUS.a), exact.  The planner takes the fold
+ * only where the plain rename cannot say the chain (the next stage reads
+ * both PREV and the register), the stage's own alpha write is dead, and the
+ * next stage needs no PREV alpha; everything else is the M30 plan. */
+static int rc_carry_ok(const GXTevStage* s, int i, int stages) {
+    const GXTevStage* n;
+    GXTexObjPort* t;
+    u8 x;
+    int j, r;
+    if (port_opt.nocarry || i + 1 >= stages) {
+        return 0;
+    }
+    if (s->cop != GX_TEV_ADD || s->cbias != GX_TB_ZERO || ras_table(s) != NULL ||
+        SWAP_PACK(gx.swap_tbl[s->tex_swap & 3]) != SWAP_IDENTITY) {
+        return 0;
+    }
+    if (s->creg == GX_TEVPREV || s->creg > GX_TEVREG0 + 2) {
+        return 0;
+    }
+    r = (int)s->creg;
+    /* the stage's own alpha write must be a register nobody reads */
+    if (s->areg == GX_TEVPREV || s->areg > GX_TEVREG0 + 2 || rc_live_after(i, (int)s->areg, 1, stages)) {
+        return 0;
+    }
+    /* T * X, X a scalar with an alpha form */
+    if (s->cin[0] != GX_CC_ZERO || s->cin[3] != GX_CC_ZERO) {
+        return 0;
+    }
+    if (s->cin[1] == GX_CC_TEXC) {
+        x = s->cin[2];
+    } else if (s->cin[2] == GX_CC_TEXC) {
+        x = s->cin[1];
+    } else {
+        return 0;
+    }
+    if (x == GX_CC_KONST) {
+        float k[4];
+        konst_color(s, 0, k);
+        if (k[0] != k[1] || k[1] != k[2]) {
+            return 0; /* a coloured constant is not a scalar */
+        }
+    } else if (x != GX_CC_RASA && x != GX_CC_A0 && x != GX_CC_A1 && x != GX_CC_A2) {
+        return 0;
+    }
+    t = gx_bound_tex(s->map);
+    if (t == NULL || s->coord >= GX_TEXCOORDS || (t->format != GX_TF_I4 && t->format != GX_TF_I8)) {
+        return 0;
+    }
+    /* the next stage: reads the register (as colour), reads PREV, and needs no
+     * alpha from PREV or from any register on either side */
+    n = &gx.tev[i + 1];
+    {
+        int reads_reg = 0, reads_prev = 0;
+        for (j = 0; j < 4; j++) {
+            u8 a = n->cin[j];
+            if (a == GX_CC_C0 + 2 * (r - 1)) reads_reg++;
+            if (a == GX_CC_CPREV) reads_prev++;
+            if (a == GX_CC_APREV || a == GX_CC_A0 || a == GX_CC_A1 || a == GX_CC_A2) return 0;
+            if (n->ain[j] == GX_CA_APREV || n->ain[j] == GX_CA_A0 || n->ain[j] == GX_CA_A1 ||
+                n->ain[j] == GX_CA_A2) {
+                return 0;
+            }
+        }
+        if (!reads_reg || !reads_prev) {
+            return 0; /* the plain rename says it */
+        }
+    }
+    return 1;
+}
 
 /* which stage m > i reads register `reg` (1..3) on `side` before another
  * write to it: 1 if any */
@@ -1201,11 +1285,20 @@ static int rc_live_after(int i, int reg, int side, int stages) {
 
 static void regchain_plan(int stages, int skip_from, int skip_n) {
     int last_c[4], last_a[4]; /* producer stage of PREV, REG0..2 on each side; -1 = the constant */
+    /* M31: what GL's PREVIOUS holds after the unit before this one -- the
+     * producer stage of its RGB and of its alpha (a pass leaves them), and
+     * whether the alpha is a carried colour product (rc_carry) rather than
+     * a GX alpha.  A read is expressible iff the GX value it names is what
+     * PREVIOUS holds; the M30 plan tested `prod == i - 1`, which is the same
+     * thing except across a pass, where it counted an exact read as
+     * unexpressible (a count, not a picture). */
+    int gl_c = -1, gl_a = -1, carry_of = -1;
     int i, j, any = 0, bad = 0;
     memset(rc_ren_c, 0, sizeof(rc_ren_c));
     memset(rc_ren_a, 0, sizeof(rc_ren_a));
     memset(rc_pass_c, 0, sizeof(rc_pass_c));
     memset(rc_pass_a, 0, sizeof(rc_pass_a));
+    memset(rc_carry, 0, sizeof(rc_carry));
     if (port_opt.noregchain) {
         return;
     }
@@ -1219,6 +1312,8 @@ static void regchain_plan(int stages, int skip_from, int skip_n) {
              * result in PREV on both sides */
             if (i == skip_from + skip_n - 1) {
                 last_c[0] = last_a[0] = i;
+                gl_c = gl_a = i;
+                carry_of = -1;
             }
             continue;
         }
@@ -1232,10 +1327,14 @@ static void regchain_plan(int stages, int skip_from, int skip_n) {
             if (prod == -2 || prod == -1) {
                 continue; /* not a register, or the register's constant: as before */
             }
-            if (prod == i - 1) {
-                if ((a == GX_CC_CPREV || a == GX_CC_APREV)) {
-                    continue; /* PREV after a PREV write: GL_PREVIOUS already */
-                }
+            if (a == GX_CC_CPREV) {
+                if (prod != gl_c) bad++; /* GL_PREVIOUS already, or lost */
+            } else if (a == GX_CC_APREV) {
+                if (prod != gl_a || carry_of >= 0) bad++;
+            } else if (!side && carry_of >= 0 && prod == carry_of) {
+                rc_ren_c[i][j] = 2; /* M31: the register's RGB rides in PREVIOUS.a */
+                any = 1;
+            } else if (side ? (prod == gl_a && carry_of < 0) : (prod == gl_c)) {
                 rc_ren_c[i][j] = side ? 2 : 1;
                 any = 1;
             } else {
@@ -1250,10 +1349,9 @@ static void regchain_plan(int stages, int skip_from, int skip_n) {
             if (prod == -2 || prod == -1) {
                 continue;
             }
-            if (prod == i - 1) {
-                if (a == GX_CA_APREV) {
-                    continue;
-                }
+            if (a == GX_CA_APREV) {
+                if (prod != gl_a || carry_of >= 0) bad++;
+            } else if (prod == gl_a && carry_of < 0) {
                 rc_ren_a[i][j] = 2;
                 any = 1;
             } else {
@@ -1266,11 +1364,25 @@ static void regchain_plan(int stages, int skip_from, int skip_n) {
             if (i < stages - 1 && !rc_live_after(i, (int)s->creg, 0, stages)) {
                 rc_pass_c[i] = 1;
                 any = 1;
+            } else if (last_c[0] == gl_c && rc_carry_ok(s, i, stages)) {
+                /* M31: the next stage wants both PREV and this register; the
+                 * product is a scalar, so it rides in the unit's alpha */
+                rc_pass_c[i] = 1;
+                rc_carry[i] = 1;
+                last_c[s->creg] = i;
+                last_a[s->areg] = i; /* its alpha write is dead (checked) */
+                carry_of = i;
+                gl_a = i;
+                any = 1;
+                stat_rc_carried++;
+                continue;
             } else {
                 last_c[s->creg] = i;
+                gl_c = i;
             }
         } else {
             last_c[0] = i;
+            gl_c = i;
         }
         if (s->areg != GX_TEVPREV && s->areg <= GX_TEVREG0 + 2) {
             if (i < stages - 1 && !rc_live_after(i, (int)s->areg, 1, stages)) {
@@ -1278,9 +1390,13 @@ static void regchain_plan(int stages, int skip_from, int skip_n) {
                 any = 1;
             } else {
                 last_a[s->areg] = i;
+                gl_a = i;
+                carry_of = -1;
             }
         } else {
             last_a[0] = i;
+            gl_a = i;
+            carry_of = -1;
         }
     }
     if (any) {
@@ -1436,10 +1552,16 @@ void gx_tev_apply(void) {
         stages = gl13_max_tex_units;
     }
     if (!port_opt.oldtev) {
-        for (i = 0; i < stages && i < 32; i++) {
+        for (i = 0; i < stages && i < 16; i++) {
             const GXTevStage* s = &gx.tev[i];
-            if (gx_bound_tex(s->map) != NULL && s->coord < GX_TEXCOORDS) {
+            GXTexObjPort* t = gx_bound_tex(s->map);
+            if (t != NULL && s->coord < GX_TEXCOORDS) {
                 have_tex_bits |= 1u << i;
+                /* M31: the carry fold reads the texture's format (I4/I8), so
+                 * the plan is a function of it too */
+                if (t->format == GX_TF_I4 || t->format == GX_TF_I8) {
+                    have_tex_bits |= 1u << (16 + i);
+                }
             }
         }
         sig = tev_sig_hash(stages, have_tex_bits);
@@ -1612,7 +1734,31 @@ void gx_tev_apply(void) {
                                  color_arg(s, s->cin[2], rc[2]), color_arg(s, s->cin[3], rc[3]), s->cop,
                                  s->cbias, s->cscale, konst, &konst_set);
                 }
-                if (rc_pass_a[i]) {
+                if (rc_carry[i]) {
+                    /* M31: the stage's colour product T * X in the alpha:
+                     * TEXTURE.a (the grey texture's intensity) times X's
+                     * alpha form -- the primary alpha for RASA, the
+                     * constant's alpha for KONST / A0-2 */
+                    u8 x = s->cin[1] == GX_CC_TEXC ? s->cin[2] : s->cin[1];
+                    Arg t = alpha_arg(s, GX_CA_TEXA, 0);
+                    Arg k;
+                    Arg z;
+                    memset(&z, 0, sizeof(z));
+                    z.is_zero = 1;
+                    z.src = GL_CONSTANT;
+                    z.operand = GL_SRC_ALPHA;
+                    if (x == GX_CC_RASA) {
+                        k = alpha_arg(s, GX_CA_RASA, 0);
+                    } else if (x == GX_CC_KONST) {
+                        k = color_arg(s, GX_CC_KONST, 0); /* grey: checked */
+                        k.operand = GL_SRC_ALPHA;
+                        k.konst[3] = k.konst[0];
+                    } else {
+                        k = alpha_arg(s, (u8)(GX_CA_A0 + (x - GX_CC_A0) / 2), 0);
+                    }
+                    emit_channel(i, 0, z, t, k, z, GX_TEV_ADD, GX_TB_ZERO, s->cscale, konst,
+                                 &konst_set);
+                } else if (rc_pass_a[i]) {
                     glc_texenvi(i, GL_COMBINE_ALPHA, GL_REPLACE);
                     glc_texenvi(i, GL_SOURCE0_ALPHA, GL_PREVIOUS);
                     glc_texenvi(i, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
@@ -1657,6 +1803,10 @@ void gx_tev_report(void) {
     if (stat_regfix5) {
         port_log("port> tev: %u unit emissions of the M30 three-texture shape (the M16 triple "
                  "and a second lerp-by-alpha pair; PLAN.md 45)\n", stat_regfix5);
+    }
+    if (stat_rc_carried) {
+        port_log("port> tev: %u configs carried a grey-texture product in the alpha (m417's "
+                 "pool; PLAN.md 46)\n", stat_rc_carried);
     }
     if (stat_regfix4) {
         port_log("port> tev: %u unit emissions of the M30 lamp shape (T*RAS -> REG, T.a*K -> REG, "

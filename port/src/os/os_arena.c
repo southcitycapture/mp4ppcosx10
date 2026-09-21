@@ -439,6 +439,17 @@ void OSVisitAllocated(OSAllocVisitor visitor) {
 
 u32 portMessTag(const void* p) {
     uintptr_t v = (uintptr_t)p;
+    /* M31 (PLAN.md 46, cause J): one caller hands MAKE_MESSID_PTR a message
+     * *id* -- m435's result bubble puts the player's name in with
+     * `MAKE_MESSID_PTR(character)` (main.c:3363), a bank-0 id of 0..7, which
+     * the console's bare cast leaves an id.  Tagged, it became a pointer to
+     * page zero and the bubble read "has 101 points!" without the name.  No
+     * pointer lives below 0x1000 in a 32-bit Darwin process (__PAGEZERO), so
+     * such a value is an id and keeps its shape; the 113 other callers pass
+     * strings in .data, .bss or the stack, all far above it. */
+    if (v < 0x1000u) {
+        return (u32)v;
+    }
     if (v & PORT_MESS_TAG) {
         /* A 32-bit Darwin process puts nothing up there, and a 64-bit host
          * would have been truncated long before reaching here, but a tag that

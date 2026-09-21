@@ -262,7 +262,7 @@ typedef struct PortOptions {
                              *   thread to drain before the frame is consumed (4) */
     /* ---- M29: the decode on the render thread (PLAN.md 44) ---- */
     int stackmul;           /* --stackmul N  the coroutine stacks' multiplier over
-                             *   the game's own sizes (PORT_PRC_STACK_MUL = 4) */
+                             *   the game's own sizes (PORT_PRC_STACK_MUL = 2 since M31; 4 before) */
     int rtdecode;           /* --rtdecode N  -1: 2 with the render thread on, else 0
                              *   (the default); 0: the display lists decoded on the
                              *   game thread (the inline twin); 1: decoded by the
@@ -322,6 +322,9 @@ typedef struct PortOptions {
     int nospot;             /* --nospot  M30: spot lights without their cone, as before (PLAN.md 45 B) */
     int oldfog;             /* --oldfog  M30: GL_EXP by 1/(end-start+1) of |z|, and a degenerate range fogs (PLAN.md 45 C) */
     int noregchain;         /* --noregchain  M30: a register chain's reads as the constants, as before (PLAN.md 45 B) */
+    int nocarry;            /* --nocarry  M31: no scalar-in-alpha fold for m417's pool shape (PLAN.md 46) */
+    const char* forceobj;   /* --forceobj NAME[:flags]  M31 diagnostic: the object's draws without cull (1) / z test (2) / alpha test (4) */
+    int forceobj_flags;
     int nolinewidth;        /* --nolinewidth  M30: GXSetLineWidth ignored, every line 1 px (PLAN.md 45 H) */
     int noregfix;           /* --noregfix  fold a stage's GX_TEVREG write to
                              *   PREV the way every build before M16 did (the
@@ -436,6 +439,7 @@ void port_shutdown(int code); /* the one exit path: report, flush, close SDL */
  * the window opens; the title is what the window shows until the first drawn
  * frame, the summary is the one-line inventory + verdict. */
 void port_machine_check(void);
+int port_prc_stack_mul(void);                /* os_misc.c: the coroutine stacks' multiplier (M29/M31) */
 const char* port_machine_title(void);
 const char* port_machine_summary(void);
 const char* port_machine_verdict(void);   /* "ok" / "degraded" / "unsupported" */

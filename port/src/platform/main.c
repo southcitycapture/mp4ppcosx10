@@ -137,7 +137,7 @@ static void usage(const char* argv0) {
             "  --norenderthread  M27: --renderthread 0\n"
             "  --rtgate MS       M27: the gate waits this long for the render thread (4)\n"
             "  --rtdecode N      M29: the display-list decode 0 on the game thread, 1 on the\n"
-            "  --stackmul N      M29: the coroutine stacks' multiplier over the game's sizes (4)\n"
+            "  --stackmul N      M29: the coroutine stacks' multiplier over the game's sizes (2; M31 soak)\n"
             "                    render thread joined at once, 2 joined at the retrace (2 with a thread)\n"
             "  --rtsplit         M27: the replay timed by record class (an instrument)\n"
             "  --predecode       M24: the texture decode staged on the worker from\n"
@@ -263,6 +263,8 @@ static void usage(const char* argv0) {
             "  --noregchain      M30: a TEV stage reading the register the previous\n"
             "                    stage wrote gets the register's constant, as before\n"
             "                    (m427's flooded cave), for the A/B\n"
+            "  --nocarry         M31: no scalar-in-alpha fold (m417's pool: the water black)\n"
+            "  --forceobj N[:f]  M31 diagnostic: object N's draws without cull 1 / z test 2 / alpha test 4\n"
             "  --nolinewidth     M30: ignore GXSetLineWidth, every line one pixel\n"
             "                    wide as before (m428's rope), for the A/B\n"
             "  --noregfix        fold a TEV stage's GX_TEVREG write to PREV (the\n"
@@ -898,6 +900,16 @@ int port_parse_args(int argc, char** argv) {
             port_opt.oldfog = 1;
         } else if (!strcmp(a, "--noregchain")) {
             port_opt.noregchain = 1;
+        } else if (!strcmp(a, "--nocarry")) {
+            port_opt.nocarry = 1;
+        } else if (!strcmp(a, "--forceobj") && i + 1 < argc) {
+            char* colon;
+            port_opt.forceobj = argv[++i];
+            colon = strchr(port_opt.forceobj, ':');
+            if (colon) {
+                *colon = 0;
+                port_opt.forceobj_flags = atoi(colon + 1);
+            }
         } else if (!strcmp(a, "--nolinewidth")) {
             port_opt.nolinewidth = 1;
         } else if (!strcmp(a, "--noregfix")) {

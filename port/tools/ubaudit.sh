@@ -116,7 +116,7 @@ CF="-std=gnu11 -O2 -fno-strict-aliasing -fwrapv -fcommon -w
  -Wno-unknown-pragmas -Wno-implicit-int -Wno-builtin-declaration-mismatch
  -Wno-discarded-qualifiers -Wno-pointer-sign
  -DTARGET_PC -DVERSION=1 -DNDEBUG=1 -DMTX_USE_C -DMUSY_TARGET=MUSY_TARGET_PC
- -DPORT_PRC_STACK_MUL=4 -DPORT_PRC_STACK_GUARD=64
+ -DPORT_PRC_STACK_MUL=2 -DPORT_PRC_STACK_GUARD=64
  -Ibuild-ppc-darwin/gen/include -I../extern/musyx/include
  -I../build/GMPE01_01/include -Iinclude
  -isysroot /usr/local/MacOSX10.4u.sdk -mmacosx-version-min=10.4
@@ -154,7 +154,7 @@ CF="-std=gnu11 -O2 -fno-strict-aliasing -fwrapv -fcommon -w
  -Wno-unknown-pragmas -Wno-implicit-int -Wno-builtin-declaration-mismatch
  -Wno-discarded-qualifiers -Wno-pointer-sign
  -DTARGET_PC -DVERSION=1 -DNDEBUG=1 -DMTX_USE_C -DMUSY_TARGET=MUSY_TARGET_PC
- -DPORT_PRC_STACK_MUL=4 -DPORT_PRC_STACK_GUARD=64
+ -DPORT_PRC_STACK_MUL=2 -DPORT_PRC_STACK_GUARD=64
  -Ibuild-ppc-darwin/gen/include -I../extern/musyx/include
  -I../build/GMPE01_01/include -Iinclude
  -isysroot /usr/local/MacOSX10.4u.sdk -mmacosx-version-min=10.4
@@ -196,7 +196,7 @@ find build-ppc-darwin/gen/src -name "*.c" | sort | while read f; do
     -Wno-builtin-declaration-mismatch -Wno-discarded-qualifiers -Wno-pointer-sign \
     -Waggressive-loop-optimizations -Warray-bounds \
     -DTARGET_PC -DVERSION=1 -DNDEBUG=1 -DMTX_USE_C -DMUSY_TARGET=MUSY_TARGET_PC \
-    -DPORT_PRC_STACK_MUL=4 -DPORT_PRC_STACK_GUARD=64 \
+    -DPORT_PRC_STACK_MUL=2 -DPORT_PRC_STACK_GUARD=64 \
     -I build-ppc-darwin/gen/include -I ../extern/musyx/include \
     -I ../build/GMPE01_01/include -Iinclude \
     -isysroot /usr/local/MacOSX10.4u.sdk -mmacosx-version-min=10.4 \

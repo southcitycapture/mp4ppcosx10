@@ -1,0 +1,4 @@
+# m31 chain start Mon Sep 21 06:54:39 EDT 2026  isle md5 e195a4f39a1cf54a92b9a832f99cbd30
+T EXIT=0 wall=248s md5 800:0b58c5ee 3000:c58a046d 7000:4a9a640c args='--turbo --play board-start-com4.play --frames 9000'
+Tnc EXIT=0 wall=248s md5 800:0b58c5ee 3000:c58a046d 7000:4a9a640c args='--turbo --play board-start-com4.play --frames 9000 --nocarry'
+# m31 chain start Mon Sep 21 07:03:56 EDT 2026  isle md5 e195a4f39a1cf54a92b9a832f99cbd30

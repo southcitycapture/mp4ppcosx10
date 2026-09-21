@@ -347,7 +347,7 @@ void os_misc_snap_register(void) {
 }
 
 /* M29: the game's process.c multiplies every coroutine stack by this (the
- * patch in port/patches.txt); PORT_PRC_STACK_MUL (4) unless --stackmul */
+ * patch in port/patches.txt); PORT_PRC_STACK_MUL (2 since the M31 soak, PLAN.md 46; 4 before) unless --stackmul */
 int port_prc_stack_mul(void) {
     return port_opt.stackmul > 0 ? port_opt.stackmul : PORT_PRC_STACK_MUL;
 }

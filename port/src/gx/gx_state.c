@@ -364,6 +364,33 @@ void GXSetViewportJitter(f32 left, f32 top, f32 wd, f32 ht, f32 nearz, f32 farz,
 
 void GXGetViewportv(f32* v) { memcpy(v, gx.vp, sizeof(gx.vp)); }
 
+/* M31 (PLAN.md 46): a point through the model-view, the projection and the
+ * viewport to screen coordinates -- the SDK's GXTransform.c body over the
+ * GXGetProjectionv / GXGetViewportv vectors above.  m427 (map.c:988) places
+ * its lamp flares and m428 (player.c:3410) its rope hooks by it; it was a
+ * stub that left sx/sy/sz uninitialised until M31. */
+void GXProject(f32 x, f32 y, f32 z, const f32 mtx[3][4], const f32* pm, const f32* vp, f32* sx,
+               f32* sy, f32* sz) {
+    f32 ex, ey, ez, xc, yc, zc, wc;
+    ex = mtx[0][3] + ((mtx[0][2] * z) + ((mtx[0][0] * x) + (mtx[0][1] * y)));
+    ey = mtx[1][3] + ((mtx[1][2] * z) + ((mtx[1][0] * x) + (mtx[1][1] * y)));
+    ez = mtx[2][3] + ((mtx[2][2] * z) + ((mtx[2][0] * x) + (mtx[2][1] * y)));
+    if (pm[0] == 0.0f) { /* GX_PERSPECTIVE */
+        xc = (ex * pm[1]) + (ez * pm[2]);
+        yc = (ey * pm[3]) + (ez * pm[4]);
+        zc = pm[6] + (ez * pm[5]);
+        wc = 1.0f / -ez;
+    } else {
+        xc = pm[2] + (ex * pm[1]);
+        yc = pm[4] + (ey * pm[3]);
+        zc = pm[6] + (ez * pm[5]);
+        wc = 1.0f;
+    }
+    *sx = (vp[2] / 2.0f) + (vp[0] + (wc * (xc * vp[2] / 2.0f)));
+    *sy = (vp[3] / 2.0f) + (vp[1] + (wc * (-yc * vp[3] / 2.0f)));
+    *sz = vp[5] + (wc * (zc * (vp[5] - vp[4])));
+}
+
 void GXSetScissor(u32 left, u32 top, u32 wd, u32 ht) {
     GX_STATE_TOUCH_IF(GX_CMP_MATRIX, gx.scissor[0] != left || gx.scissor[1] != top || gx.scissor[2] != wd ||
                       gx.scissor[3] != ht);

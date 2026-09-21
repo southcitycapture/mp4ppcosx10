@@ -356,7 +356,80 @@ f32 C_VECSquareDistance(const Vec* a, const Vec* b) {
 
 f32 C_VECDistance(const Vec* a, const Vec* b) { return port_sqrtf(C_VECSquareDistance(a, b)); }
 
+/* ---- M31 (PLAN.md 46): the quaternion bodies the SDK only wrote in
+ * paired-single asm -------------------------------------------------------
+ *
+ * quat.c has C_QUATAdd, C_QUATRotAxisRad, C_QUATMtx and C_QUATSlerp in C and
+ * PSQUATMultiply / PSQUATNormalize / PSQUATInverse in asm only; the mirror
+ * drops the asm and gen_stubs.py made the three C_ names loud stubs that
+ * return without writing their result.  m417's raft (player.c:1064-1072)
+ * multiplies three quaternions a frame and normalises the product to test
+ * the tilt (`sp28.w < cosd(25)`) -- through the stubs the product never
+ * moved and the normalised copy was an uninitialised stack Qtrn, which is
+ * why the port's solo fell in the first frame of play (+846 against the
+ * console's ~2,600).  The bodies below are the SDK's own C ones (the same
+ * arithmetic the asm does; PSQUATNormalize's frsqrte+Newton reciprocal is a
+ * correctly rounded 1/sqrt here, as C_VECNormalize's is). */
+#define PORT_QUAT_EPSILON 0.00001f
+
+void C_QUATMultiply(const Quaternion* p, const Quaternion* q, Quaternion* pq) {
+    Quaternion t;
+    t.w = p->w * q->w - p->x * q->x - p->y * q->y - p->z * q->z;
+    t.x = p->w * q->x + p->x * q->w + p->y * q->z - p->z * q->y;
+    t.y = p->w * q->y + p->y * q->w + p->z * q->x - p->x * q->z;
+    t.z = p->w * q->z + p->z * q->w + p->x * q->y - p->y * q->x;
+    *pq = t;
+}
+
+void C_QUATNormalize(const Quaternion* src, Quaternion* unit) {
+    f32 mag = src->x * src->x + src->y * src->y + src->z * src->z + src->w * src->w;
+    if (mag >= PORT_QUAT_EPSILON) {
+        mag = 1.0f / port_sqrtf(mag);
+        unit->x = src->x * mag;
+        unit->y = src->y * mag;
+        unit->z = src->z * mag;
+        unit->w = src->w * mag;
+    } else {
+        unit->x = unit->y = unit->z = unit->w = 0.0f;
+    }
+}
+
+void C_QUATInverse(const Quaternion* src, Quaternion* inv) {
+    f32 mag = src->x * src->x + src->y * src->y + src->z * src->z + src->w * src->w;
+    f32 norminv;
+    if (mag == 0.0f) {
+        mag = 1.0f;
+    }
+    norminv = 1.0f / mag;
+    inv->x = -src->x * norminv;
+    inv->y = -src->y * norminv;
+    inv->z = -src->z * norminv;
+    inv->w = src->w * norminv;
+}
+
 /* ---- PS* forwarders ------------------------------------------------------ */
+
+/* M31: the direct PS* calls the game makes outside the MTX_USE_C macros --
+ * m428's rope (PSVECSubtract, 249,216 calls a play), mstory3's win effect
+ * (PSVECSubtract/Mag/Add/Scale), m438's fire (PSMTXTranspose) -- and the
+ * kerent exports (PSMTXQuat, PSQUAT*, PSMTXMultVecSR, PSVEC*) were the same
+ * do-nothing stubs until M31. */
+void PSMTXQuat(Mtx m, const Quaternion* q) { C_MTXQuat(m, q); }
+void PSMTXTranspose(const Mtx src, Mtx xPose) { C_MTXTranspose(src, xPose); }
+void PSMTXMultVecSR(const Mtx m, const Vec* src, Vec* dst) { C_MTXMultVecSR(m, src, dst); }
+void PSQUATAdd(const Quaternion* p, const Quaternion* q, Quaternion* r) { C_QUATAdd(p, q, r); }
+void PSQUATMultiply(const Quaternion* p, const Quaternion* q, Quaternion* pq) {
+    C_QUATMultiply(p, q, pq);
+}
+void PSQUATNormalize(const Quaternion* src, Quaternion* unit) { C_QUATNormalize(src, unit); }
+void PSQUATInverse(const Quaternion* src, Quaternion* inv) { C_QUATInverse(src, inv); }
+void PSVECAdd(const Vec* a, const Vec* b, Vec* ab) { C_VECAdd(a, b, ab); }
+void PSVECSubtract(const Vec* a, const Vec* b, Vec* a_b) { C_VECSubtract(a, b, a_b); }
+void PSVECScale(const Vec* src, Vec* dst, f32 scale) { C_VECScale(src, dst, scale); }
+f32 PSVECDotProduct(const Vec* a, const Vec* b) { return C_VECDotProduct(a, b); }
+f32 PSVECMag(const Vec* v) { return C_VECMag(v); }
+f32 PSVECSquareDistance(const Vec* a, const Vec* b) { return C_VECSquareDistance(a, b); }
+f32 PSVECDistance(const Vec* a, const Vec* b) { return C_VECDistance(a, b); }
 
 /* PSMTXIdentity is six paired-single stores and therefore writes all twelve
  * elements, translation column included.  C_MTXIdentity used to write only the

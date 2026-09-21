@@ -747,6 +747,14 @@ void port_machine_check(void) {
             port_log("port> machine: --cpuxf given already (no GL_ARB_vertex_program)\n");
         }
     }
+    /* M31 (PLAN.md 46): the coroutine stacks' multiplier is a setting the
+     * applied-settings block should own up to -- x2 is the default since the
+     * M31 soak (6.5 h at x2, four boards, 129 minigame plays, no `stack
+     * overlap error`, no fault); m459 needs it (x4 exhausts HEAP_HEAP). */
+    port_log("port> machine: coroutine stacks x%d over the game's sizes (%s)\n",
+             port_prc_stack_mul(),
+             port_opt.stackmul != PORT_PRC_STACK_MUL ? "--stackmul given"
+                                                     : "the default since M31; --stackmul N");
 
     if (port_opt.machinecheck) {
         /* the whole answer is above; the exit code is the verdict */

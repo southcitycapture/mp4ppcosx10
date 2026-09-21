@@ -142,7 +142,7 @@ STUBS_OBJ := $(BUILD)/port/sdk_stubs.o $(BUILD)/port/sdk_stubs_untyped.o
 VERSION_NUM ?= 1
 GAME_DEFS := -DTARGET_PC -DVERSION=$(VERSION_NUM) -DNDEBUG=1 -DMTX_USE_C \
              -DMUSY_TARGET=MUSY_TARGET_PC \
-             -DPORT_PRC_STACK_MUL=4 -DPORT_PRC_STACK_GUARD=64
+             -DPORT_PRC_STACK_MUL=2 -DPORT_PRC_STACK_GUARD=64
 GAME_INC  := -I$(GEN)/include -I$(ROOT)/extern/musyx/include \
              -I$(ROOT)/build/GMPE01_01/include -Iinclude
 # -fcommon: <dolphin/os.h> makes a tentative definition of __OSBusClock and

@@ -1,0 +1,2 @@
+# m31 chain start Mon Sep 21 07:35:55 EDT 2026  isle md5 be468f84d27c9793dd5f3117069f4e6f
+T EXIT=0 wall=253s md5 800:0b58c5ee 3000:c58a046d 7000:4a9a640c args='--turbo --play board-start-com4.play --frames 9000'

@@ -1252,7 +1252,7 @@ void gl13_apply_raster_state(void) {
 
     /* GX's front face is the opposite of GL's default. */
     {
-        int on = gx.cull != GX_CULL_NONE;
+        int on = gx.cull != GX_CULL_NONE && !(gx_force_flags & 1);
         GLenum face = GL_FRONT;
         switch (gx.cull) {
             case GX_CULL_FRONT: face = GL_BACK; break;
@@ -1278,7 +1278,7 @@ void gl13_apply_raster_state(void) {
         }
     }
 
-    glc_enable(GL_DEPTH_TEST, gx.z_enable ? 1 : 0, &glc.depth_on);
+    glc_enable(GL_DEPTH_TEST, gx.z_enable && !(gx_force_flags & 2) ? 1 : 0, &glc.depth_on);
     if (gx.z_enable) {
         GLenum f = gl_compare(gx.z_func);
         if (glc.depth_func != (int)f) {
@@ -1381,7 +1381,7 @@ void gl13_apply_raster_state(void) {
         } else {
             gx_warn("GXSetAlphaCompare: XOR/XNOR is reduced to its first test");
         }
-        if (pass_all || use == GX_ALWAYS) {
+        if (pass_all || use == GX_ALWAYS || (gx_force_flags & 4)) {
             glc_enable(GL_ALPHA_TEST, 0, &glc.alpha_on);
         } else {
             GLenum f = gl_compare(use);

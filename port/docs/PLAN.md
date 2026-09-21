@@ -15561,3 +15561,334 @@ the `rt N ms dec M` on the status lines should read as §45.1's, and every
 same-binary comparison; the gallery frames of the day are in
 `~/gallery-m30/` on the G4 and littlejelly.
 
+## 46. M31 log: the rest of the picture list, and the stack multiplier *(2026-09-21, littlejelly)*
+
+M31's brief was the soak's verdict on `--stackmul 2`, then the four
+findings M30 read but did not fix — m417's black water and its early
+end, m430's column, m435's pillar sphere, the name m435's bubble drops —
+each from M30's reading. The soak was clean (§46.1) and ×2 is the
+default. The four findings turned out to be *two* causes and one open
+read: m417's early end, m430's column and four lesser things were one
+thing — **the SDK's paired-single vector and quaternion
+bodies, and one GX writer, were loud do-nothing stubs** (§46.2: twenty
+symbols, 12.7 million calls over the soak); m417's water was the fold
+§45.4 named (§46.3); the bubble's name was the port's own message tag
+(§46.5); the sphere is still not drawn after every lever the port has
+(§46.4).
+
+### 46.1 The soak, read: ×2 is the default
+
+§45.12's leave-behind — `g4 run --soak --com4 --rtc dolphin --freshcard
+--realtime --snap-every 5000 --snap-keep 3 --status --ovllog --stuckwatch
+200 --perf --stackmul 2` on the M30 build (`071cbc5c…`) — ran 23:31 to
+06:50 G4 time and was ended through `g4 stop` for the milestone: **7 h
+19 min, 1,578,060 frames, 26,301 status lines**
+(`docs/soak/m31-soak21-m30-stackmul2.log.gz`, read by
+`port/tools/soak_read.py`).
+
+| | |
+|---|---|
+| speed / presented fps | **100.1%** mean over 26,301 lines (`machine ok` on every one, `cpu 2`); 27.7 fps overall; the board's `w01dll` turn lines 28.8–29.4 fps mean on every one of the five boards' twenty turns, `rt` 15.8–17.8 ms, `dec` 5.2–6.6 |
+| where it got | **five complete 20-turn boards and into a sixth** (turn 3/20 at the stop); each board through `mstory3dll → modeseldll → mentdll` and back |
+| minigames | **144 plays of 40 modules** (m444 ×8, m438 ×8, m441 ×7, m439/m424/m421 ×6, … m417 ×2, m436 ×1); presented fps 19.7 (m431, the §32.4 shape) to 29.8 |
+| `stack overlap error` | **none** — the `HuPrcCall` guard byte never fired in 144 minigame plays and five boards |
+| faults / guard hits / mismatches | **0 / 0 / 0** (`skin: lifetime … 0 guard hits`; `musyx_mix … 0 position mismatches`; no `*** port` line) |
+| STUCK | 15, all the chain's designed 200 s waits at `modeseldll` / `mentdll` between boards (three per board cycle, five cycles) |
+| resyncs | **1**: `retrace 1246811, 1094 ms behind` — the fifth board's entry (`w01dll` link at 1,246,796: `stall: … 508 ms [consumed] … dll`, then 348, 175 and 169 ms as the board's textures decode), the §44.6 (B) load at its slowest; the other four board entries did not resync |
+| render thread | 2.81 G records, 728,583 frames presented, replay mean 16.1 ms; decode 417 M runs, **0 late**; gate 40,876 waited (worst 22.8 ms); ring waits 0 |
+| card | 218 image flushes on the writer thread, 1,257 ms on the game thread in all; 109 waited for the previous one; the rename 1.6–1.77 s behind the game six times (frames 324k, 799k, 894k, 1134k, 1294k) and **no `stall:` beside any of them** |
+| DVD | 7,962 reads, 17.8 s in reads, **8 over 100 ms** (worst `m415.bin` 811 ms at frame 760,036, `m403.bin` 467 ms) — none of M30's 1.8 s |
+| rss / tex | 145–194 MB (194 at `mentdll`, as §38.1); 806–834 tex entries, 40–41 MB |
+| m459 | **did not come up**: the roulette's picks over 144 plays never dealt Mushroom Medic (nor m403–m409's neighbours m411, m413, m433, m435, m437, m442, m445–m454, m457–m463); its case is §44.7's walk, 3,000 frames at 30 fps under ×2 |
+
+**The verdict: the default is 2.** Seven hours, five full boards and 144
+plays of 40 modules at ×2 with the guard byte silent and no fault is the
+soak §44.7 asked for. `PORT_PRC_STACK_MUL` is 2 in the Makefile
+(`PORT_PRC_STACK_MUL=2`, port.h, os_misc.c, `--stackmul`'s help), the
+machine check's applied-settings block now owns up to it — `port>
+machine: coroutine stacks x2 over the game's sizes (the default since
+M31; --stackmul N)` — and m459 needs no lever. ×4 stays one flag away
+(`--stackmul 4`) if a module ever prints the guard's line; the m459 heap
+argument (65 stacks × 0x2000 × the multiplier against a 2.25 MB heap)
+is why 2 and not 3.
+
+**The disk, read.** M30's two 1.8 s DVD reads and three slow renames in
+one quarter-hour asked whether the G4's disk is slow. Measured outside
+the game after the soak, with `mds` idle (`ps auxww | sort -k3` clean):
+`dd if=~/MarioParty4/mp4.nkit.iso of=/dev/null bs=1m count=100 skip=N`
+at three offsets — **8.1 s each, 12.9–13.0 MB/s** sequential. The drive
+is a Seagate `ST1000LX015` (a 2.5" FireCuda, shingled) on the
+Quicksilver's ATA bus, and 13 MB/s is what it reads at here; a 1.3 MB
+module read from the image is 100 ms when the page cache has dropped it
+and 15 ms when it has not, and a rename over an existing file is the
+journal plus the shingled band's rewrite — the 1.7 s the card flush pays
+behind the game. `mdutil -s /` says `Indexing enabled` for the volume
+(`~` has no index of its own); `mds` was at 85% CPU for the two minutes
+after the install (the `.o` sync and the bundle), then gone. Nothing
+changed: the port's data directory carries its
+`.metadata_never_index`, the flush is on its thread, and the soak's one
+resync was a board load, not the disk. Reported, not touched.
+
+### 46.2 The cause under three findings: the SDK bodies that were stubs
+
+M30 read m417's early end as "a logic divergence, not chased", m430's
+column as "the shadow quads or the rope tubes", and m428's play as "the
+play differs". The m417 read started from the picture: on the G4's +60
+frame the raft is *empty* and at +400 a small Mario stands in the pool
+below it, where the console has him on the raft from the first frame —
+not chaos but a rule. `player.c:1064–1072` builds the raft's tilt as
+three quaternion products, normalises the product and tests its `w`
+against `cosd(25)` for the fall (`fn_1_9C14`); `VECMag`,
+`QUATMultiply`, `QUATNormalize`, `QUATInverse`, `MTXQuat` are the SDK
+macros. The run's own stub report said the rest:
+
+```
+---- SDK surface hit at boot: 4 distinct stubs, in first-call order ----
+   2  C_QUATInverse                         845
+   3  C_QUATMultiply                       2532
+   4  C_QUATNormalize                         1
+```
+
+`quat.c` has `C_QUATAdd`, `C_QUATRotAxisRad`, `C_QUATMtx` and
+`C_QUATSlerp` in C and **`PSQUATMultiply` / `PSQUATNormalize` /
+`PSQUATInverse` in paired-single asm only**; the mirror drops the asm,
+`-DMTX_USE_C` sends the macros to the `C_` names, and `gen_stubs.py`
+made the three `C_` names loud stubs that return without writing their
+result (`port_stub`, PLAN.md 2). So on the port the raft's quaternion
+never moved, the normalised copy was an uninitialised stack `Qtrn`, and
+`sp28.w < cosd(25)` was true on the first frame of play: the solo fell
+at +600 and the module left at +846, every time, on both machines.
+
+The same list, over the M30 soak's 7 h 19 min (its report at the stop):
+
+| stub | calls | who |
+|---|---:|---|
+| `GXProject` | 5,097,960 | m427's lamp flares (`map.c:988`), m428's rope hooks (`player.c:3410`): `sx/sy/sz` left uninitialised |
+| `PSMTXTranspose` | 4,081,790 | m438's fire (`fire.c:218,288`): the normal matrix for its lighting, garbage |
+| `PSVECSubtract` | 3,270,035 | m428's rope (`player.c:2134`, 249,216 calls a play), mstory3's win effect |
+| `PSVECAdd` / `PSVECScale` / `PSVECMag` | 156,750 / 33,250 / 5,555 | mstory3's win-effect particles (`win_effect.c:228–287`) |
+| `GXUnknownu16` | 72,656 | **m430's rope and sail display lists** (`player.c:1513`, `water.c:1151`): the decomp's name for a bare `u16` store into the write-gather pipe, undeclared in the mirrored header's `TARGET_PC` block, so it linked to an *untyped* stub — the lists recorded their `GXBegin` and no indices, and the decoder read the heap after them as vertices. That is the column |
+| `C_QUATMultiply` / `C_QUATInverse` / `C_QUATNormalize` | 5,064 / 1,690 / 2 | m417 (two plays) |
+| `GXSetZTexture` | 9,244 | m419 (`main.c:279`): still a stub, a Z-texture the port has no equivalent for; m419 is a match |
+
+Twenty of the twenty-six stubs were these (the six left are `ARAlloc`,
+`ARFree`, `GXSetZTexture` and the three THP entries). The bodies are
+`port/src/os/psmtx_c.c` (the three `C_QUAT` functions as the SDK's C
+arithmetic, `PSQUATNormalize`'s `frsqrte` reciprocal a correctly
+rounded `1/sqrt` through `port_sqrtf` as `C_VECNormalize`'s is; the
+`PS*` names as forwarders to the `C_` bodies), `GXProject` in
+`gx_state.c` (GXTransform.c's body over the port's `GXGetProjectionv` /
+`GXGetViewportv` vectors), `GXUnknownu16` as one more `IDX_WRITER` in
+`gx_draw.c` with a `patches.txt` line declaring it in the header's
+`TARGET_PC` block. No lever: what they replace wrote nothing.
+
+**m417's play.** On the bench and on the G4 alike the module now leaves
+at **+2014** (was +846; the console's run left at +2646, its timer
+running out at +2280 — on the port the solo fell at about +1700 under
+the wave rockers, which is the game, not the port: the two runs do not
+share their RNG). Mario is on the raft from +60; the timer reads 18 at
++1200 on both.
+
+![m417 +60, +400, +1200, results: M31 on the G4 | console](screenshots/m31-m417-g4-pairs.jpg)
+
+**m430's column.** Gone: both views show sky, the parasails, the ropes
+and the wakes where the M30 build stood a dark rectangle in the right
+view.
+
+![m430 +400, +1200, +2300: M31 | console](screenshots/m31-m430-g4-pairs.jpg)
+
+**m428 and m427: no pixel moved.** The rope's `PSVECSubtract` feeds
+`fn_1_F88C` (player.c:2136, the rope segment against the rock) with the
+segment's direction, and m427's `GXProject` places its lamp flares;
+neither changes a gallery frame — `ppmdiff` between the M30 and M31
+frames of both games is 0.00000 at every position, and m428's "the play
+differs" of §45.9b stands as the play. One thing to know when reading
+m428's sims: the port's `--com4` pairs Mario with Peach and Luigi with
+Yoshi where the console's pokes pair Mario with Luigi (the type-2 groups
+`0,0,1,1` fall on different players in the two harnesses), so the two
+ropes are the other way round.
+
+### 46.3 m417's water: the scalar-in-alpha fold
+
+§45.4 read the pool's shader (`water.c:826`): five stages, the last two
+
+```
+stage 3:  T_foam * RASA          -> REG2     (T_foam a 64x64 I8: grey)
+stage 4:  lerp(PREV, C1, C2)     -> PREV
+```
+
+and stage 4 reads PREV *across* stage 3's register write — the planner's
+unexpressible case, drawn as the register's constant (0,0,0): the black
+water. But stage 3's product is a *scalar* — a grey texture times an
+alpha — and the alpha channel is idle in this chain (every stage's alpha
+is `KONST` into a register nobody reads). So unit 3 passes its RGB
+through and computes the product in its alpha (`TEXTURE.a` is the
+intensity: the port decodes I4/I8 with `d[3] = I`), and unit 4 reads
+`C2` as `PREVIOUS.a`: `INTERPOLATE(C1, PREVIOUS, PREVIOUS.a)`, exact.
+`regchain_plan` (gx_tev.c) takes the fold only where the plain rename
+cannot say the chain (the next stage reads both PREV and the register),
+the stage's own alpha write is dead, the next stage needs no PREV alpha,
+the texture is I4/I8 with an identity swap and the multiplier has an
+alpha form (`RASA`, a grey `KONST`, `A0–A2`); the plan tracks what GL's
+PREVIOUS holds on each side (`gl_c`, `gl_a`, `carry_of`) instead of
+M30's `prod == i − 1`, which also stops counting a `CPREV` read across a
+pass as unexpressible (a count, not a picture). The TEV cache's
+signature carries the I4/I8 bits. `--nocarry` is the A/B; the `tev:`
+report counts the configs carried (2,012 on the bench's m417 play; 0
+reads unexpressible where M30's had one per frame).
+
+The water on the G4 is a translucent blue over the star floor now, the
+raft and the tubes ride it, and what is still not the console's is the
+**indirect warp** (three `GXSetTevIndWarp` stages ripple the two copies
+across the surface; the port draws the direct stages, §17) — the
+console's foam-and-caustic pattern against the port's smooth tint — and
+one thing new at +1200: a fan of long thin light quads from the raft's
+edge toward a tube (`m417-m31-f015677.jpg`, the crop below). Read as
+far as: not the water mesh (`fn_1_604C`'s 35 strips are the pool), not
+the 150-billboard splash particle (`particleFunc`, its first quads at
+the origin with alpha 0), the three `hire` wave models are 72/128-vertex
+objects — unnamed; the snapshot is `~/gallery-m31/m417/snaps/f016000.snap`
+(entry +1523, the M31 gallery build) and `snaps/lib/m417-streaks-f016000.snap`.
+
+![m417 +1200, the streaks](screenshots/m31-m417-streaks-crop.jpg)
+
+### 46.4 m435's sphere: read further, not drawn
+
+§45.7's next reads, done on the bench: `--dumptex` shows the sphere's
+128×128 RGB565 textures as the blue plasma one would expect (two of
+them, one per pass; alpha 255 throughout) and the 32×32 I8 rim map as a
+soft radial blob; the `--gltrace` of the two `Hu3DDrawPost` draws is
+exactly the emission the drawlog implies — unit 0 `MODULATE(TEXTURE,
+PRIMARY)` / alpha `MODULATE(TEXTURE.a, CONSTANT.a = 1)`, unit 1
+`MODULATE_ADD_ATI(TEXTURE × 1 + PREVIOUS)` / alpha `MODULATE(PREVIOUS.a,
+CONSTANT.a = 0.698)`, then `glDrawArrays(GL_TRIANGLES, 0, 48)` and
+`(GL_QUADS, 48, 128)` — and the `--cpuxf` positions sit at the pillar
+top with lit colours from (89, 53, 127) to (239, 203, 255). Then every
+lever, one run each: `--nospot`, `--oldtev`, `--viewtexgen`, `--nohilite
+--nohilitetex`, `--cpuxf --nrmfrac0`, `--oldsubmit --novar
+--nomultidraw`, `--noindexed --nofixbase`; and a new diagnostic,
+`--forceobj sphere1` (gx_draw.c / gl13.c: the named object's draws with
+the cull, the z test and the alpha test switched off, `:flags` for one
+at a time). **The sphere is absent in every one.** With cull, z and
+alpha off and the fragments' colour bright, the draw is not landing on
+the framebuffer at all, or landing somewhere else — which points at the
+transform, not the fragment side: the vertex program's output for this
+draw (its `posmtx` is the pillar top with a 1.5 scale; its texgen 1 is
+`GX_TG_NRM` through a 2×4 matrix) or the primitive's assembly. The next
+read is a `--skipobj` twin of `--forceobj` (does the frame change at all
+without the draw?) and the program's transformed positions written back
+through `glReadPixels` on a 1-pixel viewport. Not done today. Snapshot:
+`~/gallery-m31/m435/snaps/f015200.snap` (entry +723) and
+`snaps/lib/m435-sphere-f015200.snap`. m436 and m437 are the same arena.
+
+### 46.5 Cause J: the tag on a message that was an id
+
+m435's result bubble reads "has 101 points!" without the name. The
+module writes it as `HuWinInsertMesSet(win, MAKE_MESSID_PTR(character),
+0)` (`main.c:3363`) — a **bank-0 message id of 0..7** through the
+pointer-tagging macro, which on the console is a bare cast and leaves
+an id an id. The port's `MAKE_MESSID_PTR` is `portMessTag` (§18's fix
+for the file-select screen: the tag bit made real, because nothing here
+lives above 0x80000000), and it tagged the 3 into a pointer to page
+zero: the insert was an empty string. `portMessTag` leaves a value below
+0x1000 untagged now — no pointer lives there in a 32-bit Darwin process
+(`__PAGEZERO`), and the 113 other callers pass strings in `.data`,
+`.bss` or the stack; bank 0's messages 0–7 are the eight names
+(option/sound.c's `voiceCharNameTbl`). The bubble reads "Mario has 101
+points!" on the G4 (`m435-m31-f016444.jpg`). m457's empty intro bubble (the other J note) is a
+different thing — `HuWinMesSpeedSet(window, 1)` types the text out and
+the port's intro lags the console's by a few frames (§41b's rule), so
+the +63 frame is caught before the first glyph; the card titles' last
+glyph is not read.
+
+### 46.6 The md5s
+
+The 9,000-frame turbo walk on the M31 builds (`e195a4f3…` and the
+final `be468f84…`, `docs/soak/m31-chain-index*.txt`), and the same
+with `--nocarry`:
+
+| frame | M30 | **M31** (`T`, both builds) | `--nocarry` (`Tnc`) |
+|---:|---|---|---|
+| 800 | `0b58c5ee…` | `0b58c5ee1dee7b5da28a688c4fe315ce` | the same |
+| 3000 | `c58a046d…` | `c58a046d9ce6fabe3fef0b2270179203` | the same |
+| 7000 | `4a9a640c…` | `4a9a640c219e94b8c80460c84e019b97` | the same |
+
+Byte-identical to M30's three (`docs/soak/m31-chain-index.txt`): the
+title, the character select and the board call none of the twenty
+bodies through a path that reaches a pixel, and no chain on those frames
+folds. The references stand.
+
+### 46.7 The gallery on the G4: the pairs and the numbers
+
+`gallery_chain.sh` with `GAMES=417 430 428 427 435 436 437 438 405 401
+416` on the day's first build (`e195a4f3…`: everything but the J fix),
+07:04–07:33 G4 time, then m435–m437 again on the final build
+(`be468f84…`, 07:40–07:49; `docs/soak/m31-gallery-index*.txt`,
+`m31-gallery-mNNN.log.gz`), the
+frames in `port/docs/gallery/mNNN-m31-fNNNNNN.jpg`, the rows regenerated
+by `port/tools/compare_m31.py` (the console frames stay; each M31 row
+keeps the M30 and M26b verdicts below its own; `verdicts-m31.tsv`,
+`similarity-m31.tsv`). The sim cell is §41b.2's `sim/>8` at +60 · +400
+· +1200 · +2300, M30 first, M31 second:
+
+| game | cause | M30 | **M31** | sim: M30 → M31 (+60 · +400 · +1200 · +2300) |
+|---|---|---|---|---|
+| m417 Makin' Waves | the quaternion stubs; the fold | major | **minor** | 75/84 82/66 61/98 71/100 → **88/79 93/64 91/66** 76/100 (the port's +2300 is its results: the solo fell at ~+1700) |
+| m430 Pair-a-sailing | `GXUnknownu16` | major | **match** | 92/61 91/70 82/87 82/84 → **94/54 94/60 86/82 85/81** (the play differs) |
+| m428 Cliffhangers | `PSVECSubtract`, `GXProject` | match | match | 92/57 92/57 82/89 79/96, byte-identical frames |
+| m427 Right Oar Left? | `GXProject` | match | match | 99/21 95/43 94/58 92/43, byte-identical frames |
+| m435 Darts of Doom | J fixed; I read further | minor | minor | 95/58 97/37 98/38 98/32 → 95/58 97/37 98/38 98/31 (the name is two words in a bubble) |
+| m436, m437 | as m435 | minor | minor | unchanged |
+| m438 Chain Chomp Fever | `PSMTXTranspose` | match | match | 98/30 97/53 95/52 → 98/30 96/57 95/54 (the play) |
+| m405 Mario Medley | – | minor | minor | 95/66 93/74 87/88 90/91 unchanged |
+| m401, m416 (controls) | – | match | match | unchanged to the digit |
+
+The header counts move from **52 match, 6 minor, 2 major, 1
+port-faulted, 2 oracle-failed** to **53 match, 7 minor, 0 major, 1 port-faulted, 2 oracle-failed** — the milestone's target, major 0.
+
+![m417 +400 and +1200, m430 +400 and +1200: M30 | M31 | console](screenshots/m31-g4-pairs.jpg)
+![m435 +2300, the bubble: M30 | M31 | console](screenshots/m31-m435-bubble.jpg)
+
+### 46.8 What M31 shipped, and the table of what is left
+
+| shipped, with a witness | |
+|---|---|
+| **the stack multiplier's default is 2** (Makefile, port.h, os_misc.c, the machine check's applied-settings line) | soak 21: 7 h 19 min, five boards, 144 plays, no `stack overlap error`, no fault (§46.1) |
+| **twenty SDK bodies that were stubs** — `C_QUATMultiply/Normalize/Inverse`, the `PSQUAT*`, `PSMTXQuat`, `PSMTXTranspose`, `PSMTXMultVecSR`, `PSVEC*` forwarders (psmtx_c.c), `GXProject` (gx_state.c), `GXUnknownu16` (gx_draw.c + patches.txt) | m417 plays to +2014 with Mario on the raft; m430's column gone; m428 and m427 pixel-identical (§46.2); 6 stubs left, none in a game's play but `GXSetZTexture` |
+| **the scalar-in-alpha fold** (`regchain_plan`'s carry, `--nocarry`, the planner tracking GL's PREVIOUS) | m417's water blue over the floor; the three md5s unchanged with and without (§46.3, §46.6) |
+| **`portMessTag` leaves an id an id** (os_arena.c) | m435's bubble names the player (§46.5) |
+| `--forceobj NAME[:flags]` (a diagnostic), `compare_m31.py`, `gallery_pull_m31.sh`, `m31_chain.sh` | |
+| soak 21 read, the disk note, `docs/soak/m31-*`, `docs/screenshots/m31-*`, the regenerated `compare.html` rows | |
+
+**The table of what is left** (§45.11's, after M31):
+
+| cause | games | M31 |
+|---|---|---|
+| B water | m405 | minor: the caustic is the indirect warp — not started |
+| C scenes | m417 | **the play fixed** (the quaternion stubs), **the water drawn** (the fold); minor: the indirect warp, the +1200 streaks (§46.3, snapshot named) |
+| C scenes | m408 | minor: the tunnel's white cap — not read |
+| D column | m430 | **fixed** (`GXUnknownu16`) |
+| I spheres | m435–m437 | read further, not drawn (§46.4, snapshot named): the next read is the transform |
+| J text | m435's name **fixed**; m457's bubble is timing; the card titles' last glyph not read |
+| E faults | m459 | ×2 is the default now |
+| A's leftover | m457's ring shadows | not started |
+| new | m428's team pairing under `--com4` differs from the console's pokes (a harness thing, §46.2) | not started |
+
+**What M32 starts with**: the leave-behind soak (§46.9); m435's sphere
+from its snapshot with `--forceobj` / a `--skipobj` twin and the
+program's output; m417's streaks from `snaps/lib/m417-streaks-f016000.snap`;
+m405's warp and m408's cap; the character select's render-thread wall
+(§44.8).
+
+### 46.9 What is left running
+
+`g4 run --soak --com4 --rtc dolphin --freshcard --realtime --snap-every
+5000 --snap-keep 3 --status --ovllog --stuckwatch 200 --perf` on the final
+build (`be468f84…`; its turbo walk reproduces the three md5s), from
+07:59 G4 time — the stack multiplier at its new default of 2 (the
+applied-settings line says so), the twenty bodies live, the fold on.
+Read it first: the `stack overlap error` line stays the witness (none
+expected), `rt N ms dec M` on the status lines as §46.1's, the stub
+report at the end should list six or fewer names with `GXSetZTexture`
+the only one a play can reach, and m417 — when the roulette deals it —
+should leave the module at +2000 or later.
