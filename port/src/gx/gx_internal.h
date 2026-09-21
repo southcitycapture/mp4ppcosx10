@@ -404,6 +404,66 @@ void gx_vprog_invalidate(void);       /* glc_invalidate's counterpart         */
 void gx_vprog_report(void);           /* --vprogstats                         */
 void gx_vprog_frame_reset(void);      /* per-frame fallback counters          */
 
+/* ---- M29: the display-list decode as a record (PLAN.md 44) ----------------
+ * The per-primitive decode plan (gx_draw.c build_decode_plan) and the job
+ * the game thread hands the render thread: everything the eight specialised
+ * loops and the general walker read, by value -- the arrays' bases and
+ * strides, the byte tables (append-only statics), the destination in the
+ * ring.  The render thread runs gx_decode_job on it and writes nothing but
+ * the ring bytes. */
+enum {
+    DEC_NONE = 0,
+    /* <type>_<components read>_<components written>; the written-but-unread
+     * component is the zero GX pads a 2-component position or a 1-component
+     * texcoord with. */
+    DEC_F32_2_3, DEC_F32_3_3, DEC_F32_1_2, DEC_F32_2_2,
+    DEC_S16_2_3, DEC_S16_3_3, DEC_S16_1_2, DEC_S16_2_2,
+    DEC_U16_2_3, DEC_U16_3_3, DEC_U16_1_2, DEC_U16_2_2,
+    DEC_S8_2_3,  DEC_S8_3_3,  DEC_S8_1_2,  DEC_S8_2_2,
+    DEC_U8_2_3,  DEC_U8_3_3,  DEC_U8_1_2,  DEC_U8_2_2,
+    DEC_CLR_RGBA8, DEC_CLR_RGBX8, DEC_CLR_RGB8,
+    DEC_CLR_RGB565, DEC_CLR_RGBA4, DEC_CLR_RGBA6,
+    /* the table forms of the four 8-bit ops (byte_table) */
+    DEC_TS8_2_3, DEC_TS8_3_3, DEC_TS8_1_2, DEC_TS8_2_2,
+    DEC_TU8_2_3, DEC_TU8_3_3, DEC_TU8_1_2, DEC_TU8_2_2
+};
+
+typedef struct DecStep {
+    const u8* base;   /* indexed: the array; direct: NULL                     */
+    f32 scale;        /* the VAT's fractional scale, folded in once           */
+    const f32* tbl;   /* S8/U8: (f32)(s8)b * scale for every byte (M17)       */
+    u16 dstoff;       /* byte offset into the vertex, or into `pending`       */
+    u8 stride;        /* indexed: the array's stride                          */
+    u8 idx;           /* 0 direct, 1 GX_INDEX8, 2 GX_INDEX16                  */
+    u8 advance;       /* direct: bytes of payload this step eats              */
+    u8 op;            /* DEC_*                                                */
+    u8 to_pending;    /* destination is the staging vertex, not the packed one */
+    u8 attr;          /* only for the display-list cache's index range        */
+} DecStep;
+
+#define GX_DEC_FILL_MAX 8
+typedef struct GxDecJob {
+    const u8* p;          /* the list bytes of the run (the game's memory)    */
+    const u8* end;
+    u32 count;            /* the primitive's vertex count                   */
+    u8* dst;              /* the ring: src_buf + run_pos                    */
+    u32 stride;
+    int off_nrm, off_clr, off_tex;
+    int clr_const;        /* splat `clr` into off_clr per vertex            */
+    u32 clr;
+    int prefetch;         /* !--noprefetch                                  */
+    int fast;             /* which specialised loop (gx_draw.c), -1 general */
+    int nplan;
+    int nfill;
+    struct { u16 dstoff; f32 s, t; } fill[GX_DEC_FILL_MAX];
+    DecStep plan[GX_MAX_ATTR];
+} GxDecJob;
+/* the render thread (rt.c): decode the job's run into the ring; returns the
+ * vertices written */
+u32 gx_decode_job(const GxDecJob* j);
+/* the game thread (rt.c): append the run to the stream */
+void rt_decode_record(const GxDecJob* j);
+
 /* one place for "the backend could not do this exactly", counted and named
  * once each by --gxwarn */
 void gx_warn(const char* what);

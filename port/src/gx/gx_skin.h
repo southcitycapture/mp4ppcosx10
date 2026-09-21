@@ -73,11 +73,17 @@ typedef struct SkinHsf {
     unsigned last_frame;
     int nmesh;
     SkinMesh* mesh;
+    /* M29 (PLAN.md 44.1 rule 2): the stream position after the last decode
+     * record that read one of this HSF's buffers; the body joins on it */
+    unsigned dec_pos;
+    int dec_valid;
 } SkinHsf;
 
 int gx_skin_on(void);                 /* the palette path is skinning         */
 int gx_skin_mode(void);               /* 0 --cpuskin, 1 deferred CPU, 2 palette */
 void gx_skin_array_bound(const void* pos_array); /* GXSetArray(GX_VA_POS)    */
+void gx_skin_stamp_decode(unsigned pos);  /* M29: a decode record was emitted
+                                            * under the bound position array  */
 int gx_skin_palette_slots(void);      /* gx_vprog.c: slots the layout holds  */
 int gx_vprog_palette_available(void); /* gx_vprog.c: ARL loaded native      */
 SkinMesh* gx_skin_lookup(const void* pos_array, unsigned frame);

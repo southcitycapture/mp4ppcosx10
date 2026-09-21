@@ -35,7 +35,8 @@ src/game/hsfmotion.c	__declspec(weak) float GetBezier	float GetBezier
 # alignment).  Multiply the stacks -- a GCC 14 frame is fatter than a
 # Metrowerks EABI frame -- and give the fake frame real headroom.  The game's
 # own "stack overlap error" guard byte in HuPrcCall still checks the result.
-src/game/process.c	    if(stack_size == 0) {\n        stack_size = 2048;\n    }\n	    if(stack_size == 0) {\n        stack_size = 2048;\n    }\n    stack_size *= PORT_PRC_STACK_MUL;\n
+src/game/process.c	    if(stack_size == 0) {\n        stack_size = 2048;\n    }\n	    if(stack_size == 0) {\n        stack_size = 2048;\n    }\n    stack_size *= port_prc_stack_mul();\n
+src/game/process.c	#include "game/memory.h"\n	#include "game/memory.h"\n\nint port_prc_stack_mul(void);\n
 src/game/process.c	process->base_sp = ((u32)HuMemMemoryAlloc(heap, stack_size, FAKE_RETADDR))+stack_size-8;	process->base_sp = (u32)((((uintptr_t)HuMemMemoryAlloc(heap, stack_size, FAKE_RETADDR))+stack_size-PORT_PRC_STACK_GUARD) & ~(uintptr_t)0xF);
 
 # ---------------------------------------------------------------- game/memory.c
@@ -765,3 +766,14 @@ src/game/EnvelopeExec.c	    PSMTXTrans(spC, arg1->mesh.curr.pos.x, arg1->mesh.cu
 # computed on the same inputs, and the same `start` written back; a free of
 # the track's page forgets it.  --nocurvememo: every call to the body.
 src/game/hsfmotion.c	float GetCurve(HSFTRACK *arg0, float arg1) {\n    float *var_r30;\n\n    switch (arg0->curveType) {\n        case 1:\n            return GetLinear(arg0->numKeyframes, arg0->data, arg1);\n        case 2:\n            return GetBezier(arg0->numKeyframes, arg0, arg1);\n	int port_curve_memo_get(HSFTRACK *t, float time, float *out);\nfloat port_curve_memo_put(HSFTRACK *t, float time, float value);\n\nfloat GetCurve(HSFTRACK *arg0, float arg1) {\n    float *var_r30;\n    float port_memo;\n\n    switch (arg0->curveType) {\n        case 1:\n            if (port_curve_memo_get(arg0, arg1, &port_memo)) {\n                return port_memo;\n            }\n            return port_curve_memo_put(arg0, arg1, GetLinear(arg0->numKeyframes, arg0->data, arg1));\n        case 2:\n            if (port_curve_memo_get(arg0, arg1, &port_memo)) {\n                return port_memo;\n            }\n            return port_curve_memo_put(arg0, arg1, GetBezier(arg0->numKeyframes, arg0, arg1));\n
+
+# ------------------------------------------------ game/ShapeExec.c, ClusterExec.c
+# M29 (PLAN.md 44.1 rule 4): with the display-list decode on the render
+# thread, the two game functions that rewrite a mesh's vertex buffer in
+# place inside the frame ask the port first, which waits for any decode
+# record still reading it (a hooked child drawn before its own motion
+# block).  A no-op without the render thread.
+src/game/ShapeExec.c	#include "game/EnvelopeExec.h"\n	#include "game/EnvelopeExec.h"\n\nvoid port_vtx_rewrite(const char *who);\n
+src/game/ShapeExec.c	void ShapeProc(HSFDATA *arg0) {\n    HSFOBJECT *var_r31;\n    s32 i;\n\n    var_r31 = arg0->object;	void ShapeProc(HSFDATA *arg0) {\n    HSFOBJECT *var_r31;\n    s32 i;\n\n    port_vtx_rewrite("ShapeProc");\n    var_r31 = arg0->object;
+src/game/ClusterExec.c	#include "game/sprite.h"\n	#include "game/sprite.h"\n\nvoid port_vtx_rewrite(const char *who);\n
+src/game/ClusterExec.c	    HSFOBJECT *temp_r31;\n\n    for (i = 0; i < 4; i++) {\n        temp_r24 = arg0->motIdCluster[i];	    HSFOBJECT *temp_r31;\n\n    port_vtx_rewrite("ClusterProc");\n    for (i = 0; i < 4; i++) {\n        temp_r24 = arg0->motIdCluster[i];

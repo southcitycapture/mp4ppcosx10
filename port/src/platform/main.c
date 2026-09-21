@@ -136,6 +136,9 @@ static void usage(const char* argv0) {
             "                    joined every frame; 3 = overlapped (default with cpu 2)\n"
             "  --norenderthread  M27: --renderthread 0\n"
             "  --rtgate MS       M27: the gate waits this long for the render thread (4)\n"
+            "  --rtdecode N      M29: the display-list decode 0 on the game thread, 1 on the\n"
+            "  --stackmul N      M29: the coroutine stacks' multiplier over the game's sizes (4)\n"
+            "                    render thread joined at once, 2 joined at the retrace (2 with a thread)\n"
             "  --rtsplit         M27: the replay timed by record class (an instrument)\n"
             "  --predecode       M24: the texture decode staged on the worker from\n"
             "                    consumed frames (measured, off: PLAN.md 39.3)\n"
@@ -504,6 +507,8 @@ int port_parse_args(int argc, char** argv) {
     port_opt.nocurvememo = 1;
     port_opt.nofastsqrt = 1;
     port_opt.rtgate_ms = 4;
+    port_opt.rtdecode = -1; /* M29: the decode on the render thread when there is one */
+    port_opt.stackmul = PORT_PRC_STACK_MUL;
     /* Linear, since the G4 measured both on the same walk (PLAN.md §20.5):
      * 1.75 ms mean against the 4-tap's 2.00, a worst frame of 10.92 ms against
      * 28.30, and fewer discontinuities, not more -- 33,002 against 36,328.
@@ -600,6 +605,13 @@ int port_parse_args(int argc, char** argv) {
             port_opt.rtsplit = 1;
         } else if (!strcmp(a, "--rtgate") && i + 1 < argc) {
             port_opt.rtgate_ms = atoi(argv[++i]);
+        } else if (!strcmp(a, "--rtdecode") && i + 1 < argc) {
+            port_opt.rtdecode = atoi(argv[++i]);
+        } else if (!strcmp(a, "--stackmul") && i + 1 < argc) {
+            port_opt.stackmul = atoi(argv[++i]);
+            if (port_opt.stackmul < 1) {
+                port_opt.stackmul = 1;
+            }
         } else if (!strcmp(a, "--predecode")) {
             port_opt.predecode = 1;
         } else if (!strcmp(a, "--predecodelog")) {

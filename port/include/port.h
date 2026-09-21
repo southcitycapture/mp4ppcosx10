@@ -260,6 +260,15 @@ typedef struct PortOptions {
                              *   draw / tex / present); two timer reads a record */
     int rtgate_ms;          /* --rtgate MS  how long the gate waits for the render
                              *   thread to drain before the frame is consumed (4) */
+    /* ---- M29: the decode on the render thread (PLAN.md 44) ---- */
+    int stackmul;           /* --stackmul N  the coroutine stacks' multiplier over
+                             *   the game's own sizes (PORT_PRC_STACK_MUL = 4) */
+    int rtdecode;           /* --rtdecode N  -1: 2 with the render thread on, else 0
+                             *   (the default); 0: the display lists decoded on the
+                             *   game thread (the inline twin); 1: decoded by the
+                             *   render thread, the game thread joined right after
+                             *   each record (stage 1, no overlap); 2: joined at the
+                             *   retrace (stage 2, the overlap)                */
     /* ---- M25: the machine check (src/platform/machine.c, PLAN.md 40) ---- */
     const char* fake_machine; /* --fake-machine FILE  key=value overrides of the
                              *   probes: argue another machine on this one   */
@@ -569,6 +578,7 @@ void port_dvd_init(void);
 void port_dvd_service(void);
 void port_thp_report(void);
 void port_card_report(void);
+void port_card_service(void);        /* M29: reap the image writer (per retrace) */
 void port_arq_service(void);
 
 /* ---- audio (port/src/audio, PLAN.md §16) --------------------------------- */
@@ -628,6 +638,17 @@ void rt_ring_enter(int chunk);      /* the ring writer reuses a chunk: the join 
 void rt_report(void);
 void rt_status(char* buf, size_t n);
 double rt_last_frame_ms(void);
+/* M29 (PLAN.md 44): the decode records.  rt_decode_on says whether the
+ * display-list decode goes into the stream; rt_pos is the writer's position
+ * (a stamp); rt_decode_join waits until the render thread's decode cursor has
+ * passed everything recorded so far, counted by name; rt_last_dec_ms is the
+ * decode time the render thread spent on the last presented frame. */
+int rt_decode_on(void);
+unsigned rt_pos(void);
+void rt_decode_join(const char* why);
+void rt_decode_join_pos(unsigned pos, const char* why); /* up to a stamped position */
+double rt_last_dec_ms(void);
+void port_vtx_rewrite(const char* who); /* ShapeProc/ClusterProc (patches.txt): the join */
 extern int rt_recording;
 void port_workers_init(void);       /* after the options: reads --threads and hw.ncpu */
 void port_workers_shutdown(void);

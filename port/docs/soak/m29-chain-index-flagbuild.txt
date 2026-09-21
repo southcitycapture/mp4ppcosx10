@@ -1,0 +1,13 @@
+# m29 chain start Sun Sep 20 17:22:03 EDT 2026  isle md5 6c91b243c45445b9bf24e314bd010780
+T0 EXIT=0 wall=245s md5 800:0b58c5ee 3000:c58a046d 7000:021d58fb args='--turbo --play board-start-com4.play --frames 9000 --rtdecode 0'
+T1 EXIT=0 wall=352s md5 800:0b58c5ee 3000:c58a046d 7000:021d58fb args='--turbo --play board-start-com4.play --frames 9000 --rtdecode 1'
+T2 EXIT=0 wall=243s md5 800:0b58c5ee 3000:c58a046d 7000:021d58fb args='--turbo --play board-start-com4.play --frames 9000 --rtdecode 2'
+T2c EXIT=0 wall=243s md5 800:0b58c5ee 3000:c58a046d 7000:021d58fb args='--turbo --play board-start-com4.play --frames 9000 --rtdecode 2 --cpuskin'
+T0c EXIT=0 wall=245s md5 800:0b58c5ee 3000:c58a046d 7000:021d58fb args='--turbo --play board-start-com4.play --frames 9000 --rtdecode 0 --cpuskin'
+K EXIT=1 wall=1s sample=/Users/zach/m29/K/stall.sample
+R2 EXIT=0 wall=273s md5 800:0b58c5ee 3000:c58a046d 7000:021d58fb args='--soak --realtime --frames 16000 --rtdecode 2'
+R2a EXIT=0 wall=273s md5 800:0b58c5ee 3000:c58a046d 7000:021d58fb args='--soak --realtime --frames 16000 --rtdecode 2'
+R2b EXIT=0 wall=273s md5 800:0b58c5ee 3000:c58a046d 7000:021d58fb args='--soak --realtime --frames 16000 --rtdecode 2'
+R0 EXIT=0 wall=272s md5 800:0b58c5ee 3000:c58a046d 7000:021d58fb args='--soak --realtime --frames 16000 --rtdecode 0'
+# m29 chain all done Sun Sep 20 18:03:13 EDT 2026
+# m29 chain start Sun Sep 20 18:09:34 EDT 2026  isle md5 a1b53e7011917c98c5cac8f5e204202f

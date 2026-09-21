@@ -334,6 +334,7 @@ static float byte_scale[256];
 
 static unsigned stat_prims, stat_verts, stat_draws, stat_dls;
 static unsigned long stat_fast_verts; /* through the specialised loops (M17) */
+static unsigned long stat_rtdec_runs, stat_rtdec_verts, stat_rtdec_refused; /* M29 */
 /* --submitstats (M16): what the batching actually found in the lists */
 static unsigned stat_indexed_batches, stat_indexed_tris, stat_indexed_u32; /* M21 */
 static unsigned stat_mergeable, stat_mergeable_small, stat_mergeable_verts; /* M21 */
@@ -396,6 +397,13 @@ void gx_draw_report(void) {
     port_log("port> GX draw: %lu vertices through the specialised decode loops "
              "(%.1f%%)\n",
              stat_fast_verts, stat_verts ? 100.0 * (double)stat_fast_verts / stat_verts : 0.0);
+    if (stat_rtdec_runs || stat_rtdec_refused) {
+        port_log("port> GX draw: M29: %lu display-list runs (%lu vertices, %.1f%%) handed to the "
+                 "render thread's decode, %lu runs decoded here instead\n",
+                 stat_rtdec_runs, stat_rtdec_verts,
+                 stat_verts ? 100.0 * (double)stat_rtdec_verts / stat_verts : 0.0,
+                 stat_rtdec_refused);
+    }
     port_log("port> GX draw: %u primitive(s) off-world (|position matrix "
              "translation| over %.0f)\n",
              stat_offworld, (double)GX_OFFWORLD_LIMIT);
@@ -885,35 +893,7 @@ static void begin_attr_order(void) {
  * and `pending` is written back from the last decoded vertex at the end of the
  * primitive, so the next primitive's `fill[]` sees exactly what it used to. */
 
-enum {
-    DEC_NONE = 0,
-    /* <type>_<components read>_<components written>; the written-but-unread
-     * component is the zero GX pads a 2-component position or a 1-component
-     * texcoord with. */
-    DEC_F32_2_3, DEC_F32_3_3, DEC_F32_1_2, DEC_F32_2_2,
-    DEC_S16_2_3, DEC_S16_3_3, DEC_S16_1_2, DEC_S16_2_2,
-    DEC_U16_2_3, DEC_U16_3_3, DEC_U16_1_2, DEC_U16_2_2,
-    DEC_S8_2_3,  DEC_S8_3_3,  DEC_S8_1_2,  DEC_S8_2_2,
-    DEC_U8_2_3,  DEC_U8_3_3,  DEC_U8_1_2,  DEC_U8_2_2,
-    DEC_CLR_RGBA8, DEC_CLR_RGBX8, DEC_CLR_RGB8,
-    DEC_CLR_RGB565, DEC_CLR_RGBA4, DEC_CLR_RGBA6,
-    /* the table forms of the four 8-bit ops (byte_table) */
-    DEC_TS8_2_3, DEC_TS8_3_3, DEC_TS8_1_2, DEC_TS8_2_2,
-    DEC_TU8_2_3, DEC_TU8_3_3, DEC_TU8_1_2, DEC_TU8_2_2
-};
-
-typedef struct DecStep {
-    const u8* base;   /* indexed: the array; direct: NULL                     */
-    f32 scale;        /* the VAT's fractional scale, folded in once           */
-    const f32* tbl;   /* S8/U8: (f32)(s8)b * scale for every byte (M17)       */
-    u16 dstoff;       /* byte offset into the vertex, or into `pending`       */
-    u8 stride;        /* indexed: the array's stride                          */
-    u8 idx;           /* 0 direct, 1 GX_INDEX8, 2 GX_INDEX16                  */
-    u8 advance;       /* direct: bytes of payload this step eats              */
-    u8 op;            /* DEC_*                                                */
-    u8 to_pending;    /* destination is the staging vertex, not the packed one */
-    u8 attr;          /* only for the display-list cache's index range        */
-} DecStep;
+/* the DEC_* ops and DecStep: gx_internal.h (M29: the render thread runs the plan) */
 
 static DecStep plan[GX_MAX_ATTR];
 static int nplan;
@@ -3157,6 +3137,10 @@ static int draw_apply(const u8* s, int n, int in_ring) {
     }
     if (!on_gpu) {
         gx_vprog_disable();
+        if (in_ring) {
+            /* M29: the vertices may still be the render thread's to decode */
+            rt_decode_join("cpu path");
+        }
         port_perf_sub_enter(PERF_SUB_XF);
         finish_vertices(s, n);
         port_perf_sub_leave();
@@ -4322,6 +4306,264 @@ static DecodeFast pick_fast(void) {
     return NULL;
 }
 
+/* ---- M29: the decode as a job for the render thread (PLAN.md 44) ----------
+ *
+ * The same eight shapes and the same general walk as above, reading the
+ * plan from the job instead of the file's statics and writing nothing but
+ * the ring bytes: no `pending`, no `nverts`, no counters.  The stores are
+ * the same bytes in the same places as the loops above, which is what the
+ * md5s check.  The game thread keeps `pending` exact with a one-vertex pass
+ * over the run's last vertex (decode_pending_last). */
+#define DECODE_FAST_JOB(NAME, NRM, CLR, TEX)                                             \
+    static u32 NAME(const GxDecJob* j) {                                                 \
+        const int PREFETCH = j->prefetch;                                                \
+        const u8* p = j->p;                                                              \
+        const u8* end = j->end;                                                          \
+        const u32 count = j->count;                                                      \
+        const u32 stride = j->stride;                                                    \
+        const u8* pb = j->plan[0].base;                                                  \
+        const u32 ps = j->plan[0].stride;                                                \
+        const u8* nb = NRM ? j->plan[1].base : NULL;                                     \
+        const u32 ns = NRM ? j->plan[1].stride : 0;                                      \
+        const f32* nt = (NRM == 1) ? j->plan[1].tbl : NULL;                              \
+        const int ci = NRM ? 2 : 1;                                                      \
+        const u8* cb = CLR ? j->plan[ci].base : NULL;                                    \
+        const u32 cs = CLR ? j->plan[ci].stride : 0;                                     \
+        const int ti = ci + (CLR ? 1 : 0);                                               \
+        const u8* tb = TEX ? j->plan[ti].base : NULL;                                    \
+        const u32 ts = TEX ? j->plan[ti].stride : 0;                                     \
+        const int off_nrm = j->off_nrm, off_clr = j->off_clr, off_tex = j->off_tex;      \
+        const int clr_const = j->clr_const;                                              \
+        const u32 clr = j->clr;                                                          \
+        const int per = 2 * (1 + (NRM ? 1 : 0) + (CLR ? 1 : 0) + (TEX ? 1 : 0));         \
+        u8* v = j->dst;                                                                  \
+        u32 i;                                                                           \
+        for (i = 0; i < count && p + per <= end; i++, v += stride) {                     \
+            const u8* q;                                                                 \
+            u32 ix;                                                                      \
+            if (clr_const) {                                                             \
+                *(u32*)(v + off_clr) = clr;                                              \
+            }                                                                            \
+            if (PREFETCH && p + 2 * per <= end) {                                         \
+                const u8* pn = p + per;                                                  \
+                __builtin_prefetch(pb + (size_t)(((u32)pn[0] << 8) | pn[1]) * ps);       \
+                if (NRM) {                                                               \
+                    __builtin_prefetch(nb + (size_t)(((u32)pn[2] << 8) | pn[3]) * ns);   \
+                }                                                                        \
+                if (TEX) {                                                               \
+                    __builtin_prefetch(tb + (size_t)(((u32)pn[per - 2] << 8) |           \
+                                                     pn[per - 1]) * ts);                 \
+                }                                                                        \
+            }                                                                            \
+            ix = ((u32)p[0] << 8) | p[1];                                                \
+            q = pb + (size_t)ix * ps;                                                    \
+            ((f32*)v)[0] = DEC_F32(q, 0);                                                \
+            ((f32*)v)[1] = DEC_F32(q, 1);                                                \
+            ((f32*)v)[2] = DEC_F32(q, 2);                                                \
+            p += 2;                                                                      \
+            if (NRM) {                                                                   \
+                f32* dp = (f32*)(v + off_nrm);                                           \
+                ix = ((u32)p[0] << 8) | p[1];                                            \
+                q = nb + (size_t)ix * ns;                                                \
+                if (NRM == 1) {                                                          \
+                    dp[0] = nt[q[0]];                                                    \
+                    dp[1] = nt[q[1]];                                                    \
+                    dp[2] = nt[q[2]];                                                    \
+                } else {                                                                 \
+                    dp[0] = DEC_F32(q, 0);                                               \
+                    dp[1] = DEC_F32(q, 1);                                               \
+                    dp[2] = DEC_F32(q, 2);                                               \
+                }                                                                        \
+                p += 2;                                                                  \
+            }                                                                            \
+            if (CLR) {                                                                   \
+                ix = ((u32)p[0] << 8) | p[1];                                            \
+                q = cb + (size_t)ix * cs;                                                \
+                memcpy(v + off_clr, q, 4);                                               \
+                p += 2;                                                                  \
+            }                                                                            \
+            if (TEX) {                                                                   \
+                f32* dp = (f32*)(v + off_tex);                                           \
+                ix = ((u32)p[0] << 8) | p[1];                                            \
+                q = tb + (size_t)ix * ts;                                                \
+                dp[0] = DEC_F32(q, 0);                                                   \
+                dp[1] = DEC_F32(q, 1);                                                   \
+                p += 2;                                                                  \
+            }                                                                            \
+        }                                                                                \
+        return i;                                                                        \
+    }
+DECODE_FAST_JOB(decj_n2c0t1, 2, 0, 1)
+DECODE_FAST_JOB(decj_n1c0t1, 1, 0, 1)
+DECODE_FAST_JOB(decj_n1c0t0, 1, 0, 0)
+DECODE_FAST_JOB(decj_n2c0t0, 2, 0, 0)
+DECODE_FAST_JOB(decj_n1c1t1, 1, 1, 1)
+DECODE_FAST_JOB(decj_n2c1t1, 2, 1, 1)
+DECODE_FAST_JOB(decj_n0c1t1, 0, 1, 1)
+DECODE_FAST_JOB(decj_n1c1t0, 1, 1, 0)
+typedef u32 (*DecodeJobFn)(const GxDecJob*);
+static const DecodeJobFn dec_fast_job[8] = {
+    decj_n2c0t1, decj_n1c0t1, decj_n1c0t0, decj_n2c0t0,
+    decj_n1c1t1, decj_n2c1t1, decj_n0c1t1, decj_n1c1t0,
+};
+/* the index of the shape plan_fast names, or -1: the job carries the number
+ * so the render thread never reads this file's statics */
+static int fast_index_of(DecodeFast f) {
+    if (f == decode_fast_n2c0t1s0) return 0;
+    if (f == decode_fast_n1c0t1s0) return 1;
+    if (f == decode_fast_n1c0t0s0) return 2;
+    if (f == decode_fast_n2c0t0s0) return 3;
+    if (f == decode_fast_n1c1t1s0) return 4;
+    if (f == decode_fast_n2c1t1s0) return 5;
+    if (f == decode_fast_n0c1t1s0) return 6;
+    if (f == decode_fast_n1c1t0s0) return 7;
+    return -1;
+}
+
+/* one vertex of a job's run through the plan: into `v` (stride bytes) and,
+ * for the to_pending steps, into `pend`.  The general walker of the job and
+ * the game thread's last-vertex pass share it. */
+static const u8* decode_job_vertex(const GxDecJob* j, const u8* p, u8* v, Pending* pend) {
+    const DecStep* st = j->plan;
+    int k;
+    if (j->clr_const) {
+        *(u32*)(v + j->off_clr) = j->clr;
+    }
+    for (k = 0; k < j->nfill; k++) {
+        f32* t = (f32*)(v + j->fill[k].dstoff);
+        t[0] = j->fill[k].s;
+        t[1] = j->fill[k].t;
+    }
+    for (k = j->nplan; k > 0; k--, st++) {
+        const u8* q;
+        u8* d;
+        f32* dp;
+        f32 sc;
+        const f32* tb;
+        if (st->idx == 2) {
+            u32 ix = ((u32)p[0] << 8) | p[1];
+            q = st->base + (size_t)ix * st->stride;
+            p += 2;
+        } else if (st->idx == 1) {
+            u32 ix = p[0];
+            q = st->base + (size_t)ix * st->stride;
+            p += 1;
+        } else {
+            q = p;
+            p += st->advance;
+        }
+        d = st->to_pending ? (u8*)pend + st->dstoff : v + st->dstoff;
+        dp = (f32*)d;
+        sc = st->scale;
+        tb = st->tbl;
+        switch (st->op) {
+            DEC_CASE_F32
+            DEC_CASE_TYPE(S16, DEC_S16)
+            DEC_CASE_TYPE(U16, DEC_U16)
+            DEC_CASE_TYPE(S8, DEC_S8)
+            DEC_CASE_TYPE(U8, DEC_U8)
+            DEC_CASE_TBL(TS8)
+            DEC_CASE_TBL(TU8)
+            DEC_CASE_COLOUR
+            default: break;
+        }
+    }
+    return p;
+}
+
+u32 gx_decode_job(const GxDecJob* j) {
+    if (j->fast >= 0) {
+        return dec_fast_job[j->fast](j);
+    }
+    {
+        Pending scratch; /* the to_pending steps' values are the game thread's business */
+        const u8* p = j->p;
+        u8* v = j->dst;
+        u32 i;
+        for (i = 0; i < j->count && p < j->end; i++, v += j->stride) {
+            p = decode_job_vertex(j, p, v, &scratch);
+        }
+        return i;
+    }
+}
+
+/* the bytes of list one vertex of the plan eats, and the vertices a run of
+ * `count` will decode from the bytes left -- the loops' own conditions
+ * (`p + per <= end` for the specialised ones, `p < end` for the walker),
+ * without decoding */
+static u32 job_vertex_bytes(const GxDecJob* j) {
+    u32 b = 0;
+    int k;
+    for (k = 0; k < j->nplan; k++) {
+        b += j->plan[k].advance;
+    }
+    return b;
+}
+static u32 job_vertices(const GxDecJob* j, u32 vbytes) {
+    size_t left = j->end > j->p ? (size_t)(j->end - j->p) : 0;
+    u32 n;
+    if (!vbytes) {
+        return 0;
+    }
+    if (j->fast >= 0) {
+        n = (u32)(left / vbytes);
+    } else {
+        n = (u32)((left + vbytes - 1) / vbytes);
+    }
+    return n < j->count ? n : j->count;
+}
+
+/* The game thread's share of a deferred run: what the loops above left in
+ * `pending` -- the to_pending steps' values and plan_back's texcoords, both
+ * from the last vertex decoded -- from that one vertex alone. */
+static void decode_pending_last(const GxDecJob* j, u32 n, u32 vbytes) {
+    u8 scratch[SRC_MAX_STRIDE] __attribute__((aligned(16)));
+    const u8* pl;
+    int i;
+    if (!n) {
+        return;
+    }
+    pl = j->p + (size_t)(n - 1) * vbytes;
+    decode_job_vertex(j, pl, scratch, &pending);
+    for (i = 0; i < plan_nback; i++) {
+        const f32* t = (const f32*)(scratch + plan_back[i].dstoff);
+        pending.tex[plan_back[i].k][0] = t[0];
+        pending.tex[plan_back[i].k][1] = t[1];
+    }
+}
+
+/* Build the job for the primitive in hand, or return 0 when the run must be
+ * decoded here: a shape the job cannot carry (the palette's per-vertex slot,
+ * the display-list cache's index tracking, --decodestats, the premerge),
+ * or a run that would not fit the ring (the sink). */
+static int rtdec_build(GxDecJob* j, const u8* p, const u8* end, u32 count) {
+    if (!rt_decode_on() || sl.off_skin >= 0 || premerge_on || port_opt.decodestats ||
+        nplan > GX_MAX_ATTR || plan_nfill > GX_DEC_FILL_MAX ||
+        run_pos + (size_t)count * sl.stride > src_cap || count >= MAX_VERTS) {
+        return 0;
+    }
+    j->p = p;
+    j->end = end;
+    j->count = count;
+    j->dst = src_buf + run_pos;
+    j->stride = (u32)sl.stride;
+    j->off_nrm = sl.off_nrm;
+    j->off_clr = sl.off_clr;
+    j->off_tex = sl.off_tex;
+    j->clr_const = plan_clr_const;
+    j->clr = plan_clr.u;
+    j->prefetch = !port_opt.noprefetch;
+    j->fast = plan_fast ? fast_index_of(plan_fast) : -1;
+    if (plan_fast && j->fast < 0) {
+        return 0; /* a palette shape: the loops above */
+    }
+    j->nplan = nplan;
+    memcpy(j->plan, plan, (size_t)nplan * sizeof(DecStep));
+    j->nfill = plan_nfill;
+    memcpy(j->fill, plan_fill, (size_t)plan_nfill * sizeof(plan_fill[0]));
+    return 1;
+}
+
 void GXCallDisplayList(const void* list, u32 nbytes) {
     const u8* p = (const u8*)list;
     const u8* end = p + nbytes;
@@ -4332,6 +4574,7 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
     int caching;
     unsigned nops = 0;    /* primitives in this list, for --submitstats */
     size_t list_pos = 0;  /* ring offset of the list's first run          */
+    static GxDecJob rtjob; /* M29: the run handed to the render thread   */
     /* 0 = this (buffer, state) pair has never been seen, 2 = the list's bytes
      * changed, 3 = the arrays the list reads were rewritten under it (an
      * animated model, which is the split the M9 log reports) */
@@ -4536,10 +4779,27 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
                 ds_plan_note(count);
             }
             port_perf_sub_enter(PERF_SUB_DECODE);
-            if (plan_fast && !caching && !port_opt.decodestats) {
+            if (!caching && rtdec_build(&rtjob, p, end, count)) {
+                /* M29: the run is the render thread's (PLAN.md 44); here only
+                 * the list pointer, the vertex count and `pending` advance */
+                u32 vb = job_vertex_bytes(&rtjob);
+                u32 n = job_vertices(&rtjob, vb);
+                rt_decode_record(&rtjob);
+                gx_skin_stamp_decode(rt_pos()); /* the skin body's join (PLAN.md 44.1) */
+                decode_pending_last(&rtjob, n, vb);
+                nverts = (int)n;
+                p += (size_t)n * vb;
+                stat_rtdec_runs++;
+                stat_rtdec_verts += n;
+                if (plan_fast) {
+                    stat_fast_verts += count;
+                }
+            } else if (plan_fast && !caching && !port_opt.decodestats) {
                 stat_fast_verts += count;
+                stat_rtdec_refused += rt_decode_on() ? 1 : 0;
                 p = plan_fast(p, end, count);
             } else {
+                stat_rtdec_refused += rt_decode_on() ? 1 : 0;
                 p = (caching || port_opt.decodestats) ? decode_run_tracked(p, end, count)
                                                       : decode_run(p, end, count);
             }

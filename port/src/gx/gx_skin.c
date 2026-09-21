@@ -611,11 +611,15 @@ int port_envelope_proc(HSFDATA* hsf) {
     stat_proc_calls++;
     if (gx_skin_mode() == 0 || !hsf || !hsf->matrix) {
         stat_proc_cpu++;
+        /* M29 (PLAN.md 44.1 rule 3): the game's own body rewrites the
+         * buffers now */
+        rt_decode_join("cpuskin EnvelopeProc");
         return 0;
     }
     h = hsf_register(hsf, frame);
     if (!h || h->cpu) {
         stat_proc_cpu++;
+        rt_decode_join("cpuskin EnvelopeProc");
         return 0;
     }
     h->serial++;
@@ -660,6 +664,14 @@ static void hsf_mtx_sync(SkinHsf* h) {
 static void hsf_run_body(SkinHsf* h) {
     HSFMATRIX* mx = h->hsf->matrix;
     Mtx id;
+    /* M29 (PLAN.md 44.1 rule 2): SetEnvelopMain rewrites this HSF's vertex
+     * and normal buffers in place; a decode record that reads them may still
+     * be pending on the render thread (a hooked child drawn in the shadow
+     * pass and again after its own mark) */
+    if (h->dec_valid) {
+        rt_decode_join_pos(h->dec_pos, "skin body");
+        h->dec_valid = 0;
+    }
     MtxTop = mx->data;
     nObj = mx->count;
     nMesh = mx->base_idx;
@@ -719,14 +731,24 @@ void port_envelope_sync(HSFDATA* hsf) {
  * still dirty -- a hooked model, drawn inside its parent's object walk before
  * its own EnvelopeProc of the frame ran -- gets the body now.  Deferred-CPU
  * mode only: the palette path skins from the rest pose at the decode. */
+static SkinHsf* bound_hsf; /* M29: the skinned HSF whose position array is bound */
+void gx_skin_stamp_decode(unsigned pos) {
+    if (bound_hsf) {
+        bound_hsf->dec_pos = pos;
+        bound_hsf->dec_valid = 1;
+    }
+}
+
 void gx_skin_array_bound(const void* p) {
     SkinMesh* m;
+    bound_hsf = NULL;
     if (gx_skin_mode() != 1 || !p || gl13_draw_off()) {
         return;
     }
     for (m = mesh_hash[hash_ptr(p)]; m; m = m->hnext) {
         if (m->vtxenv == p) {
             SkinHsf* h = m->owner;
+            bound_hsf = h;
             const HSFBUFFER* v;
             if (!(h->mtx_dirty || h->skin_dirty) || h->cpu) {
                 return;
@@ -945,6 +967,7 @@ void gx_skin_count_vertex(const SkinMesh* m, unsigned pos_ix, unsigned nrm_ix, i
 }
 
 void gx_skin_frame_end(void) {
+    bound_hsf = NULL; /* M29: a bind is per frame; never stamp across one */
     if (frame_skin_verts) {
         stat_frames_with_skin++;
         if (frame_skin_verts > worst_frame_skin_verts) {

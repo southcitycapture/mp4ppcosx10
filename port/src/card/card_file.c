@@ -48,6 +48,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <time.h>
+#include <unistd.h>
 
 #include <dolphin/types.h>
 #include <dolphin/card.h>
@@ -197,6 +198,21 @@ static void card_dir_make(char* out, size_t n) {
              home && *home ? home : ".");
     mkdir(buf, 0755);
     snprintf(out, n, "%s", buf);
+    /* M29 (PLAN.md 44.6): the results screen's 1.7 s stall was this
+     * directory's card image being re-read by Spotlight after every save
+     * -- a 2 MB `.raw` is a camera file to its importer -- so the flush's
+     * truncate (and then its rename) waited for the reader.  The marker
+     * Apple documents for exactly this keeps the indexer out of the port's
+     * own data: nothing in here is the user's to search. */
+    {
+        char marker[760];
+        FILE* f;
+        snprintf(marker, sizeof(marker), "%s/.metadata_never_index", buf);
+        f = fopen(marker, "a");
+        if (f) {
+            fclose(f);
+        }
+    }
 }
 
 static void card_format_image(Slot* s) {
@@ -240,8 +256,114 @@ static void card_format_image(Slot* s) {
 }
 
 unsigned gl13_frame_number(void);
-static void card_flush(Slot* s) {
+
+/* M29 (PLAN.md 44.6): the image is written by a thread, never by the game
+ * thread.  The results screen's 1.4-1.8 s stall was this flush: 2 MB
+ * written in 6 ms, then 1.7 s in the filesystem's metadata operation --
+ * the rename over the old image (before M29 the fopen("wb") truncate,
+ * outside the M23 clock) -- which HFS+ pays with a journal commit and a
+ * flush of the file's data, and which takes what the disk takes at that
+ * moment.  So the game thread copies the image into the job's buffer
+ * (2 ms) and a writer thread does the open / write / rename, the same
+ * shape as the snapshot's writer (snapshot.c).  One job at a time: a
+ * flush that finds the previous one still writing waits for it first,
+ * counted.  The write is atomic on disk either way (a sibling temp file,
+ * then rename), so a power cut leaves the old image or the new one. */
+#include <pthread.h>
+typedef struct CardJob {
+    volatile int state;    /* 0 idle, 1 writing, 2 done, 3 failed */
+    pthread_t thread;
+    int threaded;
+    u8* img;               /* the image's copy */
+    char path[1024];
+    char tmp[1032];
+    double t0, t_open, t_write, t_rename;
+    unsigned frame;
+    char err[128];
+} CardJob;
+static CardJob cjob;
+static unsigned stat_flush_waits;
+static double stat_flush_wait_s, stat_flush_game_s, stat_flush_behind_s, stat_flush_behind_max;
+
+static void* card_job_main(void* arg) {
+    CardJob* j = (CardJob*)arg;
     FILE* f;
+    int ok = 1;
+    snprintf(j->tmp, sizeof(j->tmp), "%s.tmp", j->path);
+    f = fopen(j->tmp, "wb");
+    j->t_open = port_now_seconds();
+    if (!f) {
+        snprintf(j->err, sizeof(j->err), "cannot write %s (%s)", j->tmp, strerror(errno));
+        j->state = 3;
+        return NULL;
+    }
+    if (fwrite(j->img, 1, CARD_IMAGE_SIZE, f) != CARD_IMAGE_SIZE) {
+        ok = 0;
+    }
+    if (fclose(f) != 0) {
+        ok = 0;
+    }
+    j->t_write = port_now_seconds();
+    if (ok && rename(j->tmp, j->path) != 0) {
+        snprintf(j->err, sizeof(j->err), "cannot rename over %s (%s)", j->path, strerror(errno));
+        ok = 0;
+    }
+    j->t_rename = port_now_seconds();
+    if (!ok) {
+        unlink(j->tmp);
+        if (!j->err[0]) {
+            snprintf(j->err, sizeof(j->err), "short write to %s", j->tmp);
+        }
+    }
+    j->state = ok ? 2 : 3;
+    return NULL;
+}
+
+/* the game thread: reap a finished (or wait for a running) write */
+static void card_job_reap(int wait) {
+    double behind;
+    if (cjob.state == 0) {
+        return;
+    }
+    if (cjob.state == 1) {
+        double t0;
+        if (!wait) {
+            return;
+        }
+        t0 = port_now_seconds();
+        stat_flush_waits++;
+        if (cjob.threaded) {
+            pthread_join(cjob.thread, NULL);
+            cjob.threaded = 0;
+        }
+        stat_flush_wait_s += port_now_seconds() - t0;
+    } else if (cjob.threaded) {
+        pthread_join(cjob.thread, NULL);
+        cjob.threaded = 0;
+    }
+    behind = cjob.t_rename - cjob.t0;
+    if (cjob.state == 3) {
+        port_log("port> CARD: image flush failed: %s; this session's saves are in memory only\n",
+                 cjob.err);
+    } else {
+        stat_flushes++;
+        stat_flush_behind_s += behind;
+        if (behind > stat_flush_behind_max) {
+            stat_flush_behind_max = behind;
+        }
+        if (behind > 0.05) {
+            port_log("port> CARD: image flush took %.0f ms behind the game (open %.0f, write %.0f, "
+                     "rename %.0f; frame %u)\n",
+                     behind * 1000.0, (cjob.t_open - cjob.t0) * 1000.0,
+                     (cjob.t_write - cjob.t_open) * 1000.0,
+                     (cjob.t_rename - cjob.t_write) * 1000.0, cjob.frame);
+        }
+    }
+    cjob.state = 0;
+}
+
+static void card_flush(Slot* s) {
+    double t0;
     if (!s->present || !s->dirty) {
         return;
     }
@@ -257,29 +379,31 @@ static void card_flush(Slot* s) {
         s->dirty = 0;
         return;
     }
-    f = fopen(s->path, "wb");
-    if (!f) {
-        port_log("port> CARD: cannot write %s (%s); this session's saves are "
-                 "in memory only\n",
-                 s->path, strerror(errno));
-        s->dirty = 0;
-        return;
-    }
-    {
-        /* M23 (PLAN.md 38): the write is timed.  Three real-time walks in
-         * four stalled 1.7-2.9 s of game time at frame 14,198 -- the results
-         * screen's save -- with no texture work on the frame; whether it is
-         * this write is what the line answers. */
-        double t0 = port_now_seconds(), ms;
-        fwrite(s->img, 1, CARD_IMAGE_SIZE, f);
-        fclose(f);
-        ms = (port_now_seconds() - t0) * 1000.0;
-        if (ms > 50.0) {
-            port_log("port> CARD: image flush took %.0f ms (frame %u)\n", ms, gl13_frame_number());
+    t0 = port_now_seconds();
+    card_job_reap(1); /* the previous write, if it is still going */
+    if (!cjob.img) {
+        cjob.img = (u8*)malloc(CARD_IMAGE_SIZE);
+        if (!cjob.img) {
+            port_log("port> CARD: no memory for the flush's copy; saves are in memory only\n");
+            s->dirty = 0;
+            return;
         }
     }
+    memcpy(cjob.img, s->img, CARD_IMAGE_SIZE);
+    snprintf(cjob.path, sizeof(cjob.path), "%s", s->path);
+    cjob.err[0] = '\0';
+    cjob.t0 = port_now_seconds();
+    cjob.frame = gl13_frame_number();
+    cjob.state = 1;
+    if (pthread_create(&cjob.thread, NULL, card_job_main, &cjob) != 0) {
+        cjob.threaded = 0;
+        card_job_main(&cjob);
+        card_job_reap(0);
+    } else {
+        cjob.threaded = 1;
+    }
     s->dirty = 0;
-    stat_flushes++;
+    stat_flush_game_s += port_now_seconds() - t0;
 }
 
 static void card_load(int chan) {
@@ -474,6 +598,13 @@ void CARDInit(void) {
     }
 }
 
+/* the retrace (vi.c): a finished write is logged the frame it lands */
+void port_card_service(void) {
+    if (cjob.state == 2 || cjob.state == 3) {
+        card_job_reap(0);
+    }
+}
+
 void port_card_report(void) {
     int i;
     for (i = 0; i < CARD_SLOTS; i++) {
@@ -481,11 +612,17 @@ void port_card_report(void) {
             card_flush(&slot[i]);
         }
     }
+    card_job_reap(1); /* the last write lands before the process ends */
     if (stat_reads || stat_writes || stat_creates || stat_deletes) {
         port_log("port> CARD: %u reads, %u writes, %u files created, %u deleted, "
                  "%u image flushes, %u of %d blocks free\n",
                  stat_reads, stat_writes, stat_creates, stat_deletes, stat_flushes,
                  slot[0].present ? bat_free(&slot[0]) : 0, CARD_FREE_BLOCKS);
+        port_log("port> CARD: flushes on a thread (M29): %.0f ms on the game thread in all, "
+                 "%.0f ms behind it (worst %.0f ms); %u flush(es) waited for the previous "
+                 "one (%.0f ms)\n",
+                 stat_flush_game_s * 1000.0, stat_flush_behind_s * 1000.0,
+                 stat_flush_behind_max * 1000.0, stat_flush_waits, stat_flush_wait_s * 1000.0);
     }
 }
 

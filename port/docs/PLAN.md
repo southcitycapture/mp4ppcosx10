@@ -14239,3 +14239,527 @@ thread (§42.5), with §39.5's in-place-rewrite argument re-checked against
 the sprite path and `EnvelopeProc` before a line is written; the
 results-screen stall from its snapshot; and the gallery on the final
 build as the picture witness of (a) across all 63 games (`gallery_chain.sh`).
+
+## 44. M29 log: the decode on the render thread *(2026-09-20, littlejelly)*
+
+M29's brief is the last 1.3 ms: the board presents 27.0 fps because the
+game thread's drawn frame (28.6 ms) plus the consumed frame that pays for
+it (6.06) is 1.3 ms over two retraces (§43.12). The decode of the display
+lists into the vertex ring is 8.9 ms of that drawn frame, and §42.5 said
+where it could go: not a frame later (§39.5: the game rewrites its arrays
+in place) but a *thread* over, onto the render thread, which has 18 ms of
+every 33 idle. What follows is the ordering argument that design owes
+before a line is written, then the build in stages, each held to the
+three md5s.
+
+### 44.1 The ordering argument, written before the code
+
+**What the decode reads.** A display-list primitive is `count` vertices of
+`GX_INDEX16` indices (two bytes per attribute per vertex) into the arrays
+`GXSetArray` named: for an HSF model, `mesh.vertex->data`,
+`mesh.normal->data`, `mesh.color->data`, `mesh.st->data`
+(hsfdraw.c:508–601); for a particle, `particleP->vtxBuf` and the
+particle data (hsfanim.c:808–817); for a minigame's own geometry, its
+module's buffers (24 call sites in 22 RELs). The list bytes themselves
+(`DLBufStartP + dlOfs` for a model: file data; `particleP->dlBuf`; a
+module's recorded list). The port's own inputs are the plan
+(`build_decode_plan`: the array base and stride per step, the op, the
+byte table — an append-only static, §32.3 — the scale, the destination
+offset) and the register material colour when it wins. Nothing else: no
+`gx.*` state, no matrix, no texture.
+
+**What the decode writes.** The ring (`src_buf + run_pos`, `count ×
+stride` bytes — the render thread's own DMA range, §42.1c) and, on the
+game thread, three things the *next* primitive may read: `pending.tex`
+from the last vertex (`plan_back`), the `to_pending` steps' last values
+(an attribute the layout has no slot for), and `nverts`/the list pointer
+(how far the list advanced). None of those needs the decoded vertices:
+the count of vertices a run decodes is a function of `count`, the bytes
+left in the list and the plan's bytes-per-vertex; the `pending` values
+are the last vertex's alone, so the game thread decodes *that one
+vertex* into a scratch and leaves the other `count − 1` to the render
+thread. Exact by construction, and the md5s are the witness.
+
+**When the game rewrites what the decode reads.** The frame is
+`HuPrcCall` (the game's logic) → `Hu3DExec` (the draws) →
+`HuSysDoneRender` → `VIWaitForRetrace` (main.c:84–113). Inside
+`Hu3DExec` the writes and the draws interleave *per model*: for each
+camera, each layer, each model in turn — motion exec, `InitVtxParm`
+(writes a flag only), `ShapeProc` (rewrites `mesh.vertex->data` of a
+shape-animated mesh), `ClusterProc` (the same for a cluster mesh),
+`EnvelopeProc` (the skinning: rewrites `mesh.vertex->data` and
+`mesh.normal->data` of every skinned mesh) — then `Hu3DDraw` of that
+model (hsfman.c:200–256); the shadow pass does the same for its models
+first (hsfman.c:1950–1990, `HU3D_ATTR_MOT_EXEC` keeps the main loop from
+doing it twice). So a model's arrays are written once per frame, before
+its draws, and are stable from its first draw until the game's next
+frame — **except** for a `HU3D_ATTR_HOOK` child (a held item), which is
+drawn inside its parent's object walk (hsfdraw.c objMesh → the hooked
+model) *before* its own iteration of the loop runs its motion block, and
+so is rewritten after a draw in the same frame; and for whatever a
+module's process does to its own buffers, which is game logic before
+`Hu3DExec` and so before the draw. M18 changed one of these writers:
+in the default mode `EnvelopeProc` only marks the HSF dirty
+(`port_envelope_proc`), and the body runs at the *draw* — `port_envelope_sync`
+in objMesh, or `gx_skin_array_bound` at `GXSetArray` for the hooked
+child — which is port code; `--cpuskin` runs the game's body at
+`EnvelopeProc` itself.
+
+**The rule.** A decode record emitted at stream position P reads memory
+that must not change until the render thread has executed P. The
+writers, and what orders each:
+
+1. *The game's next frame* (everything `HuPrcCall` and `Hu3DExec` do at
+   N+1): a **join on the decode position at the top of
+   `VIWaitForRetrace`** — the game thread waits until the render thread's
+   decode cursor has passed every record of frame N. That is before the
+   retrace's sleep, so it costs only what exceeds the slack.
+2. *The skin body at the draw* (`hsf_run_body`, deferred mode): a **join
+   on the decode position before the body runs**. In the common case the
+   body runs before the model's records exist and the wait is nil; for
+   the hooked child drawn twice (the shadow pass, then the main pass
+   after its own mark) the second body waits for the first draw's
+   decodes, which the render thread has long done.
+3. *`EnvelopeProc`'s own body under `--cpuskin`*: the same join at
+   `port_envelope_proc` before it returns 0.
+4. *`ShapeProc` and `ClusterProc`*: two new exact-text patches
+   (port/patches.txt) call `port_vtx_rewrite()` at their heads — the same
+   join. Both are called only from the motion blocks above and from
+   `Hu3DMotionCalc`, all before the model's draw except for the hooked
+   child.
+5. *The CPU vertex path* (`finish_vertices`, when the card refuses a
+   variant or under `--cpuxf`): it reads the ring on the game thread, so
+   `draw_apply` joins the decode position before it. 0 draws of the walk,
+   15 variants over a soak (§43.10's report).
+6. *The ring's reuse*: unchanged — `rt_ring_enter` waits on the game
+   thread, before the record is emitted, for the *replay* past the
+   chunk's last use and the GPU's fence; a decode record that exists
+   already stands past both.
+7. *Immediate mode* (`GXBegin`/`GXEnd`) decodes on the game thread into
+   its own ring bytes; the two threads write disjoint bytes of one buffer
+   and the `glFlushVertexArrayRangeAPPLE` record that covers the batch
+   replays after both.
+
+Every join is "the render thread's decode cursor past position P",
+counted by name and timed, and the join at the retrace is the only one
+on every frame's path.
+
+**The render thread's schedule.** If the render thread executed decode
+records in stream order between the draws, the decode of frame N would
+finish only when the *replay* of frame N did — 15.4 + 8.9 ≈ 24 ms of
+work that cannot start before the first draw record — and the retrace
+join would hand the game thread a tail of several milliseconds (§42.5's
+"~5 ms"). So the render thread keeps **two cursors**: a decode cursor
+that runs ahead through every published record and executes the decodes
+as soon as they exist, and the replay cursor behind it that skips the
+decodes already done. The decode has priority. Then the decode of frame
+N finishes a record after the game thread emits its last list, the join
+at the retrace waits for one primitive at most, and the replay's tail
+(the GL issue the render thread has not reached) runs on into the
+consumed frame, where the gate (§42.1d) already waits for it.
+
+**What it costs if the decode is late.** The game thread waits at the
+retrace; `join decode (retrace)` counts it and the `--perf` frame shows
+it as `game` time. If the render thread cannot keep up — a scene whose
+replay plus decode is over two retraces — the drawn frame grows by the
+wait and the walk says so; the brief's rule is to stop there with the
+numbers.
+
+**The arithmetic to beat.** Board: consumed 6.06 ms, drawn 28.6 (of
+which decode 8.9). Drawn without the decode ≈ 19.7 + the join's tail;
+drawn + consumed ≈ 26 < 33.3: the cap, with 7 ms of margin for the
+contention a dual G4 charges (§42.4: +0.23 ms consumed, +1 ms decode with
+both cores busy). Render thread: 15.4 + 8.9 = 24.3 of every 33.3 ms.
+Character select: the render thread's replay is already 25.3 ms; adding
+its decode puts it near or over two retraces, so it stays where it is or
+moves a little. Title: light either way.
+
+**Not moved.** The material walk, the texture decode, the state walk, the
+records (§43.12: the state walk is 23% of the drawn frame and the next
+lever after this one). The display-list cache (`--dlcache`, off), the
+palette (`--palette`, off), `--decodestats`, `--olddecode`, the premerge
+(`--premerge-max`, off) keep the game-thread decode: they read or write
+the decoded bytes on the game thread.
+
+### 44.2 The soak, read
+
+§43.13's leave-behind — `g4 run --soak --com4 --rtc dolphin --freshcard
+--realtime --snap-every 5000 --snap-keep 3 --status --ovllog --stuckwatch
+200 --perf` on the M28 build (`04a6764f…`), 16:45 to 17:20 G4 time, ended
+through Escape at turn 10's minigame (m431) to take the G4 for the
+milestone: **35 minutes, 125,400 frames, 2,090 status lines**
+(`docs/soak/m29-soak19-m28-leave.log.gz`), the first soak with (a) and (c)
+on.
+
+| | |
+|---|---|
+| speed / presented fps | **100.0%** mean over 2,090 lines (`cpu 2`, `machine ok` on every one); **27.1 fps** overall, **28.7 on the board** (994 board lines; soak 18 read 28.4) |
+| where it got | turn 10 of 20, 14 minigames dealt, **the same modules in the same order** as soaks 13–18 (m412 m428 m420 m444 m423 m438 m429 m444 m430 m406 m416 m405 m438 m431) |
+| `rt` on the status lines | median **15.2 ms**, p95 27.8, worst 69 |
+| the `render thread:` block | 176M records, 56,650 frames presented, replay mean 15.45 ms; gate: 50,921 drained, 4,837 waited (2.7 s, worst 13 ms), 108 consumed for a busy thread; ring waits 0; joins: 85 compiles (1.2 s), 894 forced frames (0.7 s), 25 snapshots (11 ms); present tail 0.6 ms |
+| `split frames` / `worker mixer` | 418,431 halves each side, 125,462 joins, **0 position mismatches**; 4 late jobs (5 ms), 119 waited for (44 ms, worst 1.6 ms) |
+| resyncs / faults / STUCK / guard hits | **2 / 0 / 0 / 0** (below) |
+| audio | 226 underruns / 2.97 s over the 35 minutes, `aud` 0.1–0.5 ms |
+| `tex` / `rss` | 627 KB / 39,394 KB budget at the end; **rss 135–138 MB** on every board line from turn 1 to turn 10 (183 MB once, at the first board's load) — the monotone rise §43.13 asked to watch is not there |
+| `REL .data` / `skin: lifetime` / `EFB copies` | 36 re-opens, 26 reset / 321 dropped, 0 guard hits / 63,436 |
+
+**The two resyncs.** The first is the results-screen stall at **the same
+retrace as soak 18, 89,285** — `stall: frame 89280 took 1433 ms (game
+1433 …) [consumed]`, no decode, no free, no module load, at `resultdll`'s
+exit after m406, turn 7's game: the frame is deterministic (the same
+inputs land it at the same retrace in two soaks), the duration is not
+(1710 ms in soak 18, 1433 here, 505 in M28's `K` teleport). The second
+is m431's own: `rt 39.7 ms` on its status line, drawn frames of 106–150
+ms one after another (gx 75–129) until the schedule was a second behind
+(`retrace 122597, 1002 ms`) — the §32.4 shape, a game whose replay is
+over two retraces, not a stall.
+
+**A regular stall the `--perf` lines show for the first time**: `stall:
+frame N took ~350 ms (game 350 …) [consumed]` three frames after every
+`overlay -1 (next 89)` — the board's re-entry after each results screen
+(frames 14,244, 30,964, 39,334, 52,410, 67,108, 81,498, 89,326, 98,262,
+111,486: nine of nine), between the `Rest Memory` / `data num` lines of
+`w01dll`'s reload. 350 ms of game logic with `dll 0 ms` and no disc read
+over 100 ms is the board's own data decode (the game inflates its
+archives on the CPU); it is the same every time and it is under a wipe.
+Not the 1.4 s stall, which is 46 frames *before* it, inside `resultdll`.
+Nothing in the soak outranks the milestone.
+
+### 44.3 The build
+
+What §44.1 describes is `--rtdecode N` (0: the decode on the game thread —
+the inline twin, today's loops untouched; 1: the record, joined right
+after each — stage 1; 2: the record, joined at the retrace — stage 2, the
+default with a render thread), 400 lines across:
+
+* **gx_internal.h**: `DecStep` and the `DEC_*` ops moved out of gx_draw.c;
+  `GxDecJob` — the run's list pointer and end, the count, the ring
+  destination, the stride and offsets, the register colour when it wins,
+  the fills, the specialised loop's number, and the plan's steps (the
+  arrays' bases and strides, the byte tables, the ops).
+* **gx_draw.c**: `rtdec_build` fills the job for a run the record can
+  carry (not the palette's per-vertex slot, not the display-list cache's
+  index tracking, not `--decodestats`, not the premerge, not a run the
+  ring would truncate — every one of those keeps the loops of §32.3);
+  `job_vertex_bytes` / `job_vertices` say how far the list advances and
+  how many vertices the run has, from the plan's widths and the loops'
+  own conditions (`p + per <= end` for a specialised loop, `p < end` for
+  the walker), without decoding; `decode_pending_last` decodes the run's
+  *last* vertex into a scratch on the game thread, which is all
+  `pending` ever kept (the `to_pending` steps' values, `plan_back`'s
+  texcoords); `gx_decode_job` is the render thread's kernel — the eight
+  specialised shapes re-instantiated over the job (`DECODE_FAST_JOB`,
+  the same loads and stores as `DECODE_FAST`, minus `nverts`, `pending`
+  and the counters) and a general walker over the job's steps; the
+  emission stamps the bound skinned HSF (`gx_skin_stamp_decode`); the
+  CPU vertex path joins before `finish_vertices` (rule 5).
+* **rt.c**: `OP_DECODE` (the job inline, only the steps in use — ~230
+  bytes a run against 26 for a state record; 860 runs a board frame);
+  the **decode cursor** `dec` / `dec_pub` — `decode_ahead(wr_pub)` runs
+  before every replayed record, executes every `OP_DECODE` not yet done
+  between max(dec, rd) and the published position, marks it done (a
+  flag in the record; the replay behind skips it, or runs it itself if
+  the cursor never got there — counted as *late*, 0 on every walk);
+  `wait_pos` generalised to `wait_var` so the game thread can wait on
+  either cursor; `rt_decode_join(why)` (to the writer's position) and
+  `rt_decode_join_pos(pos, why)` (to a stamp), both counted by name in
+  the `join` table; the decode timed on its own (`dec` next to `rt` on
+  the status line and in the `--perfdump` CSV's new `dec_ms` column,
+  `decode` line in the report: runs recorded / ahead / late, vertices,
+  ms per presented frame).
+* **gx_skin.c**: `hsf_run_body` joins on the HSF's stamp (rule 2);
+  `port_envelope_proc` under `--cpuskin` joins on everything (rule 3);
+  the bound skinned HSF is remembered at `GXSetArray(GX_VA_POS)` and
+  cleared at the frame's end.
+* **patches.txt**: `port_vtx_rewrite("ShapeProc")` / `("ClusterProc")`
+  at the heads of the two in-place rewriters (rule 4) — a join on
+  everything; 513 calls over the turbo walk, 2,097 over the real-time
+  one, 0.1 ms each.
+* **vi.c**: `rt_decode_join("retrace")` at the top of `VIWaitForRetrace`
+  (rule 1).
+* `port/tools/m29_chain.sh` (the runs below), `m29_perfstat.py` (the
+  CSV's medians with the `dec` column).
+
+The first build joined the skin body on *everything recorded so far*
+(the join-all): exact, but it waited 0.18 ms five times a drawn frame on
+the board (`skin body 49860 (9089 ms)` over the real-time walk, the
+drawn frame's `game` 11.5 → 12.3), because the render thread was in the
+middle of a draw when the next model's body asked. The stamp — the
+stream position after the last record emitted under the HSF's own
+position array — makes that wait the render thread's progress past
+*that* record, which it has long made: `skin body 30654 (20 ms)` on the
+final build's turbo walk.
+
+### 44.4 The stages on the G4
+
+`port/tools/m29_chain.sh` as `~/MarioParty4-chain.app`, the 9,000-frame
+turbo walk of §31.2 (`--dumpframe 800,3000,7000`), each stage a
+`--rtdecode` value on the same binary (`6c91b243…`, the join-all build):
+
+| stage | walk | frame 800 / 3000 / 7000 | game thread gx per drawn frame (`--gxsplit`) | of which decode | render thread per drawn frame, board (replay + decode) | board (6000–8900) |
+|---|---:|---|---:|---:|---:|---:|
+| 0 the decode on the game thread (`--rtdecode 0`, the inline twin) | 245 s | **`0b58c5ee` / `c58a046d` / `021d58fb`** | 17.24 ms | 8.89 | 14.9 + — | 35.6 fps, 28.1 ms (game 11.8 gx 15.6) |
+| 1 the record, joined at once (`1`) | 352 s | identical | 29.30 | 21.50 (the join is inside it) | 14.8 + 6.6 | 26.3, 38.1 |
+| 2 the record, joined at the retrace (`2`) | 243 s | identical | (the log was overwritten by the final build's run of the same name; its console read decode 2.34, board 24.63 ms / 40.6 fps, game 13.7 gx 10.2, render thread 15.0 + 7.7) | | | |
+| 2 with `--cpuskin` (`2 --cpuskin`) | 243 s | identical | 15.37 | 2.34 | 14.9 + 7.7 | 40.8, 24.5 (game 13.9 gx 9.9) |
+| 0 with `--cpuskin` | 245 s | identical | 17.34 | 8.94 | 14.9 + — | 35.8, 27.9 |
+| **2 on the final build** (`a1b53e70…`, the stamp) | 244 s | **identical** | 15.4 | 2.39 | 14.9 + 7.7 | **40.9, 24.5** (game 12.7 gx 11.1) |
+
+(`docs/soak/m29-walk-T*.log.gz`, `m29-chain-index-*.txt`.) Every stage
+holds the three M26 references — the render thread's kernel writes the
+same bytes in the same places; 7,669,131 runs (411 M vertices, 98.8% of
+the walk's) handed over on every stage, 0 refused, 0 decoded late by the
+replay — and the two `--cpuskin` arms hold them too, which is the
+skinning ordering proven both ways (rule 2 by the stamp, rule 3 by the
+join-all at `EnvelopeProc`; 44,836 of those on the walk). What the
+columns say: the game thread's decode region falls from 8.9 ms to 2.4
+(the record's memcpy and the last-vertex pass, 2.8 µs a run); stage 1's
+join after every record costs a thread round trip a primitive (352 s);
+under `--turbo` the render thread is the bottleneck once it decodes too
+(15 + 7.7 = 22.7 ms a board frame against the game thread's 24.5, the
+`retrace` join 0.2 ms a frame), so the walk is only 2 s faster — the
+real-time walk is where the overlap pays.
+
+### 44.5 The real-time walk: the board at the cap
+
+§39.4's walk (`--soak --com4 --rtc dolphin --freshcard --realtime --frames
+16000 --perf --status --ovllog --perfwin … --dumpframe 800,3000,7000`),
+the CSVs' medians by `port/tools/m29_perfstat.py`; `consumed` and `drawn`
+are the game thread's frame, `rt` the render thread's replay of a drawn
+frame and `dec` its decode of that frame (the two run on one thread, so
+the render thread's frame is their sum). Every run holds the three md5s.
+
+| arm | board: consumed | drawn (game / gx / **rt + dec**) | **presented** | character select: consumed | drawn (game / gx / rt + dec) | **presented** | title: consumed | drawn (rt + dec) | **presented** |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| M28's final build, its own walk (§43.12) | 6.06 | 28.6 (11.5 / 16.4 / 15.4 + —) | 27.01 | 4.10 | 39.9 (12.2 / 26.7 / 25.2 + —) | 19.56 | 1.49 | 29.7 (13.9) | 25.46 |
+| the same bundle on today's machine, 19:30 (`M28R`, the environment check) | 6.00 | 28.7 (11.5 / 16.6 / 15.6) | 27.48 | 4.07 | 39.8 (12.2 / 26.8 / 25.7) | 19.82 | 1.47 | 30.9 (14.0) | 25.59 |
+| `--rtdecode 0` on the M29 binary (the inline twin, `R0`) | 5.95 | 28.4 (11.3 / 16.4 / 15.4 + —) | 27.82 | 4.08 | 40.0 (12.3 / 26.7 / 25.2) | 19.64 | 1.52 | 30.0 (13.9) | 25.94 |
+| **`--rtdecode 2`, the join-all build** (`R2`, `R2a`, `R2b`) | **6.17 / 6.10 / 6.13** | **22.4 / 22.3 / 22.3** (12.3 / 9.4 / **15.7 + 7.7**) | **29.79 / 29.53 / 29.82** | 4.57 / 4.67 / 4.69 | 35.0 / 34.9 / 34.7 (19.0 / 15.0 / 24.4 + 14.6) | 21.32 / 21.87 / 21.79 | 1.75 / 1.68 / 1.67 | 21.3 / 21.5 / 21.4 (11.5 + 17.8) | 25.24 / 24.85 / 25.55 |
+| `--rtdecode 2`, the stamp build with the flush timed (`4c77ebcb…`, `R2g`, `R2h`) | 6.19 / 6.19 | 22.3 / 22.4 (12.1 / 9.4 / 15.9 + 7.9) | 29.67 / 29.80 | 7.06 / 6.73 | 28.7 / 28.8 (12.6 / 15.0 / 24.9 + 15.5) | 20.18 / 20.30 | 1.61 / 1.67 | 21.7 / 21.7 (11.8 + 18.4) | 25.24 / 25.19 |
+| the same plus the Spotlight marker and `--stackmul` (`a1941a57…`, `R2j`, `R2k`) | 6.12 / 6.12 | 22.1 / 22.1 (12.0 / 9.4 / 15.7 + 7.9) | 29.82 / 29.78 | 6.77 / 6.75 | 28.6 / 28.7 (12.5 / 15.0 / 25.0 + 15.6) | 20.23 / 20.36 | 1.65 / 1.73 | 21.6 / 21.9 (11.6 + 18.2) | 25.24 / 24.89 |
+| **the final build, the flush on its thread** (`bf758385…`, `R2l`, `R2m`) | **6.11 / 6.10** | **22.1 / 22.0** (12.0 / 9.4 / **15.8 + 7.8**) | **29.65 / 29.81** | 6.72 / 6.76 | 28.5 / 28.7 (12.6 / 15.0 / 24.6 + 15.5) | **20.25 / 20.30** | 1.73 / 1.69 | 21.6 / 21.7 (11.4 + 18.1) | **25.20 / 25.24** |
+| `--rtdecode 2 --cpuskin` (`R2c`, after the reboot, the `locate` job running) | 6.63 | 22.7 (12.4 / 9.7 / 17.4 + 8.0) | 28.60 | 6.61 | 30.4 (14.0 / 15.8 / 26.7 + 16.1) | 19.42 | 1.71 | 22.7 (12.9 + 18.5) | 24.65 |
+| `--rtdecode 2 --renderthread 1` (the inline twin with the record, `R2i`) | 5.76 | 43.3 (11.6 / 30.7 / —) | 18.00 | 3.85 | 58.1 (11.9 / 45.2) | 13.84 | 1.29 | 40.2 | 19.93 |
+
+(`docs/soak/m29-walk-R*.log.gz` and `m29-walk-final-R*.log.gz` with their
+`-perfdump.csv.gz`; the runs between — `R2a`/`R2b` after the reboot with
+the `locate` rebuild on the machine, `R2d`–`R2f` with Spotlight indexing a
+freshly synced `.o` tree — are in the directory and read 0.5–1 fps under
+these on every scene; g4-witness.md 0r says what to do about that.)
+
+**What the table says.**
+
+* **The board presents 29.7–29.8 fps, from 27.0: the cap.** The game
+  thread's drawn frame is **28.6 → 22.4 ms** (gx 16.4 → 9.4: the decode's
+  8.9 ms became 2.0 of records and last-vertex passes), the consumed frame
+  6.06 → 6.19 (the second core busier, §42.4's +0.2 again); drawn +
+  consumed = 28.6 < 33.3 with 4.7 ms to spare. The render thread replays
+  15.9 and decodes 7.9 = 23.8 of every 33.3 ms. The status lines read
+  `30.0 fps presented` on 33 of the 38 board seconds of the final build's
+  first walk (the others 28.9–29.9, and the seconds a `g4 shot` landed
+  on); `screenshots/m29-board-realtime-cap.png` is that board.
+* **The character select: 19.6 → 20.2**, and its wall moved. Its render
+  thread is now the long pole at **24.9 + 15.5 = 40.4 ms** a drawn frame —
+  over two retraces — so the gate (§42.1d) waits its 4 ms and consumes
+  (`rt 1364 frames consumed because the render thread was still busy`,
+  twice M28's), and that wait is what the table shows as the consumed
+  frame's 4.1 → 7.0: it is charged to the consumed frame *before* a
+  would-be-drawn one (the frame after a consumed frame reads 8.2 ms at the
+  median, the one after a drawn frame 4.7). The game thread's drawn frame
+  fell 39.9 → 28.7. The join-all build read 21.3–21.9 here because its
+  skin-body waits made the drawn frame's `game` 19 ms (§44.3), which gave
+  the render thread more room. The M28 bundle on the same machine at 19:30
+  reads M28's numbers to a tenth, so this is the build's and not the
+  day's.
+* **The title: 25.2–25.6, unchanged.** Its decode is 18 ms a drawn frame
+  (the menu's sprites are hundreds of small lists), so its render thread
+  is 11.8 + 18.4 = 30 ms and the gate's rule holds it where it was; its
+  game thread's drawn frame fell 29.7 → 21.7.
+* **The joins cost nothing on the board**: `retrace` 16,000 joins, 1.2 s
+  in all (0.07 ms a frame; worst 20 ms, a texture upload the reader was
+  inside), `skin body` 32,823 joins, 70 ms, `ClusterProc` 2,097, 0.27 s,
+  0 CPU-path joins; 5.06 M runs decoded ahead by the cursor, **0 late**.
+* **The inline twin with the record** (`R2i`, one core) is within 0.4 fps
+  of the direct path (18.0 against 18.35 in §42.4): the record's cost on
+  one core is the memcpy.
+* Underruns and resyncs are the loads' and the results screen's (§44.6);
+  `late worst 650 ms` on every arm is the first board load.
+
+### 44.6 The results-screen stall: the card image's flush, waiting for Spotlight
+
+**The two stalls at the results screen**, told apart by their frames on
+every `--perf` walk and soak of the day:
+
+* **(B), 350 ms, every time**: three frames after `overlay -1 (next 89)`
+  — the board's re-entry after the results (walk frame 14,244; soak
+  frames 30,964 / 39,334 / 52,410 / 67,108 / 81,498 / 89,326 / 98,262 /
+  111,486, nine of nine). The `K` teleport reproduces it under
+  `--restore` and the `sample` says what it is
+  (`docs/soak/m29-K-board-reentry.sample.gz`, `sample_tree.py`): the game
+  thread in `MainFunc → BoardPlayerModelInit → CreateInstance →
+  CharMotionCreate → Hu3DJointMotion → strcmp` (291 of 417 non-sleeping
+  samples: the joint-name lookup of every character's motion set against
+  the model's objects, `JointModel_Motion` 43), the rest in
+  `HuDataSelHeapReadNum → HuDecodeFslide/HuDecodeData` (the board's data
+  inflated on the CPU). The game's own, under the wipe, the console does
+  the same work; not a port stall. (The `K` run's 1,279 ms for it is
+  `sample`'s own halving of the run plus the restore's cold caches,
+  §0q.)
+* **(A), 1.4–1.8 s, a lottery**: `resultdll`'s save. On the walk it is
+  frame 14,198 — 140 frames after `ARAM data num 860020` (the "Saving…"
+  sprite `SaveExec` loads, resultDll/main.c:1004) and 43 before the
+  overlay switch; in the soaks it is frame 89,280 after m406, the same
+  place after the same sprite. It hit 2 of the day's first 4 real-time
+  walks (1,762 and 1,736 ms), 0 of the next 6, and then **R2h caught it
+  with the new clock on the flush**:
+
+  ```
+  port> CARD: image flush took 1726 ms (open 0, write 6, rename 1720; frame 14197)
+  port> realtime: resync at retrace 14203, 1720 ms behind dropped (1 so far)
+  port> stall: frame 14198 took 1736 ms (game 1736 gx 0 present 0 aud 0) …
+  ```
+
+  **It is the card image's flush** (`card_file.c card_flush`): 2 MB
+  written in 6 ms, and 1.72 s in the *metadata* operation that replaces
+  the old file — the `rename` in this build, and in every build before
+  it the `fopen(path, "wb")` that truncated the image in place, which sat
+  *outside* the M23 clock (`CARD: image flush took` timed the `fwrite`
+  and `fclose` only, which is why §39.4 and §43.1 could say "not the card
+  flush"). What holds the old file: the image is
+  `~/Library/Application Support/MarioParty4/scratch-slot-a.raw`, and a
+  2 MB `.raw` is a camera file to Spotlight's importer, which re-reads
+  it after every flush; HFS+'s truncate and rename both take the file's
+  exclusive lock and wait for that reader. The lottery is the importer's
+  timing. The `K` restore never showed it because "the restored card has
+  no file in this process" (§0g) — no flush at all. The console's save
+  is the card's own ~100 ms under the same sprite, which is what the
+  game's `HuPrcSleep(60)` before the write is sized for.
+
+**The fix, in port/**: `card_dir_make` puts Apple's `.metadata_never_index`
+marker in the port's own data directory (nothing in it is the user's to
+search), so the indexer never opens the image again; the flush writes a
+sibling temp file and renames it over the old one (no zero-length window
+for a power cut, which the G4 had today, §0r), and the timing line now
+carries the open / write / rename split. The marker did **not** end it —
+`R2j` on that build: `open 0, write 7, rename 1749` — so the reader was
+never the point: the wait is the filesystem's own (HFS+ commits its
+journal and flushes the replaced file's data on a rename over an
+existing target; the truncate paid the journal the same way), 1.7 s on
+this disk, and it is a lottery only in how often the disk is quick. So
+the second half of the fix is the one that was right all along: **the
+flush runs on a writer thread** (`card_job_main`, the snapshot writer's
+shape: the game thread copies the 2 MB image into the job, 2 ms, and
+the thread opens, writes and renames; one job at a time, a flush that
+finds the previous one still writing waits for it, counted;
+`port_card_service` at the retrace reaps and logs it). The witness,
+`R2l` and `R2m` on the final build:
+
+```
+port> CARD: image flush took 1745 ms behind the game (open 1, write 9, rename 1735; frame 14197)
+  late     worst 636.0 ms behind the schedule; 0 resync(s) dropping 0.00 s of game time
+port> CARD: flushes on a thread (M29): 63 ms on the game thread in all, 1847 ms behind it (worst 1745 ms); 3 flush(es) waited for the previous one (54 ms)
+```
+
+— the 1.7 s is still there, on the thread, and **the `stall:` line at
+14,198 and its resync are gone** (only the board re-entry's 350 ms (B)
+remains on the walk). The game thread paid 63 ms for six flushes over
+the walk. The rename's 1.7 s appears on every flush that replaces an
+existing image now, where the truncate's wait was a lottery; nobody
+waits for it but the writer.
+
+**One more, once**: `R2e` — run while Spotlight was indexing 300 MB of
+freshly synced `.o` files — stalled **5,028 ms at frame 13,923** inside
+the results screen, before the sprite load, with nothing on the frame
+(`tex 0`, `frees 0`, `dll 0`, `DVD 0 over 100 ms`): a disk-bound moment
+of the game thread under a busy disk (the log's own write, or a data
+read the DVD clock does not cover). Recorded, not chased: it did not
+recur in eight other walks and the machine's state was the cause.
+
+### 44.7 The gallery's two faults: m459 runs at ×2, m458 keeps its snapshot
+
+**m459, Mushroom Medic** (§41: `HEAP_HEAP` exhausted at the module's
+setup — 65 `HuPrcChildCreate`s of 0x2000 stacks, each ×`PORT_PRC_STACK_MUL`
+= 4, 2.17 MB of a 2.25 MB heap the console fills to a quarter). The
+multiplier is a run-time lever now: `--stackmul N` (`port_prc_stack_mul()`
+in os_misc.c, the patch in process.c calls it; 4 is still the default and
+the M8 argument for it stands — a GCC 14 frame is fatter than a
+Metrowerks EABI one). `--soak --realtime --minigame m459 --turns 1
+--ffto 14000 --frames 17500 --stackmul 2`: the module links at 14,477
+and **plays 3,000 frames at 30.0 fps presented, 100% speed** — the first
+time it has run in the port (`docs/soak/m29-walk-final-M4592.log.gz`;
+`screenshots/m29-m459-stackmul2.png`). `--stackmul 1` faults at boot
+(`signal 10 at address 0xc`, `M4591`): the game's own sizes are not
+enough for a Darwin frame, which is what M8 found. Whether ×2 is enough
+for *every* coroutine the game creates is a soak's question, not a
+walk's — the "stack overlap error" guard byte in `HuPrcCall` is the
+witness a soak at ×2 would read — so the default stays 4 and m459 is
+the documented case for the lever, the way `--dvdheap` is m453's. The
+right fix is still the one §41 named: a multiplier that scales with the
+stack's size (the small stacks are the many), or `HEAP_HEAP` grown by
+what the multiplier costs. Not built today.
+
+**m458, Panels of Doom** (SIGBUS at `0x935c001c` in the REL after the
+panel pick): not reached. `snaps/lib/m458-fault-f015200.snap` on
+`~/MarioParty4-m26gallery.app` under gdb is where M30 starts, exactly as
+§41.8 wrote it.
+
+### 44.8 What M29 shipped, and what it did not
+
+The final build (`bf758385…`): the decode on the render thread by default
+with a render thread (`--rtdecode 2`), the per-HSF stamp, the card image's
+flush on its own thread with the split timed, the Spotlight marker,
+`--stackmul`. Its turbo walk holds the three md5s (`0b58c5ee` /
+`c58a046d` / `021d58fb`) and so does every run of the day, 26 of them
+across four builds; its real-time walk reads board consumed **6.10** ms,
+drawn **22.0** (12.0 / 9.4 / rt 15.8 + dec 7.8), **29.8 presented**;
+character select 6.76 / 28.7 / **20.3**; title **25.2**.
+
+| shipped, with a witness | |
+|---|---|
+| **the decode on the render thread** (§44.1–44.4: the ordering argument, `GxDecJob`, the job kernels, the decode cursor ahead of the replay, the joins at the retrace / the skin body / `ShapeProc` / `ClusterProc` / `EnvelopeProc` under `--cpuskin` / the CPU path, the stamp, `--rtdecode 0/1/2`, the inline twin) | the three md5s on stages 0, 1, 2, both skinning modes and the single-core twin; 7.67 M runs (98.8% of the vertices) a walk, 0 refused, 0 late |
+| **the board at the 30 cap**: 27.0 → **29.7–29.8** presented, the game thread's drawn frame 28.6 → 22.0 ms (§44.5) | six real-time walks on three builds within 0.3 fps; `30.0 fps presented` on the status lines; `screenshots/m29-board-realtime-cap.png` |
+| the character select 19.6 → 20.3, the title 25.2 → 25.2 (§44.5: their render thread is the wall now) | the same walks |
+| **the results-screen stall found and taken off the game thread** (§44.6): the card image's flush, 1.7 s in the filesystem's replace of the old image; on a writer thread now, the split timed | `R2l`/`R2m`: `1745 ms behind the game`, no stall, no resync; 63 ms on the game thread for six flushes |
+| the board re-entry's 350 ms named (§44.6 (B): `BoardPlayerModelInit`'s joint-name `strcmp` walk and the data inflate, the game's own) | `docs/soak/m29-K-board-reentry.sample.gz` |
+| `--stackmul N`; m459 runs at ×2 (§44.7) | 3,000 frames at 30 fps; `screenshots/m29-m459-stackmul2.png` |
+| `dec` on the status line and in the CSV, the `decode` and `CARD: flushes on a thread` report lines, `port/tools/m29_chain.sh`, `m29_perfstat.py` | |
+| soak 19 read (§44.2), `docs/soak/m29-*` (every walk of the day, the sample, the two chain indexes), `docs/screenshots/m29-*`, witness 0r | |
+
+**Not done, and why:**
+
+* **The character select and the title above 20 / 25**: their render
+  thread is now the long pole (charsel 24.6 + 15.5 = 40 ms a drawn
+  frame, title 11.4 + 18.1 = 29.5), so the next lever is the render
+  thread's own — the driver's per-batch cost (§42.5) for the character
+  select, and the decode's cost for the menus' hundreds of small lists
+  (18 ms for a title frame that the game thread built in 21) — or the
+  gate's 4 ms wait, which the charsel pays and then consumes anyway.
+* **The Spotlight marker** stays (it is right on its own terms) but is
+  not the fix; the writer thread is.
+* **m458** (§44.7) untouched; **m459** runs under a lever, not by
+  default — a soak at `--stackmul 2` is what would make ×2 the default,
+  and the size-scaled multiplier §41 named is the real fix.
+* The `R2e` 5-second disk-bound frame (§44.6) is recorded and not
+  chased.
+* The M24–M28 leftovers stand: the two mixer timers, the selected box's
+  specular, the launcher, causes B–F of §41.8, `Hu3DMotionExec`'s reset
+  loop, `hsf_register`'s scan.
+
+### 44.9 What M30 starts with
+
+Left running: `g4 run --soak --com4 --rtc dolphin --freshcard --realtime
+--snap-every 5000 --snap-keep 3 --status --ovllog --stuckwatch 200 --perf`
+on the final build (`bf758385…`), the decode on the render thread, the
+card flush on its thread — the first soak of both. Read it first: `rt N
+ms dec M` on the status lines (the board should read `30.0 fps
+presented` with `rt ~16 dec ~8`; a minigame whose `rt + dec` is over 33
+shows as fewer fps than M28's soak and is the charsel's case), the
+`decode` line of the `render thread:` block (`late` must be 0; the
+`retrace` join's worst), `CARD: image flush took … behind the game` at
+every results screen with **no** `stall:` line beside it, `CARD: flushes
+on a thread` at the end, and the results screens at retraces ~14,200 and
+~89,280 in particular. Then the render thread's own cost for the
+character select (the per-batch driver cost, §42.5, or the gate's wait);
+the gallery on the final build (`gallery_chain.sh`) as the picture witness
+of the decode across all 63 games; m458 from its snapshot; a soak at
+`--stackmul 2`.

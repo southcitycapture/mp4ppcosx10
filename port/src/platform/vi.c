@@ -138,6 +138,11 @@ void port_vi_rebase_schedule(void) {
 static double first_retrace_at;
 
 void VIWaitForRetrace(void) {
+    /* M29 (PLAN.md 44.1 rule 1): every display-list run this frame handed
+     * the render thread is decoded before the game's next frame can rewrite
+     * the arrays it reads.  Before the sleep, so it costs only what exceeds
+     * the schedule's slack. */
+    rt_decode_join("retrace");
     /* M24: every job published at the previous retrace is finished before
      * anything below reads what it wrote -- the snapshot serialises the
      * mixer's state, the texture cache takes the staged decodes. */
@@ -160,6 +165,7 @@ void VIWaitForRetrace(void) {
 
     port_dvd_service();
     port_arq_service();
+    port_card_service();
     /* The AI interrupt, simulated.  On the console this was the audio
      * hardware's own 200 Hz interrupt; here it is an exact integer number of
      * 160-sample frames per retrace, spent before the game runs, so MusyX's

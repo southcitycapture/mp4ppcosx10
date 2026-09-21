@@ -345,3 +345,9 @@ void os_misc_snap_register(void) {
     port_snap_register("os.sound_mode", &sound_mode, sizeof(sound_mode));
     port_snap_register("os.progressive", &progressive, sizeof(progressive));
 }
+
+/* M29: the game's process.c multiplies every coroutine stack by this (the
+ * patch in port/patches.txt); PORT_PRC_STACK_MUL (4) unless --stackmul */
+int port_prc_stack_mul(void) {
+    return port_opt.stackmul > 0 ? port_opt.stackmul : PORT_PRC_STACK_MUL;
+}

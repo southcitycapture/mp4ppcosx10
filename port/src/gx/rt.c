@@ -42,6 +42,7 @@
 #include "gx_internal.h"
 
 #include <pthread.h>
+#include <stddef.h>
 #include <sched.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -95,6 +96,7 @@ enum {
     OP_FLUSH_VAR, OP_SET_FENCE, OP_WAIT_FENCE,
     OP_BIND_PROG, OP_ENV4, OP_ENVN,
     OP_CALL, OP_PRESENT,
+    OP_DECODE, /* M29: a display-list run decoded into the ring (PLAN.md 44) */
     OP_N
 };
 
@@ -117,6 +119,7 @@ static const char* const op_name[OP_N] = {
     "FlushVertexArrayRangeAPPLE", "SetFenceAPPLE", "wait fence",
     "BindProgramARB", "ProgramEnvParameter4fvARB", "ProgramEnvParameters4fvEXT",
     "call", "present",
+    "decode",
 };
 
 typedef struct { u32 op, len; } Hdr;
@@ -160,6 +163,7 @@ typedef struct { GLenum target; GLuint idx; GLfloat v[4]; } A_env4;
 typedef struct { GLenum target; GLuint idx; GLsizei n; /* n*4 floats follow */ } A_envn;
 typedef struct { void (*fn)(void*); u32 n; /* args follow */ } A_call;
 typedef struct { unsigned frame; double t_rec; } A_present;
+typedef struct { u32 done; u32 verts; GxDecJob job; } A_decode; /* done: set by the reader */
 
 /* ---- the stream ------------------------------------------------------------ */
 
@@ -172,6 +176,13 @@ static u8* buf;
 static u32 wr;                /* the writer's private position */
 static volatile u32 wr_pub;   /* published to the reader */
 static volatile u32 rd;       /* published by the reader */
+/* M29: the decode cursor (PLAN.md 44.1).  The reader runs it ahead of `rd`
+ * through every published record, executing the OP_DECODE ones as soon as
+ * they exist and marking them done; the replay behind it skips those.
+ * `dec_pub` is what the game thread's decode joins wait on. */
+static u32 dec;
+static volatile u32 dec_pub;
+static int decmode;           /* --rtdecode: 0 off, 1 joined at once, 2 at the retrace */
 static int mode;              /* 0 direct, 1 inline, 2 join per frame, 3 overlap */
 static pthread_t thread;
 static int thread_up, quit;
@@ -218,6 +229,9 @@ static unsigned long st_full_waits; static double st_full_wait_s;
 static unsigned long st_reader_sleeps, st_writer_wakes;
 static unsigned long st_names;
 static unsigned long st_owned_frees, st_stash_bytes;
+static unsigned long st_dec_records, st_dec_ahead, st_dec_late; /* by the decode cursor / by the replay */
+static unsigned long st_dec_verts;
+static double st_dec_s, st_frame_dec_s, st_last_dec_ms, st_dec_ms_sum, st_dec_ms_max;
 #define JOIN_KINDS 12
 static struct { const char* why; unsigned long n; double s, max; } joins[JOIN_KINDS];
 static int njoins;
@@ -270,11 +284,12 @@ static void publish(void) {
 
 static void replay_upto(u32 to);
 
-/* wait until the reader has passed `pos` (rd - pos >= 0 in difference arithmetic) */
-static void wait_pos(u32 pos, const char* why, double* acc_s, double* acc_max) {
+/* wait until the reader's cursor `var` (rd, or the decode cursor) has passed
+ * `pos` (var - pos >= 0 in difference arithmetic) */
+static void wait_var(volatile u32* var, u32 pos, const char* why, double* acc_s, double* acc_max) {
     double t0;
     int spins = 0;
-    if ((s32)(rd - pos) >= 0) {
+    if ((s32)(*var - pos) >= 0) {
         return;
     }
     if (mode == 1) {
@@ -283,7 +298,7 @@ static void wait_pos(u32 pos, const char* why, double* acc_s, double* acc_max) {
     }
     t0 = now();
     publish();
-    while ((s32)(rd - pos) < 0) {
+    while ((s32)(*var - pos) < 0) {
         if (spins++ < 4000) {
             RT_ACQ_REL();
             continue;
@@ -291,7 +306,7 @@ static void wait_pos(u32 pos, const char* why, double* acc_s, double* acc_max) {
         pthread_mutex_lock(&mu);
         writer_waiting = 1;
         RT_FULL(); /* the store above before the load below (Dekker) */
-        while ((s32)(rd - pos) < 0) {
+        while ((s32)(*var - pos) < 0) {
             pthread_cond_wait(&cv_done, &mu);
         }
         writer_waiting = 0;
@@ -308,6 +323,9 @@ static void wait_pos(u32 pos, const char* why, double* acc_s, double* acc_max) {
         }
         (void)why;
     }
+}
+static void wait_pos(u32 pos, const char* why, double* acc_s, double* acc_max) {
+    wait_var(&rd, pos, why, acc_s, acc_max);
 }
 
 static u32 last_op; /* the op of the record being built (done() publishes by it) */
@@ -368,7 +386,7 @@ static void done_op(u32 op) {
         case OP_DRAW_ARRAYS: case OP_MULTI_DRAW: case OP_DRAW_RANGE: case OP_PRESENT:
         case OP_CALL: case OP_READ_PIXELS: case OP_GET_TEX_IMAGE: case OP_GET_ERROR:
         case OP_TEXIMAGE: case OP_COPY_TEX_SUB: case OP_CLEAR: case OP_FINISH:
-        case OP_BEGIN: case OP_END: case OP_WAIT_FENCE: case OP_SET_FENCE:
+        case OP_BEGIN: case OP_END: case OP_WAIT_FENCE: case OP_SET_FENCE: case OP_DECODE:
             unpublished = 0;
             publish();
             return;
@@ -899,6 +917,68 @@ void rt_call(void (*fn)(void*), const void* args, size_t n, int sync) {
     }
 }
 
+/* ---- M29: the decode records (PLAN.md 44) ---------------------------------- */
+
+int rt_decode_on(void) { return rt_recording && decmode > 0; }
+unsigned rt_pos(void) { return wr; }
+
+/* the game thread hands a run to the render thread; the record is published
+ * at once (the reader's decode cursor is what waits for it) */
+void rt_decode_record(const GxDecJob* j) {
+    /* `plan` is the job's last field: only the steps in use travel */
+    size_t jb = offsetof(GxDecJob, plan) + (size_t)j->nplan * sizeof(DecStep);
+    A_decode* a = (A_decode*)rec(OP_DECODE, offsetof(A_decode, job) + jb);
+    a->done = 0;
+    a->verts = 0;
+    memcpy(&a->job, j, jb);
+    st_dec_records++;
+    done();
+    if (decmode == 1) {
+        rt_decode_join("after record (stage 1)");
+    }
+}
+
+/* wait until the render thread has executed every decode recorded so far
+ * (the decode cursor, not the replay: the draws may still be pending) */
+void rt_decode_join(const char* why) {
+    double t0;
+    if (!rt_recording || decmode == 0) {
+        return;
+    }
+    if (mode == 1) {
+        replay_upto(wr);
+        return;
+    }
+    if ((s32)(dec_pub - wr) >= 0) {
+        join_count(why, 0.0);
+        return;
+    }
+    t0 = now();
+    wait_var(&dec_pub, wr, why, NULL, NULL);
+    join_count(why, now() - t0);
+}
+
+/* the same, up to a stamped position only (a skinned HSF's last record) */
+void rt_decode_join_pos(unsigned pos, const char* why) {
+    double t0;
+    if (!rt_recording || decmode == 0) {
+        return;
+    }
+    if (mode == 1) {
+        replay_upto(pos);
+        return;
+    }
+    if ((s32)(dec_pub - pos) >= 0) {
+        join_count(why, 0.0);
+        return;
+    }
+    t0 = now();
+    wait_var(&dec_pub, pos, why, NULL, NULL);
+    join_count(why, now() - t0);
+}
+
+void port_vtx_rewrite(const char* who) { rt_decode_join(who); }
+
 /* The vertex program compile, on the GL thread (gx_vprog.c's vp_compile):
  * the text in, the id and the driver's verdicts out.  Written here because a
  * call target must use the real GL -- gx_vprog.c's `gl*` are the twins, and
@@ -1220,11 +1300,71 @@ static void replay_one(const Hdr* h) {
             cls = RC_PRESENT;
             break;
         }
+        case OP_DECODE: {
+            /* the decode cursor normally got here first; if not (it is at
+             * most `rd` itself), the run is decoded now, in stream order,
+             * before the draw that reads it */
+            A_decode* a = (A_decode*)h + 0, *d = (A_decode*)(void*)(h + 1);
+            (void)a;
+            if (!d->done) {
+                double t0 = now();
+                d->verts = gx_decode_job(&d->job);
+                d->done = 1;
+                st_dec_late++;
+                st_dec_verts += d->verts;
+                t0 = now() - t0;
+                st_dec_s += t0;
+                st_frame_dec_s += t0;
+            }
+            cls = RC_OTHER;
+            break;
+        }
         default:
             port_fatal("render thread: unknown record %u (%s) at %u", h->op,
                        h->op < OP_N ? op_name[h->op] : "?", rd);
     }
     class_end(cls);
+}
+
+/* M29: the decode cursor.  From max(dec, rd) to `upto` (a published
+ * position): execute every OP_DECODE not yet done, skip everything else.
+ * Runs before each replayed record with a fresh wr_pub, so a run is
+ * decoded within a record of its emission and the game thread's join at
+ * the retrace (rt_decode_join) waits for one primitive at most. */
+static void decode_ahead(u32 upto) {
+    int any = 0;
+    if ((s32)(dec - rd) < 0) {
+        dec = rd;
+    }
+    while ((s32)(upto - dec) > 0) {
+        const Hdr* h = (const Hdr*)(buf + (dec & RT_MASK));
+        u32 len = h->len;
+        if (h->op == OP_DECODE) {
+            A_decode* d = (A_decode*)(void*)(h + 1);
+            if (!d->done) {
+                double t0 = now();
+                d->verts = gx_decode_job(&d->job);
+                d->done = 1;
+                st_dec_ahead++;
+                st_dec_verts += d->verts;
+                t0 = now() - t0;
+                st_dec_s += t0;
+                st_frame_dec_s += t0;
+                any = 1;
+            }
+        }
+        dec += len;
+    }
+    if (any || (s32)(dec - dec_pub) > 0) {
+        RT_ACQ_REL(); /* release: the ring bytes before the position */
+        dec_pub = dec;
+        RT_FULL(); /* the store above before the load below (Dekker) */
+        if (writer_waiting) {
+            pthread_mutex_lock(&mu);
+            pthread_cond_broadcast(&cv_done);
+            pthread_mutex_unlock(&mu);
+        }
+    }
 }
 
 /* replay [rd, to) -- on the render thread, or on the game thread inline */
@@ -1240,14 +1380,30 @@ static void replay_upto(u32 to) {
             replay_one(h);
             rd += len;
         }
+        dec = dec_pub = rd;
         return;
     }
     t0 = now();
     RT_ACQ_REL(); /* acquire: the records behind `to` after the position itself */
     while ((s32)(to - rd) > 0) {
-        const Hdr* h = (const Hdr*)(buf + (rd & RT_MASK));
-        u32 len = h->len;
-        int present = h->op == OP_PRESENT;
+        const Hdr* h;
+        u32 len;
+        int present;
+        if (decmode) {
+            /* the decode first, over everything published by now */
+            u32 w;
+            RT_ACQ_REL();
+            w = wr_pub;
+            if ((s32)(w - dec) > 0) {
+                double td = now();
+                decode_ahead(w);
+                td = now() - td;
+                t0 += td; /* the decode is timed on its own, not as replay */
+            }
+        }
+        h = (const Hdr*)(buf + (rd & RT_MASK));
+        len = h->len;
+        present = h->op == OP_PRESENT;
         replay_one(h);
         if (present || ((++replayed_since_test & 255u) == 0 && mode >= 2)) {
             reader_test_fences();
@@ -1264,6 +1420,12 @@ static void replay_upto(u32 to) {
                 st_frame_ms_max = st_last_frame_ms;
             }
             st_frame_replay_s = 0.0;
+            st_last_dec_ms = st_frame_dec_s * 1000.0;
+            st_dec_ms_sum += st_last_dec_ms;
+            if (st_last_dec_ms > st_dec_ms_max) {
+                st_dec_ms_max = st_last_dec_ms;
+            }
+            st_frame_dec_s = 0.0;
         }
         RT_ACQ_REL(); /* release: a read-back's pixels before the position */
         rd += len;
@@ -1374,6 +1536,13 @@ void rt_start(void* sdl_window, void* sdl_glcontext) {
     if (!win || !ctx) {
         mode = 0;
     }
+    decmode = port_opt.rtdecode;
+    if (decmode < 0) {
+        decmode = mode >= 2 ? 2 : 0;
+    }
+    if (mode == 0) {
+        decmode = 0;
+    }
     /* the extension pointers the twins call in every mode */
     ext = (win && ctx) ? (const char*)glGetString(GL_EXTENSIONS) : NULL;
     if (ext) {
@@ -1425,6 +1594,11 @@ void rt_start(void* sdl_window, void* sdl_glcontext) {
              : mode == 2 ? "on, joined at every frame's end (no overlap)"
                          : "on, overlapped (the join at the gate)",
              mode, RT_BYTES / 1024);
+    port_log("port> render thread: the display-list decode %s (--rtdecode %d)\n",
+             decmode == 0 ? "on the game thread" :
+             decmode == 1 ? "as records, the game thread joined after each (stage 1)" :
+                            "as records, the game thread joined at the retrace (stage 2)",
+             decmode);
 }
 
 void rt_stop(void) {
@@ -1451,8 +1625,13 @@ void rt_status(char* out, size_t n) {
         out[0] = '\0';
         return;
     }
-    snprintf(out, n, "  rt %.1f ms", st_last_frame_ms);
+    if (decmode) {
+        snprintf(out, n, "  rt %.1f ms dec %.1f", st_last_frame_ms, st_last_dec_ms);
+    } else {
+        snprintf(out, n, "  rt %.1f ms", st_last_frame_ms);
+    }
 }
+double rt_last_dec_ms(void) { return st_last_dec_ms; }
 
 void rt_report(void) {
     int i;
@@ -1470,6 +1649,14 @@ void rt_report(void) {
              st_replay_s * 1000.0, st_frame_ms_n ? st_frame_ms_sum / (double)st_frame_ms_n : 0.0,
              st_frame_ms_max, st_frame_ms_n,
              st_frames ? st_tail_s / (double)st_frames * 1000.0 : 0.0, st_tail_max * 1000.0);
+    if (decmode) {
+        port_log("  decode   %lu runs recorded, %lu decoded ahead by the decode cursor, %lu by the "
+                 "replay (late); %lu vertices; %.0f ms in all, per presented frame mean %.2f ms, "
+                 "worst %.1f ms (--rtdecode %d)\n",
+                 st_dec_records, st_dec_ahead, st_dec_late, st_dec_verts, st_dec_s * 1000.0,
+                 st_frame_ms_n ? st_dec_ms_sum / (double)st_frame_ms_n : 0.0, st_dec_ms_max,
+                 decmode);
+    }
     if (port_opt.rtsplit) {
         port_log("  split    ");
         for (i = 0; i < RC_N; i++) {
@@ -1520,5 +1707,12 @@ void rt_call(void (*fn)(void*), const void* args, size_t n, int sync) {
     if (copy) { memcpy(copy, args, n); fn(copy); free(copy); }
 }
 const void* rt_stash(const void* p, size_t n) { (void)n; return p; }
+int rt_decode_on(void) { return 0; }
+unsigned rt_pos(void) { return 0; }
+void rt_decode_join(const char* why) { (void)why; }
+void rt_decode_join_pos(unsigned pos, const char* why) { (void)pos; (void)why; }
+double rt_last_dec_ms(void) { return 0.0; }
+void port_vtx_rewrite(const char* who) { (void)who; }
+void rt_decode_record(const GxDecJob* j) { (void)j; }
 
 #endif

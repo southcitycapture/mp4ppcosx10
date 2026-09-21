@@ -730,3 +730,45 @@ is either ready to offer upstream or has a case to remove.
   column) turns a `first at (addr 0x...)` into a symbol; hsfdraw.c's
   statics sit together in one `.bss` run, which is how "the walk's own
   residue" is told from a game global.
+
+## 0r. Six things M29 paid for *(2026-09-20)*
+
+* **The G4 lost power at 18:21 and came back with its clock at 1969.**
+  No panic log, no plug configured on the hub, the RTC reset (a warm
+  reboot or a panic keeps it; a power cut with the dead PRAM battery does
+  not), the journals replayed: a power interruption mid-walk. The runner
+  restarts with the auto-login, so `g4 run` works again after `sudo date
+  $(date +%m%d%H%M%Y.%S)` from littlejelly — and *then* `periodic
+  weekly` fires because the clock jumped, and its `locate` rebuild
+  (`find -s /`, as `nobody`) takes half a core for a quarter of an hour.
+  `ps auxww | sort -k3 -rn | head` before any speed run that follows a
+  clock change; two real-time walks (`R2a`, `R2b`) read a frame low
+  because of it.
+* **`g4_debug_sync.sh` during a real-time run costs the next quarter
+  hour.** It ships ~300 MB of `.o` files to `~/mp4-work`, and Spotlight
+  indexes them for as long after; three walks (`R2d`–`R2f`) ran under
+  that and one stalled 5 s on a disk-bound frame. The sync is part of
+  the install now — do both, then wait for `mds`/`mdworker` to leave the
+  top of `ps`, not just the 90 s of §0j. `~/mp4-work` and `~/m29` carry a
+  `.metadata_never_index` marker from today on.
+* **`cp -R` of a bundle breaks its snapshots.** The build id hashes the
+  executable's size and *mtime* (§0g), and `cp -R` gives the copy a new
+  one: `~/MarioParty4-m28.app` refused `m28-results-stall-f014150.snap`
+  by a build id though the bytes are identical (`md5 04a6764f`).
+  `cp -Rp` when keeping a bundle for its snapshots; `--restore FILE
+  --restore-lax` is the sound answer for a byte-identical copy (the
+  range table is still checked).
+* **A chain's run names are per build, not per arm.** The M29 chain
+  re-ran `T2` on the final build and overwrote the flag build's `T2.log`
+  on the G4 before it was pulled; the flag build's stage-2 turbo numbers
+  survive only in the console transcript (PLAN.md 44.4). Pull the logs
+  *before* starting a chain that reuses a name, or name them by build.
+* **A suffix letter in a run name is an arm.** `R2i` was meant as the
+  ninth real-time run and `arm_flags` read the `i` as `--renderthread 1`
+  (the inline twin). A useful accident — it is the single-core witness
+  of the record — but read the `args=` column of `index.txt` before
+  reading a number.
+* **A clock that wraps the `fwrite` and not the `fopen` cannot see a
+  truncate.** M23's `CARD: image flush took` timed the write and the
+  close; the 1.7 s was in the `fopen(path, "wb")` before them (PLAN.md
+  44.6). Time the whole operation, and print the split.
