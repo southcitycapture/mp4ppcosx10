@@ -1838,24 +1838,6 @@ static void draw_log(u32 first, u32 count, u8 dprim) {
         port_log("           %8.3f %8.3f %8.3f %10.2f\n", m[4], m[5], m[6], m[7]);
         port_log("           %8.3f %8.3f %8.3f %10.2f\n", m[8], m[9], m[10], m[11]);
     }
-    {
-        int mdl = -1;
-        const char* nm = port_drawobj_name(gx_last_posmtx_arg, &mdl);
-        if (mdl >= 0) {
-            port_log("           drawobj model %d object \"%s\"\n", mdl,
-                     nm ? nm : "?");
-        }
-    }
-    {
-        Dl_info di;
-        if (gx_last_posmtx_caller &&
-            dladdr((void*)(uintptr_t)gx_last_posmtx_caller, &di) && di.dli_sname) {
-            port_log("           loaded by %s+%u (%s)\n", di.dli_sname,
-                     (unsigned)((const char*)gx_last_posmtx_caller -
-                                (const char*)di.dli_saddr),
-                     di.dli_fname ? di.dli_fname : "?");
-        }
-    }
     port_log("  proj %s [%g %g %g %g %g %g]  viewport %g %g %g %g z %g..%g\n",
              gx.proj_type == GX_PERSPECTIVE ? "persp" : "ortho", gx.proj[0],
              gx.proj[1], gx.proj[2], gx.proj[3], gx.proj[4], gx.proj[5], gx.vp[0],
@@ -1932,6 +1914,12 @@ static void draw_log(u32 first, u32 count, u8 dprim) {
     port_log("  alphacmp %u ref %u op %u / %u ref %u   zmode test %u fn %u write %u\n",
              gx.alpha_comp0, gx.alpha_ref0, gx.alpha_op, gx.alpha_comp1,
              gx.alpha_ref1, gx.z_enable, gx.z_func, gx.z_update);
+    if (gl13_zprepass_wanted()) {
+        /* M34: the depth-only pass this draw gets first (--zprepass 1: only under
+         * GXSetZCompLoc(TRUE); 2: every alpha-tested z-writing draw) */
+        port_log("  z pre-pass: issued depth-first (comploc %u, --zprepass %d)\n", gx.z_comploc,
+                 port_opt.zprepass);
+    }
     port_log("  blend mode %u src %u dst %u   cull %u   scissor %u %u %u %u   update colour %u alpha %u\n",
              gx.blend_mode, gx.blend_src, gx.blend_dst, gx.cull,
              gx.scissor[0], gx.scissor[1], gx.scissor[2], gx.scissor[3],
@@ -1950,6 +1938,27 @@ static void draw_log(u32 first, u32 count, u8 dprim) {
              gx.fog_color.r, gx.fog_color.g, gx.fog_color.b, gx.fog_color.a,
              gx.copy_clear.r, gx.copy_clear.g, gx.copy_clear.b, gx.copy_clear.a,
              (unsigned)gx.copy_clear_z);
+    /* M34: the object name and the caller last -- a hook's matrix (m404's
+     * guide line) is a stack Mtx, not a DrawObjData entry, and the lookup
+     * faulted the bench's drawlog before the stages were printed. */
+    {
+        int mdl = -1;
+        const char* nm = port_drawobj_name(gx_last_posmtx_arg, &mdl);
+        if (mdl >= 0) {
+            port_log("           drawobj model %d object \"%s\"\n", mdl,
+                     nm ? nm : "?");
+        }
+    }
+    {
+        Dl_info di;
+        if (gx_last_posmtx_caller &&
+            dladdr((void*)(uintptr_t)gx_last_posmtx_caller, &di) && di.dli_sname) {
+            port_log("           loaded by %s+%u (%s)\n", di.dli_sname,
+                     (unsigned)((const char*)gx_last_posmtx_caller -
+                                (const char*)di.dli_saddr),
+                     di.dli_fname ? di.dli_fname : "?");
+        }
+    }
     {
         GLenum e = GL(glGetError)();
         port_log("  glGetError %s (0x%04x)\n", e == GL_NO_ERROR ? "GL_NO_ERROR" : "SET",
@@ -3255,6 +3264,9 @@ static int draw_apply(const u8* s, int n, int in_ring) {
         }
     }
     app_skip = port_opt.skipobj && obj_named(port_opt.skipobj);
+    if (port_opt.skipverts && n == port_opt.skipverts) {
+        app_skip = 1; /* M34: --skipverts N, a draw a hook issues (no object name) */
+    }
     app_probe = port_opt.probeobj && obj_named(port_opt.probeobj);
     if (port_opt.probeobj && !strcmp(port_opt.probeobj, "?")) {
         /* the names the lookup sees this frame, once each per frame */
@@ -3380,6 +3392,9 @@ static void probe_begin(const u8* s, int n, const Seg* segs, int nsegs, int on_g
     {
         /* the first vertices as bound: the ring's bytes at the array base */
         int k, lim = n < 6 ? n : 6;
+        if (port_opt.probeverts > lim && n > lim) {
+            lim = n < port_opt.probeverts ? n : port_opt.probeverts; /* M34: --probeverts N */
+        }
         for (k = 0; k < lim; k++) {
             const u8* vb = s + (size_t)k * sl.stride;
             const f32* pf = (const f32*)vb;

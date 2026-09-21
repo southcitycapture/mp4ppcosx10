@@ -16586,3 +16586,448 @@ thread's share; the board should read `+0.0` and `30.0 fps presented`,
 the character select and m431/m444 a share), the `auto` line of the
 `render thread:` block, `late` 0 in the decode line, and the m430 frame
 near 80,000 + 350 again (the snapshot writer's disk).
+
+## 49. M34 log: the z pre-pass judged by the console, the IA8 byte, and the four ports *(2026-09-21, littlejelly)*
+
+M34's brief was three things: the z pre-pass decision the console alone
+could make (§48.3 left `--zprepass 2` off because 105 pixels of the title
+logo had no frame-exact reference), the four remaining Read Me items in
+their order, and controllers 2–4. The soak M33 left was long and clean
+(§49.1). The console's title was captured at the port's frame 800 and
+**disagrees with the ungated pre-pass on 103 of its 105 pixels** (§49.2):
+the pre-pass's gate was wrong in principle (the hardware writes the Z of
+an alpha-killed fragment only under `GXSetZCompLoc(GX_TRUE)`), and with
+the right gate the pre-pass does nothing for the pillar sphere — because
+**the sphere's cause was never the Z at all: the port had read every IA8
+texel and every IA8 palette entry with its two bytes the wrong way round
+since M3** (§49.3). One byte swap draws the three Bowser games' spheres
+and takes the white cap off Paratrooper Plunge's tunnel (§49.5); Trace
+Race's guide line was a TEV shape the combiner could not say without a
+zero constant, plus the game's one `GX_CS_DIVIDE_2` (§49.4); the indirect
+warp is one shape, recorded and not built (§49.6); **m417's streaks were
+NaN water vertices — `sqrtf` of a negative rim weight, which MSL's inline
+returns unchanged and libm makes NaN** — fixed for every game unit by a
+`sqrtf` shim (§49.7). The pads are laid over the four ports
+and witnessed with the keyboard as player 2 (§49.8). The Read Me's list is
+two lines (§49.9); the disk image is 0.9.2 (§49.10).
+
+### 49.1 The soak, read
+
+§48.10's leave-behind — `g4 run --soak --com4 --rtc dolphin --freshcard
+--realtime --snap-every 5000 --snap-keep 3 --status --ovllog --stuckwatch
+200 --perf` on the M33 build (`d1f5f8f9…`, the first soak with
+`--rtdecode auto`) — ran 12:22 to 13:25 G4 time and was ended through
+`g4 key esc` when the milestone needed the machine: **63 minutes,
+226,860 frames, 3,781 status lines**
+(`docs/soak/m34-soak24-m33-leave.log.gz`, `soak_read.py`).
+
+| | |
+|---|---|
+| speed / presented fps | **100.1%** mean (`machine ok`, `cpu 2`); 28.2 fps overall; the board's `w01dll` 29.3 mean over 1,905 lines (turns 1–18: 28.4–29.6), `rt` 15.9 ms, `dec` 5.5 + **0.0** |
+| where it got | board 0, turn 18 of 20 |
+| minigames | 25 plays of 24 modules, **M23's order** (m412 m428 m420 m444 m423 m438 m429 m444 m430 m406 m416 m405 m438 m431 m422 m410 m407 m421 m424 m436 m404 m427 m455 m401 m414); presented 20.5 (m416) to 29.7 (m428, m406) |
+| `dec A+B`, the split per scene | the board `5.5 + 0.0` (14 of 1,905 lines with a share: the dead band holds); m444 `9.2 + 7.3` (71 of 126 lines split), m431 `8.9 + 6.8` (59/98), m423 `10.8 + 3.4`, m412 `9.1 + 2.7`; m436 `13.0 + 0.0` (its render thread is 21.8 ms: under the fit) |
+| the `auto` line | 106,626 drawn frames planned, **17,834 split** (share mean 0.38, max 0.75); 549 M vertices decoded on the game thread (128 s) against 4,244 M on the render thread |
+| `stack overlap error` / faults / guard hits / mismatches / STUCK | **none / 0 / 0 / 0 / 0** |
+| resyncs | **0** (worst 710 ms behind the schedule) |
+| stalls | 154 `stall:` lines, **all ≤ 508 ms** (frame 125,035, m431: `game 492`); the frame-80,000 snapshot write cost 260 ms and the m430 frame near it 427 ms (81,498: 68 textures decoded) — no repeat of §48.1's 1.4 s |
+| render thread | mode 3; decode 47.5 M runs, **0 late**, 6.58 ms mean a presented frame; gate 101,606 drained, 4,195 waited (8.5 s, worst 13.5 ms), 1,109 busy; ring 0 GPU waits |
+| card / DVD | flushes 334 ms on the game thread in all, 984 ms behind (worst 100); `DVD: 1352 reads, 0 over 100 ms` |
+| audio / rss | 56 underruns, 808 ms; rss 82–185 MB |
+| the stub report | `THPInit 3` only; at exit `pad: xone: read failed (e00002eb), controller gone` — the close aborting the reader's `ReadPipe`, as designed |
+
+Nothing outranks the milestone.
+
+### 49.2 The z pre-pass, judged by the console
+
+**The capture.** The port's 800 is the title just after its logo scaled in
+(`BootTitleExec`: the wipe-in, the 50-frame logo scale, then the wait for
+START — the walk's 800 edge falls in the scale loop and 850 is taken).
+The board-start schedule's console title lasts ~90 frames (START at GC
+380), and the title's 3D is a carousel whose phase runs from *boot*
+(`BootTitleCreate` before the logos, `HU3D_MOTATTR_LOOP`): the console
+holds the logos on a wall clock and plays the movie, the port skips it,
+so the two reach the title at different points of a **718-frame loop**.
+`port/ref/movies/title-hold.txt` (START through the boot, nothing after:
+`BootTitleExec` times out into the attract loop and returns) shows the
+whole loop twice in 9,191 dump frames; a template match of the port's 800
+against every one of them lands on **dump frame 8390 at 4.09 levels**
+(9108 one loop later at 4.15; the card calibration's frame-exact pairs
+match at 4.0–5.6). The frame is `port/ref/frames/title-console-8390.png`;
+the rig and the calibration are in `port/ref/notes.md`.
+
+**The verdict.** On the 105 pixels the two arms disagree on, the console
+is closer to the default on **103** (sum |Δ| 4,142 against 35,930;
+`screenshots/m34-title-f00800-default-zprepass-console.jpg`, the ribbon
+crop `m34-title-f00800-ribbon-crop-default-zprepass-console.png`). The
+pixels are not the logo's letters: they are a **seam of pale yellow (the
+glow behind) between the present's pink ribbon and its grey lid** under
+the logo's edge, which the console does not have. **`--zprepass 2` loses.**
+
+**Why the pre-pass moves them** (the brief's condition before deciding):
+`--probeobj '*' --probebox 150,228,200,252` on the bench, both arms
+(`docs/soak/m34-title-probe-ribbon-*.log.gz`): the draws that touch the
+box are the sky sprite, `obj2` and `PartyCube` (alpha `GEQUAL 1`), then
+**`obj6` and `obj5`** of the character model with `alpha GEQUAL 128 OR
+GEQUAL 128, z write 1, comploc 0`. `obj6` changes **645 pixels in the
+box on the default and 612 under the pre-pass**, `obj5`'s second draw 49
+against 43: the pre-pass writes Z for `obj6`'s *own* alpha-killed
+fragments where they lie in front of its opaque ones (a cut-out mesh that
+overlaps itself), the colour pass then fails LEQUAL there, nothing paints,
+and the glow shows through. The Intel bench shows the same 111 pixels, so
+it is the mechanism, not the Radeon's Z. It is not a texture the gate
+misjudged: the gate was **wrong in principle** — every textured object of
+`hsfdraw.c` is drawn under `GXSetZCompLoc(0)` (late Z: the Z test and
+write after the texture and the alpha test, so a killed fragment writes
+no Z), and the hardware — and Dolphin, which puts `early_fragment_tests`
+on only under `early_ztest` — writes the Z of a killed fragment **only
+under `GXSetZCompLoc(GX_TRUE)`**. That is `--zprepass 1`, M33's "Dolphin's
+rule".
+
+**The gate, fixed and made the default.** `--zprepass 1` is the default
+now (`port_opt.zprepass = 1`; `0` never, `2` the ungated rule, kept for the
+A/B), and the gate asks one more thing: the stage that binds the texture
+must read `TEXA` in its alpha chain at all — the board's balloons
+(`kinobaloon`) bind their I8 hilite map (alpha_min 0) to a stage whose
+alpha is `A0 × APREV`, and were doubled 34 times a frame for nothing
+(`docs/soak/m34-board-f07000-drawlog-zprepass1.log.gz`; the drawlog prints
+`z pre-pass: issued depth-first` on a doubled draw now). On the G4 the
+ZCompLoc gate is **md5-identical to the default on all three scenes**
+(`TDz1`: 0b58c5ee / c58a046d / 4a9a640c, 18,622 draws doubled over the
+9,000 frames before the TEXA condition, the title 0 of them) and costs
+nothing measurable (`RDz2` in §48 was already within 0.1 fps of `RD`).
+And **it does nothing for the pillar sphere**: `--zprepass 1` at m435's
+14,544 is byte-identical to the default on the bench
+(`39498f48…` both; `--zprepass 2` `7d5c142b…`), as §48.3 said — which is
+what sent the read back to the sphere itself.
+
+### 49.3 The pillar sphere's cause: the IA8 byte order
+
+§48.3's mechanism needed the flare's alpha-killed fragments to write Z
+under `ZCompLoc(0)`, which nothing does. What the flare's texture *is*
+was in §48.3's own picture (`m33-m435-flare-and-cloud-textures.png`): the
+port's decode of it has a **flat 192 intensity plane and the star in the
+alpha** — an odd thing for an artist to paint, and the wrong way round.
+GX's IA8 texel is `AAAAAAAA IIIIIIII`: the alpha in the high byte, as
+IA4's is in the high nibble (which the port had right); `gx_tex.c` read
+`v >> 8` as the intensity and `v & 0xFF` as the alpha since M3, and the
+`GX_TL_IA8` palette entry — the same layout — the same way. Read the
+hardware's way the flare is **a star of intensity under a flat alpha of
+192**, so on the console the whole octagon passes `GEQUAL 128`, writes its
+Z (comploc or not: the fragments are not killed), and the cloud domes
+drawn after it fail LEQUAL under the whole ball — the black halo of the
+octagon's width §48.3 saw on the console and tried to explain with a
+rule. The port killed everything but the star's texels, wrote Z under
+the star alone, and the domes covered the rest of the ball.
+
+**The fix** is two byte swaps in `gx_tex.c` (the IA8 texel, the IA8
+TLUT entry) and the demo's test texture (`gxdemo.c`). **On the bench**
+m435's 14,544 draws the two balls on their pillars, the star through
+them (`screenshots/m34-m435-f014544-before-after-ia8.jpg`); on the G4 the
+gallery rows of m435–m437 are in §49.11. The three md5 scenes carry no
+IA8 texture: `TD` on the fixed build reads **0b58c5ee / c58a046d /
+4a9a640c**, unchanged. The pre-pass was a red herring; the Read Me's
+three Bowser lines come off.
+
+### 49.4 m404 Trace Race's guide line: a lerp with no zero constant, and a half
+
+The line is not a `GX_LINES` at all: `m404Dll/main.c` `fn_1_58E4` is a
+model hook that draws one 3000×200 quad from a display list the module
+records at setup (`fn_1_6248`: `GXBegin(GX_TRIANGLESTRIP, …, 4)` with
+direct positions and texcoords), twice — first with the guide image
+(`HuSprTexLoad`, a 960×64 I8, a black wavy line on white:
+`--dumptex` on the bench, `tex-054-960x64-fmt1`) as `colour = RASC`
+with **`GX_CS_DIVIDE_2`** and **`alpha = (KONST, ZERO, TEXA, ZERO)`** =
+`KONST × (1 − TEXA)`; then with the players' 960×64 I8 canvas as
+`alpha = A0 × TEXA`. The drawlog of the hook's draw (`m34-m404-drawlog-
+f014537-hook-fault.log.gz`) says the state is exactly that, the texture
+is right, the geometry lands where the lane is, and nothing paints.
+
+**Cause 1** (`gx_tev.c`, `emit_channel`): `lerp(a, 0, c)` with `d = 0`
+went to `GL_INTERPOLATE` with its `b` a *black constant*, which claimed
+the unit's one `GL_TEXTURE_ENV_COLOR` alpha first; `a = KONST` (1.0) then
+"collided" and lost (`TEV: a stage needs two different constants; the
+first wins`), so the line drew with alpha `0 × (1 − TEXA) = 0`. The shape
+is a modulate by the complement — `a × (1 − c)` as `GL_MODULATE(a, c with
+ONE_MINUS_*)`, no constant needed (`lerp(a, 0, 0) = a` is a `REPLACE`).
+**Cause 2**: `GX_CS_DIVIDE_2` has no GL scale (1, 2, 4 only) and was drawn
+at 1 with a warning; the game's one use is this line, a one-term stage,
+which halves as `GL_MODULATE(term, a 0.5 constant)` — the constant's RGB
+half is free when the term is not a constant. **After**
+(`screenshots/m34-m404-f014537-before-tev-div2-console.jpg`): the lane
+carries each player's dark wavy line as the console's does.
+
+**Found on the way — the drawlog and the probe fault on a hook's draw
+(the bench only, so far).** `--drawlog` and `--probeobj` name a draw's
+object through `port_drawobj_name(gx_last_posmtx_arg)`, which treats the
+matrix pointer as a `DrawObjData` entry; a hook's matrix is a stack
+`Mtx`, and the run died with `signal 11 at address 0x0, pc 0` at the
+hook's draw, four runs out of four under Rosetta. Two guards went in
+(the object pointer must lie in MEM1; a matrix inside the game's own
+mmap — the stack, MEM1 — cannot be a `DrawObjData` entry) and the drawlog
+prints the name and the caller *last*, so the draw's state is on the log
+before the lookup runs — and the fault stayed, at the same draw, after
+the state. It is in the lookup or in `dladdr` on the hook's return
+address and it is not resolved; the G4 has never run a drawlog on m404.
+Not a shipped path. `docs/soak/m34-m404-drawlog-f014537-hook-fault.log.gz`.
+
+### 49.5 m408 Paratrooper Plunge: the fall is the play, the cap was the IA8 byte
+
+**The timing** (§48.4's "the port's fall runs ahead"): the fall is a
+frame count (`lbl_1_bss_54 -= 400/60` a frame from 12,000, `main.c:287`),
+the intro before it is frame counts (the plane's four states, the
+camera's drop to 12,010 at `-400/59.999995` a frame), and the walk's
+inputs are the COM's; the module ends when the height reaches 200 **or
+when every player is out** (`lbl_1_bss_4C == 0`: a player with no
+balloons left after the others have hit him). The console itself does
+not repeat: M26b's capture left the module at entry **+2,742** GC, this
+milestone's recapture (`~/mp4-sweep-work/frames/m408m34`,
+`docs/soak/m34-m408-oracle-recapture.json`) at **+2,422**, the port at
++2,493 — the play, not the clock. Put side by side at the same frame
+after the link (`screenshots/m34-m408-timeline-port-vs-console-L+629..
+1529.jpg`: the port's 15,100–16,000 every 100, the console's L_c 10,627 +
+the same offsets, L_c from the card→module white 10,623–10,628): **the
+START banner rises on the same frame on both**, the tunnel opens on the
+same frame, the balloons drift apart by the play. There was never a
+timing fault; §48.4's "longer tunnel" was the cap.
+
+**The cap.** `fusagi` (the plug) is two draws: the 128-vertex open
+cylinder (radius 1,500, ±50,000 along the axis, the cloud texture six
+times along it; **292,593 of 307,200 pixels change when it draws** — the
+whole screen but the 62-pixel hole at the far end, which is right) and a
+**4-vertex 3,000×3,000 quad at the far end** (`--probeobj fusagi`,
+`docs/soak/m34-m408-scenelog-fusagi-probe-before-ia8.log.gz`: 2,789
+pixels — the hole), a two-palette material (`hsfdraw.c:1009`, `texCol
+[0].a == 2`): the same CI8 image through TLUT 0 and TLUT 1 with the swap
+tables `SWAP1 = (R,A,A,A)`, `SWAP2 = (B,B,B,A)`, additive, its alpha
+**`TEXA × KONST` from the second palette**. Both palettes are `GX_TL_IA8`
+— read backwards, the plug's alpha was its palette's intensity, bright,
+and the far end filled with white. With the byte order fixed the plug is
+what its alpha says, the tube converges to the island as the console's
+does (`screenshots/m34-m408-f015677-before-after-console.jpg`), and the
+line comes off the Read Me.
+
+### 49.6 The indirect warp: one shape, recorded, not built
+
+The three forms the brief named, read: **m417's ripple** (`water.c:809`):
+three indirect stages, all sampling the same bump map (`TEXMAP1` through
+`TEXCOORD1`, a normal-based texgen) and warping TEV stages 0, 1, 2 and 3
+with three 2×3 matrices (scales ∓0.5, 0.5, ∓0.65; exponents −2, 0, −3).
+**m405's caustic** (`main.c:978`): two indirect stages, each its own map
+and texgen (`TEXCOORD2/TEXMAP2`, `TEXCOORD3/TEXMAP3`), warping stages 0
+and 1 (scales ∓0.2, 0.5; exponents −2, 0). The **mode select has no
+`GXSetTevIndWarp`** — its window backgrounds are the tile form (§14.1,
+composed on the CPU); the other users of the warp are m410, m423, m427,
+m430, m434, m442, m455, m456 and `modeltestDll`. Every site is the same
+call: `GXSetTevIndWarp(stage, indStage, GX_TRUE, GX_FALSE, GX_ITM_n)` with
+`GXSetIndTexCoordScale(ITS_1, ITS_1)` — signed offsets, no replace, the
+direct stage's texel coordinate offset by `M_n · texel · 2^exp`. **One
+shape.** What it would take on `GL_ATI_text_fragment_shader`: a
+`!!ATIfs1.0` program per (number of warped stages, matrices) with a
+prelim pass that samples the indirect map(s) into registers and forms the
+offset coordinates (`MAD` by the matrix as constants, the offset scaled
+into the direct map's texel space by its size), and an output pass whose
+`SampleMap r, rN.str` dependent reads fetch the warped direct maps and
+combine them by the stage's TEV inputs (m405: `TEXC0`, then `+ TEXC1 ×
+A0`; m417: five stages, the fifth a register mix) — inside the R200's 6
+samples, 2 passes of 8 instructions and 6 constants. **Not built this
+milestone**: the extension exists on the G4 alone (the bench's Intel
+driver has no `ATI_text_fragment_shader`), so every iteration of a new
+fragment path is a G4 run, and the G4's day went to the gallery, the md5
+walks, the pad witness, m417's cause (§49.7: eight G4 arms) and the soak.
+The brief's condition ("if one shape, build it behind `--tfs`") is met on
+the reading and not on the build; it is the first item of the next
+milestone, with the program shape above as its spec. The two Read Me lines stay, with the
+shape named; the snapshots (`snaps/lib/m417-streaks-f016000.snap`) and
+the parks (m405, m417 in 100 s) stand for the next milestone.
+
+### 49.7 m417's streaks at +1200: NaN water vertices, from a `sqrtf` of a negative number
+
+**What they are.** The gallery of the first M34 build (§49.11's first
+pass) still had M31's fan of thin light quads from the raft toward
+Luigi's tube at 15,677 (`screenshots/m34-m417-f015677-streaks-before-
+after-console.jpg`, the zoom `...-zoom-...`). On the G4 they are
+**deterministic and machine-bound**: the default, `--norenderthread
+--lockstep`, `--noaltivec` and `--cpuxf` all give the byte-identical frame
+`5e10a412…` (`~/m417ab.sh` on the G4: the arms `S417`, `S417nrt`,
+`S417noav`, `S417cpu`), `--skipobj luigi_m2` keeps them, and the same
+binary on the mbp bench has none — so neither the render thread, nor
+AltiVec, nor the vertex program, nor the character. `--skipverts 2048`
+(new: the diagnostic a hook's draw needs, having no object name) leaves
+the frame byte-identical, so not the splash particles either. The fan
+converges on **the screen centre**, which is where a Radeon puts a
+vertex whose clip w is 0 or NaN (the Intel driver drops the triangle):
+the picture of a NaN position.
+
+**The probe found it.** `--probeobj '*' --probebox 60,190,300,290` with
+the new `--probeverts 2100` (the probe printed six vertices; it prints
+up to N now) over 15,674–15,677 on the G4 (`--norenderthread`: under the
+render thread the game thread's read-back has no context, viewport
+0 0 0 0), `docs/soak/m34-m417-probe-water-nan-f15674-15677.log.gz`: the
+2,083-vertex draw in 35 strips is **the water surface** (`water.c`
+`fn_1_604C`: 18 strips of 60 + 17 of 59, named "para-c" by the lookup
+because a hook's matrix has no object), and its positions as bound carry
+**NaN**: none at 15,674, 2 at 15,675, 6 at 15,676, 10 at 15,677 — grid
+vertices (13,3), (16,2), (18,2), (20,2)…, one new rim vertex a frame
+along the path of the wave Luigi's pound sent out, not a spreading
+front. The 355-draw `--drawlog` at 15,677 (`m34-m417-drawlog-f015677.log.gz`)
+has no zero or NaN matrix, so it is the data.
+
+**The cause** is in the mesh build, `water.c:352-358` (`fn_1_3D58`): a
+vertex at radius r ≤ 850 gets the rim weight `unk_24 = sqrtf((750 − r)
+× 0.01f)` when `750 − r < 100` — **the square root of a negative number
+for 750 < r ≤ 850**. On the console `sqrtf` is MSL's inline
+(`include/dolphin/math.h`: `if (x > 0.0f) { frsqrte, three Newton steps }
+return x;`), which **returns the argument itself for anything not
+positive**: those rim weights are small negative numbers (−0.0…−1.0),
+and the sim's `unk_24[i] × displacement` inverts the wave a little at
+the rim. The port's mirror replaces MSL's `math.h` with the host's
+(`mirror_src.py` `LIBC_SHIMS`), so the game linked libm's `sqrtf`, whose
+`sqrtf(−0.5f)` is NaN; the weight was NaN from the module's first frame
+and the first wave to reach the vertex (`fn_1_4E64`: `if (!(mag >= 1))
+unk_30 += unk_24[i] × …`) made its displacement, then its position, NaN.
+
+**The fix**, port only: `port/include/msl_math.h`, forced onto every
+game and REL translation unit by `-include` in the Makefile's
+`GAME_CFLAGS` (the port's own sources do not take it), defines
+`sqrtf(x)` as `port_msl_sqrtf(x)` — `psmtx_c.c`: `x > 0` goes to
+`port_sqrtf` (libm's correctly rounded value, unchanged), `+inf` gives
+`x × 0` = NaN as the console's `frsqrte(inf) = 0` does, and everything
+else returns `x`. (No `<math.h>` in the shim: `kerent.c`, the SDK export
+table, declares every libm name as `void f(void)` and includes no math.h;
+the macro alone rewrites the host math.h's own prototype in the units
+that include it.) The bench's frames and the console's `+1200` agree with
+the fixed G4 frame `5f582976…`: no fan, and the boat that was drawn
+strangely under the NaN normals sits in the water as the console's does.
+`TD` on the fixed build: **0b58c5ee / c58a046d / 4a9a640c**, the three
+md5s unchanged — no positive `sqrtf` changed, and nothing on those three
+frames takes the root of a negative number. The line comes off the Read
+Me; the snapshot `snaps/lib/m417-streaks-f016000.snap` stands as the
+before.
+
+### 49.8 Controllers 2–4: the pads laid over the four ports
+
+§48.6's forty lines, built (`pad_xone.c`, `pad_sdl.c`, `pad.c`,
+`--kbport`): **`pad_xone_open` claims every Xbox One pad on the USB bus**
+(up to four, each its own device handle, interface, pipes, reader thread
+and state — `XonePad pads[PORT_PAD_MAX]`, the statics of M3 gone),
+**`pad_sdl_init` opens every joystick SDL reports** (`SdlPad
+pads[PORT_PAD_MAX]`), and `PADInit` lays them over the ports in that
+order; the keyboard is port 1's fallback (alone when no pad holds port 1,
+beside the pad that does — M32's merge, now `merge_under`), or, with
+**`--kbport N`**, a controller of its own on port N with the pads filling
+the others. `PADRead` polls every port that has a source (the `--play`
+script and the harness's `port_pad_inject` stay port 1's), `PADControlMotor`
+rumbles the pad on its port, `--paddbg` names the port. `PADInit` logs one
+line per port and `controllers N-4 unplugged` after the last.
+
+**The witness, with the one pad in the house** (`ioreg` still lists one
+`045e:02ea`): the M34 chain's `K2` run — `--turbo --play board-start.play
+--frames 3200 --kbport 2 --paddbg --dumpframe 1500-3200/25`, the one-human
+walk — logs `controller 1 = Xbox One controller 1 (045e:02ea)`,
+`controller 2 = keyboard (--kbport)`, `controllers 3-4 unplugged`, and its
+frame 3,100 is the character select with **`1P` on Mario and `2P` on
+Luigi** (`screenshots/m34-kbport2-charselect-f03100-1P-2P.jpg`,
+`m34-kbport2-walk-1500-3100.jpg`): `modeseldll` read two ports with a pad
+(`HuPadStatGet`) and made player 2 human, as the console does with two
+controllers — the one-pad walk of every earlier milestone has `1P` and
+three `COM`s. Then a real-time run with the same flags and `~/key.py` on
+the G4 (Quartz key events, held): `z` → `pad> frame 2238: port 2 btn
+0100` for 33 frames (A), Return → `port 2 btn 1000` for 30 (Start), the
+right arrow → `port 2 … stick 100,0` for 36, the Xbox pad's drift on port
+1 throughout (`docs/soak/m34-kbport2-witness.log.gz`). Two real pads on
+one bus were not tried (there is one); the second Xbox pad's path is the
+same code with `pads[1]`, untested, and the Read Me says so.
+
+The default is unchanged for a one-pad player: the keyboard beside the
+pad on port 1, players 2–4 CPU — making the keyboard port 2 by default
+would turn player 2 human for everyone (notes.md §4), which is why it is
+a switch and not remembered. `TD` on the pad build: the three md5s
+unchanged. One guard added on the resume: `pad_sdl.c` skips an SDL
+joystick named "Xbox One" when `pad_xone` holds any — a GIP pad is not
+HID-class and the G4's SDL lists none (K2's log), but a HID layer that did
+would have made the same pad controller 1 *and* 2. Not seen; a guard, not
+a finding.
+
+### 49.9 The Read Me's list, before and after
+
+| line | M33 | M34 |
+|---|---|---|
+| Trace Race's guide line | on | **off** — the lerp-with-a-zero combiner and `DIVIDE_2` (§49.4) |
+| Mario Medley's caustic | on | on: the indirect warp, one shape, recorded (§49.6) |
+| Paratrooper Plunge's white cap | on (read part way) | **off** — the IA8 byte (§49.5); the fall was the play |
+| Makin' Waves' ripple and streaks | on | the ripple on (§49.6); the streaks **off** — NaN water vertices from `sqrtf` of a negative number (§49.7) |
+| the three Bowser games' pillar spheres | on, `--zprepass 2` named | **off** — the IA8 byte (§49.3); the pre-pass gate fixed and on by the hardware's rule (§49.2) |
+| the character select at about 23 fps | on | on |
+| intro movies skipped; one card | on | on |
+| controllers 2–4 absent | on | **a second controller works** (the keyboard as player 2, witnessed); three and four wired the same, untested (§49.8) |
+
+The Read Me's list is two lines now — Mario Medley's caustic and Makin'
+Waves' ripple, the one missing effect (§49.6) — plus the character select's
+23 fps, the skipped movies, the one card, and the controllers line.
+
+### 49.10 The disk image: 0.9.2
+
+`port/tools/make_dmg.sh` on the final build (`isle` md5 `889fd32f…`,
+version 0.9.2 / M34 in `port.h`, the plist's `CFBundleShortVersionString`
+0.9.2, `port/dist/Read Me.txt` as §49.9 leaves it): **`Mario Party 4
+PowerPC Edition 0.9.2.dmg`, 4,212,755 bytes, md5 `6946bab50a59e9d6f9cd918df561e5b9`**,
+built by hdiutil on the G4 with the gallery finished and before the soak
+(a copy stays at the G4's `~/Mario Party 4 PowerPC Edition 0.9.2.dmg`),
+and at `littlejelly:~/MarioParty4-PowerPC-0.9.2.dmg`. No game data in it
+(the script refuses a bundle with an image in its Resources and any file
+over 100 MB in the staged folder).
+
+### 49.11 The gallery of the final build: seven rows
+
+`gallery_chain.sh` on `889fd32f…` for m404, m405, m408, m417, m435, m436,
+m437 (17:00–17:23 G4 time, 0 faults, 7–8 frames each; the first pass on the
+14:11 build — before the balloon gate, the pad guard and the `sqrtf` shim —
+is what §49.7 read the streaks from), pulled with `gallery_pull_m34.sh`,
+`compare_m34.py` (`verdicts-m34.tsv`): **`compare.html` is 58 match / 2
+minor / 0 major** (M31: 53 / 7 / 0), the two minors m405 and m417, both
+the indirect warp; 2 oracle-failed and 1 port-faulted as before. The
+`sim/>8` numbers against the console (card +64/+164/+264, entry
++60/+400/+1200/+2300, results), M34 over M31:
+
+| game | +60 | +400 | +1200 | +2300 | verdict |
+|---|---|---|---|---|---|
+| m404 Trace Race | 95/56 (96/48) | 93/62 (94/57) | 91/70 (91/68) | 82/94 (82/94) | minor → **match**: the line on every lane; the scores are the play |
+| m405 Mario Medley | 95/66 | 93/74 | 87/88 | 90/91 | minor (control: byte-identical to M31's numbers; the caustic) |
+| m408 Paratrooper Plunge | 92/84 | 96/99 | **90/81** (87/87) | 70/99 | minor → **match**: the tunnel converges to the island; +2300 is the port already down (the play) |
+| m417 Makin' Waves | 88/79 | 93/64 | 91/66 | 76/100 | minor (the streaks gone; the ripple is the console's whole pool, which no number here can say) |
+| m435 Darts of Doom | 95/57 | 98/35 (97/37) | 98/38 | 98/31 | minor → **match**: the spheres on the pillars |
+| m436 Fruits of Doom | 95/56 | 98/35 (97/37) | 98/38 (97/39) | 97/39 (97/40) | minor → **match** |
+| m437 Balloon of Doom | 95/57 | 98/35 (97/37) | 97/32 (97/33) | 97/31 (97/32) | minor → **match** |
+
+(The numbers barely move: a sphere is 36 pixels of 76,800 and the cap 62;
+the rows are read by eye, `screenshots/m34-m435-f014544-before-after-ia8.jpg`,
+`m34-m408-f015677-before-after-console.jpg`, `m34-m404-f014537-before-tev-
+div2-console.jpg`, `m34-m417-f015677-streaks-before-after-console.jpg`.)
+The title is not a gallery row: its pair is `m34-title-f00800-final-vs-
+console.jpg`, the final build's 800 (md5 `0b58c5ee…`) beside the console's
+calibrated frame 8390.
+
+### 49.12 What the G4 is doing, and what is left
+
+**The leave-behind**: `g4 run --soak --com4 --rtc dolphin --freshcard
+--realtime --snap-every 5000 --snap-keep 3 --status --ovllog --stuckwatch
+200 --perf` on `889fd32f…` from 17:25 G4 time — the first soak with the
+ZCompLoc pre-pass on by default, the IA8 byte swap, the `sqrtf` shim on
+every game unit and the four pad ports. M35 reads it first: `stack overlap
+error`, faults, mismatches, the `auto` line, the stall list; and the `sqrtf`
+shim is the widest change — any game value that a negative `sqrtf` used to
+make NaN (and so, on the port, a silent zero somewhere) now carries the
+console's negative number, which the soak's 40 modules exercise.
+
+**Left, by name**: the indirect warp (m405's caustic, m417's ripple; §49.6
+names the shape and the `GL_ATI_text_fragment_shader` program it would
+take — the G4 alone can run it); the character select at 23 fps; the
+drawlog/probe fault on the bench under Rosetta at a hook's draw (§49.4,
+`m34-m404-drawlog-f014537-hook-fault.log.gz`; the G4 runs the same probe
+on m417's hooks without it, so it is the bench's); a second real pad on
+the bus (§49.8: one pad in the house). The G4 keeps `~/MarioParty4.app`
+(`889fd32f…`, the build in the dmg), `~/MarioParty4-m32.app`, the chain
+scripts `~/m34_chain.sh`, `~/m417ab.sh`, `~/gallery_chain.sh`, and
+`~/m34/`, `~/gallery-m34/` with every run named above.
+

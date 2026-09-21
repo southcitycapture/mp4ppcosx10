@@ -218,6 +218,12 @@ void port_mem_init(void) {
 void* port_game_stack_top(void) { return region + PORT_GUARD_SIZE + PORT_GAME_STACK; }
 void* port_mem1_lo(void) { return mem1; }
 void* port_mem1_hi(void) { return mem1 + PORT_MEM1_SIZE; }
+/* M34: is `p` in the one mmap -- the game stack, MEM1 or a guard?  What is
+ * not is the executable's own data (a DrawObjData entry, say). */
+int port_in_game_region(const void* p) {
+    return region != NULL && (const u8*)p >= region &&
+           (const u8*)p < region + PORT_GUARD_SIZE + PORT_GAME_STACK + PORT_GUARD_SIZE + PORT_MEM1_SIZE + PORT_GUARD_SIZE;
+}
 void* port_aram(void) { return aram; }
 
 /* ---- arena --------------------------------------------------------------- */

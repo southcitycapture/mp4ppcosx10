@@ -1,4 +1,5 @@
-/* Xbox One controllers over USB, without a kernel driver.
+/* Xbox One controllers over USB, without a kernel driver -- every one on the
+ * bus, up to PORT_PAD_MAX, each with its own device handle and reader (M34).
  *
  * Ported near-verbatim from the Snowboard Kids ports'
  * (~/Apps/snowboardkids-decomp/port/src/platform/input_xone.c): these pads
@@ -23,11 +24,11 @@
  *   LB          -> Z                 menu (Start) -> START
  *   dpad        -> the GC pad's own digital dpad bits
  *
- * The reader runs on an SDL thread (SDL is already linked for GX/audio; this
- * just reuses it for a portable thread+atomics primitive) and only ever
- * writes `state`, which is a plain struct read back with no lock -- torn
- * reads are, at worst, one frame of a slightly wrong analog value, which is
- * the same trade-off the Snowboard Kids ports made.
+ * Each pad's reader runs on an SDL thread (SDL is already linked for
+ * GX/audio; this just reuses it for a portable thread+atomics primitive) and
+ * only ever writes its pad's `state`, which is a plain struct read back with
+ * no lock -- torn reads are, at worst, one frame of a slightly wrong analog
+ * value, which is the same trade-off the Snowboard Kids ports made.
  */
 #include "pad_internal.h"
 
@@ -51,42 +52,46 @@ struct pad_xone_state {
     int16_t lx, ly, rx, ry;  /* Y positive is up */
 };
 
-static IOUSBDeviceInterface187** xdev;
-static IOUSBInterfaceInterface190** xintf;
-static UInt8 in_pipe, out_pipe;
-static SDL_Thread* reader;
-static volatile int present;
-static volatile struct pad_xone_state state;
-static uint8_t seq;
-static int report_log;
-static char pad_name[64];
+typedef struct XonePad {
+    IOUSBDeviceInterface187** xdev;
+    IOUSBInterfaceInterface190** xintf;
+    UInt8 in_pipe, out_pipe;
+    SDL_Thread* reader;
+    volatile int present;
+    volatile struct pad_xone_state state;
+    uint8_t seq;
+    int report_log;
+    char name[64];
+} XonePad;
+static XonePad pads[PORT_PAD_MAX];
+static int npads;
 
 static const uint16_t products[] = { 0x02D1, 0x02DD, 0x02E3, 0x02EA, 0x02FD, 0x0B00, 0x0B0A, 0x0B12, 0x0B20, 0 };
 
 static int16_t le16(const uint8_t* p) { return (int16_t)(p[0] | (p[1] << 8)); }
 
-static void send_packet(const uint8_t* pkt, int len) {
+static void send_packet(XonePad* x, const uint8_t* pkt, int len) {
     uint8_t buf[64];
     memcpy(buf, pkt, len);
-    buf[2] = seq++;
-    (*xintf)->WritePipe(xintf, out_pipe, buf, len);
+    buf[2] = x->seq++;
+    (*x->xintf)->WritePipe(x->xintf, x->out_pipe, buf, len);
 }
 
 static int reader_main(void* arg) {
+    XonePad* x = (XonePad*)arg;
     uint8_t buf[64];
-    (void)arg;
     for (;;) {
         UInt32 size = sizeof(buf);
-        IOReturn r = (*xintf)->ReadPipe(xintf, in_pipe, buf, &size);
+        IOReturn r = (*x->xintf)->ReadPipe(x->xintf, x->in_pipe, buf, &size);
         if (r != kIOReturnSuccess) {
-            port_log("port> pad: xone: read failed (%08x), controller gone\n", (unsigned)r);
-            present = 0;
+            port_log("port> pad: xone: %s: read failed (%08x), controller gone\n", x->name, (unsigned)r);
+            x->present = 0;
             return 0;
         }
-        if (report_log > 0 && size >= 4) {
+        if (x->report_log > 0 && size >= 4) {
             unsigned i;
-            report_log--;
-            port_log("port> pad: xone: report");
+            x->report_log--;
+            port_log("port> pad: xone: %s: report", x->name);
             for (i = 0; i < size && i < 20; i++) {
                 port_log(" %02x", buf[i]);
             }
@@ -102,14 +107,15 @@ static int reader_main(void* arg) {
             s.ly = le16(buf + 12);
             s.rx = le16(buf + 14);
             s.ry = le16(buf + 16);
-            state = s;
+            s.guide = x->state.guide;
+            x->state = s;
         } else if (size >= 5 && buf[0] == 0x07) {
-            state.guide = buf[4] & 1;
+            x->state.guide = buf[4] & 1;
         }
     }
 }
 
-static int open_interface(io_service_t svc) {
+static int open_interface(XonePad* x, io_service_t svc) {
     IOCFPlugInInterface** plug = NULL;
     SInt32 score;
     UInt8 n, i, cls, sub, proto;
@@ -118,54 +124,54 @@ static int open_interface(io_service_t svc) {
         port_log("port> pad: xone: interface plug-in failed (%08x)\n", (unsigned)r);
         return 0;
     }
-    (*plug)->QueryInterface(plug, CFUUIDGetUUIDBytes(kIOUSBInterfaceInterfaceID190), (LPVOID*)&xintf);
+    (*plug)->QueryInterface(plug, CFUUIDGetUUIDBytes(kIOUSBInterfaceInterfaceID190), (LPVOID*)&x->xintf);
     (*plug)->Release(plug);
-    if (xintf == NULL) {
+    if (x->xintf == NULL) {
         return 0;
     }
-    (*xintf)->GetInterfaceClass(xintf, &cls);
-    (*xintf)->GetInterfaceSubClass(xintf, &sub);
-    (*xintf)->GetInterfaceProtocol(xintf, &proto);
+    (*x->xintf)->GetInterfaceClass(x->xintf, &cls);
+    (*x->xintf)->GetInterfaceSubClass(x->xintf, &sub);
+    (*x->xintf)->GetInterfaceProtocol(x->xintf, &proto);
     if (port_pad_debug) {
         port_log("port> pad: xone: interface class %02x/%02x/%02x\n", cls, sub, proto);
     }
     if (cls != 0xFF || sub != 0x47 || proto != 0xD0) {
-        (*xintf)->Release(xintf);
-        xintf = NULL;
+        (*x->xintf)->Release(x->xintf);
+        x->xintf = NULL;
         return 0;
     }
-    if ((*xintf)->USBInterfaceOpen(xintf) != kIOReturnSuccess) {
+    if ((*x->xintf)->USBInterfaceOpen(x->xintf) != kIOReturnSuccess) {
         port_log("port> pad: xone: cannot open the control interface (another driver has it?)\n");
-        (*xintf)->Release(xintf);
-        xintf = NULL;
+        (*x->xintf)->Release(x->xintf);
+        x->xintf = NULL;
         return 0;
     }
-    (*xintf)->GetNumEndpoints(xintf, &n);
-    in_pipe = out_pipe = 0;
+    (*x->xintf)->GetNumEndpoints(x->xintf, &n);
+    x->in_pipe = x->out_pipe = 0;
     for (i = 1; i <= n; i++) {
         UInt8 dir, num, type, interval;
         UInt16 maxp;
-        if ((*xintf)->GetPipeProperties(xintf, i, &dir, &num, &type, &maxp, &interval) != kIOReturnSuccess) {
+        if ((*x->xintf)->GetPipeProperties(x->xintf, i, &dir, &num, &type, &maxp, &interval) != kIOReturnSuccess) {
             continue;
         }
-        if (type == kUSBInterrupt && dir == kUSBIn && in_pipe == 0) {
-            in_pipe = i;
+        if (type == kUSBInterrupt && dir == kUSBIn && x->in_pipe == 0) {
+            x->in_pipe = i;
         }
-        if (type == kUSBInterrupt && dir == kUSBOut && out_pipe == 0) {
-            out_pipe = i;
+        if (type == kUSBInterrupt && dir == kUSBOut && x->out_pipe == 0) {
+            x->out_pipe = i;
         }
     }
-    if (in_pipe == 0 || out_pipe == 0) {
-        port_log("port> pad: xone: interrupt pipes not found (in %u out %u)\n", in_pipe, out_pipe);
-        (*xintf)->USBInterfaceClose(xintf);
-        (*xintf)->Release(xintf);
-        xintf = NULL;
+    if (x->in_pipe == 0 || x->out_pipe == 0) {
+        port_log("port> pad: xone: interrupt pipes not found (in %u out %u)\n", x->in_pipe, x->out_pipe);
+        (*x->xintf)->USBInterfaceClose(x->xintf);
+        (*x->xintf)->Release(x->xintf);
+        x->xintf = NULL;
         return 0;
     }
     return 1;
 }
 
-static int open_device(io_service_t svc, uint16_t pid) {
+static int open_device(XonePad* x, io_service_t svc, uint16_t pid) {
     IOCFPlugInInterface** plug = NULL;
     SInt32 score;
     UInt8 cfg = 0;
@@ -178,47 +184,47 @@ static int open_device(io_service_t svc, uint16_t pid) {
         port_log("port> pad: xone: device plug-in failed (%08x)\n", (unsigned)r);
         return 0;
     }
-    (*plug)->QueryInterface(plug, CFUUIDGetUUIDBytes(kIOUSBDeviceInterfaceID187), (LPVOID*)&xdev);
+    (*plug)->QueryInterface(plug, CFUUIDGetUUIDBytes(kIOUSBDeviceInterfaceID187), (LPVOID*)&x->xdev);
     (*plug)->Release(plug);
-    if (xdev == NULL) {
+    if (x->xdev == NULL) {
         port_log("port> pad: xone: no device interface\n");
         return 0;
     }
-    r = (*xdev)->USBDeviceOpen(xdev);
+    r = (*x->xdev)->USBDeviceOpen(x->xdev);
     if (r != kIOReturnSuccess) {
-        r = (*xdev)->USBDeviceOpenSeize(xdev);
+        r = (*x->xdev)->USBDeviceOpenSeize(x->xdev);
     }
     if (r != kIOReturnSuccess) {
         port_log("port> pad: xone: cannot open device 045e:%04x (%08x)\n", pid, (unsigned)r);
-        (*xdev)->Release(xdev);
-        xdev = NULL;
+        (*x->xdev)->Release(x->xdev);
+        x->xdev = NULL;
         return 0;
     }
-    (*xdev)->GetConfiguration(xdev, &cfg);
+    (*x->xdev)->GetConfiguration(x->xdev, &cfg);
     if (port_pad_debug) {
         port_log("port> pad: xone: device 045e:%04x open, configuration %u\n", pid, cfg);
     }
     if (cfg == 0) {
         IOUSBConfigurationDescriptorPtr d;
-        if ((*xdev)->GetConfigurationDescriptorPtr(xdev, 0, &d) == kIOReturnSuccess) {
-            (*xdev)->SetConfiguration(xdev, d->bConfigurationValue);
+        if ((*x->xdev)->GetConfigurationDescriptorPtr(x->xdev, 0, &d) == kIOReturnSuccess) {
+            (*x->xdev)->SetConfiguration(x->xdev, d->bConfigurationValue);
         }
     }
     req.bInterfaceClass = kIOUSBFindInterfaceDontCare;
     req.bInterfaceSubClass = kIOUSBFindInterfaceDontCare;
     req.bInterfaceProtocol = kIOUSBFindInterfaceDontCare;
     req.bAlternateSetting = kIOUSBFindInterfaceDontCare;
-    if ((*xdev)->CreateInterfaceIterator(xdev, &req, &it) == kIOReturnSuccess) {
+    if ((*x->xdev)->CreateInterfaceIterator(x->xdev, &req, &it) == kIOReturnSuccess) {
         while (!ok && (isvc = IOIteratorNext(it)) != 0) {
-            ok = open_interface(isvc);
+            ok = open_interface(x, isvc);
             IOObjectRelease(isvc);
         }
         IOObjectRelease(it);
     }
     if (!ok) {
-        (*xdev)->USBDeviceClose(xdev);
-        (*xdev)->Release(xdev);
-        xdev = NULL;
+        (*x->xdev)->USBDeviceClose(x->xdev);
+        (*x->xdev)->Release(x->xdev);
+        x->xdev = NULL;
     }
     return ok;
 }
@@ -240,7 +246,7 @@ int pad_xone_open(void) {
         port_log("port> pad: xone: IOServiceGetMatchingServices failed\n");
         return 0;
     }
-    while (!present && (svc = IOIteratorNext(iter)) != 0) {
+    while (npads < PORT_PAD_MAX && (svc = IOIteratorNext(iter)) != 0) {
         CFNumberRef pn = IORegistryEntryCreateCFProperty(svc, CFSTR(kUSBProductID), NULL, 0);
         CFNumberRef vn = IORegistryEntryCreateCFProperty(svc, CFSTR(kUSBVendorID), NULL, 0);
         SInt32 pid = 0, vid = 0;
@@ -265,29 +271,33 @@ int pad_xone_open(void) {
                 break;
             }
         }
-        if (products[i] != 0 && open_device(svc, (uint16_t)pid)) {
-            static const uint8_t s_init[] = { 0x05, 0x20, 0x00, 0x0F, 0x06 }; /* Xbox One S: leave the "wake" state */
-            static const uint8_t power_on[] = { 0x05, 0x20, 0x00, 0x01, 0x00 };
-            present = 1;
-            memset((void*)&state, 0, sizeof(state));
-            if (pid == 0x02EA || pid == 0x02FD || pid == 0x0B12 || pid == 0x0B20) {
-                send_packet(s_init, sizeof(s_init));
+        if (products[i] != 0) {
+            XonePad* x = &pads[npads];
+            memset(x, 0, sizeof(*x));
+            if (open_device(x, svc, (uint16_t)pid)) {
+                static const uint8_t s_init[] = { 0x05, 0x20, 0x00, 0x0F, 0x06 }; /* Xbox One S: leave the "wake" state */
+                static const uint8_t power_on[] = { 0x05, 0x20, 0x00, 0x01, 0x00 };
+                x->present = 1;
+                if (pid == 0x02EA || pid == 0x02FD || pid == 0x0B12 || pid == 0x0B20) {
+                    send_packet(x, s_init, sizeof(s_init));
+                }
+                send_packet(x, power_on, sizeof(power_on));
+                snprintf(x->name, sizeof(x->name), "Xbox One controller %d (045e:%04x)", npads + 1, (unsigned)pid);
+                x->report_log = port_pad_debug ? 6 : 0;
+                x->reader = SDL_CreateThread(reader_main, "mp4-xone", x);
+                port_log("port> pad: %s via IOUSBLib (pipes in %u out %u)\n", x->name, x->in_pipe, x->out_pipe);
+                npads++;
             }
-            send_packet(power_on, sizeof(power_on));
-            reader = SDL_CreateThread(reader_main, "mp4-xone", NULL);
-            snprintf(pad_name, sizeof(pad_name), "Xbox One controller (045e:%04x)", (unsigned)pid);
-            port_log("port> pad: %s via IOUSBLib (pipes in %u out %u)\n", pad_name, in_pipe, out_pipe);
-            report_log = port_pad_debug ? 6 : 0;
         }
         IOObjectRelease(svc);
     }
     IOObjectRelease(iter);
-    return present;
+    return npads;
 }
 
-int pad_xone_present(void) { return present; }
-
-const char* pad_xone_name(void) { return pad_name; }
+int pad_xone_count(void) { return npads; }
+int pad_xone_present(int i) { return i >= 0 && i < npads && pads[i].present; }
+const char* pad_xone_name(int i) { return (i >= 0 && i < npads) ? pads[i].name : "xone (none)"; }
 
 static u8 scale_trigger(uint16_t v) {
     /* 0..1023 -> 0..255 */
@@ -307,9 +317,15 @@ static s8 scale_stick(int16_t v) {
     return (s8)s;
 }
 
-void pad_xone_poll(PortPadRaw* out) {
-    struct pad_xone_state s = state; /* struct copy: a torn read costs one frame, not a crash */
+void pad_xone_poll(int i, PortPadRaw* out) {
+    struct pad_xone_state s;
     u16 b = 0;
+
+    memset(out, 0, sizeof(*out));
+    if (i < 0 || i >= npads) {
+        return;
+    }
+    s = pads[i].state; /* struct copy: a torn read costs one frame, not a crash */
 
     out->stickX = scale_stick(s.lx);
     out->stickY = scale_stick(s.ly);
@@ -359,9 +375,9 @@ void pad_xone_poll(PortPadRaw* out) {
 
 /* GIP rumble: 0x09 report, motor mask 0x0F (both triggers and both motors),
  * strengths 0..100, on/off periods in 10 ms units, repeat count. */
-void pad_xone_rumble(int on) {
+void pad_xone_rumble(int i, int on) {
     uint8_t pkt[13] = { 0x09, 0x00, 0x00, 0x09, 0x00, 0x0F, 0x00, 0x00, 0, 0, 0xFF, 0x00, 0xFF };
-    if (!present || xintf == NULL) {
+    if (i < 0 || i >= npads || !pads[i].present || pads[i].xintf == NULL) {
         return;
     }
     if (on) {
@@ -371,30 +387,36 @@ void pad_xone_rumble(int on) {
         pkt[8] = pkt[9] = 0;
         pkt[10] = pkt[12] = 0;
     }
-    send_packet(pkt, sizeof(pkt));
+    send_packet(&pads[i], pkt, sizeof(pkt));
 }
 
 void pad_xone_close(void) {
-    if (xintf != NULL) {
-        (*xintf)->USBInterfaceClose(xintf); /* aborts the reader's ReadPipe */
-        (*xintf)->Release(xintf);
-        xintf = NULL;
+    int i;
+    for (i = 0; i < npads; i++) {
+        XonePad* x = &pads[i];
+        if (x->xintf != NULL) {
+            (*x->xintf)->USBInterfaceClose(x->xintf); /* aborts the reader's ReadPipe */
+            (*x->xintf)->Release(x->xintf);
+            x->xintf = NULL;
+        }
+        if (x->xdev != NULL) {
+            (*x->xdev)->USBDeviceClose(x->xdev);
+            (*x->xdev)->Release(x->xdev);
+            x->xdev = NULL;
+        }
+        x->present = 0;
     }
-    if (xdev != NULL) {
-        (*xdev)->USBDeviceClose(xdev);
-        (*xdev)->Release(xdev);
-        xdev = NULL;
-    }
-    present = 0;
+    npads = 0;
 }
 
 #else /* PORT_NO_SDL || !PAD_XONE_REAL: no IOKit driver in this build */
 
 int pad_xone_open(void) { return 0; }
-int pad_xone_present(void) { return 0; }
-const char* pad_xone_name(void) { return "xone (disabled)"; }
-void pad_xone_poll(PortPadRaw* out) { memset(out, 0, sizeof(*out)); }
-void pad_xone_rumble(int on) { (void)on; }
+int pad_xone_count(void) { return 0; }
+int pad_xone_present(int i) { (void)i; return 0; }
+const char* pad_xone_name(int i) { (void)i; return "xone (disabled)"; }
+void pad_xone_poll(int i, PortPadRaw* out) { (void)i; memset(out, 0, sizeof(*out)); }
+void pad_xone_rumble(int i, int on) { (void)i; (void)on; }
 void pad_xone_close(void) {}
 
 #endif

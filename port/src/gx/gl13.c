@@ -502,7 +502,13 @@ int gl13_zprepass_wanted(void) {
     ref = (int)(glc.alpha_ref * 255.0f + 0.5f);
     for (u = 0; u < gl13_max_tex_units && u < 8; u++) {
         int stage = u < gx.num_tev ? gx_tev_unit_stage(u) : -1;
-        if (stage >= 0 && gx_bound_tex(gx.tev[stage].map) != NULL) {
+        /* M34: and only when the stage's alpha chain reads the texture's
+         * alpha at all -- the board's balloons bind their hilite map (an I8,
+         * alpha_min 0) to a stage whose alpha is A0 * APREV, and doubled
+         * every frame for nothing (34 draws at frame 7000, no pixel moved) */
+        if (stage >= 0 && gx_bound_tex(gx.tev[stage].map) != NULL &&
+            (gx.tev[stage].ain[0] == GX_CA_TEXA || gx.tev[stage].ain[1] == GX_CA_TEXA ||
+             gx.tev[stage].ain[2] == GX_CA_TEXA || gx.tev[stage].ain[3] == GX_CA_TEXA)) {
             int amin = (int)gx_unit_alpha_min[u];
             if (glc.alpha_func == GL_GEQUAL ? amin < ref
                 : glc.alpha_func == GL_GREATER ? amin <= ref

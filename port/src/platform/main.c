@@ -270,10 +270,14 @@ static void usage(const char* argv0) {
             "  --nocarry         M31: no scalar-in-alpha fold (m417's pool: the water black)\n"
             "  --forceobj N[:f]  M31 diagnostic: object N's draws without cull 1 / z test 2 / alpha test 4\n"
             "  --zprepass N      M33: a depth-only pass before a z-writing draw whose alpha test\n"
-            "                    kills fragments (the hardware writes their Z; m435's sphere): 1 =\n"
-            "                    only under GXSetZCompLoc(TRUE), 2 = every such draw (off: PLAN.md 48.3)\n"
+            "                    kills fragments: 1 = under GXSetZCompLoc(TRUE), where the hardware\n"
+            "                    writes their Z (the default since M34, PLAN.md 49.2), 2 = every\n"
+            "                    such draw (the console disagrees: the title's ribbon), 0 = never\n"
             "  --skipobj N       M33 diagnostic: object N's draws are not issued at all\n"
             "  --probeobj N      M33 diagnostic: object N's draws bracketed by a framebuffer read-back\n"
+            "  --probeverts N    M34: --probeobj prints up to N of a draw's vertices as bound (6)\n"
+            "  --skipverts N     M34 diagnostic: draws of exactly N vertices are not issued (a\n"
+            "                    hook's draw has no object name for --skipobj)\n"
             "                    (pixels changed) and a print of the GL state and vertices as issued\n"
             "                    (M32: blend off 8, colour+alpha update forced on 16)\n"
             "  --nolinewidth     M30: ignore GXSetLineWidth, every line one pixel\n"
@@ -316,6 +320,9 @@ static void usage(const char* argv0) {
             "  --keys            M32: print the keyboard and pad table and exit\n"
             "\n"
             "  --nopad           no controller 1 at all, not even the keyboard\n"
+            "  --kbport N        M34: the keyboard as controller N (1-4) of its own; the\n"
+            "                    pads fill the other ports in order.  Without it the\n"
+            "                    keyboard is controller 1 alone, or beside the pad on it\n"
             "  --paddbg          log raw pad reports/buttons/axes as they arrive\n"
             "  --play SCRIPT     scripted controller 1 input (port/src/pad/pad_play.c\n"
             "                    format); see port/tools/gecko2play.py to convert a\n"
@@ -609,6 +616,7 @@ int port_parse_args(int argc, char** argv) {
     port_opt.rtauto_fit_ms = 30.0; /* M33: auto's dead band, two retraces less a margin */
     port_opt.rtauto_max = 0.75;
     port_opt.stackmul = PORT_PRC_STACK_MUL;
+    port_opt.zprepass = 1; /* M34: the ZCompLoc gate, the hardware's rule (PLAN.md 49.2) */
     /* Linear, since the G4 measured both on the same walk (PLAN.md §20.5):
      * 1.75 ms mean against the 4-tap's 2.00, a worst frame of 10.92 ms against
      * 28.30, and fewer discontinuities, not more -- 33,002 against 36,328.
@@ -1003,6 +1011,10 @@ int port_parse_args(int argc, char** argv) {
             port_opt.skipobj = argv[++i];
         } else if (!strcmp(a, "--probeobj") && i + 1 < argc) {
             port_opt.probeobj = argv[++i];
+        } else if (!strcmp(a, "--probeverts") && i + 1 < argc) {
+            port_opt.probeverts = atoi(argv[++i]);
+        } else if (!strcmp(a, "--skipverts") && i + 1 < argc) {
+            port_opt.skipverts = atoi(argv[++i]);
         } else if (!strcmp(a, "--zprepass") && i + 1 < argc) {
             port_opt.zprepass = atoi(argv[++i]);
         } else if (!strcmp(a, "--probebox") && i + 1 < argc) {
@@ -1050,6 +1062,8 @@ int port_parse_args(int argc, char** argv) {
             port_opt.scale = atoi(argv[++i]);
         } else if (!strcmp(a, "--nopad")) {
             port_opt.nopad = 1;
+        } else if (!strcmp(a, "--kbport") && i + 1 < argc) {
+            port_opt.kbport = atoi(argv[++i]);
         } else if (!strcmp(a, "--paddbg")) {
             port_opt.pad_debug = 1;
         } else if (!strcmp(a, "--play") && i + 1 < argc) {

@@ -1,0 +1,25 @@
+{
+ "name": "m408",
+ "tag": "m34",
+ "module": "m408",
+ "type": 0,
+ "groups": [
+  0,
+  1,
+  2,
+  3
+ ],
+ "idx": 7,
+ "rtc": null,
+ "reason": "results done",
+ "inst_gc": 10646,
+ "entry_gc": 10981,
+ "left_gc": 13403,
+ "result_gc": 13404,
+ "result_left_gc": 13847,
+ "misdeal": null,
+ "last_gc": 13967,
+ "last_vc": 15967,
+ "frames": 4052,
+ "wall": 316
+}

@@ -175,9 +175,12 @@ GAME_WARN := -w -Wno-implicit-function-declaration -Wno-return-mismatch \
 # function looks to it like one that never set up a frame ("No stack frame
 # has been allocated", backtrace ends at two frames inside draw_run).
 DEBUG_G = -gdwarf-2 -gstrict-dwarf -fno-shrink-wrap
+# M34: include/msl_math.h routes the game's sqrtf through MSL's semantics
+# (sqrtf(x <= 0) = x, not NaN: m417's water); the port's own files keep libm.
 GAME_CFLAGS = -std=gnu11 -O2 $(DEBUG_G) -fno-strict-aliasing -fwrapv -fcommon \
               $(GAME_UBSAFE) $(TUNE) \
-              $(GAME_WARN) $(GAME_DEFS) $(GAME_INC) $(TARGET_CFLAGS)
+              $(GAME_WARN) $(GAME_DEFS) $(GAME_INC) $(TARGET_CFLAGS) \
+              -include include/msl_math.h
 PORT_CFLAGS = -std=gnu11 -O2 $(DEBUG_G) -fno-strict-aliasing -fcommon \
               -Wall -Wno-unused-parameter -Wno-unknown-pragmas $(TUNE) \
               $(GAME_DEFS) $(GAME_INC) $(SDL_CFLAGS) $(TARGET_CFLAGS)

@@ -31,8 +31,8 @@ extern "C" {
 /* ---- settings, from argv ------------------------------------------------- */
 /* M32: the shipped version (the dmg's name, the plist, the --defaults header)
  * and the milestone that built it. */
-#define PORT_VERSION_STRING "0.9.1"
-#define PORT_MILESTONE "M33"
+#define PORT_VERSION_STRING "0.9.2"
+#define PORT_MILESTONE "M34"
 
 typedef struct PortOptions {
     const char* image;      /* --image  disc image or extracted files/ tree   */
@@ -78,6 +78,7 @@ typedef struct PortOptions {
     /* ---- M3: PAD ---- */
     int nopad;              /* --nopad  no controller 1 at all (keyboard too) */
     int pad_debug;          /* --paddbg  log raw pad reports/buttons/axes     */
+    int kbport;             /* --kbport N  the keyboard as controller N (M34) */
     const char* pad_play;   /* --play SCRIPT  scripted controller 1 input     */
     const char* pad_record; /* --record FILE  record controller 1's raw input */
     /* ---- M4 ---- */
@@ -342,8 +343,11 @@ typedef struct PortOptions {
     const char* skipobj;    /* --skipobj NAME  M33 diagnostic: the object's draws not issued */
     int zprepass;           /* --zprepass N  M33: a depth-only pass before a draw whose alpha
                              *   test kills fragments the hardware still writes Z for: 1 = with
-                             *   GXSetZCompLoc(TRUE) only, 2 = every alpha-tested z-writing draw */
+                             *   GXSetZCompLoc(TRUE) only (the default since M34), 2 = every
+                             *   alpha-tested z-writing draw (the title says no), 0 = never */
     int probebox[4];        /* --probebox X0,Y0,X1,Y1  M33: --probeobj counts only that box (GL rows) */
+    int probeverts;         /* --probeverts N  M34: --probeobj prints up to N vertices (6) */
+    int skipverts;          /* --skipverts N  M34 diagnostic: draws of exactly N vertices not issued */
     const char* probeobj;   /* --probeobj NAME  M33 diagnostic: the object's draws bracketed by a
                              *   read-back of the framebuffer (pixels changed, their box) and a
                              *   print of the GL state and the first vertices as issued */
@@ -562,6 +566,7 @@ double port_now_seconds(void);
 /* ---- MEM1 / ARAM --------------------------------------------------------- */
 void port_mem_init(void);
 void* port_mem1_lo(void);
+int port_in_game_region(const void* p); /* M34: the game stack, MEM1 or a guard */
 void* port_mem1_hi(void);
 void* port_aram(void);
 /* Name the port-owned region an address falls in ("MEM1", "the guard above

@@ -518,3 +518,44 @@ on.  Dump index vs GlobalCounter: the dump count runs ~350 *behind*
 GlobalCounter at the module (10939 vs 11294) and 1,900 behind the
 2026-09-19 m416 capture's indices (12,500 for the card) — the index is a
 file name, never a frame number (reference-dolphin.md §6).
+
+## The title on the console (2026-09-21, capture on littlejelly, PLAN.md §49.2)
+
+The port's frame 800 (the §21.1 md5 scene: the title just after its logo
+has scaled in, `PRESS START` not yet up, START taken at 850) needed a
+frame-exact console pair to judge `--zprepass 2`'s 105 pixels.  Two things
+about the title that the card calibration (§41b.2) did not have to face:
+
+* **The title's 3D is a carousel with its own phase.** The present, the
+  characters and the sky are `Hu3DModelCreateFile` models with
+  `HU3D_MOTATTR_LOOP`, created in `BootTitleCreate` before the logos, so
+  their motion runs from *boot* and the pose at the title's first frame
+  depends on how many frames the boot took: the console holds the logos on
+  a wall clock (§2) and plays the 70 s movie, the port skips the movie, so
+  the two reach the title at different phases of a **718-frame loop**
+  (the two best matches of one capture were 718 apart).  The board-start
+  schedule accepts the title within ~90 frames (START at GC 380), which
+  does not cover the loop.
+* **The schedule that does**: `port/ref/movies/title-hold.txt` -- START
+  held 10-330 (the logos and the movie, as `m406-end.txt`) and nothing
+  after, so `BootTitleExec` waits its 1800 frames, times out into the
+  attract loop, and comes back to the title once more; 9,191 dump frames
+  in 70 s of Dolphin at ~130 dump fps (the title from 664, the second
+  title from ~8,100).  Rig as §41b (`~/mp4-oracle/capture-linux.sh`'s
+  flags, the user dir seeded from `port/ref/dolphin-user`, one instance,
+  `pkill -x dolphin-emu` after; `~/m34/title/capture-title.sh`).
+
+**The calibration** is a template match of the port's 800 against every
+console frame at 160x120 (mean |Δ|): **dump frame 8390** at 4.09 levels
+(9108 at 4.15, one loop later; the first pass's 1201/1919 at 5.9/6.1 --
+the second pass matches better because its sky sprites' phase also
+agrees), the same order of agreement as the card's 4.4.  The console
+frame is `port/ref/frames/title-console-8390.png` (640x528 as Dolphin
+dumps; the port's 480 rows are its 528 resampled).  Its `PRESS START` is
+up (the wait loop) where the port's 800 has none (the logo's last
+scale-in frame); the sprite sits at y 380 and does not touch the logo or
+the present.  What it settles: the ribbon of the present under the logo
+is continuous on the console -- **no seam** between the ribbon and the
+lid -- so the ungated depth pre-pass (`--zprepass 2`), which opens one
+there, is wrong, and the port's default agrees with the console on 103 of
+the 105 pixels (sum |Δ| 4,142 against 35,930).

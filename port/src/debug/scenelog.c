@@ -302,6 +302,15 @@ const char* port_drawobj_name(const void* mtx, int* model_index) {
     if (!mtx || ((uintptr_t)base & 3u)) {
         return NULL;
     }
+    /* M34: a hook's matrix (m404's guide line, fn_1_58E4's `arg1`) is on a
+     * coroutine stack in MEM1, not a DrawObjData entry in the executable's
+     * bss, and the bytes before it are whatever the hook's frame holds --
+     * the model check below passed once and the object pointer after it
+     * faulted the bench's drawlog and probe.  DrawObjData is never in the
+     * game's mmap; a matrix that is cannot be named. */
+    if (port_in_game_region(mtx)) {
+        return NULL;
+    }
     if (d->model < &Hu3DData[0] || d->model >= &Hu3DData[HU3D_MODEL_MAX]) {
         return NULL;
     }

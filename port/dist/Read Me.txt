@@ -1,6 +1,6 @@
 Mario Party 4 PowerPC Edition
 =============================
-Version 0.9.1
+Version 0.9.2
 
 
 WHAT THIS IS
@@ -103,8 +103,18 @@ Keyboard (always active, beside a pad too)
     Esc                     quit
     Cmd+Q                   quit
 
-Game pad: an Xbox One controller over USB is driven directly (no driver
+Game pads: Xbox One controllers over USB are driven directly (no driver
 to install); any other pad SDL recognises works through its own mapping.
+Every pad plugged in before the game starts gets a port, in order: the
+Xbox One pads first, then the others, up to four.  With one pad the
+keyboard works beside it as player 1; to make the keyboard a controller
+of its own -- player 2 on the keys, say -- run once from the Terminal:
+
+    open -a "Mario Party 4" --args --kbport 2
+
+(A port that has a controller makes that player human on the character
+select, as on a console; players without one are computer players.  The
+switch is not remembered: it is for the run it is given to.)
 
     Left stick              control stick
     Right stick             C stick
@@ -142,25 +152,19 @@ The disc image stays wherever you keep it.
 WHAT IS NOT QUITE RIGHT YET
 
 Every minigame has been compared against the real game frame by frame;
-seven differ in ways a player can see:
+two differ in ways a player can see, both the same missing effect (a
+rippled texture the card's fixed pipeline cannot express):
 
-    Trace Race          the guide line you trace is missing
     Mario Medley        the pool's light ripple is a flat tint
-    Paratrooper Plunge  the tunnel's cap is white
     Makin' Waves        the pool has a flat tint where the console
-                        ripples it; a few thin light streaks near the raft
-    Darts of Doom,      the glowing spheres on Bowser's pillars are
-    Fruits of Doom,     painted over by the sky (run it once from the
-    Balloon of Doom     Terminal with --zprepass 2 to see them; that
-                        switch is off because it also moves a few pixels
-                        of the title logo that have not been checked
-                        against the console yet)
+                        ripples it
 
 The character select screen runs at about 23 frames a second on the
 reference machine (the board and most minigames run at the 30 cap).
 Intro movies are skipped.  The game's memory card is one card in slot A;
-slot B is always empty.  Controllers 2-4 are not connected: players 2-4
-are computer players, as they are with one controller on a console.
+slot B is always empty.  A second controller works (checked with a pad on
+port 1 and the keyboard standing in as player 2); three and four are
+wired the same way but untested, there being one pad in the house.
 
 
 LICENCE AND CREDITS

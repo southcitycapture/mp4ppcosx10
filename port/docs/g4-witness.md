@@ -904,3 +904,37 @@ is either ready to offer upstream or has a case to remove.
   `ThrottleProcessIO`); a run's frames come back faster as one `tar`
   stream than as four `scp`s, and a bench script that copies inside the
   120 s tool timeout goes to the background.
+
+## 0w. Six things M34 paid for *(2026-09-21)*
+
+* **The probe's read-back needs the context: `--norenderthread`.** Under
+  the render thread the game thread's `glGetIntegerv(GL_VIEWPORT)` is
+  `0 0 0 0` and every draw is "nothing in the box" — a 10-minute G4 run
+  that said nothing (`~/m34/S417p.log`, the first one).  The M33 comment
+  ("the twins are joins, so it works under the render thread") was about
+  the *drawlog*; the probe reads pixels.
+* **A hook's draw has no object name.** `--skipobj` / `--probeobj NAME`
+  cannot reach a `Hu3DHookFuncCreate` draw (m404's line, m417's water and
+  particles); the lookup names it after whatever `DrawObjData` the stack
+  matrix happens to fall near ("para-c" for the water).  `--skipverts N`
+  and `--probeverts N` are the two knobs that were missing; the vertex
+  count is the name.
+* **The probe's frame numbers run about two behind `--ffto`.** `--ffto
+  15674 --frames 15679` probed 15,672 alone and never wrote the 15,677
+  dump; `--ffto 15676 --frames 15684` covered 15,674–15,677.  Widen the
+  window by four on each side.
+* **A "same play, other machine" difference is the GL driver until proven
+  otherwise — and NaN is the first thing to look for.** The bench and the
+  G4 ran the same binary and the same play; the only difference was the
+  driver's answer to a NaN vertex (Intel drops it, the Radeon draws it at
+  the screen centre).  Four arms (`nrt`, `noav`, `cpuxf`, `skipobj`) were
+  spent on the threading and the transform before the probe's vertex
+  dump (with the count raised past six) showed the NaN in the data.
+* **The host's libm is not MSL.** `sqrtf(negative)` is the argument on
+  the console and NaN on the port; the mirror's "replace MSL's libc
+  headers with the host's" was right for 33 milestones and wrong for one
+  line of m417.  When a game value goes NaN and the arithmetic has no
+  division, look at the library functions between the C and the console.
+* **`kerent.c` declares every libm name as `void f(void)`.** A header
+  forced onto every game unit may not include `<math.h>`; a bare macro
+  does the redirect and the host math.h's own prototype carries it.

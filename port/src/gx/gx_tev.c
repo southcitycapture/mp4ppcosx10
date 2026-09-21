@@ -298,6 +298,25 @@ static void emit_channel(int unit, int rgb, Arg a, Arg b, Arg c, Arg d, u8 op, u
         mode = GL_ADD;
         args[n++] = a;
         args[n++] = d;
+    } else if (b.is_zero && d.is_zero) {
+        /* M34 (PLAN.md 49.4): lerp(a, 0, c) = a * (1 - c) -- a modulate by
+         * the complement, with no zero constant to claim the unit's one
+         * GL_TEXTURE_ENV_COLOR.  As a GL_INTERPOLATE it went (b = a black
+         * constant, a = KONST, c), the black claimed the constant first and
+         * KONST "collided" with it: m404's guide line, KONST * (1 - TEXA),
+         * drew with alpha 0 * (1 - TEXA) = nothing. */
+        if (c.is_zero) {
+            mode = GL_REPLACE; /* lerp(a, 0, 0) = a */
+            args[n++] = a;
+        } else {
+            mode = GL_MODULATE;
+            args[n++] = a;
+            c.operand = c.operand == GL_SRC_ALPHA ? GL_ONE_MINUS_SRC_ALPHA
+                      : c.operand == GL_ONE_MINUS_SRC_ALPHA ? GL_SRC_ALPHA
+                      : c.operand == GL_SRC_COLOR ? GL_ONE_MINUS_SRC_COLOR
+                      : c.operand == GL_ONE_MINUS_SRC_COLOR ? GL_SRC_COLOR : c.operand;
+            args[n++] = c;
+        }
     } else if (d.is_zero) {
         /* GL_INTERPOLATE is Arg0*Arg2 + Arg1*(1-Arg2); GX's lerp is
          * a*(1-c) + b*c, so Arg0 = b, Arg1 = a, Arg2 = c. */
@@ -316,6 +335,20 @@ static void emit_channel(int unit, int rgb, Arg a, Arg b, Arg c, Arg d, u8 op, u
         args[n++] = d;
     }
 
+    if (scale == GX_CS_DIVIDE_2 && mode == GL_REPLACE) {
+        /* M34 (PLAN.md 49.4): GL's scale is 1, 2 or 4, never a half, but a
+         * one-term stage halves as a modulate by a 0.5 constant (the unit's
+         * constant has a free half for it when the term is not a constant
+         * itself).  The game's one DIVIDE_2 is m404's guide line, RASC / 2. */
+        mode = GL_MODULATE;
+        memset(&args[1], 0, sizeof(args[1]));
+        args[1].src = GL_CONSTANT;
+        args[1].operand = rgb ? GL_SRC_COLOR : GL_SRC_ALPHA;
+        args[1].is_const = 1;
+        args[1].konst[0] = args[1].konst[1] = args[1].konst[2] = args[1].konst[3] = 0.5f;
+        n = 2;
+        scale = GX_CS_SCALE_1;
+    }
     for (i = 0; i < n; i++) {
         if (args[i].is_zero) {
             /* Zero as a live argument only survives here in shapes the table
@@ -399,7 +432,7 @@ static void emit_channel(int unit, int rgb, Arg a, Arg b, Arg c, Arg d, u8 op, u
     glc_texenvf(unit, (unsigned)scale_e,
                 scale == GX_CS_SCALE_2 ? 2.0f : scale == GX_CS_SCALE_4 ? 4.0f : 1.0f);
     if (scale == GX_CS_DIVIDE_2) {
-        gx_warn("TEV: GX_CS_DIVIDE_2 has no GL equivalent; drawn at scale 1");
+        gx_warn("TEV: GX_CS_DIVIDE_2 on a stage with two or more terms has no GL 1.3 equivalent; drawn at scale 1");
     }
 }
 

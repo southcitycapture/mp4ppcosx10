@@ -76,9 +76,9 @@ static void tlut_lookup(const GXTlutObjPort* t, u32 idx, u8* out) {
     p = (const u8*)t->lut + idx * 2;
     v = be16(p);
     switch (t->fmt) {
-        case GX_TL_IA8:
-            out[0] = out[1] = out[2] = (u8)(v >> 8);
-            out[3] = (u8)(v & 0xFF);
+        case GX_TL_IA8: /* AAAAAAAA IIIIIIII, as the IA8 texel (M34) */
+            out[0] = out[1] = out[2] = (u8)(v & 0xFF);
+            out[3] = (u8)(v >> 8);
             break;
         case GX_TL_RGB565:
             rgb565(v, out);
@@ -236,8 +236,14 @@ static u8* decode(const GXTexObjPort* o, const GXTlutObjPort* tlut, int* out_w,
                             {
                                 u8* d = dst + (size_t)py * stride + (size_t)px * 4;
                                 if (o->format == GX_TF_IA8) {
-                                    d[0] = d[1] = d[2] = (u8)(v >> 8);
-                                    d[3] = (u8)(v & 0xFF);
+                                    /* M34: an IA8 texel is AAAAAAAA IIIIIIII -- the
+                                     * alpha is the high byte, as IA4's is the high
+                                     * nibble.  The port read it the other way round
+                                     * since M3, which is why m435's flare passed its
+                                     * alpha test only under the star (PLAN.md 49.2)
+                                     * and m408's plug drew its intensity as alpha. */
+                                    d[0] = d[1] = d[2] = (u8)(v & 0xFF);
+                                    d[3] = (u8)(v >> 8);
                                 } else if (o->format == GX_TF_RGB565) {
                                     rgb565(v, d);
                                 } else if (o->format == GX_TF_RGB5A3) {

@@ -1,7 +1,9 @@
-/* Keyboard and SDL joystick/game-controller as GameCube controller 1.
+/* The keyboard and SDL joysticks/game controllers as GameCube controllers.
  *
- * Keyboard (always polled, OR'd under whatever pad is open -- the game is
- * playable and testable with no pad plugged in at all):
+ * Keyboard (pad.c polls it every frame: alone as controller 1 with no pad,
+ * OR'd under the pad that holds port 1 otherwise, or a controller of its own
+ * with --kbport -- the game is playable and testable with no pad plugged in
+ * at all):
  *
  *   arrows / WASD    main stick        Return        Start
  *   Z X C V          A B X Y           Q / E         L / R triggers
@@ -28,9 +30,10 @@
  * SDL_JoystickGetAxis-family calls, never SDL_PollEvent: the event pump
  * already lives in gl13.c's SwapBuffers path (see PLAN.md), and a second
  * consumer would starve it of events one frame in two. Hot-plug is therefore
- * not handled here -- the pad present at PADInit is the pad for the run,
- * which is fine for a port whose target session is "one pad, plugged in
- * before launch".
+ * not handled here -- the pads present at PADInit are the pads for the run,
+ * which is fine for a port whose target session is "the pads, plugged in
+ * before launch".  M34: every pad SDL reports is opened, up to PORT_PAD_MAX,
+ * in SDL's order; pad.c lays them over the ports after the Xbox One pads.
  */
 #include "pad_internal.h"
 
@@ -39,34 +42,54 @@
 #ifndef PORT_NO_SDL
 #include <SDL.h>
 
-static SDL_GameController* pad;
-static SDL_Joystick* joy; /* raw fallback, or the controller's own joystick */
-static SDL_Haptic* haptic;
-static char pad_name[128];
+typedef struct SdlPad {
+    SDL_GameController* pad;
+    SDL_Joystick* joy; /* raw fallback, or the controller's own joystick */
+    SDL_Haptic* haptic;
+    char name[128];
+} SdlPad;
+static SdlPad pads[PORT_PAD_MAX];
+static int npads;
 
-static void open_pad(void) {
+static void open_pads(void) {
     int i;
-    for (i = 0; i < SDL_NumJoysticks() && joy == NULL; i++) {
+    for (i = 0; i < SDL_NumJoysticks() && npads < PORT_PAD_MAX; i++) {
+        SdlPad* p = &pads[npads];
+        memset(p, 0, sizeof(*p));
+        /* M34: an Xbox One pad is pad_xone.c's (IOUSBLib claims it before
+         * SDL runs); should a HID layer list it too, it must not become a
+         * second controller that follows the first.  Not seen on the G4
+         * (GIP pads are not HID-class): a guard, not a finding. */
+        if (pad_xone_count() > 0) {
+            const char* jn = SDL_JoystickNameForIndex(i);
+            if (jn != NULL && strstr(jn, "Xbox One") != NULL) {
+                continue;
+            }
+        }
         if (SDL_IsGameController(i)) {
-            pad = SDL_GameControllerOpen(i);
-            if (pad != NULL) {
-                joy = SDL_GameControllerGetJoystick(pad);
-                snprintf(pad_name, sizeof(pad_name), "%s", SDL_GameControllerName(pad));
+            p->pad = SDL_GameControllerOpen(i);
+            if (p->pad != NULL) {
+                p->joy = SDL_GameControllerGetJoystick(p->pad);
+                snprintf(p->name, sizeof(p->name), "%s", SDL_GameControllerName(p->pad));
             }
         }
-        if (joy == NULL) {
-            joy = SDL_JoystickOpen(i);
-            if (joy != NULL) {
-                snprintf(pad_name, sizeof(pad_name), "%s (raw joystick, no SDL mapping)", SDL_JoystickName(joy));
+        if (p->joy == NULL) {
+            p->joy = SDL_JoystickOpen(i);
+            if (p->joy != NULL) {
+                snprintf(p->name, sizeof(p->name), "%s (raw joystick, no SDL mapping)", SDL_JoystickName(p->joy));
             }
         }
-    }
-    if (joy != NULL && SDL_JoystickIsHaptic(joy)) {
-        haptic = SDL_HapticOpenFromJoystick(joy);
-        if (haptic != NULL && SDL_HapticRumbleInit(haptic) != 0) {
-            SDL_HapticClose(haptic);
-            haptic = NULL;
+        if (p->joy == NULL) {
+            continue;
         }
+        if (SDL_JoystickIsHaptic(p->joy)) {
+            p->haptic = SDL_HapticOpenFromJoystick(p->joy);
+            if (p->haptic != NULL && SDL_HapticRumbleInit(p->haptic) != 0) {
+                SDL_HapticClose(p->haptic);
+                p->haptic = NULL;
+            }
+        }
+        npads++;
     }
 }
 
@@ -75,35 +98,40 @@ void pad_sdl_init(void) {
         port_log("port> pad: SDL joystick subsystem unavailable (%s); keyboard only\n", SDL_GetError());
         return;
     }
-    open_pad();
+    open_pads();
 }
 
 void pad_sdl_shutdown(void) {
-    if (haptic != NULL) {
-        SDL_HapticClose(haptic);
-        haptic = NULL;
+    int i;
+    for (i = 0; i < npads; i++) {
+        SdlPad* p = &pads[i];
+        if (p->haptic != NULL) {
+            SDL_HapticClose(p->haptic);
+            p->haptic = NULL;
+        }
+        if (p->pad != NULL) {
+            SDL_GameControllerClose(p->pad);
+            p->pad = NULL;
+        } else if (p->joy != NULL) {
+            SDL_JoystickClose(p->joy);
+        }
+        p->joy = NULL;
     }
-    if (pad != NULL) {
-        SDL_GameControllerClose(pad);
-        pad = NULL;
-    } else if (joy != NULL) {
-        SDL_JoystickClose(joy);
-    }
-    joy = NULL;
+    npads = 0;
 }
 
-int pad_sdl_present(void) { return joy != NULL; }
-const char* pad_sdl_name(void) { return joy != NULL ? pad_name : "keyboard"; }
-int pad_sdl_rumble_supported(void) { return haptic != NULL; }
+int pad_sdl_count(void) { return npads; }
+const char* pad_sdl_name(int i) { return (i >= 0 && i < npads) ? pads[i].name : "keyboard"; }
+int pad_sdl_rumble_supported(int i) { return i >= 0 && i < npads && pads[i].haptic != NULL; }
 
-void pad_sdl_rumble(int on) {
-    if (haptic == NULL) {
+void pad_sdl_rumble(int i, int on) {
+    if (i < 0 || i >= npads || pads[i].haptic == NULL) {
         return;
     }
     if (on) {
-        SDL_HapticRumblePlay(haptic, 0.7f, 5000);
+        SDL_HapticRumblePlay(pads[i].haptic, 0.7f, 5000);
     } else {
-        SDL_HapticRumbleStop(haptic);
+        SDL_HapticRumbleStop(pads[i].haptic);
     }
 }
 
@@ -145,7 +173,7 @@ static void map_stick(int ax, int ay, s8* x, s8* y) {
     *y = (s8)my;
 }
 
-void pad_sdl_poll(PortPadRaw* out) {
+void pad_sdl_poll_keys(PortPadRaw* out) {
     const Uint8* k = SDL_GetKeyboardState(NULL);
     u16 b = 0;
 
@@ -194,7 +222,21 @@ void pad_sdl_poll(PortPadRaw* out) {
     out->stickY = axis_key(k, SDL_SCANCODE_DOWN, SDL_SCANCODE_UP, SDL_SCANCODE_S, SDL_SCANCODE_W);
     out->substickX = axis_key(k, SDL_SCANCODE_J, SDL_SCANCODE_L, SDL_SCANCODE_J, SDL_SCANCODE_L);
     out->substickY = axis_key(k, SDL_SCANCODE_K, SDL_SCANCODE_I, SDL_SCANCODE_K, SDL_SCANCODE_I);
+    out->button = b;
+}
 
+/* The i-th SDL pad alone (pad.c merges it with the keyboard for port 1). */
+void pad_sdl_poll_pad(int i, PortPadRaw* out) {
+    SDL_GameController* pad;
+    SDL_Joystick* joy;
+    u16 b = 0;
+
+    memset(out, 0, sizeof(*out));
+    if (i < 0 || i >= npads) {
+        return;
+    }
+    pad = pads[i].pad;
+    joy = pads[i].joy;
     if (pad != NULL) {
         int rx, ry;
         map_stick(SDL_GameControllerGetAxis(pad, SDL_CONTROLLER_AXIS_LEFTX),
@@ -283,10 +325,11 @@ void pad_sdl_poll(PortPadRaw* out) {
 
 void pad_sdl_init(void) { port_log("port> pad: built without SDL; keyboard/pad unavailable\n"); }
 void pad_sdl_shutdown(void) {}
-int pad_sdl_present(void) { return 0; }
-const char* pad_sdl_name(void) { return "(no SDL)"; }
-void pad_sdl_poll(PortPadRaw* out) { memset(out, 0, sizeof(*out)); }
-int pad_sdl_rumble_supported(void) { return 0; }
-void pad_sdl_rumble(int on) { (void)on; }
+int pad_sdl_count(void) { return 0; }
+const char* pad_sdl_name(int i) { (void)i; return "(no SDL)"; }
+void pad_sdl_poll_pad(int i, PortPadRaw* out) { (void)i; memset(out, 0, sizeof(*out)); }
+void pad_sdl_poll_keys(PortPadRaw* out) { memset(out, 0, sizeof(*out)); }
+int pad_sdl_rumble_supported(int i) { (void)i; return 0; }
+void pad_sdl_rumble(int i, int on) { (void)i; (void)on; }
 
 #endif

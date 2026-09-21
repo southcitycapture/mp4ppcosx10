@@ -1,0 +1,5 @@
+# M34: boot to the title and stay there -- START held through the logos and the
+# movie (as m406-end.txt), then nothing: BootTitleExec waits 1800 frames for
+# START, so the title's whole carousel loop is on screen for a phase match
+# against the port's frame 800.
+at 10 320 START

@@ -1,13 +1,17 @@
 /* PAD: the real thing.
  *
  * `PADRead` fills all four `PADStatus` slots once per retrace (called from
- * the game's own VI post-retrace callback, src/game/pad.c:152). Port 1 gets
- * whichever live source PADInit found, in priority order:
+ * the game's own VI post-retrace callback, src/game/pad.c:152). The ports
+ * are laid out once, at PADInit, from what is on the machine (M34):
  *
- *   1. an Xbox One controller over IOUSBLib (pad_xone.c) -- the pad this port
- *      was actually developed against, plugged into the G4
- *   2. an SDL joystick or game controller (pad_sdl.c)
- *   3. the keyboard alone (also pad_sdl.c)
+ *   1. every Xbox One controller over IOUSBLib (pad_xone.c) -- the pad this
+ *      port was actually developed against, plugged into the G4 -- in the
+ *      order the USB registry lists them
+ *   2. then every joystick or game controller SDL reports (pad_sdl.c)
+ *   3. the keyboard (also pad_sdl.c): port 1's fallback when no pad holds
+ *      port 1, OR'd under the pad that does otherwise (a player at the desk
+ *      can press Start on either, M32) -- or, with --kbport N, a controller
+ *      of its own on port N (a second player on the keys)
  *
  * A `--play` script (pad_play.c) sits on top of whatever port 1 read and
  * overwrites it for whichever frames the script covers; `--record` writes
@@ -16,10 +20,11 @@
  * edge or a `_PadDStk` value -- that is `HuPadRead`'s and `PadADConv`'s job,
  * and they must see the same kind of state a real pad would produce.
  *
- * Ports 2-4 always report PAD_ERR_NO_CONTROLLER. That is not a limitation,
- * it is the reference configuration: notes.md §4 traces `PlayerConfig.iscom`
- * to which SI ports report a pad, and the rig this port is checked against
- * pins ports 2-3 empty so players 2-4 come up CPU.
+ * A port with nothing on it reports PAD_ERR_NO_CONTROLLER. With one pad that
+ * is the reference configuration: notes.md §4 traces `PlayerConfig.iscom` to
+ * which SI ports report a pad, and the rig this port is checked against pins
+ * ports 2-3 empty so players 2-4 come up CPU. A second pad makes player 2
+ * human, as it does on a console.
  *
  * `PADClamp` is the genuine GameCube clamp region and math, ported from the
  * decomp's own (unused-by-the-port-build) src/dolphin/pad/Padclamp.c, so a
@@ -37,15 +42,22 @@
 u32 __PADFixBits;
 int port_pad_debug;
 
-static int have_pad;      /* an Xbox One or SDL pad is open (not just the keyboard) */
-static int use_xone;
+/* M34: what each controller port reads from.  `idx` is the pad's index in
+ * its driver; the keyboard is one source (KB) and, when it is not a port's
+ * own source, it is OR'd under port 1 (`kb_under_port1`). */
+enum { SRC_NONE, SRC_XONE, SRC_SDL, SRC_KB };
+typedef struct PadSource {
+    int kind;
+    int idx;
+} PadSource;
+static PadSource src[PAD_CHANMAX];
+static int kb_under_port1; /* the keyboard beside whatever pad holds port 1 */
 static PADSamplingCallback sampling_cb;
 static u32 pad_spec;
 static u32 analog_mode;
 
 /* Rumble: PADControlMotor is called once per port per retrace by
- * src/game/pad.c's own rumble sequencer; only port 0 can possibly rumble
- * here, since ports 1-3 never report a controller. */
+ * src/game/pad.c's own rumble sequencer; it goes to the pad on that port. */
 static u32 motor_cmd[PAD_CHANMAX];
 
 void port_pad_shutdown(void);
@@ -65,27 +77,73 @@ BOOL PADInit(void) {
 
     port_pad_debug = port_opt.pad_debug;
 
+    memset(src, 0, sizeof(src));
+    kb_under_port1 = 0;
     if (port_opt.nopad) {
         port_log("port> PADInit: --nopad, controller 1 unplugged\n");
     } else {
-        use_xone = pad_xone_open();
-        if (!use_xone) {
-            pad_sdl_init();
+        PadSource pads[PORT_PAD_MAX * 2];
+        int npads = 0, n = 0, i, last = 0;
+        int kbport = (port_opt.kbport >= 1 && port_opt.kbport <= PAD_CHANMAX) ? port_opt.kbport : 0;
+        for (i = 0; i < pad_xone_open(); i++) {
+            pads[npads].kind = SRC_XONE;
+            pads[npads++].idx = i;
         }
-        have_pad = use_xone || pad_sdl_present();
-        if (use_xone) {
-            port_log("port> PADInit: controller 1 = %s (driver: Xbox-One-IOUSBLib)\n", pad_xone_name());
-        } else if (pad_sdl_present()) {
-            port_log("port> PADInit: controller 1 = %s (driver: SDL joystick)\n", pad_sdl_name());
-        } else {
-            port_log("port> PADInit: no pad found; controller 1 = keyboard\n");
+        pad_sdl_init();
+        for (i = 0; i < pad_sdl_count(); i++) {
+            pads[npads].kind = SRC_SDL;
+            pads[npads++].idx = i;
+        }
+        /* the ports, in order: the pads fill them, the keyboard's own port
+         * (--kbport) is skipped over; with no --kbport the keyboard is
+         * controller 1 alone or beside the pad that holds it (M32) */
+        if (kbport) {
+            src[kbport - 1].kind = SRC_KB;
+        }
+        for (i = 0; i < npads; i++) {
+            while (n < PAD_CHANMAX && src[n].kind != SRC_NONE) {
+                n++;
+            }
+            if (n >= PAD_CHANMAX) {
+                port_log("port> PADInit: %d pads found, only %d fit the four ports\n", npads, i);
+                break;
+            }
+            src[n] = pads[i];
+        }
+        if (!kbport) {
+            if (src[0].kind == SRC_NONE) {
+                src[0].kind = SRC_KB;
+            } else {
+                kb_under_port1 = 1;
+            }
+        }
+        for (i = 0; i < PAD_CHANMAX; i++) {
+            const char* what = NULL;
+            const char* drv = "";
+            switch (src[i].kind) {
+            case SRC_XONE: what = pad_xone_name(src[i].idx); drv = " (driver: Xbox-One-IOUSBLib)"; break;
+            case SRC_SDL: what = pad_sdl_name(src[i].idx); drv = " (driver: SDL joystick)"; break;
+            case SRC_KB: what = "keyboard"; drv = kbport ? " (--kbport)" : ""; break;
+            default: break;
+            }
+            if (what) {
+                port_log("port> PADInit: controller %d = %s%s\n", i + 1, what, drv);
+                last = i + 1;
+            }
+        }
+        if (kb_under_port1) {
+            port_log("port> PADInit: the keyboard works beside controller 1\n");
         }
         {
-            int rumble = use_xone ? 1 : pad_sdl_rumble_supported();
-            port_log("port> PADInit: rumble %savailable\n", rumble ? "" : "not ");
+            int rumble = src[0].kind == SRC_XONE ? 1
+                       : src[0].kind == SRC_SDL ? pad_sdl_rumble_supported(src[0].idx) : 0;
+            port_log("port> PADInit: rumble %savailable on controller 1\n", rumble ? "" : "not ");
+        }
+        if (last < PAD_CHANMAX) {
+            port_log("port> PADInit: controllers %d-4 unplugged%s\n", last + 1,
+                     last == 1 ? " (reference config: CPU players)" : "");
         }
     }
-    port_log("port> PADInit: controllers 2-4 unplugged (reference config: CPU players)\n");
 
     pad_play_init(port_opt.pad_play, port_opt.pad_record);
 
@@ -112,6 +170,35 @@ static u16 inject_buttons;
 
 void port_pad_inject(unsigned short buttons) { inject_buttons |= (u16)buttons; }
 
+static void poll_source(const PadSource* p, PortPadRaw* raw) {
+    switch (p->kind) {
+    case SRC_XONE: pad_xone_poll(p->idx, raw); break;
+    case SRC_SDL: pad_sdl_poll_pad(p->idx, raw); break;
+    case SRC_KB: pad_sdl_poll_keys(raw); break;
+    default: memset(raw, 0, sizeof(*raw)); break;
+    }
+}
+
+/* `under` beneath `raw`: the buttons OR, a stick only where raw's rests, the
+ * larger trigger. */
+static void merge_under(PortPadRaw* raw, const PortPadRaw* under) {
+    raw->button |= under->button;
+    if (raw->stickX == 0 && raw->stickY == 0) {
+        raw->stickX = under->stickX;
+        raw->stickY = under->stickY;
+    }
+    if (raw->substickX == 0 && raw->substickY == 0) {
+        raw->substickX = under->substickX;
+        raw->substickY = under->substickY;
+    }
+    if (under->triggerL > raw->triggerL) {
+        raw->triggerL = under->triggerL;
+    }
+    if (under->triggerR > raw->triggerR) {
+        raw->triggerR = under->triggerR;
+    }
+}
+
 u32 PADRead(PADStatus* status) {
     u32 chan_bits = 0;
     int i;
@@ -130,65 +217,55 @@ u32 PADRead(PADStatus* status) {
      * unless the harness is actually pressing something this frame -- a soak
      * that has to answer a prompt is the one case where the port is allowed to
      * contradict it, and it says so in the run's own log the first time. */
-    if (!port_opt.nopad || inject) {
+    for (i = 0; i < PAD_CHANMAX; i++) {
         PortPadRaw raw;
+        int live = !port_opt.nopad && src[i].kind != SRC_NONE;
+        if (!live && !(i == 0 && inject)) {
+            continue;
+        }
         memset(&raw, 0, sizeof(raw));
-        if (!port_opt.nopad) {
-            if (use_xone) {
-                /* M32: the keyboard under the Xbox pad too -- a player at the
+        if (live) {
+            poll_source(&src[i], &raw);
+            if (i == 0 && kb_under_port1) {
+                /* M32: the keyboard under the pad on port 1 -- a player at the
                  * desk can press Start on either.  The pad's sticks win when
                  * they are off centre; the keys' stick only when they rest. */
                 PortPadRaw kb;
-                pad_sdl_poll(&kb);
-                pad_xone_poll(&raw);
-                raw.button |= kb.button;
-                if (raw.stickX == 0 && raw.stickY == 0) {
-                    raw.stickX = kb.stickX;
-                    raw.stickY = kb.stickY;
-                }
-                if (raw.substickX == 0 && raw.substickY == 0) {
-                    raw.substickX = kb.substickX;
-                    raw.substickY = kb.substickY;
-                }
-                if (kb.triggerL > raw.triggerL) {
-                    raw.triggerL = kb.triggerL;
-                }
-                if (kb.triggerR > raw.triggerR) {
-                    raw.triggerR = kb.triggerR;
-                }
-            } else {
-                pad_sdl_poll(&raw); /* keyboard, OR'd under an SDL pad if one is open */
+                pad_sdl_poll_keys(&kb);
+                merge_under(&raw, &kb);
             }
         }
-        if (!port_opt.nopad) {
-            pad_play_step(frame, &raw); /* a --play script overwrites raw for its frames */
+        if (i == 0) {
+            if (!port_opt.nopad) {
+                pad_play_step(frame, &raw); /* a --play script overwrites raw for its frames */
+            }
+            /* The harness's press is OR'd *after* the script, so the two can
+             * never cancel: a script that is still running holds whatever it
+             * holds and the navigator adds a button to it.  In practice they
+             * do not overlap -- the navigator only fires on a screen that has
+             * stopped moving, and board-start-com4.play stops at frame 29,960. */
+            raw.button |= inject;
         }
-        /* The harness's press is OR'd *after* the script, so the two can never
-         * cancel: a script that is still running holds whatever it holds and
-         * the navigator adds a button to it.  In practice they do not overlap
-         * -- the navigator only fires on a screen that has stopped moving, and
-         * board-start-com4.play stops at frame 29,960. */
-        raw.button |= inject;
         if (port_pad_debug && (raw.button || raw.stickX || raw.stickY)) {
             extern u8 HuPadDStk[4];
             extern u8 HuPadDStkRep[4];
-            port_log("pad> frame %u: btn %04x stick %d,%d  (last frame's dstk %02x "
+            port_log("pad> frame %u: port %d btn %04x stick %d,%d  (last frame's dstk %02x "
                      "rep %02x)\n",
-                     (unsigned)frame, (unsigned)raw.button, (int)raw.stickX,
-                     (int)raw.stickY, (unsigned)HuPadDStk[0],
-                     (unsigned)HuPadDStkRep[0]);
+                     (unsigned)frame, i + 1, (unsigned)raw.button, (int)raw.stickX,
+                     (int)raw.stickY, (unsigned)HuPadDStk[i],
+                     (unsigned)HuPadDStkRep[i]);
         }
 
-        status[0].button = raw.button;
-        status[0].stickX = raw.stickX;
-        status[0].stickY = raw.stickY;
-        status[0].substickX = raw.substickX;
-        status[0].substickY = raw.substickY;
-        status[0].triggerL = raw.triggerL;
-        status[0].triggerR = raw.triggerR;
-        status[0].analogA = status[0].analogB = 0;
-        status[0].err = PAD_ERR_NONE;
-        chan_bits |= PAD_CHAN0_BIT;
+        status[i].button = raw.button;
+        status[i].stickX = raw.stickX;
+        status[i].stickY = raw.stickY;
+        status[i].substickX = raw.substickX;
+        status[i].substickY = raw.substickY;
+        status[i].triggerL = raw.triggerL;
+        status[i].triggerR = raw.triggerR;
+        status[i].analogA = status[i].analogB = 0;
+        status[i].err = PAD_ERR_NONE;
+        chan_bits |= PAD_CHAN0_BIT >> i;
     }
 
     return chan_bits;
@@ -323,12 +400,12 @@ void PADControlMotor(s32 chan, u32 cmd) {
         return;
     }
     motor_cmd[chan] = cmd;
-    if (chan == PAD_CHAN0) {
+    {
         int on = (cmd == PAD_MOTOR_RUMBLE);
-        if (use_xone) {
-            pad_xone_rumble(on);
-        } else {
-            pad_sdl_rumble(on);
+        if (src[chan].kind == SRC_XONE) {
+            pad_xone_rumble(src[chan].idx, on);
+        } else if (src[chan].kind == SRC_SDL) {
+            pad_sdl_rumble(src[chan].idx, on);
         }
     }
 }
@@ -356,11 +433,8 @@ u32 SISetSamplingRate(u32 msec) {
 
 void port_pad_shutdown(void) {
     pad_play_shutdown();
-    if (use_xone) {
-        pad_xone_close();
-    } else {
-        pad_sdl_shutdown();
-    }
+    pad_xone_close();
+    pad_sdl_shutdown();
 }
 
 /* ---- snapshots ------------------------------------------------------------

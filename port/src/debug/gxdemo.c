@@ -74,8 +74,8 @@ static void build_textures(void) {
                      (u16)(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3)));
             put_be16(tex_rgb5a3 + tile_index(x, y, 32, 4, 4) * 2,
                      (u16)(0x8000 | ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3)));
-            put_be16(tex_ia8 + tile_index(x, y, 32, 4, 4) * 2,
-                     (u16)((r << 8) | (checker ? 0xFF : 0x40)));
+            put_be16(tex_ia8 + tile_index(x, y, 32, 4, 4) * 2, /* AAAAAAAA IIIIIIII (M34) */
+                     (u16)(((checker ? 0xFF : 0x40) << 8) | r));
             tex_i8[tile_index(x, y, 32, 8, 4)] = (u8)(x * 8);
             tex_c8[tile_index(x, y, 32, 8, 4)] = (u8)((x >> 2) + 8 * (y >> 3));
             {

@@ -137,7 +137,8 @@ void port_print_effective(FILE* f, int live) {
 /* The keys, as pad_sdl.c reads them and pad_xone.c maps the pad. */
 void port_print_keys(FILE* f) {
     const char* pre = f ? "" : "port> keys: ";
-    emitf(f, "%sKeyboard (controller 1; works beside a pad too)\n", pre);
+    emitf(f, "%sKeyboard (controller 1; beside a pad on port 1 too; --kbport N makes it\n", pre);
+    emitf(f, "%s          controller N of its own)\n", pre);
     emitf(f, "%s  arrow keys or W A S D   control stick\n", pre);
     emitf(f, "%s  I J K L                 C stick\n", pre);
     emitf(f, "%s  T F G H                 D-pad up / left / down / right\n", pre);
@@ -148,7 +149,8 @@ void port_print_keys(FILE* f) {
     emitf(f, "%s  F5 (or F12)             screenshot -> ~/Desktop/Mario Party 4 NNNNN.png\n", pre);
     emitf(f, "%s                          (Leopard gives F12 to Dashboard unless you change it)\n", pre);
     emitf(f, "%s  Escape, Cmd-Q           quit (through the game's reset: the save is written)\n", pre);
-    emitf(f, "%sXbox One pad over USB (no driver needed), or any pad SDL knows\n", pre);
+    emitf(f, "%sXbox One pads over USB (no driver needed), then any pads SDL knows,\n", pre);
+    emitf(f, "%s  controllers 1-4 in that order (M34)\n", pre);
     emitf(f, "%s  left stick / right stick   control stick / C stick\n", pre);
     emitf(f, "%s  A B X Y                    A B X Y\n", pre);
     emitf(f, "%s  LT / RT                    L / R (analogue, with the click past 80%%)\n", pre);

@@ -337,6 +337,19 @@ void C_VECCrossProduct(const Vec* a, const Vec* b, Vec* r) {
 }
 
 f32 C_VECSquareMag(const Vec* v) { return v->x * v->x + v->y * v->y + v->z * v->z; }
+/* M34 (PLAN.md 49.7): the game's sqrtf (include/msl_math.h says why).  MSL's
+ * inline returns the argument for anything not > 0 -- zero, a negative
+ * number, NaN -- and for +inf its frsqrte is 0, so x * 0 is NaN there too. */
+f32 port_msl_sqrtf(f32 x) {
+    if (x > 0.0f) {
+        if (x > 3.4028235e38f) {
+            return x * 0.0f;
+        }
+        return port_sqrtf(x);
+    }
+    return x;
+}
+
 f32 C_VECMag(const Vec* v) { return port_sqrtf(C_VECSquareMag(v)); }
 
 void C_VECNormalize(const Vec* src, Vec* dst) {
