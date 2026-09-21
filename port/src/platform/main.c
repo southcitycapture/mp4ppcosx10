@@ -255,6 +255,16 @@ static void usage(const char* argv0) {
             "                    transformed on the CPU into the batch's model\n"
             "                    space and appended; implies --lazyflush\n"
             "                    (measured: slower, PLAN.md 37; default 0 = off)\n"
+            "  --nospot          M30: GXInitLightSpot's cone ignored, every spot light\n"
+            "                    lights all round as before (m427's headlamps)\n"
+            "  --oldfog          M30: the pre-M30 fog: a degenerate GXSetFog range\n"
+            "                    (end == start) still fogs (m414's cyan), and the\n"
+            "                    exponential shape is GL's of |z| (PLAN.md 45)\n"
+            "  --noregchain      M30: a TEV stage reading the register the previous\n"
+            "                    stage wrote gets the register's constant, as before\n"
+            "                    (m427's flooded cave), for the A/B\n"
+            "  --nolinewidth     M30: ignore GXSetLineWidth, every line one pixel\n"
+            "                    wide as before (m428's rope), for the A/B\n"
             "  --noregfix        fold a TEV stage's GX_TEVREG write to PREV (the\n"
             "                    pre-M16 path; the board eyes), for the A/B\n"
             "  --oldkonst        claim a unit's GL constant whole instead of RGB\n"
@@ -878,6 +888,18 @@ int port_parse_args(int argc, char** argv) {
         } else if (!strcmp(a, "--premerge-max") && i + 1 < argc) {
             port_opt.premerge_max = atoi(argv[++i]);
             port_opt.lazyflush = 1;
+        } else if (!strcmp(a, "--mdposonly")) {
+            port_opt.mdposonly = 1;
+        } else if (!strcmp(a, "--mdmax") && i + 1 < argc) {
+            port_opt.mdmax = atoi(argv[++i]);
+        } else if (!strcmp(a, "--nospot")) {
+            port_opt.nospot = 1;
+        } else if (!strcmp(a, "--oldfog")) {
+            port_opt.oldfog = 1;
+        } else if (!strcmp(a, "--noregchain")) {
+            port_opt.noregchain = 1;
+        } else if (!strcmp(a, "--nolinewidth")) {
+            port_opt.nolinewidth = 1;
         } else if (!strcmp(a, "--noregfix")) {
             port_opt.noregfix = 1;
         } else if (!strcmp(a, "--oldkonst")) {

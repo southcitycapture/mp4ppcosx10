@@ -117,6 +117,7 @@ typedef struct GXState {
     f32 vp[6];       /* left, top, wd, ht, nearz, farz */
     u32 scissor[4];
     u8 cull;
+    u8 line_width;   /* M30: GXSetLineWidth, in 1/6 pixel (PLAN.md 45 cause H) */
 
     /* channels and lights */
     u8 num_chans;
@@ -390,6 +391,7 @@ int gx_hilite_decide(void);
 void glc_color_sum(int on);
 
 void gx_vprog_probe(void);            /* needs a live GL context */
+int gx_tev_unit_stage(int u); /* M30: the stage a GL unit samples for (gx_tev.c) */
 int gx_vprog_available(void);
 int gx_vprog_native_instr_limit(void);
 /* 1 = this draw's vertices are on the GPU; the caller must skip phase 2 and

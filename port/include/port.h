@@ -317,6 +317,12 @@ typedef struct PortOptions {
     int oldkonst;           /* --oldkonst  claim a unit's GL constant whole
                              *   (RGB and A together) the way every build
                              *   before M16 did.  The A/B lever (PLAN.md 31.4) */
+    int mdposonly;          /* --mdposonly  M30: multi-draw a position-only layout too (m434's pond vanishes) */
+    int mdmax;              /* --mdmax N  M30: at most N vertices per glMultiDrawArraysEXT call (0 = no cap) */
+    int nospot;             /* --nospot  M30: spot lights without their cone, as before (PLAN.md 45 B) */
+    int oldfog;             /* --oldfog  M30: GL_EXP by 1/(end-start+1) of |z|, and a degenerate range fogs (PLAN.md 45 C) */
+    int noregchain;         /* --noregchain  M30: a register chain's reads as the constants, as before (PLAN.md 45 B) */
+    int nolinewidth;        /* --nolinewidth  M30: GXSetLineWidth ignored, every line 1 px (PLAN.md 45 H) */
     int noregfix;           /* --noregfix  fold a stage's GX_TEVREG write to
                              *   PREV the way every build before M16 did (the
                              *   board eyes).  The A/B lever (PLAN.md 31.3)  */

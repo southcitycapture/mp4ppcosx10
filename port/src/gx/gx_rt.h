@@ -53,6 +53,7 @@ void rt_glBlendEquation(GLenum m);
 void rt_glAlphaFunc(GLenum f, GLclampf ref);
 void rt_glFogi(GLenum p, GLint v);
 void rt_glFogf(GLenum p, GLfloat v);
+void rt_glLineWidth(GLfloat w); /* M30 */
 void rt_glFogfv(GLenum p, const GLfloat* v);
 void rt_glLightf(GLenum l, GLenum p, GLfloat v);
 void rt_glLightfv(GLenum l, GLenum p, const GLfloat* v);
@@ -158,6 +159,7 @@ void rt_call(void (*fn)(void*), const void* args, size_t n, int sync);
 #define glAlphaFunc rt_glAlphaFunc
 #define glFogi rt_glFogi
 #define glFogf rt_glFogf
+#define glLineWidth rt_glLineWidth
 #define glFogfv rt_glFogfv
 #define glLightf rt_glLightf
 #define glLightfv rt_glLightfv

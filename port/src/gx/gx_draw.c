@@ -1060,8 +1060,13 @@ static void build_decode_plan(void) {
                 s->to_pending = 1;
                 s->dstoff = (u16)offsetof(Pending, nrm);
             }
+            /* M30 (PLAN.md 45): GX_NRM_NBT carries nine components a vertex
+             * (normal, binormal, tangent) and GX_NRM_NBT3 three indices; the
+             * port keeps the normal and steps over the rest */
             if (!s->idx) {
-                s->advance = (u8)dec_bytes_of(f->type, 3);
+                s->advance = (u8)dec_bytes_of(f->type, f->cnt == GX_NRM_XYZ ? 3 : 9);
+            } else if (f->cnt == GX_NRM_NBT3) {
+                s->advance = (u8)(3 * s->idx);
             }
         } else if (a == GX_VA_CLR0 || a == GX_VA_CLR1) {
             s->op = (u8)dec_clr_op_of(f->type);
@@ -1161,6 +1166,7 @@ static int cur_attr(void) {
     return (nactive && acur < nactive) ? active[acur] : -1;
 }
 
+static void draw_now(void);
 static void attr_written(void) {
     if (!nactive) {
         return;
@@ -1168,6 +1174,18 @@ static void attr_written(void) {
     if (++acur >= nactive) {
         acur = 0;
         transform_and_store();
+        /* M30 (PLAN.md 45, cause H): the hardware ends a primitive on its
+         * n-th vertex -- the SDK's GXEnd is an empty inline (GXVert.h) and
+         * m428's rope hook (player.c:2189) never calls it.  Until M30 the
+         * port only submitted on GXEnd, and the next GXBegin reset the
+         * count: every immediate primitive without a GXEnd was dropped. */
+        if (in_prim && want_verts && nverts >= want_verts) {
+            in_prim = 0;
+            port_perf_gx_begin();
+            draw_now();
+            port_perf_gx_end();
+            nverts = 0;
+        }
     }
 }
 
@@ -1303,6 +1321,14 @@ static void light_channel(int c, const float* wpos, const float* wnrm,
             att = den > 0.0f ? 1.0f / den : 1.0f;
             if (att > 1.0f) {
                 att = 1.0f;
+            }
+            if (cc->attn_fn == GX_AF_SPOT && !port_opt.nospot) {
+                /* M30 (PLAN.md 45): the cone, as gx_vprog.c computes it */
+                float cs = -(dx * l->dir[0] + dy * l->dir[1] + dz * l->dir[2]);
+                float num;
+                cs = cs < 0.0f ? 0.0f : cs;
+                num = l->a[0] + l->a[1] * cs + l->a[2] * cs * cs;
+                att *= num < 0.0f ? 0.0f : num;
             }
         }
         acc[0] += byte_scale[l->color.r] * ndl * att;
@@ -1893,6 +1919,14 @@ static void draw_log(u32 first, u32 count, u8 dprim) {
     port_log("  blend mode %u src %u dst %u   cull %u   scissor %u %u %u %u\n",
              gx.blend_mode, gx.blend_src, gx.blend_dst, gx.cull,
              gx.scissor[0], gx.scissor[1], gx.scissor[2], gx.scissor[3]);
+    /* M30 (PLAN.md 45): the fog and the copy clear, which a flat-colour
+     * frame (m414's cyan quadrants) can only be read from */
+    port_log("  fog type %u start %g end %g near %g far %g color %u %u %u %u   "
+             "copyclear %u %u %u %u z %06x\n",
+             gx.fog_type, gx.fog_startz, gx.fog_endz, gx.fog_nearz, gx.fog_farz,
+             gx.fog_color.r, gx.fog_color.g, gx.fog_color.b, gx.fog_color.a,
+             gx.copy_clear.r, gx.copy_clear.g, gx.copy_clear.b, gx.copy_clear.a,
+             (unsigned)gx.copy_clear_z);
     {
         GLenum e = GL(glGetError)();
         port_log("  glGetError %s (0x%04x)\n", e == GL_NO_ERROR ? "GL_NO_ERROR" : "SET",
@@ -2940,6 +2974,16 @@ static void issue_segments(const Seg* segs, int nsegs) {
     static int md_count[BATCH_MAX];
     int i = 0;
     int multi = gl13_have_multidraw() && !port_opt.nomultidraw && !port_opt.oldsubmit;
+    /* M30 (PLAN.md 45, cause B): a position-only layout -- no normal, no
+     * texcoord array, every texgen from the position -- is the one shape
+     * glMultiDrawArraysEXT drew nothing for, on the Radeon 9000's driver and
+     * on the Intel HD 3000's alike, while the same strips through
+     * glDrawArrays drew (m434's pond: 31 strips of 64, the only such batch
+     * in the game).  Not understood; per-strip calls for that layout, and
+     * --mdposonly keeps the multi-draw for the A/B. */
+    if (multi && sl.ntex == 0 && sl.off_nrm < 0 && !port_opt.mdposonly) {
+        multi = 0;
+    }
     while (i < nsegs) {
         GLenum mode = gl_prim(segs[i].prim);
         int j = i + 1;
@@ -2969,15 +3013,26 @@ static void issue_segments(const Seg* segs, int nsegs) {
                 j++;
             }
             if (multi && j - i >= 2) {
-                int k;
-                for (k = i; k < j; k++) {
-                    md_first[k - i] = (int)segs[k].first;
-                    md_count[k - i] = (int)segs[k].count;
+                /* M30 (PLAN.md 45, cause B): one glMultiDrawArraysEXT per run
+                 * of segments, split so that no call carries more than
+                 * --mdmax vertices (the diagnostic for m434's water: 31
+                 * strips of 64 in one call drew nothing on two drivers). */
+                int k = i;
+                while (k < j) {
+                    int m = 0, verts = 0;
+                    while (k + m < j && (m == 0 || !port_opt.mdmax ||
+                                         verts + (int)segs[k + m].count <= port_opt.mdmax)) {
+                        md_first[m] = (int)segs[k + m].first;
+                        md_count[m] = (int)segs[k + m].count;
+                        verts += (int)segs[k + m].count;
+                        m++;
+                    }
+                    gl13_multi_draw_arrays(mode, md_first, md_count, m);
+                    stat_draws++;
+                    stat_multi_calls++;
+                    stat_multi_prims += (unsigned)m;
+                    k += m;
                 }
-                gl13_multi_draw_arrays(mode, md_first, md_count, j - i);
-                stat_draws++;
-                stat_multi_calls++;
-                stat_multi_prims += (unsigned)(j - i);
             } else {
                 int k;
                 for (k = i; k < j; k++) {
@@ -3177,7 +3232,7 @@ static int draw_apply(const u8* s, int n, int in_ring) {
         {
             int i;
             for (i = 0; i < gl13_max_tex_units; i++) {
-                int stage = i < gx.num_tev ? i : -1;
+                int stage = i < gx.num_tev ? gx_tev_unit_stage(i) : -1;
                 if (stage >= 0 && gx.tev[stage].coord < out_ntex &&
                     gx_bound_tex(gx.tev[stage].map) != NULL) {
                     glc_coord_array(i,
@@ -4849,6 +4904,9 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
                             pending.nrm[0] = read_component(p, f->type, nf, 0);
                             pending.nrm[1] = read_component(p, f->type, nf, 1);
                             pending.nrm[2] = read_component(p, f->type, nf, 2);
+                            if (f->cnt != GX_NRM_XYZ) {
+                                comps = 9; /* M30: NBT, the binormal and tangent stepped over */
+                            }
                         } else {
                             int t = attr - GX_VA_TEX0;
                             pending.tex[t][0] = read_component(p, f->type, f->frac, 0);

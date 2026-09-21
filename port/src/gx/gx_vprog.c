@@ -515,7 +515,15 @@ static void vp_gen(const VpKey* k, VpBuf* b) {
     /* GL's own fog coordinate is |z_eye|, and the CPU path gets that for free
      * because it hands GL an already-view-space position under an identity
      * modelview.  A vertex program has to say it. */
-    if (k->fog) {
+    if (k->fog && !port_opt.oldfog) {
+        /* M30 (PLAN.md 45): the coordinate is |z_eye| past the fog's start,
+         * clamped at zero, so that GL's EXP/EXP2 can be the hardware's
+         * 1 - 2^(-8 f) of the linear factor (gl13.c's density); the start
+         * rides in state.fog.params.y, which gl13.c sets for every mode. */
+        vpi(b, "ABS t0.x, vp.z;\n");
+        vpi(b, "SUB t0.x, t0.x, state.fog.params.y;\n");
+        vpi(b, "MAX result.fogcoord.x, t0.x, 0.0;\n");
+    } else if (k->fog) {
         vpi(b, "ABS result.fogcoord.x, vp.z;\n");
     }
 
@@ -587,6 +595,20 @@ static void vp_gen(const VpKey* k, VpBuf* b) {
                 vpi(b, "RCP t1.z, t1.z;\n");
                 vpi(b, "MIN t1.z, t1.z, 1.0;\n");
                 vpi(b, "MUL t1.y, t1.y, t1.z;\n");
+            }
+            if (k->attn_fn == GX_AF_SPOT && !port_opt.nospot) {
+                /* M30 (PLAN.md 45): the cone.  c = max(0, ldir . -dir) with
+                 * ldir the unit light-to-vertex... (the SDK stores -dir and
+                 * Dolphin's LightingShaderGen dots it with the vertex-to-light
+                 * unit vector, which t0 already is); the numerator
+                 * max(0, a0 + a1 c + a2 c^2) is GXInitLightSpot's polynomial. */
+                vpi(b, "DP3 t1.z, t0, program.env[%d];\n", lp + 4);
+                vpi(b, "MAX t1.z, -t1.z, 0.0;\n");                    /* c     */
+                vpi(b, "MUL t1.w, t1.z, t1.z;\n");                    /* c^2   */
+                vpi(b, "MAD t1.w, program.env[%d].z, t1.w, program.env[%d].x;\n", lp + 3, lp + 3);
+                vpi(b, "MAD t1.w, program.env[%d].y, t1.z, t1.w;\n", lp + 3);
+                vpi(b, "MAX t1.w, t1.w, 0.0;\n");
+                vpi(b, "MUL t1.y, t1.y, t1.w;\n");
             }
             vpi(b, "MAD ac.xyz, program.env[%d], t1.y, ac;\n", lp + 1);
         }
@@ -979,7 +1001,7 @@ static void vp_build_key(const GxXfDesc* d, VpKey* k, int* nlights_out,
     /* exactly draw_run's own unit -> texgen mapping, so the two paths bind
      * the same thing */
     for (u = 0; u < gl13_max_tex_units && u < GX_TEX_UNITS; u++) {
-        int stage = u < gx.num_tev ? u : -1;
+        int stage = u < gx.num_tev ? gx_tev_unit_stage(u) : -1;
         if (stage >= 0 && gx.tev[stage].coord < d->ntexgen &&
             gx_bound_tex(gx.tev[stage].map) != NULL) {
             k->unit_on[u] = 1;
@@ -1158,7 +1180,7 @@ void gx_vprog_bind(const GxXfDesc* d) {
             env4(lp + 1, l->color.r / 255.0f, l->color.g / 255.0f,
                  l->color.b / 255.0f, 1.0f);
             env4(lp + 2, l->k[0], l->k[1], l->k[2], 0.0f);
-            if (key.hilite) {
+            if (key.hilite || key.attn_fn == GX_AF_SPOT) { /* M30: the spot cone reads both */
                 env4(lp + 3, l->a[0], l->a[1], l->a[2], 0.0f);
                 env4(lp + 4, l->dir[0], l->dir[1], l->dir[2], 0.0f);
             }

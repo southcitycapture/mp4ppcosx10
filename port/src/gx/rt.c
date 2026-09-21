@@ -84,7 +84,7 @@ enum {
     OP_MATRIX_MODE, OP_LOAD_IDENTITY, OP_LOAD_MATRIX, OP_PUSH, OP_POP, OP_ORTHO,
     OP_DEPTH_MASK, OP_DEPTH_FUNC, OP_DEPTH_RANGE, OP_COLOR_MASK, OP_CULL, OP_FRONT,
     OP_SHADE, OP_POLYMODE, OP_HINT, OP_BLEND_FUNC, OP_BLEND_EQ, OP_ALPHA_FUNC,
-    OP_FOG_I, OP_FOG_F, OP_FOG_FV, OP_LIGHT_F, OP_LIGHT_FV, OP_LIGHTMODEL_I, OP_LIGHTMODEL_FV,
+    OP_FOG_I, OP_FOG_F, OP_FOG_FV, OP_LINE_WIDTH, /* M30: GXSetLineWidth (PLAN.md 45) */ OP_LIGHT_F, OP_LIGHT_FV, OP_LIGHTMODEL_I, OP_LIGHTMODEL_FV,
     OP_MATERIAL_FV, OP_COLOR_MATERIAL,
     OP_CLEAR_COLOR, OP_CLEAR_DEPTH, OP_CLEAR, OP_VIEWPORT, OP_SCISSOR, OP_PIXELSTORE,
     OP_READ_BUFFER, OP_FINISH,
@@ -107,7 +107,7 @@ static const char* const op_name[OP_N] = {
     "MatrixMode", "LoadIdentity", "LoadMatrixf", "PushMatrix", "PopMatrix", "Ortho",
     "DepthMask", "DepthFunc", "DepthRange", "ColorMask", "CullFace", "FrontFace",
     "ShadeModel", "PolygonMode", "Hint", "BlendFunc", "BlendEquation", "AlphaFunc",
-    "Fogi", "Fogf", "Fogfv", "Lightf", "Lightfv", "LightModeli", "LightModelfv",
+    "Fogi", "Fogf", "Fogfv", "LineWidth", "Lightf", "Lightfv", "LightModeli", "LightModelfv",
     "Materialfv", "ColorMaterial",
     "ClearColor", "ClearDepth", "Clear", "Viewport", "Scissor", "PixelStorei",
     "ReadBuffer", "Finish",
@@ -518,6 +518,11 @@ void rt_glAlphaFunc(GLenum f, GLclampf ref) {
 void rt_glFogi(GLenum p, GLint v) {
     if (!rt_recording) { glFogi(p, v); return; }
     { REC(OP_FOG_I, A_ei); a->a = p; a->v = v; }
+    done();
+}
+void rt_glLineWidth(GLfloat w) {
+    if (!rt_recording) { glLineWidth(w); return; }
+    { REC(OP_LINE_WIDTH, A_ef); a->a = 0; a->v = w; }
     done();
 }
 void rt_glFogf(GLenum p, GLfloat v) {
@@ -1211,6 +1216,7 @@ static void replay_one(const Hdr* h) {
         case OP_ALPHA_FUNC: { const A_alpha* a = p; glAlphaFunc(a->f, a->ref); break; }
         case OP_FOG_I: { const A_ei* a = p; glFogi(a->a, a->v); break; }
         case OP_FOG_F: { const A_ef* a = p; glFogf(a->a, a->v); break; }
+        case OP_LINE_WIDTH: glLineWidth(((const A_ef*)p)->v); break;
         case OP_FOG_FV: { const A_ef4* a = p; glFogfv(a->a, a->v); break; }
         case OP_LIGHT_F: { const A_eef* a = p; glLightf(a->a, a->b, a->v); break; }
         case OP_LIGHT_FV: { const A_eef4* a = p; glLightfv(a->a, a->b, a->v); break; }

@@ -87,6 +87,7 @@ static const char* const GL13_ALLOWED[] = {
     /* M23: gl13_downsample_read, the copy read back at half size */
     "glBegin", "glEnd", "glTexCoord2f", "glVertex2f", "glPushMatrix", "glPopMatrix",
     "glOrtho", "glTexEnvi",
+    "glLineWidth", /* M30: GXSetLineWidth (PLAN.md 45) */
 };
 
 int gl13_check(const char* fn) {
@@ -173,6 +174,7 @@ typedef struct Glc {
 
     signed char cull_on;
     int cull_face, front_face;
+    float line_width; /* M30 */
     signed char depth_on;
     int depth_func;
     signed char depth_mask;
@@ -260,6 +262,7 @@ void glc_invalidate(void) {
         glc.color_sum_on = -1;
         glc.fog_ptr = (const void*)-1;
         glc.fog_stride = -1;
+        glc.line_width = -1.0f; /* M30 */
         glc.proj_valid = 0;
         glc.modelview_identity = 0;
         for (i = 0; i < 4; i++) {
@@ -870,6 +873,14 @@ void gl13_draw_range_elements(unsigned mode, unsigned lo, unsigned hi, int n, in
 void gl13_multi_draw_arrays(unsigned mode, const int* first, const int* count, int n) {
 #ifndef PORT_NO_SDL
     (port_opt.glcheck ? gl13_check("glMultiDrawArraysEXT") : 0);
+    if (gl13_trace_armed()) {
+        int i, tot = 0;
+        for (i = 0; i < n; i++) {
+            tot += count[i];
+        }
+        port_log("gltrace> glMultiDrawArraysEXT mode %04x n %d first %d.. count %d.. total %d\n", mode,
+                 n, n ? first[0] : -1, n ? count[0] : -1, tot);
+    }
     rt_ext_multi_draw_arrays((GLenum)mode, (const GLint*)first, (const GLsizei*)count,
                              (GLsizei)n);
 #else
@@ -1222,6 +1233,23 @@ void gl13_apply_raster_state(void) {
         }
     }
 
+    /* M30 (PLAN.md 45, cause H): the line width.  GX counts in sixths of a
+     * pixel; GL's minimum is one pixel and the picture is the EFB's size, so
+     * the width lands unscaled.  --nolinewidth is the pre-M30 hairline. */
+    {
+        float w = port_opt.nolinewidth ? 1.0f : (float)(gx.line_width ? gx.line_width : 6) / 6.0f;
+        if (w < 1.0f) {
+            w = 1.0f;
+        }
+        if (glc.line_width != w) {
+            glc.line_width = w;
+            glc_emitted++;
+            GL(glLineWidth)(w);
+        } else {
+            glc_elided++;
+        }
+    }
+
     /* GX's front face is the opposite of GL's default. */
     {
         int on = gx.cull != GX_CULL_NONE;
@@ -1371,13 +1399,29 @@ void gl13_apply_raster_state(void) {
     }
 
     /* Fog.  Nine sites in the whole game, all of them linear or exponential
-     * in eye z, which is what GL_FOG is. */
+     * in eye z, which is what GL_FOG is.
+     *
+     * M30 (PLAN.md 45): the hardware's exponential fog is 1 - 2^(-8 f) (EXP)
+     * or 1 - 2^(-8 f^2) (EXP2) of the *linear* factor f = (z_eye - start) /
+     * (end - start) clamped to 0..1 (GXPixel.c's A, B, C; Dolphin's
+     * PixelShaderGen).  GL's EXP is exp(-d * fc) of the fog coordinate with
+     * no start, so the vertex program writes fc = max(0, |z_eye| -
+     * state.fog.params.y) (gx_vprog.c) and d = 8 ln 2 / (end - start) makes
+     * GL's factor 2^(-8 f) exactly (EXP2: exp(-(d fc)^2) = 2^(-8 f^2) with
+     * d = sqrt(8 ln 2) / (end - start)).  Beyond `end` GX holds f at 1 (0.4%
+     * unfogged) where GL keeps going: below a level.  Linear fog with that
+     * offset coordinate is GL_LINEAR over (start/2, end - start/2): (E - (z
+     * - S)) / (E - S) = (end - z) / (end - start).  The CPU vertex path has
+     * no fog coordinate of its own and keeps the pre-M30 numbers
+     * (`--oldfog` everywhere). */
     if (gx.fog_type == GX_FOG_NONE) {
         glc_enable(GL_FOG, 0, &glc.fog_on);
     } else {
         GLfloat c[4];
         int mode;
         float density = 0.0f;
+        float fs = gx.fog_startz, fe = gx.fog_endz;
+        int offs = !port_opt.oldfog && gx_vprog_available() && !port_opt.cpuxf;
         c[0] = gx.fog_color.r / 255.0f;
         c[1] = gx.fog_color.g / 255.0f;
         c[2] = gx.fog_color.b / 255.0f;
@@ -1403,17 +1447,35 @@ void gl13_apply_raster_state(void) {
             glc_elided++;
         }
         if (mode == GL_LINEAR) {
-            if (glc.fog_start != gx.fog_startz || glc.fog_end != gx.fog_endz) {
-                glc.fog_start = gx.fog_startz;
-                glc.fog_end = gx.fog_endz;
+            if (offs) {
+                fs = gx.fog_startz * 0.5f;
+                fe = gx.fog_endz - gx.fog_startz * 0.5f;
+            }
+            if (glc.fog_start != fs || glc.fog_end != fe) {
+                glc.fog_start = fs;
+                glc.fog_end = fe;
                 glc_emitted++;
-                GL(glFogf)(GL_FOG_START, gx.fog_startz);
-                GL(glFogf)(GL_FOG_END, gx.fog_endz);
+                GL(glFogf)(GL_FOG_START, fs);
+                GL(glFogf)(GL_FOG_END, fe);
             } else {
                 glc_elided++;
             }
         } else {
-            density = 1.0f / (gx.fog_endz - gx.fog_startz + 1.0f);
+            if (offs) {
+                float range = gx.fog_endz - gx.fog_startz;
+                if (range < 1.0e-6f) {
+                    range = 1.0e-6f;
+                }
+                density = mode == GL_EXP2 ? 2.3548200f / range /* sqrt(8 ln 2) */
+                                          : 5.5451774f / range; /* 8 ln 2 */
+                if (glc.fog_start != fs) {
+                    glc.fog_start = fs;
+                    glc_emitted++;
+                    GL(glFogf)(GL_FOG_START, fs); /* what the program subtracts */
+                }
+            } else {
+                density = 1.0f / (gx.fog_endz - gx.fog_startz + 1.0f);
+            }
             if (glc.fog_density != density) {
                 glc.fog_density = density;
                 glc_emitted++;

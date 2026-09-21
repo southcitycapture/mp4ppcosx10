@@ -156,8 +156,18 @@ void GXClearVtxDesc(void) {
     }
 }
 
+/* M30 (PLAN.md 45, cause G): GX_VA_NBT is the SDK's alias for the normal
+ * attribute when a vertex carries normal, binormal and tangent (GX manual,
+ * GXSetVtxDesc: "GX_VA_NBT ... is the same attribute as GX_VA_NRM").  Until
+ * M30 it landed in gx.vcd[25], which the decoder never reads, so hsfdraw.c's
+ * bump-mapped face groups (:583, GX_VA_NBT direct, 9 x s16 a vertex) were
+ * stepped through as if each vertex were four bytes: m402's table drew its
+ * second primitive from the middle of the first's data -- the yellow prism. */
+static GXAttr nbt_alias(GXAttr attr) { return attr == GX_VA_NBT ? GX_VA_NRM : attr; }
+
 void GXSetVtxDesc(GXAttr attr, GXAttrType type) {
     GX_STATE_TOUCH_DECODE();
+    attr = nbt_alias(attr);
     if ((unsigned)attr < GX_MAX_ATTR) {
         gx.vcd[attr] = (u8)type;
     }
@@ -173,6 +183,7 @@ void GXSetVtxDescv(GXVtxDescList* list) {
 void GXSetVtxAttrFmt(GXVtxFmt vtxfmt, GXAttr attr, GXCompCnt cnt, GXCompType type,
                      u8 frac) {
     GX_STATE_TOUCH_DECODE();
+    attr = nbt_alias(attr);
     if ((unsigned)vtxfmt < GX_MAX_VTXFMT && (unsigned)attr < GX_MAX_ATTR) {
         gx.vat[vtxfmt][attr].cnt = (u8)cnt;
         gx.vat[vtxfmt][attr].type = (u8)type;
@@ -197,6 +208,7 @@ unsigned gx_array_epoch;
 void gx_skin_array_bound(const void* pos_array);
 void GXSetArray(GXAttr attr, const void* data, u8 stride) {
     GX_STATE_TOUCH_DECODE();
+    attr = nbt_alias(attr);
     if ((unsigned)attr < GX_MAX_ATTR) {
         gx.array[attr].base = (const u8*)data;
         gx.array[attr].stride = stride;
@@ -367,6 +379,18 @@ void GXSetScissorBoxOffset(s32 x, s32 y) {
     (void)y;
 }
 
+/* M30 (PLAN.md 45, cause H): the line width, in 1/6 pixel units; the SDK's
+ * default is 6 (one pixel).  Until M30 this was a generated stub and every
+ * GX_LINES / GX_LINESTRIP the game drew was one pixel wide -- m428's 2-vs-2
+ * rope (width 16) was drawn, but as a hairline nobody could see.  The
+ * texture-offset argument is for texturing along the line (GX_TO_ZERO in
+ * every caller the game has); not reproduced. */
+void GXSetLineWidth(u8 width, GXTexOffset texOffsets) {
+    (void)texOffsets;
+    GX_STATE_TOUCH_IF(64, gx.line_width != width);
+    gx.line_width = width;
+}
+
 void GXSetCullMode(GXCullMode mode) { GX_STATE_TOUCH_IF(64, gx.cull != (u8)mode); gx.cull = (u8)mode; }
 
 /* ---- channels, lights ----------------------------------------------------- */
@@ -497,15 +521,44 @@ void GXInitLightAttnK(GXLightObj* o, f32 k0, f32 k1, f32 k2) {
     l->k[2] = k2;
 }
 void GXInitLightSpot(GXLightObj* o, f32 cutoff, GXSpotFn fn) {
-    /* GX's seven spot functions are polynomials in cos(theta); GL has one,
-     * cos^exponent.  GX_SP_FLAT and GX_SP_COS map exactly; the rest are
-     * approximated by the same cutoff with exponent 1. */
+    /* M30 (PLAN.md 45, cause B): the SDK's own polynomial (GXLight.c:97) in
+     * cos(theta) -- a0 + a1 c + a2 c^2, c the cosine between the light's
+     * direction and the light-to-vertex vector -- which the vertex program
+     * multiplies into a GX_AF_SPOT channel.  Until M30 the function was a
+     * comment: every light `Hu3DLightCreateV` makes is a 30-degree GX_SP_COS
+     * spot unless the game widens it to infinity, and the port lit the whole
+     * scene with each of them; m427's headlamps (37.5 degrees, GX_SP_SHARP)
+     * lit the cave wall to wall. */
     GXLight* l = light_of(o);
-    (void)l;
-    if (fn != GX_SP_OFF && fn != GX_SP_FLAT && fn != GX_SP_COS) {
-        gx_warn("GXInitLightSpot: a spot function GL cannot express exactly");
+    f32 a0, a1, a2, d, cr;
+    if (cutoff <= 0.0f || cutoff > 90.0f) {
+        fn = GX_SP_OFF;
     }
-    (void)cutoff;
+    cr = cosf((3.1415927f * cutoff) / 180.0f);
+    switch (fn) {
+        case GX_SP_FLAT: a0 = -1000.0f * cr; a1 = 1000.0f; a2 = 0.0f; break;
+        case GX_SP_COS: a0 = -cr / (1.0f - cr); a1 = 1.0f / (1.0f - cr); a2 = 0.0f; break;
+        case GX_SP_COS2: a0 = 0.0f; a1 = -cr / (1.0f - cr); a2 = 1.0f / (1.0f - cr); break;
+        case GX_SP_SHARP:
+            d = (1.0f - cr) * (1.0f - cr);
+            a0 = (cr * (cr - 2.0f)) / d; a1 = 2.0f / d; a2 = -1.0f / d;
+            break;
+        case GX_SP_RING1:
+            d = (1.0f - cr) * (1.0f - cr);
+            a0 = (-4.0f * cr) / d; a1 = (4.0f * (1.0f + cr)) / d; a2 = -4.0f / d;
+            break;
+        case GX_SP_RING2:
+            d = (1.0f - cr) * (1.0f - cr);
+            a0 = 1.0f - ((2.0f * cr * cr) / d); a1 = (4.0f * cr) / d; a2 = -2.0f / d;
+            break;
+        default: a0 = 1.0f; a1 = 0.0f; a2 = 0.0f; break;
+    }
+    if (port_opt.nospot) {
+        a0 = 1.0f; a1 = 0.0f; a2 = 0.0f;
+    }
+    l->a[0] = a0;
+    l->a[1] = a1;
+    l->a[2] = a2;
 }
 void GXInitLightDistAttn(GXLightObj* o, f32 ref_distance, f32 ref_brightness,
                          GXDistAttnFn fn) {
@@ -882,6 +935,15 @@ void GXSetDither(GXBool e) { (void)e; }
 
 void GXSetFog(GXFogType type, f32 startz, f32 endz, f32 nearz, f32 farz, GXColor color) {
     GX_STATE_TOUCH();
+    /* M30 (PLAN.md 45, cause C): the SDK's own guard (GXPixel.c:31) -- a
+     * range with endz == startz or farz == nearz "makes the fog function
+     * invalid" and the hardware gets A = 0, C = 0: no fog at all.  m414's
+     * saloon HSF carries a scene fog of (10000, 10000) in cyan, which the
+     * console never shows; the port's GL_EXP with a density of 1/(0 + 1)
+     * fogged every quadrant solid cyan.  --oldfog keeps that. */
+    if (!port_opt.oldfog && type != GX_FOG_NONE && (endz == startz || farz == nearz)) {
+        type = GX_FOG_NONE;
+    }
     gx.fog_type = (u8)type;
     gx.fog_startz = startz;
     gx.fog_endz = endz;
