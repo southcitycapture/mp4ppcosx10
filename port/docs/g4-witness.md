@@ -772,3 +772,31 @@ is either ready to offer upstream or has a case to remove.
   truncate.** M23's `CARD: image flush took` timed the write and the
   close; the 1.7 s was in the `fopen(path, "wb")` before them (PLAN.md
   44.6). Time the whole operation, and print the split.
+
+## 0s. Five things M30 paid for *(2026-09-20)*
+
+* **The bench is where a picture cause gets read.** With the G4 soaking,
+  forty-one two-minute `open -W` runs on the MacBook (`~/m30/run1*.sh`,
+  one bundle per build) did every drawlog, copy dump, texture dump and
+  A/B of the day; the G4's part was the two turbo walks and a 15-game
+  gallery (50 minutes). A drawlog is the port's own account of what it
+  submitted and is the same on both machines; `--cpuxf` prints the
+  transformed vertex positions, which the GPU path cannot. The G4 judges
+  the picture (§0o still holds: the blobs are spikes under Rosetta).
+* **`--drawlog-at F` needs the run to present F.** `--ffto 14870 --frames
+  14880` never presents 14877: the present count runs about six behind
+  the retrace count after a `--ffto` (PLAN.md 41b.2), and `--frames`
+  ends before its last frame is presented (§0p). `--ffto F-80 --frames
+  F+25` is the shape that works.
+* **`snaps/lib/m458-fault-f015200.snap` was not the M26 gallery bundle's**
+  (build `abbd973e` against `d2767188`); `--restore-lax` took it and the
+  restored run faulted at the §41 frame. And gdb must be attached in the
+  *same* ssh command as the wait for `resuming the game` — the fault is
+  six seconds after the restore, less than a second ssh round trip plus
+  a sleep.
+* **`--dumpframe` into a directory that does not exist writes nothing**
+  (`--dumpframe: cannot write …` once per frame, the run otherwise
+  fine); the gallery chain `mkdir -p`s, a hand-run must too. A run of
+  three minutes lost.
+* **`scp host:a host:b local/` hangs** (it tries a remote-to-remote
+  copy); one remote path per scp.

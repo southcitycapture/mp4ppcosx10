@@ -1,0 +1,5 @@
+# m30 chain start Sun Sep 20 22:25:48 EDT 2026  isle md5 a33e85475304e78f3600681b5045db83
+T EXIT=0 wall=248s md5 800:0b58c5ee 3000:c58a046d 7000:4a9a640c args='--turbo --play board-start-com4.play --frames 9000'
+Told EXIT=0 wall=253s md5 800:0b58c5ee 3000:c58a046d 7000:021d58fb args='--turbo --play board-start-com4.play --frames 9000 --nolinewidth --noregchain --oldfog --nospot --mdposonly'
+# m30 chain start Sun Sep 20 23:22:13 EDT 2026  isle md5 071cbc5c66d3c1e5eee71d38bb9d29bb
+T EXIT=0 wall=249s md5 800:0b58c5ee 3000:c58a046d 7000:4a9a640c args='--turbo --play board-start-com4.play --frames 9000'

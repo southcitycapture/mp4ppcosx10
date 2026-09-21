@@ -786,3 +786,13 @@ src/game/ClusterExec.c	    HSFOBJECT *temp_r31;\n\n    for (i = 0; i < 4; i++) {
 # -- fogType 0xFF, NaN range, white -- and Paratrooper Plunge drew a white sky
 # and no sea.  The table is bounded here, and the overrun reported once.
 src/game/hsfload.c	            rgba[i].r = new_mat->litColor[0];\n            rgba[i].g = new_mat->litColor[1];\n            rgba[i].b = new_mat->litColor[2];\n            rgba[i].a = 255;\n	            if (i < 100) {\n                rgba[i].r = new_mat->litColor[0];\n                rgba[i].g = new_mat->litColor[1];\n                rgba[i].b = new_mat->litColor[2];\n                rgba[i].a = 255;\n            } else if (i == 100) {\n                OSReport("port> hsfload: %d materials in one HSF, the 100-entry rgba[] overrun bounded (PLAN.md 45)\\n", head.material.count);\n            }\n
+
+# ------------------------------------------------------------ REL/m458Dll/main.c
+# M30 (PLAN.md 45.10): Panels of Doom reads its two player objects as a
+# two-element array through the address of the first, `(&lbl_1_bss_BC)[i]`
+# (17 sites), which on the console is the .bss layout the linker gave it
+# (lbl_1_bss_C0 four bytes after lbl_1_bss_BC).  GCC's .bss puts something
+# else there, so spC[1] was a garbage OMOBJ and the module died with SIGBUS
+# at the panel pick (frame ~15,560).  The same class as PLAN.md 20's bound.
+# The two become one array and keep their names.
+src/REL/m458Dll/main.c	OMOBJ *lbl_1_bss_C0;\nOMOBJ *lbl_1_bss_BC;\n	OMOBJ *lbl_1_bss_BC_arr[2];\n#define lbl_1_bss_BC (lbl_1_bss_BC_arr[0])\n#define lbl_1_bss_C0 (lbl_1_bss_BC_arr[1])\n

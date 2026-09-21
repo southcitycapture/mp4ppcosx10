@@ -15049,3 +15049,515 @@ character select (the per-batch driver cost, §42.5, or the gate's wait);
 the gallery on the final build (`gallery_chain.sh`) as the picture witness
 of the decode across all 63 games; m458 from its snapshot; a soak at
 `--stackmul 2`.
+
+## 45. M30 log: the causes *(2026-09-20, littlejelly)*
+
+M30's brief was §41b's console-confirmed list, fixed by cause and in the
+order of the games behind each: read the draw on the gallery's frame with
+`--drawlog`, name the GX feature the port drops or folds, fix it in
+`port/` behind a flag, re-dump the game and put the pair in the plan. The
+soak came first (§45.1). Every read ran on the MacBook bench under
+Rosetta while the G4 soaked (§45.2): a two-minute run per game with the
+frame's drawlog, and a new one-line-per-draw summariser to read a frame's
+five hundred draws in a screen. What the reads found is mostly *not* what
+§41b guessed. The water games were not one cause but four: a TEV
+**register chain** the port resolved to constants (m427's river flooded
+with whatever `GXSetTevColor` had last left in REG0/REG1), the **spot
+light cone** the port had never computed (every light `Hu3DLightCreateV`
+makes is a 30° `GX_SP_COS` spot; the port lit all round — m427's
+headlamps lit the cave wall to wall), a **fog** the port fogged where the
+SDK's own guard disables it (m414's cyan quadrants) and computed with GL's
+shape rather than the hardware's (m427's cave), and one batch of strips
+that `glMultiDrawArraysEXT` draws as nothing on two drivers (m434's pond).
+m408's white sky was a **game bug landing on the port's globals**: an HSF
+with more than 100 materials writes past `hsfload.c`'s `rgba[100]`, and in
+the port's link order that is `FogData` (fog type 0xFF, NaN range, white).
+m402's yellow prism was `GX_VA_NBT`, the SDK's alias for the normal
+attribute, which the decoder did not know, stepping through the bump-mapped
+face group's nine-component vertices as if they were four bytes. m428's
+rope was an immediate primitive the game never `GXEnd`s (the SDK's
+`GXEnd` is an empty inline; the hardware ends a primitive at its n-th
+vertex; the port waited for a `GXEnd` that never came and reset the count
+at the next `GXBegin`) — and then a `GXSetLineWidth` that was a stub.
+m448's black felt was hsfdraw's **three-texture** material: the M16
+triple followed by a second lerp-by-alpha pair, whose second register
+write the port emitted over PREV. Nine fixes, eight flags, and one
+reference frame moved by one level at one pixel (§45.9).
+
+### 45.1 The soak, read
+
+§44.9's leave-behind — `g4 run --soak --com4 --rtc dolphin --freshcard
+--realtime --snap-every 5000 --snap-keep 3 --status --ovllog --stuckwatch
+200 --perf` on the M29 build (`bf758385…`), the first soak with the decode
+on the render thread and the card flush on its thread — ran 20:15 to
+22:17 G4 time and was ended through `g4 stop` to take the G4 for the
+milestone: **2 h 1 min, 434,880 frames, 7,248 status lines**
+(`docs/soak/m30-soak20-m29-leave.log.gz`; `port/tools/soak_read.py` is
+the reader).
+
+| | |
+|---|---|
+| speed / presented fps | **100.1%** mean over 7,248 lines (`cpu 2`, `machine ok` on every one); **27.8 fps** overall |
+| the board at the cap | every `w01dll` turn line 28.5–29.7 fps mean (turn 1: 28.8 with the load; turns 2–20: 28.8–29.7), `rt` median 15–17.5 ms, `dec` 5–6.8 ms — **the 30 cap holds for twenty turns and into the second board** |
+| where it got | board 1 all 20 turns → `mstory3dll` → `modeseldll` → `mentdll` → board 2 (frame 296,580) → turn 11 of board 2; 31 minigame plays of 28 modules, the first 24 **the same modules in the same order** as soaks 13–19 (m412 m428 m420 m444 m423 m438 m429 m444 m430 m406 m416 m405 m438 m431 m422 m410 m407 m421 m424 m436 m404 m427 m455 m401), then m414 m418 m404 m402 and board 2's m434 m426 m425 |
+| presented fps in the minigames | 19.8 (m431: `rt 27.9`, the §32.4 shape) to 29.8; `rt + dec` over 33 on m431 (42.6), m436 (40.6), m401 (33.9), m441 (38.1), m444 (36.9) — the character select's case (§44.8), as expected |
+| `dec` on the status line | 4.2–20.4 ms by scene; the `decode` line: **114,844,949 runs, all decoded ahead by the cursor, 0 late**; per presented frame mean 7.39 ms, worst 36.8 |
+| the `render thread:` block | 775M records, 201,274 frames presented, replay mean 15.95 ms, worst 377; gate 12,232 waited (27 s, worst 16 ms), 20,511 busy; ring waits 0; retrace join worst 36 ms |
+| the results screens | **no `stall:` line at any results screen** — the card flush is off the game thread; `CARD: flushes on a thread (M29): 394 ms on the game thread in all, 5053 ms behind it (worst 1769 ms); 33 flush(es) waited for the previous one (299 ms)`; three flushes over 50 ms behind (388, 1467, 1769 ms) — all in the second hour, all `rename` |
+| `split frames` / `worker mixer` | 1,451,061 halves each side, 435,033 joins, **0 position mismatches**; 4 late jobs (7 ms), 287 waited for (151 ms, worst 4 ms) |
+| resyncs / faults / STUCK / guard hits | **2 / 0 / 3 / 0** — the STUCKs are the chain's designed 200 s waits (`modeseldll` 268,478, `mentdll` 280,776 / 295,044); the resyncs below |
+| `tex` / `rss` | 799 entries / 40.9 MB from turn 1 on; rss 132–147 MB on the board lines, **189 MB peak** (`mentdll` before board 2, as §38.1) |
+| `REL .data` / `skin: lifetime` / `EFB copies` | 133 re-opens, 97 reset / 1,041 dropped, 0 guard hits / 170,066 |
+
+**The two resyncs are the disk, not the port.** `retrace 369715, 1804 ms
+behind` and `394715, 1780 ms`: both on `instdll` (the card) of board 2's
+turns 6 and 8, both a `stall: frame N took 18xx ms (game 18xx …)
+[consumed]`, and the line before each says what the game thread was
+doing: `DVD: read of data/m434.bin (1322824 bytes at 0) took 1801 ms`
+(and `m426.bin`). A 1.3 MB read from the disc image that normally takes
+15 ms (`DVD: 2323 reads, 15989 ms in reads, 29 over 100 ms`), in the same
+quarter-hour as the three slow `rename`s of the card image (1.4–1.8 s
+each, frames 314k–375k) — the filesystem was slow for a stretch of the
+second hour, and the two things that touch it (the disc image read and
+the card flush) both waited. The same shape as §44.6's `R2e` 5-second
+disk-bound frame. Nothing in the soak outranks the milestone; the M29
+bundle is kept as `~/MarioParty4-m29.app`.
+
+### 45.2 The method: the reads on the bench, the flags on the G4
+
+The G4 soaked until 22:17, so every cause was read on the MacBook
+(§0's rule: it never judges speed, and it never judged a picture either —
+§0o's cluster spikes — but a *drawlog* is neither; it is the port's own
+account of what it submitted, and that is the same on both machines). One
+run per question: `--minigame mNNN --turns 1 --com4 --rtc dolphin
+--freshcard --play board-start-com4.play --lockstep --renderthread 0
+--ffto 14800 --frames 14900 --dumpframe 14877 --drawlog 4000 --drawlog-at
+14877`, about two minutes under Rosetta (the `--ffto` at 150 fps), the
+frame's every draw named with its object, loader, viewport, stages,
+registers and raster state. Forty-one such runs on eleven bundles
+(`~/m30/` on the MacBook). Two tools came out of it:
+
+* `port/tools/drawlog_summary.py LOG [--grep RE]`: one line per draw —
+  `d491 p98 v64 m7:bg fn_1_2978+52 vp 0 0 640 480 s0 c[15 15 15 8] a[7 7
+  7 6] k(1.00 1.00 1.00/1.00) T0=320x240/f4/gl15 | s1 c[0 8 3 15] … reg
+  c0(255,255,255,64) … a6/1 z1/3/w1 b1/4/5 c2` — a frame's five hundred
+  draws in a screen, which is how every material below was found.
+* the drawlog now prints the fog and the copy clear (m414's cyan could not
+  be read without them), `--gltrace` prints `glMultiDrawArraysEXT` calls,
+  and `--cpuxf` runs print the transformed vertex positions, which is how
+  m402's garbage and m430's degenerate rope were seen.
+
+Every fix is a flag on the same binary; the pre-M30 picture is
+`--nolinewidth --noregchain --oldfog --nospot --mdposonly` (the
+`GX_VA_NBT`, the n-th-vertex end and the `rgba[100]` bound are
+corrections with no lever: what they replace was a misparse, a dropped
+primitive and a write over another module's globals).
+
+### 45.3 Cause B, the water: four causes, not one
+
+**m427, Right Oar Left? — the reading.** The frame's drawlog
+(`~/m30/m427-400.log`) has two draws the console draws differently. The
+river (`map.c:1033`, 32-vertex strips, `T0` a 32×32 water texture, `T1` a
+copy of the view):
+
+```
+stage0  cin ZERO TEXC ONE  ZERO  -> REG0    alpha KONST -> REG0
+stage1  cin TEXC C0   A2   ZERO  -> REG1    alpha KONST -> REG1      = lerp(T1, C0, A2)
+stage2  cin C1   ZERO ZERO C2    -> PREV    alpha KONST              = C1 + C2
+```
+
+and the headlamp (`map.c:2371`, 1,200 vertices over the water and the
+walls, `T0` a 320×480 copy of the half-view projected from the lamp
+through `GX_TG_MTX3x4`, `T1` a 128×128 caustic, the channel lit by the
+boat's lamp with `GX_AF_SPOT`):
+
+```
+stage0  cin ZERO TEXC RASC ZERO  x4  -> REG0
+stage1  cin ZERO TEXA C2   ZERO      -> REG1
+stage2  cin ZERO C1   RASC C0        -> PREV                          = C1 * RAS + C0
+```
+
+Neither is one of hsfdraw's three register shapes (§31.3, §37), so both
+went down the generic emitter, where a read of `C0`/`C1` is the
+*register's constant* (`color_arg`: `gx.tev_reg[]`). The river drew
+`C1 + C2` = whatever REG1 held plus (0, 16, 30); the lamp drew `C1 * RAS +
+C0` = white times the light plus (0, 21, 178), *added* (`GX_BL_ONE`) over
+everything the lamp texture covered — which, projected, was the whole
+view. That is the "white-green flood" of §41b, and the "boats as black
+silhouettes" were the boats lit by a 37.5° spot light with no cone.
+
+**(a) Register chains** (gx_tev.c `regchain_plan`, `--noregchain`). GL's
+one carrier between units is PREVIOUS, and PREVIOUS after unit i−1 is
+stage i−1's result whatever GX register it went to. So a read at stage i
+of the register stage i−1 wrote is exactly PREVIOUS (its RGB or its alpha
+by which half was read), and a chain in which every register read is of
+the immediately preceding stage is exact — the river is one. The planner
+walks the stages once per configuration (the TEV cache's signature covers
+it), tracks the producer of PREV and REG0–2 on each side, renames such
+reads, turns a register write nobody reads into a pass (so a `CPREV` read
+after it still sees GX's PREV), and counts the rest — a read two or more
+stages back, or PREV across a live register write — as *unexpressible*,
+drawn as before (the constant) and named by `--gxwarn`. The M16/M22
+triples and the two shapes below are matched first and skipped by the
+planner. The `tev:` report line counts chains, renames, passes and the
+unexpressible.
+
+**(b) The lamp shape** (regfix shape 4, `regfix4_match`): stage 2 reads
+two stages back (`C0` from stage 0 and `C1` from stage 1), which no rename
+can say — but `RAS` factors out: `C1 * RAS + C0 = RAS * (T_caustic.a * K +
+4 T_lamp)`, three units: `REPLACE(TEXTURE) ×4`, `MODULATE_ADD_ATI(TEXTURE.a
+* CONSTANT + PREVIOUS)`, `MODULATE(PREVIOUS, PRIMARY)`. Exact but for the
+clamp: GX clamps `4 T_lamp RAS` before the sum, this clamps `4 T_lamp` —
+the two differ only where the lamp texture is over a quarter and the cone
+partial, the bright core, where both saturate.
+
+**(c) The spot cone** (`--nospot`). `GXInitLightSpot` was a comment
+("approximated by the same cutoff with exponent 1") that stored nothing,
+and the vertex program's `GX_AF_SPOT` attenuation was the distance term
+alone. Every light `Hu3DLightCreateV` makes is type 0 with `cutoff 30,
+func GX_SP_COS` (hsfman.c:1389) unless the game widens it to infinity
+(type 1: the same `GXInitLightSpot(20, GX_SP_COS)` with the light moved
+to `−dir × 10⁶`, a cone the whole scene is inside), so every scene lit by
+a placed light had its cone dropped since M3. The fix is the SDK's own
+polynomial in cos θ (GXLight.c:97: a0 + a1 c + a2 c² by cutoff and
+function) stored in the light's `a[]`, and in the program, for a
+`GX_AF_SPOT` channel, `c = max(0, ldir · −dir)` with `ldir` the unit
+vertex-to-light vector (the SDK stores `−dir`, Dolphin's
+`LightingShaderGen` dots it with exactly this vector), the numerator
+`max(0, a · (1, c, c²))` multiplied into the light's contribution. The
+CPU lighting path got the same lines. m427's `Hu3DLLightSpotSet(…, 37.5f,
+4)` is a `GX_SP_SHARP` cone: the headlamp.
+
+**(d) The fog** is §45.4's, and the cave's darkness is half of it: m427
+sets `GXSetFog(GX_FOG_EXP, 10000, 20000, 300, 50000, black)` itself
+(`map.c:2454`), and the port's GL_EXP of |z| with density 1/(end − start
++ 1) fogged a fifth of what the hardware's `1 − 2^(−8 f)` does at the
+river's distance.
+
+The witness, the bench first: the four builds of the day on m427's
++400 frame — the flood, then the chain (the river textured, the lamp
+still a blue constant), then the fog and the cone (the cave dark, the
+boats lit by their lamps), then the lamp shape:
+
+![m427 +400 on the bench: the flood, the chain, the fog and cone, the lamp shape; the console](screenshots/m30-m427-bench-steps.png)
+
+**m434, Cheep Cheep Sweep — the reading** (`map.c:266`, `fn_1_2978`): the
+pond is a 31-strip mesh whose two stages are `TEXC(copy of the underwater
+pass)` then `lerp(PREV, TEXC(copy of the mirrored sky), A0 = 0.25)`, four
+texgens (two `GX_TG_MTX3x4` projections of the copies, two for the ripple
+warp the port drops), no register writes at all — `--copylog` and
+`--dumpcopy` showed all five of the frame's copies right (the ripple map,
+the reflection, the floor, the players on black, the composed
+refraction: `screenshots/m30-m434-copies.png`), and the frame's pond
+pixels were *byte-identical* to the refraction copy: the water was not
+drawn. `--cpuxf` drew it (as M25's black disc), `--oldsubmit` drew it,
+`--nomultidraw` drew it, `--novar` and `--indexed` drew it; the default —
+`glMultiDrawArraysEXT` from the vertex-array-range ring — drew nothing,
+at any `--mdmax` (a new cap on the vertices per call: 1024, 512, 200, and
+**1**, i.e. one strip per `glMultiDrawArraysEXT` call, still nothing,
+while the same strip through `glDrawArrays` draws). On the Intel HD 3000
+under 10.6 and on the Radeon 9000 under 10.5 alike. Not understood: the
+one thing this batch is that no other batch in the game is, is a
+*position-only* layout (no normal, no texcoord array, every texgen from
+the position), so that layout now goes down per-strip `glDrawArrays`
+(`--mdposonly` keeps the multi-draw for the A/B) — the pond is the only
+such batch the walk and the gallery ever submitted (`--submitstats`).
+Then the surface drew at a quarter of its alpha: stage 1 lerps by the
+register's alpha (`A0 = 0.25`, the unit's `CONSTANT.a`) while its alpha
+side wants `KONST = 1` — the one "two constants" collision (§31.4) the
+water shaders have, and it has a second source for a 1.0 when the
+rasterised alpha is a known 1.0 (channel 0 unlit, its material alpha 255
+from the register): `PRIMARY_COLOR.a`.
+
+**m405, Mario Medley**: its pool is the same shape as m434's with two
+indirect warps (`main.c:979`) for the caustics; the water now draws the
+copies at the right alpha, the tint moved from grey-green towards the
+console's blue, and the moving caustic pattern is the indirect warp §17
+drops — still **minor**.
+
+### 45.4 Cause C: the fog that should not have been, and a table that was 100 long
+
+**m414, Long Claw of the Law.** The drawlog said the four saloon views
+*were* drawn — 547 draws, the walls, the crowd, the cubes, each under its
+quadrant's `viewport 10 20 309 219` and scissor, in the right order — and
+the frame was solid cyan (0, 255, 255) under a HUD that drew. Nothing in
+the frame draws cyan, so the drawlog grew the fog and the copy clear, and
+there it was: `fog type 4 start 10000 end 10000 … color 0 255 255`. The
+saloon HSF carries a scene fog of (10000, 10000) in cyan, which
+`Hu3DModelCreate` loads (hsfman.c:406); the SDK's `GXSetFog` (GXPixel.c:31)
+has a guard — `if (farz == nearz || endz == startz) { A = 0; B = 0.5; C =
+0 }`, "parameters that make the fog function invalid" — that makes it
+*no fog*, and the port's GL_EXP with density 1/(0 + 1) fogged every
+quadrant solid. The guard is in the port's `GXSetFog` now (`--oldfog`
+keeps the cyan), and with it the hardware's exponential shape: `1 −
+2^(−8 f)` (EXP) or `1 − 2^(−8 f²)` (EXP2) of the linear factor `f = (z −
+start) / (end − start)` clamped to 0..1 (the A, B, C of GXPixel.c and
+Dolphin's PixelShaderGen), which GL's `exp(−d · fc)` can say exactly when
+the vertex program writes the fog coordinate as `max(0, |z_eye| −
+state.fog.params.y)` and `d = 8 ln 2 / (end − start)` (EXP2: `sqrt(8 ln
+2) / (end − start)`); linear fog under that coordinate is GL_LINEAR over
+(start/2, end − start/2). The CPU vertex path has no fog coordinate of
+its own and keeps the old numbers.
+
+**m408, Paratrooper Plunge.** Its `--scenelog` said the swirl's models
+were live and drawn, and the drawlog named them (`out`, `fusagi`, `in`);
+the frame had them white. The fog line: `fog type 255 start nan end nan
+… color 255 255 255 255` — sixteen bytes of 0xFF where `FogData` should
+be, and `copyclear 0 0 0 0` where `BGColor` should be (0, 0, 0, 255). The
+link map (`marioparty4.map`) puts `hsfload.o`'s `rgba` (400 bytes, `GXColor
+rgba[100]`) at 0x158200, then `vtxtop`, `BGColor` at 0x158394 and
+`FogData` at 0x1583A0. `hsfload.c:224` fills `rgba[i]` for every material
+of every HSF loaded and nothing reads it; an HSF with more than 100
+materials writes on past it. m408's has more (the swirl tunnel, the
+island): `rgba[101]` is `BGColor`, `rgba[104..107]` is `FogData` — fog
+type = a material's lit colour with 255 in the low byte, the range =
+white as a float = NaN, the colour white; and the port fogged the sky
+white. On the console the same overrun lands on whatever the DOL put
+after `rgba`, which is not the fog. The table is bounded in
+`port/patches.txt` (an exact-text patch of the four stores, with an
+`OSReport` the first time a model goes over: the witness line in the
+log), the class of §20's struct bound.
+
+**m417, Makin' Waves — read, not fixed.** The pool's shader (`water.c:826`)
+is five stages: two lerp-adds by register alphas, then `T*RASA → REG2` and
+`lerp(PREV, C1, C2)`, and the last stage reads PREV *across* the register
+write — the planner's unexpressible case (PREV's producer is stage 2,
+stage 3 wrote REG2, and GL's PREVIOUS after unit 3 is stage 3's result).
+Expressible only by carrying stage 3's scalar in an alpha, which is a
+fold for the next milestone; and the play's early end at +846 was not
+chased. Its rows keep §41b's verdict.
+
+### 45.5 Cause G: the attribute the decoder did not know
+
+m402's prism (`--cpuxf --drawlog`, which prints the transformed
+positions): draw 263 of the frame, object `table`, the display list's
+first primitive 40 quads-vertices with `nactive 2`, then `op ff prim f8
+fmt 7 count 31488` — the decoder's next opcode read from the middle of the
+first primitive's vertex data, 183 vertices of `1e25` and `1.7e38`, a
+yellow polygon through the arena. The lists before and after it decode
+with `nactive 3`. hsfdraw.c:583: a face group with `flags & 2` (bump
+mapped) sets `GXSetVtxDesc(GX_VA_NBT, GX_DIRECT)` and
+`GXSetVtxAttrFmt(GX_VTXFMT0, GX_VA_NBT, GX_NRM_NBT, GX_S16, 8)` — nine
+s16 a vertex — and `GX_VA_NBT` (25) is the SDK's *alias* for the normal
+attribute ("the same attribute as GX_VA_NRM"), which the port stored in
+`gx.vcd[25]` and never read. `GXSetVtxDesc`, `GXSetVtxAttrFmt` and
+`GXSetArray` alias it to `GX_VA_NRM` now, and the decoder steps over the
+nine components (`GX_NRM_NBT`) or three indices (`GX_NRM_NBT3`) keeping
+the normal; the binormal and tangent are for the indirect bump the port
+drops.
+
+### 45.6 Cause H: a primitive with no end, and a line with no width
+
+m428's rope hook (`player.c:2168`) draws `GXBegin(GX_LINESTRIP, …, n)`
+and n `GXPosition1x16`/`GXColor1x16` pairs, and never calls `GXEnd` —
+the SDK's `GXEnd` is `static inline void GXEnd(void) {}` (GXVert.h:184);
+the hardware ends a primitive at its n-th vertex. The port submitted an
+immediate primitive on `GXEnd` only, and the next `GXBegin` reset the
+count: the rope, and every other immediate primitive without a `GXEnd`,
+was dropped (its drawlog had no line primitive at all, which is what
+said so). `attr_written` ends the primitive at the n-th vertex now. Then
+`GXSetLineWidth`, a generated stub since M2 (36,949 calls on the soak's
+stub report), stores the width (sixths of a pixel; the game's ropes are
+16 = 2.7 px) and `glLineWidth` is in the render thread's stream
+(`--nolinewidth` is the hairline).
+
+### 45.7 Cause I: the third texture
+
+m448's felt (`grid`, 20 vertices, six stages) is hsfdraw's
+`SetTevStageTex` for a material of *three* textures with the third's
+`kColor == 1`: the M16 triple (felt, environment map → REG2, lerp by the
+map's alpha), then `T_decal * RAS → REG2`, `lerp(PREV, C2, T_decal.a)`,
+then the shadow. The port matched the triple and sent the pair down the
+generic path: the decal stage overwrote PREV with `T_decal * RAS` (a 64×64
+RGBA8 whose mean is black) and the lerp mixed that with REG2's constant
+(black) — the felt drew black wherever the decal's alpha was low, which
+is the table. RAS still factors out of everything, so the fold is the M16
+one with the multiply moved one unit later (regfix shape 5: `T_A`;
+`lerp(PREV, T_B, PREV.a)`; `lerp(PREV, T_C, T_C.a)` with the third texture
+bound one unit early; `PREV * RAS`; a pass), and `gx_tev_unit_stage()`
+tells both vertex paths which stage's coordinate a unit samples for.
+
+**m435–m437's pillar spheres — read, not fixed.** The flames are three
+objects at the pillar top: a star flare (`m05ef01`/`sphere18`, 24
+vertices, `T_IA8 * KONST(cyan)` then `× RAS`, alpha test ≥ 128, additive)
+which draws, and the sphere itself (`sphere1`/`sphere20`, 48 + 128
+vertices, `T * RAS + T_glow` through a `GX_TG_NRM` texgen, alpha `APREV
+* A0` = 0.7, z write off, `GX_BL_SRCALPHA/INVSRCALPHA`) which is in the
+drawlog with sane vertex positions at the pillar top and does not show.
+Its material is lit (`mat (178, 178, 255)`, the arena's lights) and its
+generic emission is two ordinary units. Not resolved in the day; the
+next read is `--dumptex` for its 128×128 `T` and a `--gltrace` of its
+two draws.
+
+### 45.8 Cause D: m430's column — read, not fixed
+
+The right view's draws are the left view's 305 draws again under the
+other camera. With `--cpuxf` every draw's positions are on the log
+(`~/m30/m430-cpu.log`); the screen-aligned dark rectangle from the top of
+the view is not the rope (the rope's four line vertices were all one
+point — the game's rope points before the n-th-vertex fix; the rope
+draws now), not the sky quads (`sorasita`, `kumo`, 9,000 units across at
+z −5,900, in both views), not the island billboards (`particleFunc`, a
+2,750-unit quad at z −13,197 whose 256×256 C8 texture dumps as the palm
+island with its alpha right). The candidates left are the two
+`Hu3DDrawPost` 4-vertex `shadow` quads and the untextured 120-vertex
+`rope` tubes; the next read is `--gltrace` on the right view alone.
+
+### 45.9 The md5s
+
+The 9,000-frame turbo walk (§31.2) on the M30 build (`a33e8547…`), and
+the same with every M30 lever off:
+
+| frame | M29 (= `--nolinewidth --noregchain --oldfog --nospot --mdposonly`, to the byte) | **M30** | what |
+|---:|---|---|---|
+| 800 | `0b58c5ee…` | `0b58c5ee1dee7b5da28a688c4fe315ce` unchanged | |
+| 3000 | `c58a046d…` | `c58a046d9ce6fabe3fef0b2270179203` unchanged | |
+| 7000 | `021d58fb…` | **`4a9a640c219e94b8c80460c84e019b97`** | `ppmdiff`: **one channel sample at one pixel (126, 4) by one level**; mean 0.00005 levels, 0 samples over 8 |
+
+The board's lights are type 1 (`Hu3DGLightInfinitytSet`): a 20°
+`GX_SP_COS` cone on a light 10⁶ units away, `(c − cos 20°) / (1 − cos
+20°)` with `c` a hair under 1 — the hardware's own arithmetic, below a
+level, and one sample rounded the other way. The three M30 references are
+therefore **800 `0b58c5ee…`, 3000 `c58a046d…` (unchanged), 7000
+`4a9a640c…`**; the console cannot adjudicate a level, and the walk with
+the levers off reproduces M29's three to the byte
+(`docs/soak/m30-T.log.gz`, `m30-Told.log.gz`).
+
+
+### 45.9b The gallery on the G4: the pairs and the numbers
+
+`gallery_chain.sh` with `GAMES=` (new) on the M30 build (`a33e8547…`):
+the thirteen games of the causes and two controls, 22:34–23:13 G4 time
+(`docs/soak/m30-gallery-index.txt`, `m30-gallery-mNNN.log.gz`), the
+frames in `port/docs/gallery/mNNN-m30-fNNNNNN.jpg`, the rows regenerated
+into `compare.html` by `port/tools/compare_m30.py` (the console frames
+stay; each M30 row keeps the M26b verdict and note as the before
+picture; `verdicts-m30.tsv`, `similarity-m30.tsv`). The sim cell is
+§41b.2's `sim/>8` at the four play positions (+60 · +400 · +1200 ·
++2300), the sweep's M26 fix build first, the M30 build second:
+
+| game | cause | M26b | **M30** | sim: M26 fix → M30 |
+|---|---|---|---|---|
+| m414 Long Claw of the Law | C (the fog guard) | major | **match** | 45/100 54/92 49/92 53/100 → **95/28 95/62 90/78** 65/100 (the console's +2300 is its results) |
+| m427 Right Oar Left? | B (chain, cone, fog, lamp) | major | **match** | 85/43 47/89 47/93 56/94 → **99/21 95/43 94/58 92/43** |
+| m402 Slime Time | G (`GX_VA_NBT`) | major | **match** | 82/93 86/88 86/90 86/90 → **98/30 98/35 96/44 95/42** |
+| m434 Cheep Cheep Sweep | B (the batch, the alpha) | major | **match** | 88/69 93/56 92/61 92/60 → 91/58 94/55 93/59 93/59 (a translucent surface moves the number a little; the picture is the console's) |
+| m448 Goomba's Chip Flip | I (the three-texture shape) | minor | **match** | 98/43 92/67 92/74 92/75 → 98/43 93/61 93/68 93/70 |
+| m428 Cliffhangers | H (the n-th vertex, the width) | minor | **match** | 92/55 92/54 82/88 79/96 → 92/57 92/57 82/89 79/96 (a 3-px rope; the play differs) |
+| m458 Panels of Doom | E (§45.10) | port-faulted | **match** | – → **99/19 99/22 98/26 99/22** (the play frames were never captured before) |
+| m408 Paratrooper Plunge | C (`rgba[100]`) | major | **minor** | 92/80 93/99 83/94 62/100 → 92/84 96/99 87/87 70/99: the sky and the swirl draw; the tunnel's white cap stays |
+| m417 Makin' Waves | C (the fog guard, half) | major | major | 78/99 52/99 61/98 70/100 → 75/84 82/66 61/98 71/100: the pool scene draws, the water is black, the game still ends at +846 |
+| m405 Mario Medley | B | minor | minor | 95/66 93/74 87/88 90/91 → 95/66 93/74 87/88 90/91: the caustic is the indirect warp |
+| m430 Pair-a-sailing | D | major | major | 91/67 89/73 81/88 81/86 → 92/61 91/70 82/87 82/84: the rope draws, the column stands |
+| m435–m437 Bowser games | I, J | minor | minor | unchanged (m435: 95/58 97/37 98/39 98/32 → 95/58 97/37 98/38 98/32) |
+| m401, m416 (controls) | – | match | match | 93/92 93/95 91/93 92/94 → 94/75 95/65 92/58 94/58; 95/37 97/65 97/59 77/86 → 95/39 97/67 97/60 77/86 |
+
+The header counts move from **45 match, 7 minor, 7 major, 2
+port-faulted, 2 oracle-failed** to **52 match, 6 minor, 2 major, 1
+port-faulted, 2 oracle-failed**.
+
+![m414, m427, m434, m402 at +400: M26b | M30 | console](screenshots/m30-g4-pairs-1.png)
+![m448 +400, m428 +60, m408 +60 and +1200: M26b | M30 | console](screenshots/m30-g4-pairs-2.png)
+![what is left: m417, m430, m435, m405](screenshots/m30-g4-pairs-left.png)
+
+### 45.10 m458, Panels of Doom: the SIGBUS in the REL
+
+`snaps/lib/m458-fault-f015200.snap` was taken by build `abbd973e`, and
+`~/MarioParty4-m26gallery.app` is `d2767188` (§44.7's pointer was wrong
+by a build); `--restore-lax` took it (the range table matched), and the
+restored run faulted at the §41 frame with the §41 address: `signal 10 at
+0x935c001c`, pc `0x33d033f8` in `m458Dll.bundle`, frame 15,553. gdb
+(`port/tools/gdb/m458.gdb`, attached the moment the log said `resuming the
+game`; `docs/soak/m30-m458-gdb.txt.gz`):
+
+```
+#0  fn_1_5014 (var_r30=0x352c3d8) at m458Dll/main.c:1213
+    0x33d033f8 <fn_1_5014+1236>:  stw r8,28(r2)        r2 = 0x935c0000
+#1  omMain ()
+```
+
+main.c:1213 is `spC[…]->unk_1C = 0` in the panel-pick state machine, and
+`spC` is filled at the function's top as
+
+```c
+for (var_r31 = 0; var_r31 < 2; var_r31++)
+    spC[var_r31] = (&lbl_1_bss_BC)[var_r31]->data;
+```
+
+— the module reads its two player objects as a two-element array
+*through the address of the first* (seventeen sites), which on the
+console is what the linker gave it: `lbl_1_bss_C0` four bytes after
+`lbl_1_bss_BC`. GCC's `.bss` puts something else after `lbl_1_bss_BC`
+(the file declares `C0` before `BC`), so `spC[1]` was a garbage `OMOBJ*`
+and its `->data` a garbage work pointer, `0x935c0000` — the IOKit
+framework's address, which is what a store to it says. The M30 build's
+own run faulted 450 frames *earlier* at another of the seventeen sites
+(`signal 11 at 0x4bffef40`, `fn_1_5014+0xf8`): a different neighbour in a
+different build. §20's class exactly. The fix is an exact-text patch
+(`port/patches.txt`): the two globals become one array, `OMOBJ
+*lbl_1_bss_BC_arr[2]`, with the two names as macros over its elements,
+so `(&lbl_1_bss_BC)[1]` is `lbl_1_bss_C0` again. The witness is the
+gallery recipe on the fixed module: the game plays through +2600, and its
+frames are the console's (`m458-m30-f*.jpg`, sim 99/19 · 99/22 · 98/26 ·
+99/22 at +60 · +400 · +1200 · +2300):
+
+![m458 +400, +1200, +2300: M30 | console](screenshots/m30-m458-g4.png)
+
+
+### 45.11 What M30 shipped, and the table of what is left
+
+| shipped, with a witness | |
+|---|---|
+| **TEV register chains** (`regchain_plan`, `--noregchain`), the **lamp shape** (regfix 4) and the **three-texture shape** (regfix 5, `gx_tev_unit_stage`) | m427's river and headlamps, m448's felt (§45.3, §45.7; the gallery pairs) |
+| **the spot cone** (`GXInitLightSpot` per the SDK, the program's and the CPU path's angular term, `--nospot`) | m427's cave (§45.3); every placed light in the game |
+| **the fog**: the SDK's degenerate-range guard, the hardware's exponential shape through the fog coordinate (`--oldfog`) | m414's four views, m427's cave (§45.4) |
+| **`rgba[100]` bounded** (`port/patches.txt`, hsfload.c, with the `OSReport` witness) | m408's sky and sea (§45.4) |
+| **`GX_VA_NBT`** aliased and stepped | m402's prism gone (§45.5) |
+| **a primitive ends at its n-th vertex**; **`GXSetLineWidth`** in the stream (`--nolinewidth`) | m428's ropes (§45.6) |
+| **position-only strips per `glDrawArrays`** (`--mdposonly`), the KONST-1 alpha through the primary colour | m434's pond (§45.3) |
+| the drawlog's fog and copy-clear lines, `--gltrace`'s multi-draw line, `--mdmax`; `port/tools/drawlog_summary.py`, `soak_read.py`, `m30_chain.sh`, `gallery_chain.sh`'s `GAMES=`, `compare_m30.py`, `gdb/m458.gdb` | |
+| soak 20 read (§45.1), the md5s (§45.9), `docs/soak/m30-*`, `docs/screenshots/m30-*`, the regenerated `compare.html` rows | |
+
+**The table of what is left** (§41b's causes, after M30):
+
+| cause | games | M30 |
+|---|---|---|
+| B water | m427 | **fixed** (the chain, the cone, the fog, the lamp shape) |
+| B water | m434 | **fixed** (the multi-draw batch, the alpha) |
+| B water | m405 | minor, the tint improved; the caustic is the indirect warp (§17) — not started |
+| C scenes | m414 | **fixed** (the fog guard) |
+| C scenes | m408 | **fixed** (`rgba[100]`) |
+| C scenes | m417 | read, not fixed: a five-stage chain with PREV read across a register write (a scalar-in-alpha fold); the early end (+846) not started |
+| D column | m430 | read, not fixed: narrowed to the `shadow` quads or the `rope` tubes (§45.8) |
+| G prism | m402 | **fixed** (`GX_VA_NBT`) |
+| H lines | m428 | **fixed** (the n-th vertex, the width) |
+| I spheres | m435–m437 | read, not fixed (§45.7); m448 **fixed** (the three-texture shape) |
+| J text | m435's name, m457's bubble, the card titles' last glyph | not started |
+| E faults | m458 | **fixed** (the two-globals array, §45.10) |
+| E faults | m459 | runs at `--stackmul 2` (§44.7); the default unchanged |
+| A's leftover | m457's ring shadows | not started |
+
+**What M31 starts with**: the leave-behind soak (§45.12); m417's fold and
+its early end; m430's column through a `--gltrace` of the right view;
+m435's sphere through `--dumptex`; the `--stackmul 2` soak §44.7 named;
+the character select's render-thread wall (§44.8) — measured, unmoved.
+
+### 45.12 What is left running
+
+`g4 run --soak --com4 --rtc dolphin --freshcard --realtime --snap-every
+5000 --snap-keep 3 --status --ovllog --stuckwatch 200 --perf --stackmul
+2` on the final build (`071cbc5c…`, the same sources as `a33e8547…` plus
+the m458 patch; the turbo walk on it reproduces the three M30 md5s,
+`docs/soak/m30-chain-index.txt`), from 23:31 G4 time — §44.7's question
+put to a soak, as ITEM 3 asked: `--stackmul 2` is the multiplier m459
+runs under, and whether ×2 is enough for every coroutine the board and
+the minigames create is what this soak answers. **Read it first**: the
+`stack overlap error` guard in `HuPrcCall` is the witness of a stack
+that ran short (a fault or a `STUCK` with that line before it says ×2 is
+not enough and the default stays 4; a clean night says M31 may flip it),
+the `rt N ms dec M` on the status lines should read as §45.1's, and every
+`CARD: image flush took … behind the game` should stand alone with no
+`stall:` beside it. The M29 bundle is `~/MarioParty4-m29.app` for a
+same-binary comparison; the gallery frames of the day are in
+`~/gallery-m30/` on the G4 and littlejelly.
+
