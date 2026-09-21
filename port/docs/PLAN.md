@@ -15892,3 +15892,387 @@ expected), `rt N ms dec M` on the status lines as §46.1's, the stub
 report at the end should list six or fewer names with `GXSetZTexture`
 the only one a play can reach, and m417 — when the roulette deals it —
 should leave the module at +2000 or later.
+
+## 47. M32 log: packaging *(2026-09-21, littlejelly)*
+
+M32's brief was the v1 candidate: the bundle a player double-clicks on a
+clean G4, the defaults for players rather than soaks, and the disk image
+with its Read Me — the milestone M25's groundwork (§40.6) was written for.
+The soak M31 left was clean and short (§47.1). The first-run walk was done
+on the G4 as a player would do it, through the real chooser with a real
+click, from an empty home (§47.2), and found four things thirty milestones
+of runner launches never could: LaunchServices passes `-psn_0_NNN` to a
+double-clicked application and the parser refused it; F12 is Dashboard on
+Leopard; SDL 2.0.3 minimised the fullscreen window on that focus loss
+with nothing to bring it back; and Cmd-Q as a keystroke is not the
+menu's Quit. The defaults are a table (§47.3), the disk image is built by
+`port/tools/make_dmg.sh` on the G4 (§47.4), and the leftovers are what
+§47.5 says.
+
+### 47.1 The soak, read
+
+§46.9's leave-behind — `g4 run --soak --com4 --rtc dolphin --freshcard
+--realtime --snap-every 5000 --snap-keep 3 --status --ovllog --stuckwatch
+200 --perf` on the M31 build (`be468f84…`), the first soak with `--stackmul
+2` as the default and the twenty SDK bodies live — ran 07:59 to 08:41 G4
+time and was ended through `g4 key esc` for the milestone (the packaging
+needed the machine): **42 minutes, 152,340 frames, 2,539 status lines**
+(`docs/soak/m32-soak22-m31-leave.log.gz`, `soak_read.py`).
+
+| | |
+|---|---|
+| speed / presented fps | **100.1%** mean (`machine ok`, `cpu 2` on every line); 28.0 fps overall; the board's `w01dll` turns 28.5–29.5, `rt` 15.1–16.8 ms, `dec` 5.1–6.6 |
+| where it got | board 0, turn 13 of 20 when stopped |
+| minigames | 16 plays of 13 modules, **M25's order to the module** (m412 m428 m420 m444 m423 m438 m429 m444 m430 m406 m416 m405 m438 m431 m422 m410): the deterministic replay holds across M31's twenty bodies and the fold; presented fps 19.7 (m431, the §32.4 shape) to 29.7 |
+| `stack overlap error` / faults / guard hits / mismatches / STUCK / resyncs | **none / 0 / 0 / 0 / 0 / 0** — `late worst 743.7 ms` (the first board load) and no resync at all |
+| stalls | 97 `stall:` lines, none over 424 ms: the 250 ms ones every 5,000 frames are the snapshot's copy at the retrace (`--snap-every`), the rest module links (`dll`) and the results screen's card copy |
+| render thread | mode 3; replay 15.5 ms mean a presented frame; decode 37.6 M runs, **0 late**; gate 3,763 waited (worst 14.4 ms), 6,095 busy; ring waits 0 |
+| card / DVD | flushes 186 ms on the game thread in all, worst 40 ms behind; `DVD: 925 reads, 0 over 100 ms` |
+| rss / tex | 82–183 MB; 709 entries / 40 MB |
+| the stub report | **one name**: `THPInit 3` (the movie) — of M31's six, the only one a boot reaches |
+
+Nothing to fix; the build under it is the build M32 packages, with the
+port-side changes below and no change to game behaviour.
+### 47.2 The first-run walk, as a player gets it
+
+The bundle is `MarioParty4.app` from `make_bundle.sh` (§40.6's plist with
+`CFBundleShortVersionString 0.9`, `CFBundleVersion 32`, and an icon —
+`resources/MarioParty4.icns`, a die face drawn by `tools/gen_icon.py`, no
+artwork of the game's). A player's first run is a Finder double-click on
+a Mac that has never seen the port, so the walk was done that way: **a
+fresh home.** `~/MarioParty4-fresh.app` on the G4 is a wrapper whose
+executable is a three-line shell script (`export
+HOME=/Users/zach/mp4-fresh-home; exec ~/MarioParty4.app/Contents/MacOS/isle
+"$@"`), launched with `open` from ssh, which is a LaunchServices launch —
+the Dock icon, the foreground activation and the `-psn` argument of a
+double-click. Nothing in `/Users/zach/Library/Application
+Support/MarioParty4` was touched (witness §0u). The same walk was first
+run on the MacBook (its `screencapture` works from ssh), which is where
+the four findings were made and fixed before the G4's turn.
+
+**The walk, in order, on the G4** (build `8a9b6eb5…`, which differs from
+the final `2a52c786…` only in §47.5's diagnostics — the `--forceobj` bits
+and two drawlog lines; the first run's log is `~/mp4-fresh-run1.out` on
+the G4):
+
+1. **The machine check** ran before anything else — `verdict ok`, the
+   applied-settings block, `coroutine stacks x2` — and, on an `ok`
+   machine, showed no dialog. The `unsupported` refusal and the
+   `degraded` first-run message are §40.6's dialogs unchanged, witnessed
+   again on this build through `--fake-machine` (§47.2b), and the
+   real refusal on the MacBook under Rosetta, at two levels: the
+   Finder's own ("cannot be opened because it has an incorrect executable
+   format", `LSRequiresNativeExecution`) and, with the key removed, the
+   port's dialog with exit 2.
+2. **The chooser**, once. The image search (`$MARIOPARTY4_IMAGE`, the
+   bundle's Resources, the config, `~/MarioParty4/`) runs *after* the
+   check now (`main.c`; it ran before, so an unsupported Mac would have
+   been asked for a disc before being refused), finds nothing in the
+   fresh home, and puts up the Navigation Services dialog:
+
+   ![the chooser over the Finder, first run](screenshots/m32-first-run-chooser.jpg)
+
+   Driven end to end for the first time (M25 could not, §40.6): a
+   wrong file first — `~/isle-log.txt` — which the new check in
+   `image_looks_right` (the game id `GMPE01` in the first six bytes of an
+   image, a `files/` tree in a folder) refuses with a notice and asks
+   again:
+
+   ![the wrong-file notice](screenshots/m32-first-run-wrong-file-notice.jpg)
+
+   then, after a real click into the dialog (a Quartz mouse event: the
+   second dialog has no key focus until something clicks it, §0u),
+   ⌘⇧G with the path, and a real click on Choose:
+
+   ![Go to the folder, the image selected](screenshots/m32-first-run-chooser-goto.jpg)
+
+   `port> config: disc image /Users/zach/MarioParty4/mp4.nkit.iso (chosen;
+   remembered)` — and the second launch (step 7) read `(remembered)` and
+   showed no dialog.
+3. **Application Support created on the first run**:
+   `~/mp4-fresh-home/Library/Application Support/MarioParty4/` with
+   `config` (`fullscreen = 1`, the `machine` summary, `image = …`),
+   `memcard-slot-a.raw` (`new, formatted, 59 free blocks`, flushed on its
+   thread `74 ms behind the game … frame 1`), `MarioParty4.log` and the
+   `.metadata_never_index` marker. The fresh home had no `Library` and no
+   `Desktop`; the port makes every level now (the MacBook's first pass
+   found `cannot write …/config`).
+4. **Fullscreen, letterboxed, by default**: no `fullscreen` key in the
+   config means a first run and the key is written as `1` — the
+   Snowboard Kids convention ("a first run comes up fullscreen"). `1680x1050,
+   the picture at 1400x1050 from (140,0), scale 2.188`:
+
+   ![the title, first run, fullscreen on the G4](screenshots/m32-first-run-title-fullscreen.jpg)
+
+   `--noconfig` stays windowed unless `--fullscreen` is given (every
+   chain and every md5 walk passes `--noconfig`), and the G4's own config
+   carries `fullscreen = 0` since M25, so the lab's runs are as they were.
+5. **The pad and the keyboard.** `PADInit: controller 1 = Xbox One
+   controller (045e:02ea)`, and the keyboard is polled *beside* the pad
+   now (pad.c: buttons OR'd, the keys' sticks when the pad's rest), where
+   before M32 a plugged pad silenced the keys. A held Return (`key.py 36
+   0.3`) reads `btn 1000` under `--paddbg` and takes the title to SELECT
+   A FILE in fullscreen; the keys are §47.3's table (`--keys`).
+6. **F5 / F12** wrote `~/mp4-fresh-home/Desktop/Mario Party 4 04534.png`
+   (`png_write.c`, 922 KB, 640×480, no zlib; `Pillow` decodes it) —
+   the first F12 opened Dashboard instead (§47.2a).
+7. **Cmd-Q** as a keystroke: `reset requested: handing it to the game's
+   own reset path` → `OSResetSystem: the game finished its reset path
+   after 3977 watcher ticks; quitting cleanly`, the reports written, the
+   card image flushed and the writer joined in `port_card_report`, the
+   Finder back within three seconds. The second launch came up from the
+   remembered image straight to the fullscreen title with the existing
+   card, and Start took it to the file select:
+
+   ![the second launch, SELECT A FILE fullscreen](screenshots/m32-second-run-fileselect-fullscreen.jpg)
+
+**Verdict: the app as a player gets it works, on the G4, from an empty
+home, through the real chooser, on the final build.**
+
+#### 47.2a The four things a runner launch never showed
+
+* **`-psn_0_NNN`.** LaunchServices passes the process serial number as
+  `argv[1]` to a double-clicked application (Leopard and Snow Leopard
+  both); `port_parse_args` printed the usage and exited, and `open`
+  reported `-10810`. Skipped now. Thirty milestones of `g4 run` (the
+  runner execs the binary with its own arguments) never saw it.
+* **F12 is Dashboard on Leopard.** The key never reaches the game;
+  Dashboard came up over the fullscreen game, and SDL 2.0.3's default of
+  minimising a fullscreen window on focus loss hid the game with no Dock
+  icon to click (the wrapper's). `SDL_HINT_VIDEO_MINIMIZE_ON_FOCUS_LOSS`
+  is 0 now — the window is a desktop-sized borderless one, so it simply
+  stays — and the screenshot key is **F5 as well as F12** (the Read Me says
+  why).
+
+  ![F12 = Dashboard over the game, before the fix](screenshots/m32-f12-is-dashboard-on-leopard.jpg)
+* **Cmd-Q as a keystroke.** The MacBook's System Events delivered ⌘Q as
+  a key event and SDL raised no `SDL_QUIT` (the application menu's Quit is
+  the route SDL wires); the event pump takes `SDLK_q` with `KMOD_GUI` as
+  a quit too. Escape, ⌘Q and the close button all go through
+  `gl13_quit_asked`: the game's own reset path, and — new — a second ask
+  300 drawn frames later leaves through `port_shutdown` directly, for a
+  screen whose loop never polls the watcher (none found; the guard is for
+  the player who presses twice).
+* **The chooser before the check.** `port_find_default_image` ran before
+  `port_machine_check`; an unsupported Mac would have asked for a disc
+  image and then refused. Reordered, and a cancelled chooser now ends in
+  a notice ("no disc image … open the game again to choose it, or put the
+  .iso in ~/MarioParty4/") and exit 0 rather than `port_fatal`'s silent
+  exit — which itself shows a dialog now (`os_report.c`) when it fires
+  with a window server.
+
+#### 47.2b The dialogs on this build
+
+`g4 run --fake-machine ~/machines/imac-g4-geforce4mx.txt --noconfig` (the
+refusal, exit 2 after OK) and `--fake-machine ~/machines/g4-radeon9000-32mb.txt`
+(the first-run message on a degraded verdict, then the game): §40.6's
+two dialogs, on the M32 build, dismissed with `g4`'s
+UserNotificationCenter key:
+
+![the refusal on the M32 build](screenshots/m32-dialog-unsupported-fake-geforce4mx.jpg)
+![the first-run message on the M32 build](screenshots/m32-dialog-first-run-degraded.jpg)
+### 47.3 The defaults for players, not for soaks
+
+What the shipped bundle runs with when double-clicked and nothing is on the
+command line -- the `port> options:` block every log now starts with, and
+what `--defaults` prints (§47.2 has the G4's block verbatim):
+
+| setting | shipped default | where it is decided | the lab's soak differs by |
+|---|---|---|---|
+| pacing | `--realtime` (the retrace at 60 Hz on the wall clock, the picture at most every 2nd retrace) | `port_parse_args` (M17) | -- (the soak passes it explicitly) |
+| workers (the mixer's second half, the snapshot writer) | on when `hw.ncpu > 1`; `--threads 0` on one core | `port_workers_init`, the machine check's applied line | -- |
+| render thread | mode 3, overlapped, with the workers on; the inline twin (1) on one core | `rt_start` (M27) | -- |
+| decode on the render thread | 2 (joined at the retrace) with a render thread | `rt_start` (M29) | -- |
+| coroutine stack multiplier | ×2 | `PORT_PRC_STACK_MUL` (M31) | -- |
+| texture budget | 40 MB; three quarters of the card, rounded down to 4 MB, under 64 MB of VRAM | `gx_tex.c`, the machine check's `applying --texbudget` | -- |
+| audio | linear resampler, depop on, 100 ms lead under realtime | `port_parse_args` (M8c, M17) | -- |
+| `--status` / `--perf` / `--ovllog` / `--snap-every` | **off**: nothing is printed a second, nothing is written every 5,000 frames | not given | all four on |
+| the log | `~/Library/Application Support/MarioParty4/MarioParty4.log`, overwritten each run: the banner, the machine inventory, the options block, the boot narration, the reports at exit (the stub report last) | `main` (M25) | `~/isle-log.txt` through the runner |
+| fullscreen | **on** for a first run (no `fullscreen` key in the config), remembered; `--windowed` / `--fullscreen` write the key | `main` (M32) | the G4's config carries `fullscreen = 0` from M25; `--noconfig` is windowed |
+| the disc image | `$MARIOPARTY4_IMAGE`, the bundle's Resources, the config's `image`, `~/MarioParty4/*.iso`, then the chooser -- after the machine check | `port_find_default_image` (M32 moved it after the check) | `~/MarioParty4/mp4.nkit.iso` |
+| the card | `~/Library/Application Support/MarioParty4/memcard-slot-a.raw`, created formatted on first run | `card_file.c` (M3) | `--freshcard` = `scratch-slot-a.raw` |
+| F12 | a PNG on the Desktop, `Mario Party 4 NNNNN.png` by drawn frame (`--shotdir` redirects it) | `gl13.c`, `png_write.c` (M32) | -- |
+| Escape, Cmd-Q, the close button | the game's own reset path (the fade, the card flush, `OSResetSystem` → `port_shutdown`); a second ask after 300 drawn frames leaves through `port_shutdown` directly | `gl13_quit_asked` (M32) | `g4 key esc` is the same key |
+| pause | none of the port's: Start is the game's own pause inside a minigame, as on the console | -- | -- |
+
+### 47.4 The disk image and the Read Me
+
+`port/tools/make_dmg.sh` stages the folder the Snowboard Kids 1+2 PowerPC
+Edition shipped in — the house style, read off the G4's copy of that
+package (`~/Snowboard Kids 1+2 PowerPC Edition/`, its `Read Me.txt` and
+its UDZO image):
+
+```
+Mario Party 4 PowerPC Edition/
+    Mario Party 4.app        the bundle, renamed as the Finder names it
+    Read Me.txt              port/dist/Read Me.txt
+    Licences/                Mario Party 4 PowerPC Edition (the port).txt
+                             MusyX (MIT).txt            = extern/musyx/LICENSE
+                             SDL2 (zlib).txt            = panther-sdl2's COPYING.txt
+```
+
+and builds the image with `hdiutil create -format UDZO` — on the G4 over
+ssh when run from littlejelly (the staged folder goes over as a ustar
+stream, the image comes back through `ssh cat`; the G4 keeps `~/Mario Party
+4 PowerPC Edition 0.9.dmg`), or locally on a Mac. **No game data, ever**:
+the script refuses a bundle with an image in its Resources
+(`--with-image`) and any staged file over 100 MB; the bundle it packs is
+the one the lab installs, 9.0 MB unpacked (the executable, 99 REL bundles,
+SDL2, the icon, the seven input scripts).
+
+| | |
+|---|---|
+| name | `Mario Party 4 PowerPC Edition 0.9.dmg` (the version is `PORT_VERSION_STRING` in `include/port.h`, which the plist and `--defaults` read too) |
+| size | **4,211,911 bytes** (4.0 MB) |
+| md5 | `9d3b2640d18fc70e1adf06061b8518f0` |
+| built | 09:46 G4 time, from the bundle whose `isle` is `2a52c786…` — the final build, the repository head's (§47.6 for its md5 walk); a first image at 09:06 from `8a9b6eb5…` (`87969984…`, 4,211,752 bytes) was the one mounted and photographed, and the `/Applications` copy was replaced from the final one |
+| copies | `littlejelly:~/MarioParty4-PowerPC-0.9.dmg` (not committed), the G4's `~/Mario Party 4 PowerPC Edition 0.9.dmg`, `port/build-ppc-darwin/` |
+
+**Installed as a fresh user would**: `hdiutil attach` on the G4, the
+volume in the Finder, `cp -R` of `Mario Party 4.app` to `/Applications`
+(the drag), the volume detached, and `open "/Applications/Mario Party
+4.app"` — the real user's own config this time (`fullscreen = 0` since
+M25, the image found in `~/MarioParty4/`), the title in its window, the
+die icon in the Dock, Cmd-Q through the reset path:
+
+![the mounted image in the Finder](screenshots/m32-dmg-mounted-finder.jpg)
+![the installed application running from /Applications](screenshots/m32-installed-from-dmg-applications-run.jpg)
+
+**The Read Me** (`port/dist/Read Me.txt`, 7.5 KB, the Snowboard Kids
+Read Me's sections in its order): what this is; what it needs — the
+requirements paragraph of `requirements.md` and the by-card table in
+plain words, what the refusal and the first-run dialogs mean, that an
+Intel Mac is refused; you bring the disc image (the chooser, the
+`~/MarioParty4/` folder, `--image`; how to point it elsewhere); the
+screen (fullscreen by default, `--windowed` or the config's key); the
+controls (§47.3's tables, `--defaults` and `--keys` for a bug report);
+where your things live (the card image, the config, the log); what is not
+quite right yet — the seven `minor` rows of `compare.html` by name (Trace
+Race's guide line, Mario Medley's caustic, Paratrooper Plunge's white
+cap, Makin' Waves' ripple and streaks, the three Bowser games' pillar
+spheres), the character select at about 20 fps, the skipped movies, one
+card in slot A, controllers 2–4 absent; and the licence notes. The
+repository's own README.md was not touched.
+
+### 47.5 The leftovers
+
+**The character select's render thread, measured** (`--perf --gxsplit
+--rtsplit --perfwin 700-870:title,2600-3600:charselect --perfdump`, the
+final build, realtime, windowed, `docs/soak/m32-charsel-rtsplit.log.gz`,
+`m32-charsel-perf.csv.gz`): the window presents **19.4 fps**, skipping
+677 of 1,001 retraces, with the game thread at 15.0 ms a retrace (game
+8.8, gx 5.8) and the render thread at **28.9 ms of replay + 15.6 ms of
+decode per drawn frame** (the CSV's 324 drawn frames: replay median 28.2,
+p95 36.5; decode median 15.4) — 44.5 ms of second-core work per drawn
+frame against 15 ms of first-core work, which is the wall §44.8 named,
+now with its split: over the run **`--rtsplit` puts 87% of the replay
+inside the draw records** (`draw 15,086 ms` of 17,429: `state` 3%, `tex`
+3%, `present` 4%, `other` 3%), at 277,451 GL draws for 1,526 presented
+frames — 182 draws a frame over the run and more on this screen, so
+**about 80 µs a `glDrawArrays`/`glMultiDrawArraysEXT` on the Radeon's
+driver**, not the state, not the textures, not the gate (85 waits, 237
+ms). *The lever, in a paragraph:* the second core is doing two jobs in
+series — decode ahead, then replay — while the first core idles 18 ms of
+every 33; the port already has both placements as flags (`--rtdecode
+0` = the decode on the game thread, the M27 shape; `2` = on the render
+thread, M29's) and M29 measured them within 0.7 fps of each other
+here, because either way one core carries ~30 ms and the other ~15. The
+lever with headroom is to split the decode *by frame*: decode on the game
+thread when its consumed frame finished early (it has 18 ms), on the
+render thread otherwise — a per-retrace choice on the retrace's own
+timing, no new machinery (both paths exist; the join point is the same
+cursor). The ceiling is the balance: 1000 / max(15 + 15.6, 28.9) ≈ 32
+presented fps against 19.4 today, and the same rule helps every minigame
+whose `rt + dec` passed 33 in the soaks (m431, m444, m436). Fewer GL
+draws is the other lever (the matrix palette, `--palette`, was measured
+before the render thread existed and paid on the game thread; it is
+worth one more A/B now that the game thread has the room), but the
+per-draw driver cost is the driver's and does not move.
+
+**m435–m437's pillar sphere, read further, still not drawn.** Two
+diagnostics were added to `--forceobj` for it — bit 8 turns the blend
+off, bit 16 forces the colour and alpha writes on — and the drawlog
+prints the colour/alpha update flags and the *alpha* channel's control
+(`alpha0 enable 0 matsrc 1 lights 01`, so the raster alpha is the
+material's, 255). The bench (`~/m32/m435-blendoff` on the MacBook,
+`--forceobj sphere1:15 --drawlog 4000 --drawlog-at 14544`, the M32
+build): **with the blend off and every test off, the sphere still paints
+no disc** — the frame differs from the baseline in 1,203 pixels, all of
+them the star flare's and the crown's own pixels (they read the flags
+through the same name and went opaque), and none in the sky between
+them where a 70-pixel disc would be. So it is not alpha (§46.4's last
+open reading) and not the blend. Read out of the same trace: the
+sphere's view-space positions under `--cpuxf` project to a disc of
+about 36 px radius centred near (527, 90) — where the console draws it —
+under the *scene's own* projection (`persp [2.01184 0 2.41421 0 -1e-05
+-0.1]`: near 0.1, far 10,000 — not a projection of its own, so not a
+fold); the general decoder (`--olddecode3`) draws the same frame byte for
+byte (and `--olddecode`, the pre-M9b cursor, faults on the bench now —
+bit-rotted since the decode became a stream record, not worth reviving);
+and the frame's draw order has *two* objects per pillar besides the flare:
+one of 36 + 336 vertices with two texgens drawn in the main pass
+(draws 48/49, named `sphere20` by the matrix-pointer lookup) and one of
+48 + 128 in `Hu3DDrawPost` (draws 68–71, `sphere1`/`sphere20`). Which of
+the two is the console's visible sphere is the next question, and the
+read is a `--skipobj` twin of `--forceobj` on each (does the frame
+change at all without the draw?) with `--dumptex` of draw 48's two
+textures; after that, the bytes GL is handed for the 176 vertices at
+issue time. The snapshot stands: `snaps/lib/m435-sphere-f015200.snap`
+(the M31 gallery build; `--restore-lax`).
+
+![m435 at +60 on the bench: baseline | blend off (forceobj 15) | the difference ×4](screenshots/m32-m435-sphere-blendoff-bench.jpg)
+
+**m408's white tunnel cap, m417's streaks, m405's caustic**: not
+started; the snapshots named in §46.8 stand (`m417-streaks-f016000.snap`),
+and m405's and m417's warp is the one indirect-texture shape the port
+has never drawn (§17), the same lever for both.
+
+### 47.6 The md5s
+
+The 9,000-frame turbo walk on both M32 builds (`8a9b6eb5…` in `~/m32/T`,
+the final `2a52c786…` in `~/m32/T2` on the G4; `--noconfig`):
+
+| frame | reference (M30/M31) | **M32** |
+|---:|---|---|
+| 800 | `0b58c5ee…` | `0b58c5ee1dee7b5da28a688c4fe315ce` |
+| 3000 | `c58a046d…` | `c58a046d9ce6fabe3fef0b2270179203` |
+| 7000 | `4a9a640c…` | `4a9a640c219e94b8c80460c84e019b97` |
+
+Byte-identical on both: a packaging milestone changed no pixel.
+
+### 47.7 What M32 shipped, and what it did not
+
+| shipped, with a witness | |
+|---|---|
+| the first-run walk on the G4 from an empty home: the check, the chooser end to end (wrong file, real click, remembered), Application Support, fullscreen by default, the pad and the keyboard, F5, Cmd-Q, the second launch (§47.2) | seven screenshots, two logs on the G4 (`~/mp4-fresh-run1.out`, `~/mp4-fresh.out`) |
+| the four Finder-launch findings fixed: `-psn`, F12/Dashboard and the minimised fullscreen window, Cmd-Q as a key, the chooser before the check (§47.2a) | the walk itself; the MacBook's first pass |
+| `--defaults`, `--keys`, the options block on every log; the keyboard beside the pad, L/R/Z/C-stick keys (§47.3) | the MacBook's and the G4's prints |
+| the disk image, `make_dmg.sh`, the Read Me, the licences; installed from the image and run (§47.4) | the mount, `/Applications`, the screenshots |
+| the md5s unchanged (§47.6) | `~/m32/T` |
+| the character select measured and its lever named; the sphere read further (§47.5) | the logs |
+| the soak read (§47.1), `docs/soak/m32-*`, `docs/screenshots/m32-*`, witness §0u | |
+
+**Not done, and why:**
+
+* **The pillar sphere is still not drawn** (§47.5): four more levers say
+  what it is not; the next read is the draw-order question and the
+  bytes at issue time.
+* **m408, m417, m405** (§47.5): not started in a packaging milestone.
+* **The charsel's lever is named, not pulled** (§47.5): the per-frame
+  decode placement is a speed change and gets its own A/B on the three
+  scenes.
+* **No icon artwork of the game's**: the die is a placeholder drawn by
+  `gen_icon.py`; the Snowboard Kids apps carry box art the user made.
+* **The Read Me is a `.txt`** like the Snowboard Kids one, not an `.rtf`.
+* **Controllers 2–4** stay absent (the reference configuration since M3);
+  a second pad is a feature, not packaging.
+
+### 47.8 What is left running
+
+`g4 run --soak --com4 --rtc dolphin --freshcard --realtime --snap-every
+5000 --snap-keep 3 --status --ovllog --stuckwatch 200 --perf` on the
+final build (`2a52c786…`, `~/MarioParty4.app`; the M31 bundle kept as
+`~/MarioParty4-m31.app`) from 09:46 G4 time — the packaged code, the
+lab's flags. The G4's own config carries `fullscreen = 0`, so the soak's
+window is the window. Read it first: the same lines as §47.1's table,
+plus nothing new — a packaging milestone's soak is a regression check.

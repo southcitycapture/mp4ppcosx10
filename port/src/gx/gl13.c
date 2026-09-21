@@ -1305,8 +1305,8 @@ void gl13_apply_raster_state(void) {
     }
     {
         signed char cm[4];
-        cm[0] = cm[1] = cm[2] = (signed char)(gx.color_update ? 1 : 0);
-        cm[3] = (signed char)(gx.alpha_update ? 1 : 0);
+        cm[0] = cm[1] = cm[2] = (signed char)(gx.color_update || (gx_force_flags & 16) ? 1 : 0);
+        cm[3] = (signed char)(gx.alpha_update || (gx_force_flags & 16) ? 1 : 0);
         if (memcmp(glc.color_mask, cm, 4) != 0) {
             memcpy(glc.color_mask, cm, 4);
             glc_emitted++;
@@ -1318,7 +1318,8 @@ void gl13_apply_raster_state(void) {
     }
 
     {
-        int on = (gx.blend_mode == GX_BM_BLEND || gx.blend_mode == GX_BM_SUBTRACT);
+        int on = (gx.blend_mode == GX_BM_BLEND || gx.blend_mode == GX_BM_SUBTRACT) &&
+                 !(gx_force_flags & 8); /* M32: --forceobj bit 8 = the blend off */
         glc_enable(GL_BLEND, on, &glc.blend_on);
         if (on) {
             GLenum src, dst, eq;

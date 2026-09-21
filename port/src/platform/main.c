@@ -265,6 +265,7 @@ static void usage(const char* argv0) {
             "                    (m427's flooded cave), for the A/B\n"
             "  --nocarry         M31: no scalar-in-alpha fold (m417's pool: the water black)\n"
             "  --forceobj N[:f]  M31 diagnostic: object N's draws without cull 1 / z test 2 / alpha test 4\n"
+            "                    (M32: blend off 8, colour+alpha update forced on 16)\n"
             "  --nolinewidth     M30: ignore GXSetLineWidth, every line one pixel\n"
             "                    wide as before (m428's rope), for the A/B\n"
             "  --noregfix        fold a TEV stage's GX_TEVREG write to PREV (the\n"

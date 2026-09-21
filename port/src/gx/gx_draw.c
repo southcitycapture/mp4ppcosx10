@@ -1923,9 +1923,16 @@ static void draw_log(u32 first, u32 count, u8 dprim) {
     port_log("  alphacmp %u ref %u op %u / %u ref %u   zmode test %u fn %u write %u\n",
              gx.alpha_comp0, gx.alpha_ref0, gx.alpha_op, gx.alpha_comp1,
              gx.alpha_ref1, gx.z_enable, gx.z_func, gx.z_update);
-    port_log("  blend mode %u src %u dst %u   cull %u   scissor %u %u %u %u\n",
+    port_log("  blend mode %u src %u dst %u   cull %u   scissor %u %u %u %u   update colour %u alpha %u\n",
              gx.blend_mode, gx.blend_src, gx.blend_dst, gx.cull,
-             gx.scissor[0], gx.scissor[1], gx.scissor[2], gx.scissor[3]);
+             gx.scissor[0], gx.scissor[1], gx.scissor[2], gx.scissor[3],
+             gx.color_update, gx.alpha_update);
+    /* M32: the alpha channel's control too -- a lit colour with an alpha of
+     * zero blends to nothing, which reads exactly like a draw that never
+     * landed (m435's sphere, PLAN.md 47.5) */
+    port_log("  alpha0 enable %u matsrc %u ambsrc %u lights %02x   colour1 enable %u   alpha1 enable %u\n",
+             gx.chan[2].enable, gx.chan[2].mat_src, gx.chan[2].amb_src, gx.chan[2].light_mask,
+             gx.chan[1].enable, gx.chan[3].enable);
     /* M30 (PLAN.md 45): the fog and the copy clear, which a flat-colour
      * frame (m414's cyan quadrants) can only be read from */
     port_log("  fog type %u start %g end %g near %g far %g color %u %u %u %u   "
