@@ -1146,14 +1146,18 @@ static void compile_fn(void* args) {
             x_BindProgramARB = (fn_bindprog_t)SDL_GL_GetProcAddress("glBindProgramARB");
         }
     }
+    /* M35: the same sequence for a GL_TEXT_FRAGMENT_SHADER_ATI program (gx_tfs.c);
+     * that target has no native-limit query (the text is either accepted or
+     * refused at a character), so it is accepted on errpos alone. */
+    GLenum tgt = c->target ? (GLenum)c->target : (GLenum)RT_VP;
     c->id = 0;
     c->errpos = -1;
     c->native = 0;
     c->under_native = 0;
     c->msg[0] = '\0';
     x_GenProgramsARB(1, &id);
-    x_BindProgramARB(RT_VP, id);
-    x_ProgramStringARB(RT_VP, RT_VP_ASCII, (GLsizei)c->len, c->text);
+    x_BindProgramARB(tgt, id);
+    x_ProgramStringARB(tgt, RT_VP_ASCII, (GLsizei)c->len, c->text);
     glGetIntegerv(RT_VP_ERRPOS, &errpos);
     c->errpos = (int)errpos;
     if (errpos != -1) {
@@ -1162,8 +1166,13 @@ static void compile_fn(void* args) {
             strncpy(c->msg, m, sizeof(c->msg) - 1);
             c->msg[sizeof(c->msg) - 1] = '\0';
         }
-        x_BindProgramARB(RT_VP, 0);
+        x_BindProgramARB(tgt, 0);
         x_DeleteProgramsARB(1, &id);
+        return;
+    }
+    if (tgt != RT_VP) {
+        c->under_native = 1;
+        c->id = id; /* bound */
         return;
     }
     {

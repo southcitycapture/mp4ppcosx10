@@ -31,7 +31,7 @@ extern "C" {
 /* ---- settings, from argv ------------------------------------------------- */
 /* M32: the shipped version (the dmg's name, the plist, the --defaults header)
  * and the milestone that built it. */
-#define PORT_VERSION_STRING "0.9.3"
+#define PORT_VERSION_STRING "0.9.4"
 #define PORT_MILESTONE "M35"
 
 typedef struct PortOptions {
@@ -332,6 +332,29 @@ typedef struct PortOptions {
     int oldkonst;           /* --oldkonst  claim a unit's GL constant whole
                              *   (RGB and A together) the way every build
                              *   before M16 did.  The A/B lever (PLAN.md 31.4) */
+    int tfs;                /* --tfs / --notfs  M35: the indirect warp (GXSetTevIndWarp) as a
+                             *   GL_ATI_text_fragment_shader program (PLAN.md 50.13); off
+                             *   = the direct stage drawn unwarped, as M3..M35 */
+    int tfsprobe;           /* --tfsprobe  compile the warp programs and a read-back test
+                             *   on the card, print, quit */
+    int tfslog;             /* --tfslog  every compiled program's text and constants */
+    int tfsdbg;             /* --tfsdbg N  the warp draw's program replaced by a diagnostic (gx_tfs.c) */
+    int tfsnorebind;        /* --tfsnorebind  the program bound once per change, not per draw (the A/B) */
+    int tfscopycpu;         /* --tfscopycpu  diagnostic: EFB copies round-tripped through the CPU (needs --norenderthread) */
+    int tfssqcopy;          /* --tfssqcopy  diagnostic: EFB copy textures padded square */
+    int tfsmtx;             /* --tfsmtx  diagnostic: the units' GL texture matrices at the identity under the shader
+                             *   (the vertex program keeps the fold through gx_tfs_fold) -- no effect seen */
+    int tfsforcebind;       /* --tfsforcebind  diagnostic: the shader draw's texture binds issued past the shadow */
+    int tfsenvreset;        /* --tfsenvreset  diagnostic: every unit's texture env reset to MODULATE under the shader
+                             *   -- no effect seen */
+    int tfsdump;            /* --tfsdump  the first warp draws' unit textures read back (needs --norenderthread) */
+    int tfsall;             /* --tfsall N  a diagnostic: every draw of N or more TEV stages
+                             *   through the fragment shader too, warp or not (m448's felt:
+                             *   is the Radeon's fixed-function chain the cause?) */
+    int oldspec0;           /* --oldspec0  M35: GX_AF_SPEC on channel 0 read as the distance
+                             *   attenuation (M3..M35: m425's Thwomps opaque) */
+    int nolitalpha;         /* --nolitalpha  M35: the alpha channel unlit (the material's
+                             *   alpha), as M3..M35 */
     int oldczero;           /* --oldczero  M35: lerp(a, b, 0) keeps b as a live input
                              *   (m425's sea stage PREV + TEXC drawn as TEXC), as M3..M34 */
     int clrasclr;           /* --clrasclr  M35: GXColor3u8's three bytes are filed as a
@@ -675,6 +698,7 @@ int port_threads_on(void);          /* the workers are up */
 typedef struct {
     const char* text;
     int len;
+    unsigned target;   /* 0 = GL_VERTEX_PROGRAM_ARB; M35: 0x8200 = GL_TEXT_FRAGMENT_SHADER_ATI */
     unsigned id;       /* 0 = refused (errpos != -1, or not under the native limits) */
     int errpos;
     int native;        /* GL_PROGRAM_NATIVE_INSTRUCTIONS_ARB */

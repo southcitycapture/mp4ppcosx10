@@ -1681,6 +1681,11 @@ void gx_tex_copy(void* dest, int clear) {
 
     pw = pot_up(cw);
     ph = pot_up(ch);
+    if (port_opt.tfssqcopy) {
+        /* M35 diagnostic: the copy's texture square (does the fragment
+         * shader sample a 1024x512 image white?) */
+        pw = ph = pw > ph ? pw : ph;
+    }
     {
         GLuint name = cache[slot].gl_name;
         if (!name) {
@@ -1746,6 +1751,14 @@ void gx_tex_copy(void* dest, int clear) {
                                 sw < cw ? sw : cw, sh < ch ? sh : ch);
         if (from_front && !gl13_fullscreen()) {
             GL(glReadBuffer)(GL_BACK);
+        }
+        if (port_opt.tfscopycpu && !rt_on()) {
+            /* M35 diagnostic: the copy round-tripped through the CPU into a
+             * glTexImage2D-defined image (does the fragment shader read a
+             * CopyTexSubImage'd texture at all?) */
+            u8* px = (u8*)malloc((size_t)pw * ph * 4);
+            glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, px);
+            rt_teximage2d_owned(GL_TEXTURE_2D, 0, GL_RGBA8, pw, ph, 0, GL_RGBA, GL_UNSIGNED_BYTE, px);
         }
     }
     cache[slot].su = (float)cw / (float)pw;

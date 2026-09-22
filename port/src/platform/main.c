@@ -286,6 +286,19 @@ static void usage(const char* argv0) {
             "                    pre-M16 path; the board eyes), for the A/B\n"
             "  --oldkonst        claim a unit's GL constant whole instead of RGB\n"
             "                    and A separately (the pre-M16 path), for the A/B\n"
+            "  --tfs             M35: the indirect warp (Mario Medley's caustic, Makin'\n"
+            "                    Waves' and Cheep Cheep Sweep's ripples) as a fragment program\n"
+            "                    on GL_ATI_text_fragment_shader (the Radeon 9000 has it); OFF:\n"
+            "                    the Leopard driver samples two games' EFB copies wrong through\n"
+            "                    it (PLAN.md 50.13); --notfs is the default\n"
+            "  --tfsprobe        compile the warp programs, draw a read-back test, print, quit\n"
+            "  --tfslog          every fragment program compiled: its text and constants\n"
+            "  --tfsall N        a diagnostic: every draw of N or more TEV stages through the\n"
+            "                    fragment shader, warp or not (the fixed-function chain's A/B)\n"
+            "  --oldspec0        M35: GX_AF_SPEC on a colour channel read as the distance\n"
+            "                    attenuation (The Great Deflate's Thwomps opaque), for the A/B\n"
+            "  --nolitalpha      M35: the alpha channel unlit -- the material's alpha, not\n"
+            "                    ambient + the lights' (the Thwomps' translucency), for the A/B\n"
             "  --oldczero        M35: lerp(a, b, 0) keeps b as an input (a four-input\n"
             "                    stage, the d term alone drawn: m425's sea), for the A/B\n"
             "  --clrasclr        M35: GXColor3u8's bytes filed as a colour whatever the\n"
@@ -627,6 +640,9 @@ int port_parse_args(int argc, char** argv) {
     port_opt.rtauto_max = 0.75;
     port_opt.stackmul = PORT_PRC_STACK_MUL;
     port_opt.zprepass = 1; /* M34: the ZCompLoc gate, the hardware's rule (PLAN.md 49.2) */
+    port_opt.tfs = 0; /* M35: the indirect warp as a fragment program is built and OFF (PLAN.md 50.13:
+                       * the EFB copies of two of the three games sample wrong through it on the
+                       * Leopard driver; --tfs turns it on) */
     /* Linear, since the G4 measured both on the same walk (PLAN.md §20.5):
      * 1.75 ms mean against the 4-tap's 2.00, a worst frame of 10.92 ms against
      * 28.30, and fewer discontinuities, not more -- 33,002 against 36,328.
@@ -1046,6 +1062,36 @@ int port_parse_args(int argc, char** argv) {
             port_opt.oldkonst = 1;
         } else if (!strcmp(a, "--oldczero")) {
             port_opt.oldczero = 1;
+        } else if (!strcmp(a, "--tfs")) {
+            port_opt.tfs = 1;
+        } else if (!strcmp(a, "--notfs")) {
+            port_opt.tfs = 0;
+        } else if (!strcmp(a, "--tfsprobe")) {
+            port_opt.tfsprobe = 1;
+        } else if (!strcmp(a, "--tfslog")) {
+            port_opt.tfslog = 1;
+        } else if (!strcmp(a, "--tfsnorebind")) {
+            port_opt.tfsnorebind = 1;
+        } else if (!strcmp(a, "--tfscopycpu")) {
+            port_opt.tfscopycpu = 1;
+        } else if (!strcmp(a, "--tfssqcopy")) {
+            port_opt.tfssqcopy = 1;
+        } else if (!strcmp(a, "--tfsmtx")) {
+            port_opt.tfsmtx = 1;
+        } else if (!strcmp(a, "--tfsforcebind")) {
+            port_opt.tfsforcebind = 1;
+        } else if (!strcmp(a, "--tfsenvreset")) {
+            port_opt.tfsenvreset = 1;
+        } else if (!strcmp(a, "--tfsdump") && i + 1 < argc) {
+            port_opt.tfsdump = atoi(argv[++i]);
+        } else if (!strcmp(a, "--tfsdbg") && i + 1 < argc) {
+            port_opt.tfsdbg = atoi(argv[++i]);
+        } else if (!strcmp(a, "--tfsall") && i + 1 < argc) {
+            port_opt.tfsall = atoi(argv[++i]);
+        } else if (!strcmp(a, "--oldspec0")) {
+            port_opt.oldspec0 = 1;
+        } else if (!strcmp(a, "--nolitalpha")) {
+            port_opt.nolitalpha = 1;
         } else if (!strcmp(a, "--clrasclr")) {
             port_opt.clrasclr = 1;
         } else if (!strcmp(a, "--nodirty")) {
@@ -1172,7 +1218,9 @@ void port_shutdown(int code) {
     port_audio_shutdown(); /* first: it closes the WAV, which must be complete */
     port_workers_shutdown(); /* M24: after the audio's join, before the reports */
     void gx_tev_report(void);
+    void gx_tfs_report(void);
     gx_tev_report();
+    gx_tfs_report(); /* M35 */
     port_perf_report();
     port_framemode_report();
     port_audio_report();

@@ -17280,11 +17280,9 @@ walls unchanged to the level, as they were.
 * **m425's Thwomps, opaque where the console's are translucent** (the
   yellow marks): the Thwomp hook (`m425Dll/thwomp.c`, 44 draws a frame
   through `fn_1_101C4`) draws its own multi-stage shader; read as far as
-  its name. Snapshot: the gallery's `m425` +400 frame, and
-  `--minigame m425 --turns 1 --com4 --rtc dolphin --freshcard --play
-  board-start-com4.play --ffto 14800 --lockstep --dumpframe 14877 --drawlog
-  1500 --drawlog-at 14877` (the mbp's log: `docs/soak/m35-m425-drawlog-
-  f14877.log.gz`).
+  its name in the first pass (the mbp's log: `docs/soak/m35-m425-drawlog-
+  f14877.log.gz`) — **and fixed in the second, §50.13**: the channel's
+  specular attenuation and the lit alpha.
 * **m448's felt** ("no green there"): the M30 G4 frame's black felt is
   green on the mbp on every build back to M34 with every M35 lever off —
   a Radeon-against-Intel difference of the regfix5 fold, and the G4's
@@ -17346,7 +17344,7 @@ console; the screenshots named in the last column are the witnesses.
 | m422-1 | m422 Money Belts | entry +400 | - | shadows | 95%/70% | 95%/70% (m35) | **fixed** | §50.3 |
 | m423-1 | m423 GOOOOOOOAL!! | entry +400 | - | Shadows, and it effecting the colours | 93%/82% | 94%/82% (m35) | **fixed** | §50.3 (1.9% moved: the shadows under the three players) |
 | m424-1 | m424 Blame it on the Crane | entry +400 | - | shadows | 93%/72% | 93%/72% (m35) | **fixed** | §50.3 |
-| m425-1 | m425 The Great Deflate | entry +400 | major | Red: Black background wrong / Yellow: rendered incorrect | 93%/58% | 93%/58% (m35) | **fixed** (red) / read-not-fixed (yellow) | red: §50.6, the sea (the final build's row); yellow: the Thwomp hook's shader (§50.8) |
+| m425-1 | m425 The Great Deflate | entry +400 | major | Red: Black background wrong / Yellow: rendered incorrect | 93%/58% | 95%/53% (m35, second pass) | **fixed** (red and yellow) | red: §50.6, the sea; yellow: §50.13, the specular channel and the lit alpha — the slabs translucent with opaque highlights, the towel through them to the level |
 | m426-1 | m426 Revers-a-Bomb | entry +400 | - | shadows, plus the light is rendered wrong | 97%/57% | 97%/60% (m35) | **fixed** | §50.3: the bombs' shadows on the lanes (5.2% moved) |
 | m427-1 | m427 Right Oar Left? | entry +400 | major | Lighting is off by. a lot | 95%/43% | 96%/23% (m35) | **fixed** | §50.7: the lamps' glow on the river, (5,8,7) → (5,17,14) against the console's (6,15,14) |
 | m432-1 | m432 Dungeon Duos | entry +400 | minor | G4 looks different on the walls | 97%/38% | 97%/42% (m35) | read-not-fixed | 1.2% moved (the shadows); the walls' lit panels as before; snapshot = the gallery row |
@@ -17366,13 +17364,16 @@ console; the screenshots named in the last column are the witnesses.
 | m450-1 | m450 The Final Battle! | entry +400 | minor | missing grahics | 97%/34% | 97%/34% (m35) | read-not-fixed | the port's +400 has no player in view where the console's Mario sits dazed in the centre: the play, unresolved (0.4% moved) |
 | m453-7 | m453 Challenge Booksquirm | results | wrong | Black here | - | - | **by design** | the results' background is black on the console (m461's `c011987`); the yellow is the wipe-in, caught mid-wipe at link+40 (§41b) |
 
-**Counts: 37 notes — 26 fixed (6 of them by M34's IA8 byte, which the
-M31 frames the user reviewed predate), 10 read and not fixed, 1 by
-design.** By cause: shadows and light, 17 notes, one cause (§50.3), all
-fixed; water, 7 notes (m405 ×2, m417 ×2, m434 ×2, m427), m427 fixed
-(§50.7), the six the indirect warp; black where the console draws, 4
-notes, three fixed (§50.5: m401, m406; §50.6: m425's red) and m453 by
-design; single games, the rest.
+**Counts: 37 notes — 27 fixed (6 of them by M34's IA8 byte, which the
+M31 frames the user reviewed predate; m425's yellow by the second pass,
+§50.13), 9 read and not fixed, 1 by design.** By cause: shadows and
+light, 18 notes (the 17 of §50.3 and m425's Thwomps, §50.13), two
+causes, all fixed; water, 7 notes (m405 ×2, m417 ×2, m434 ×2, m427),
+m427 fixed (§50.7), the six the indirect warp (§50.14: built, off; one
+of m405's two is the floor missing from its copy, not the warp); black
+where the console draws, 4 notes, three fixed (§50.5: m401, m406; §50.6:
+m425's red) and m453 by design; single games, the rest (m448's felt,
+m403's lamp, m432's walls, m450's player: read, not fixed).
 
 ### 50.10 The gallery and the md5s
 
@@ -17497,3 +17498,233 @@ dmg), `~/MarioParty4-m34.app` (0.9.2's, from its dmg), the chain scripts
 `~/m35_gallery.sh`, and `~/m35/`, `~/gallery-m35/`, `~/gallery-m35f/`
 with every run named above; the mbp keeps `~/MarioParty4-m35c.app`
 (`7b8cc852…`, the czero build before the version bump) and `~/m35/`.
+
+### 50.13 The second pass: the Thwomps' lighting (`--oldspec0`, `--nolitalpha`)
+
+The first pass (§50.1–§50.12) ended at the API; the second, the same
+night on littlejelly, resumed from its commit with the two items the
+brief ranks highest among what was left: the water (§50.14) and the
+single games, first of them m425's yellow marks — the Thwomps opaque
+where the console's are translucent — which §50.8 had "read as far as
+its name". The name was enough, read to the end.
+
+**What the frames say.** The console's slabs (`m425-c010987`, +400) show
+the beach towels through them and carry opaque highlights along their
+edges; the port's are solid blue-violet
+(`screenshots/m35-m425-f14877-thwomp-old-new-console.jpg`, the three
+positions).
+
+**The reading.** `thwomp.c:2099` draws the slab with **`GXSetChanCtrl(
+GX_COLOR0A0, TRUE, GX_SRC_REG, GX_SRC_REG, lights, GX_DF_CLAMP,
+GX_AF_SPEC)`**, a white material, an ambient of `(0, 0, 255, 0x40)`
+(`unk_23A`, the player's colour with alpha 64), and its lights loaded
+through `GXInitSpecularDir` with `GXInitLightAttn(0, 0, 1, 2, 0, −1)`
+(`fn_1_116E4`, `var_f31` = 4 — the shininess). Two things the port did
+not do, both since M3:
+
+* **`GX_AF_SPEC` on channel 0.** M21 (§36.2) built the specular
+  attenuation for channel 1 alone — the hilite fold, `DF_NONE +
+  AF_SPEC` — and channel 0's `attn_fn != GX_AF_NONE` stayed on the
+  distance form, `1 / (k0 + k1·d + k2·d²)`, which with the Thwomp's k is
+  `1 / (2 − d²)`: a slab lit flat. The hardware's (Dolphin's
+  `LightingShaderGen`, the reference §36.2 used) is `nh = (N · ldir ≥ 0)
+  ? max(0, N · H) : 0`, `attn = max(0, a · (1, nh, nh²)) / (k · (1, nh,
+  nh²))`, **k normalised unless the diffuse function is NONE**, then the
+  diffuse term as the channel's diffuse function says. Both vertex
+  paths compute it now (`light_channel` and `chan_light_factor` in
+  gx_draw.c; the program's `spec0` variant in gx_vprog.c, which uploads
+  the normalised k and reads `H` from the light's `dir` as the hilite
+  path does). `--oldspec0` is the distance form.
+* **The alpha channel is lit.** `GX_COLOR0A0` sets ALPHA0's control with
+  COLOR0's, and a lit alpha is `clamp(amb.a + Σ attn · diff · lcol.a) ·
+  mat.a`. The port wrote the material's alpha unlit (`result.color.w =
+  mt.w`; `io[3] = mat[3]` on the CPU path): 255, opaque. On the console
+  the slab's alpha is 0x40 plus the specular sum — a translucent slab
+  with opaque highlights where the lights catch it, the user's mark.
+  Both paths light it now when ALPHA0 is enabled: the program shares
+  channel 0's per-light factor when the two channels' controls are equal
+  (hsfdraw's `alphaLightF` case among them, where the ambient alpha is
+  255 and every material stays as opaque as before), keeps the material's
+  alpha under the hilite fold (the fold has no CPU twin), and hands a
+  differing control to the CPU path, which lights the alpha by its own
+  control (`light_alpha`). `--nolitalpha` is the material's alpha.
+
+**The witness.** On the G4 (`~/MarioParty4-tfs.app`, the second-pass
+build; `m35_tfs.sh`'s `m425` and `m425old` runs, the same binary with
+`--oldspec0 --nolitalpha` as the A arm), the +400 frame against the
+console's `c010987`, 12×12 means:
+
+| region | M35 first pass | `--oldspec0 --nolitalpha` | fixed | console |
+|---|---|---|---|---|
+| right slab, body | (109, 110, 194) | (109, 110, 195) | **(142, 146, 197)** | (133, 138, 197) |
+| left slab, body | (142, 143, 236) | (142, 143, 237) | **(165, 171, 233)** | (156, 162, 231) |
+| left slab, lower band (the towel behind it) | (180, 169, 214) | (180, 169, 214) | **(181, 169, 195)** | (182, 170, 195) |
+
+The towel reads through the slab to the level; the body is a few levels
+lighter than the console's (the highlight's breadth, `nh` from the
+port's normals). `sim/>8` at the three positions: +60 95/51 → **97/35**,
++400 93/58 → **95/53**, +1200 92/51 → **94/53** (the A arm 95/52, 94/60,
+93/54: the first pass's picture). The three md5 scenes are unchanged
+(`~/m35/final2/index.txt`: 0b58c5ee / 2b99c60a / 4a9a640c on the final
+build) — no material of the title, the character select or the board
+lights its alpha with an ambient under 255, and no channel 0 of theirs
+is specular.
+
+### 50.14 The indirect warp, built and not shipped on (`gx_tfs.c`, `--tfs`)
+
+§49.6's spec — every `GXSetTevIndWarp` in the game one shape, and the
+program it would take on `GL_ATI_text_fragment_shader` — is built:
+`port/src/gx/gx_tfs.c` compiles a draw's whole TEV chain into an ATI
+fragment program when the chain has a warp and the card has the
+extension (`gl13_have_tfs`, the Radeon 9000's list), the direct stages'
+maps on units 0..n−1 as the fixed function has them and the indirect
+maps on the units after (`gx_tev_unit_source()`, the one question both
+vertex paths ask now), the offsets' constants as `program.env`
+parameters recomputed per draw from the maps bound. The reading of the
+shape, the program's form, and what the driver does with it are below;
+**the switch is off** (`--tfs` turns it on), because two of the three
+pools draw wrong through it for a reason the night did not find.
+
+**What the hardware does.** An indirect stage samples a map at its own
+texgen; the texel's three bytes (S from alpha, T from blue, U from
+green — the hardware's `.abg`, Dolphin's `iindtex`) are biased by −128
+when signed, multiplied by a 2×3 matrix and by 2^exp, and the result is
+an offset **in texels of the direct stage's map**, added to that
+stage's coordinate before its sample. m417 (`water.c:809`) offsets four
+stages by three matrices (`MTXScale(∓0.5, ∓0.5, 0.5)` at −2, `0.5` at
+0, `∓0.65` at −3) through one bump map on `TEXCOORD1` (a normal-based
+texgen); m405 (`main.c:978`) two stages, each through its own map and
+matrix (−0.2 at −2; 0.5 at 0); m434 (`map.c:313`) two, through `{0.012,
+0, 0; 0, 0.012, 0}` and `{0, 0, 0.5; 0, 0.5, 0}`. The matrices the game
+hands over are `Mtx` rows cast to `f32[2][3]`, so `MTXScale(a, a, b)`
+reads as row 0 = (a, 0, 0) and row 1 = (0, 0, b): S drives s, U drives
+t, and every row has at most one live entry — which lets a swap table
+on the indirect map's decode (gx_tex.c's `swizzle_rgba`, exact) put row
+0's channel in red and row 1's in green, so one `MUL` serves both rows.
+
+**The program.** ATI's fragment shader (spec §3.10.1: six registers that
+are also the six units' sample destinations, eight constants of eight
+bits in [0, 1], two passes of eight colour/alpha instruction pairs, the
+second pass's `SampleMap` free to take its coordinate from a register
+the first pass wrote) takes the shape like this — m405's, as compiled on
+the G4 (`docs/soak/m35-tfsprobe-g4.log.gz`, `--tfslog`):
+
+```
+StartPrelimPass;
+  SampleMap r2, t2.stq_dq;                # the indirect maps, on the units past the stages
+  SampleMap r3, t3.stq_dq;
+  PassTexCoord r0, t0.stq_dq;             # each warped stage's coordinate: s/q, t/q, 1/q
+  PassTexCoord r1, t1.stq_dq;
+  MUL r4.rg.eighth, r2.neg.2x.bias, c0;   # one per (map, matrix): the signed texel times
+  ADD r0.rg, r0, r4;                      #   the row scales; one ADD per warped stage
+  MUL r4.rg, r3.2x.bias, c1;
+  ADD r1.rg, r1, r4;
+EndPass;
+StartOutputPass;
+  SampleMap r0, r0.str;                   # the warped stages through their registers
+  SampleMap r1, r1.str;
+  MOV r0.rgb.sat, r0;   MOV r0.a.sat, c2; # then the TEV chain: (d + lerp(a, b, c)) * scale
+  LERP r0.rgb.sat, c3.a, r1, r0;          #   + bias, clamped, as MOV/ADD/MUL/MAD/LERP,
+  MOV r0.a.sat, c2;                       #   a LERP + ADD when all four inputs are live
+EndPass;
+```
+
+The scale of an offset: the sample's channel doubled and biased is
+(val − 127.5)/127.5, so the constant is |m| · 127.5 · 2^exp · fold /
+size (the NPOT fold of gl13.c, so the offset lands in the padded GL
+texture's space and a flipped EFB copy's flips with it); the sign goes
+on the sample's `neg` when both rows share it and into the constant's
+own `2x.bias` (c = 0.5 + k/2) when they differ; and the MUL's
+destination modifier carries the power of two that brings the larger
+row under 1 — `eighth` for m405's caustic (0.006 a texel step, and the
+constants are eight bits and **truncated** by the driver, the probe's
+"constant ×8" read, so `env_set` rounds to the nearest step first),
+`2x`/`4x` for m434's reflection, half the map per texel step. What
+falls back to the fixed function, counted by reason on the report line:
+an unsigned or replace-mode warp, an indirect coordinate scale other
+than 1, a matrix row with two live entries, more units than the card
+has, a stage shape the pass cannot say (a comparison op; a rasterised
+swap GL cannot select either), more pairs or constants than a pass
+holds, a program the driver refuses (its text on the log), no register
+left for a LERP's temporary. None of the three games' chains hits one;
+the register allocation gives m417's `GX_TEVREG2` write a register a
+consumed sample freed.
+
+**What the G4 said.** The extension exists on the G4 alone (the Intel
+bench has none), so every step of this was a G4 run — `--tfsprobe`
+(compile the builder's three programs from the games' state, draw a
+read-back test) and `m35_tfs.sh`'s parks of m405, m417 and m434 with
+`--tfsdbg N` (the draw's program replaced by one of 47 diagnostics) and
+`--tfsdump F` (the draw's unit textures read back), some sixty runs of
+90 s between 23:20 and 03:10 (`~/m35/tfs*`, `~/m35-tfs/` on
+littlejelly). Established:
+
+* Every program the builder emits **compiles** on the ATI-1.5.28 driver
+  (the first refusal was the spec's restriction 9, a `stq_dq` on a
+  register, which the builder never emits).
+* The **two-pass dependent read works** in a game draw: m405's unit 0
+  sampled through a register the first pass wrote gives the same picture
+  as sampled from its coordinate (`--tfsdbg 12` against `9`), and
+  `PassTexCoord ... stq_dq` delivers the divided, folded coordinate to
+  the level (`--tfsdbg 3`, the coordinate as the colour: s = 10, 40, 80,
+  120 at x = 40..480 of a 0.625 fold, t = 0.35 at y = 300 — the arithmetic
+  of §49's texgen exactly).
+* **m417 samples its EFB copy right** through the shader
+  (`screenshots/m35-tfs-diagnostics-...jpg`, first pane: stage 0 alone
+  under the shader is the pool floor the copy holds), and its full chain
+  draws — pale where the console is blue-grey, the TEV sum of the
+  copy × C0 + two maps × A0, A1 and the register mix, `sim` 93/64 →
+  86/74 at +400 (`m35-tfs-m417-e400.jpg`): the arithmetic is the
+  chain's; whether the maps and constants at that frame are the
+  console's is the next reading.
+* **m405's water is flat blue** through the shader because its stage-0
+  map is: buffer 2 (`lbl_1_data_10[2]`, the half-scale copy `fn_1_3F40`
+  takes at layer 2) holds the copy-clear colour `(30, 102, 162)` and
+  the sprites, not the pool floor (`m35-m405-warp-units-f14472.jpg`,
+  the four units read back). The fixed-function frame the user reviewed
+  showed lane lines through the water that were the I8 water texture of
+  stage 1 (`5D8`, 128×128) lerped in by the constant collision, not the
+  floor; on the console the floor is in buffer 2 (the console's +400
+  frame shows it refracted), which puts the port's layer-1 draws — the
+  pool model, file 50, `Hu3DModelShadowMapSet` — after layer 2's copy or
+  under layer 0's copy-with-clear (`fn_1_2714(0, TRUE)`). A
+  frame-composition difference of the port's, not the warp's, and not
+  read further in the night: **the Read Me's Mario Medley line stays,
+  with this cause named.**
+* **m434's pond draws white** through the shader — the copies sample
+  white at any coordinate (`--tfsdbg 1, 33, 34, 37, 44, 47`), while the
+  same texture objects hold the pond floor and the sky's reflection when
+  read back at that frame (`m35-m434-warp-units-f14870.jpg`), the fixed
+  function samples them, a black constant program lands on the pond
+  (`39`), the caustic on unit 2 samples at its own coordinate (`32`) and
+  a sample of unit 2 after the direct map is bound *on unit 2* returns
+  the caustic still (`45`). Not the texture matrix (`--tfsmtx`: the
+  units' GL matrices at the identity with the fold kept in the vertex
+  program through `gx_tfs_fold` — no change), not the texture
+  environment (`--tfsenvreset`), not the program's binding
+  (`--tfsnorebind`'s inverse is the default now), not the texture's
+  storage (`--tfscopycpu`: the copy round-tripped through the CPU into a
+  `glTexImage2D` image; `--tfssqcopy`: the copy padded square), not the
+  shadow (`--tfsforcebind`). And a **one-texture draw samples grey**
+  (0.64) through the shader whatever its program (`--tfsall 1` with
+  `--tfsdbg 23..30`), while every two-texture draw of the same scene
+  samples right (`--tfsall 2`: the characters and the walls textured as
+  the fixed function draws them, `m35-tfs-...` frames). Two behaviours
+  of the driver's shader path with no model yet; the notes above are
+  what the next session starts from, with `--tfsall 2` as the working
+  base and m434's unit 0 the case to explain.
+
+So the shader path ships **off**: on, it draws m434's pond white and
+m405's flat where the fixed function draws something a player reads as
+water. `--tfs` is the lever, `--tfsdbg`/`--tfsdump`/`--tfsall`/
+`--tfslog`/`--tfsprobe` the instruments, and every fallback and every
+diagnostic is counted on the report line (`tfs (M35): N draws through
+the fragment shader ...`). The three pools keep their Read Me lines; the
+warp is the item with the most notes behind it still (six), with the
+cause of one of them (m405's floor) moved off the warp.
+
+**Also read on the way.** m448's felt through the shader (`--tfsall 4`,
+the six-stage chain compiled and drawn: still black on the G4) says the
+fixed-function fold is not the only thing the Radeon disagrees with the
+Intel bench about — but the shader's own two unexplained behaviours make
+that run inconclusive; the row stands as §50.8 left it.

@@ -1,6 +1,6 @@
 Mario Party 4 PowerPC Edition
 =============================
-Version 0.9.3
+Version 0.9.4
 
 
 WHAT THIS IS
@@ -162,10 +162,13 @@ games); what is left that a player can see:
                         ripples it
     Cheep Cheep Sweep   the pond is clear where the console's reflects
                         the sky (the same missing ripple)
-    The Great Deflate   the two inflatable Thwomps are opaque; the
-                        console's are translucent
     Goomba's Chip Flip  the felt is black on the Radeon 9000 (the same
                         picture is green on an Intel card)
+
+The ripple of those three pools is a warp the card's fixed pipeline
+cannot do; a fragment-program path for it is in this build behind
+--tfs, and stays off because the Radeon's Leopard driver draws two of
+the three pools wrong through it (the notes say how far it got).
 
 The character select screen runs at about 23 frames a second on the
 reference machine (the board and most minigames run at the 30 cap).

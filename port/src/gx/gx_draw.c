@@ -1257,6 +1257,87 @@ static void put_color(u8 r, u8 g, u8 b, u8 a8) {
 /* CPU lighting, one colour channel.  GX's model: the material colour comes
  * either from the vertex or from a register, the ambient likewise, and each
  * enabled light contributes diffuse * attenuation. */
+/* the alpha channel's sum (M35): amb.a + sum(attn * diff * lcol.a), clamped,
+ * times mat.a -- io[3] on the way in is the vertex alpha */
+static float chan_light_factor(const GXChanCtrl* cc, const GXLight* l, const float* wpos,
+                               const float* wnrm);
+static void light_alpha(int c, const float* wpos, const float* wnrm, unsigned char* io) {
+    const GXChanCtrl* cc = &gx.chan[c];
+    float acc, mat;
+    int i;
+    mat = cc->mat_src == GX_SRC_REG ? byte_scale[cc->mat.a] : byte_scale[io[3]];
+    acc = cc->amb_src == GX_SRC_REG ? byte_scale[cc->amb.a] : byte_scale[io[3]];
+    for (i = 0; i < 8; i++) {
+        const GXLight* l = &gx.light[i];
+        if (!(cc->light_mask & (1u << i)) || !l->used) {
+            continue;
+        }
+        acc += byte_scale[l->color.a] * chan_light_factor(cc, l, wpos, wnrm);
+    }
+    acc = acc < 0.0f ? 0.0f : acc > 1.0f ? 1.0f : acc;
+    io[3] = (unsigned char)(acc * mat * 255.0f + 0.5f);
+}
+
+/* one light's diffuse * attenuation for a channel, the same three-way as
+ * light_channel's (which keeps its own copy for the colour's speed) */
+static float chan_light_factor(const GXChanCtrl* cc, const GXLight* l, const float* wpos,
+                               const float* wnrm) {
+    float dx = l->pos[0] - wpos[0], dy = l->pos[1] - wpos[1], dz = l->pos[2] - wpos[2];
+    float d2 = dx * dx + dy * dy + dz * dz, d, ndl, att = 1.0f;
+    if (d2 > 0.0f) {
+        float rd = gx_rsqrtf(d2);
+        d = d2 * rd;
+        dx *= rd;
+        dy *= rd;
+        dz *= rd;
+    } else {
+        d = 1.0f;
+    }
+    ndl = wnrm[0] * dx + wnrm[1] * dy + wnrm[2] * dz;
+    if (cc->attn_fn == GX_AF_SPEC && !port_opt.oldspec0) {
+        float nh = 0.0f, num, den, nk[3], nm2;
+        if (ndl >= 0.0f) {
+            nh = wnrm[0] * l->dir[0] + wnrm[1] * l->dir[1] + wnrm[2] * l->dir[2];
+            nh = nh < 0.0f ? 0.0f : nh;
+        }
+        nk[0] = l->k[0];
+        nk[1] = l->k[1];
+        nk[2] = l->k[2];
+        if (cc->diff_fn != GX_DF_NONE) {
+            nm2 = nk[0] * nk[0] + nk[1] * nk[1] + nk[2] * nk[2];
+            if (nm2 > 0.0f) {
+                float rn = gx_rsqrtf(nm2);
+                nk[0] *= rn;
+                nk[1] *= rn;
+                nk[2] *= rn;
+            }
+        }
+        num = l->a[0] + l->a[1] * nh + l->a[2] * nh * nh;
+        den = nk[0] + nk[1] * nh + nk[2] * nh * nh;
+        num = num < 0.0f ? 0.0f : num;
+        att = den != 0.0f ? num / den : 0.0f;
+    } else if (cc->attn_fn != GX_AF_NONE) {
+        float den = l->k[0] + l->k[1] * d + l->k[2] * d2;
+        att = den > 0.0f ? 1.0f / den : 1.0f;
+        if (att > 1.0f) {
+            att = 1.0f;
+        }
+        if (cc->attn_fn == GX_AF_SPOT && !port_opt.nospot) {
+            float cs = -(dx * l->dir[0] + dy * l->dir[1] + dz * l->dir[2]);
+            float num;
+            cs = cs < 0.0f ? 0.0f : cs;
+            num = l->a[0] + l->a[1] * cs + l->a[2] * cs * cs;
+            att *= num < 0.0f ? 0.0f : num;
+        }
+    }
+    if (cc->diff_fn == GX_DF_CLAMP) {
+        ndl = ndl < 0.0f ? 0.0f : ndl;
+    } else if (cc->diff_fn != GX_DF_SIGN) {
+        ndl = 1.0f;
+    }
+    return ndl * att;
+}
+
 static void light_channel(int c, const float* wpos, const float* wnrm,
                           unsigned char* io) {
     const GXChanCtrl* cc = &gx.chan[c];
@@ -1318,6 +1399,39 @@ static void light_channel(int c, const float* wpos, const float* wnrm,
             d = 1.0f;
         }
         ndl = wnrm[0] * dx + wnrm[1] * dy + wnrm[2] * dz;
+        att = 1.0f;
+        if (cc->attn_fn == GX_AF_SPEC && !port_opt.oldspec0) {
+            /* M35 (PLAN.md 50.14): the specular attenuation on a colour (or
+             * alpha) channel, as the hardware and Dolphin's LightingShaderGen
+             * compute it -- what gx_vprog.c's hilite path does for channel 1:
+             *   nh   = (N . ldir >= 0) ? max(0, N . H) : 0     H = the light's dir
+             *   attn = max(0, a . (1, nh, nh^2)) / (k . (1, nh, nh^2))
+             * with k normalised unless the diffuse function is NONE (Dolphin's
+             * rule, the hardware's).  M3..M35 read AF_SPEC as the distance
+             * attenuation with these k, which for m425's Thwomps (k = (2, 0,
+             * -1), a = (0, 0, 1)) was 1 / (2 - d^2): opaque, unlit slabs. */
+            float nh = 0.0f, num, den, nk[3], nm2;
+            if (ndl >= 0.0f) {
+                nh = wnrm[0] * l->dir[0] + wnrm[1] * l->dir[1] + wnrm[2] * l->dir[2];
+                nh = nh < 0.0f ? 0.0f : nh;
+            }
+            nk[0] = l->k[0];
+            nk[1] = l->k[1];
+            nk[2] = l->k[2];
+            if (cc->diff_fn != GX_DF_NONE) {
+                nm2 = nk[0] * nk[0] + nk[1] * nk[1] + nk[2] * nk[2];
+                if (nm2 > 0.0f) {
+                    float rn = gx_rsqrtf(nm2);
+                    nk[0] *= rn;
+                    nk[1] *= rn;
+                    nk[2] *= rn;
+                }
+            }
+            num = l->a[0] + l->a[1] * nh + l->a[2] * nh * nh;
+            den = nk[0] + nk[1] * nh + nk[2] * nh * nh;
+            num = num < 0.0f ? 0.0f : num;
+            att = den != 0.0f ? num / den : 0.0f;
+        }
         if (cc->diff_fn == GX_DF_CLAMP) {
             ndl = ndl < 0.0f ? 0.0f : ndl;
         } else if (cc->diff_fn == GX_DF_SIGN) {
@@ -1325,8 +1439,7 @@ static void light_channel(int c, const float* wpos, const float* wnrm,
         } else {
             ndl = 1.0f;
         }
-        att = 1.0f;
-        if (cc->attn_fn != GX_AF_NONE) {
+        if (cc->attn_fn != GX_AF_NONE && !(cc->attn_fn == GX_AF_SPEC && !port_opt.oldspec0)) {
             float den = l->k[0] + l->k[1] * d + l->k[2] * d2;
             att = den > 0.0f ? 1.0f / den : 1.0f;
             if (att > 1.0f) {
@@ -1351,6 +1464,14 @@ static void light_channel(int c, const float* wpos, const float* wnrm,
         io[i] = (unsigned char)(v * 255.0f + 0.5f);
     }
     io[3] = (unsigned char)(mat[3] * 255.0f + 0.5f);
+    if (c == 0 && gx.chan[GX_ALPHA0].enable && !port_opt.nolitalpha) {
+        /* M35 (PLAN.md 50.14): the alpha channel is lit too, by its own
+         * control -- GXSetChanCtrl(GX_COLOR0A0, ...) sets both -- the same
+         * sum over the lights' alpha: m425's Thwomps carry ambient 0x40 and
+         * a white material, and are translucent slabs with opaque specular
+         * highlights on the console */
+        light_alpha(GX_ALPHA0, wpos, wnrm, io);
+    }
 }
 
 /* ---- the vertex path, in two phases ----------------------------------------
@@ -3341,12 +3462,10 @@ static int draw_apply(const u8* s, int n, int in_ring) {
         {
             int i;
             for (i = 0; i < gl13_max_tex_units; i++) {
-                int stage = i < gx.num_tev ? gx_tev_unit_stage(i) : -1;
-                if (stage >= 0 && gx.tev[stage].coord < out_ntex &&
-                    gx_bound_tex(gx.tev[stage].map) != NULL) {
-                    glc_coord_array(i,
-                                    ob + out_off_tex + 8 * gx.tev[stage].coord,
-                                    out_stride);
+                u8 coord = 0, map = 0;
+                if (gx_tev_unit_source(i, &coord, &map) && coord < out_ntex &&
+                    gx_bound_tex(map) != NULL) {
+                    glc_coord_array(i, ob + out_off_tex + 8 * coord, out_stride);
                 } else {
                     glc_coord_array(i, NULL, 0);
                 }

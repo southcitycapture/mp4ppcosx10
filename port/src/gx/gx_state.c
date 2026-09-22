@@ -850,6 +850,7 @@ void GXSetTevDirect(GXTevStageID s) {
     if ((unsigned)s < GX_TEV_STAGES) {
         gx.tev[s].direct = 1;
         gx.ind_tile[s].on = 0;
+        gx.ind_warp[s].on = 0;
     }
 }
 
@@ -860,6 +861,7 @@ void GXSetNumIndStages(u8 n) {
         int i;
         for (i = 0; i < GX_TEV_STAGES; i++) {
             gx.ind_tile[i].on = 0;
+            gx.ind_warp[i].on = 0;
         }
     }
 }
@@ -878,21 +880,40 @@ void GXSetIndTexCoordScale(GXIndTexStageID s, GXIndTexScale ss, GXIndTexScale ts
         gx.ind[s].scale_t = (u8)ts;
     }
 }
+/* M35 (PLAN.md 50.13): the warp's matrix and the stages it offsets, recorded
+ * for gx_tfs.c.  The SDK's GXSetIndTexMtx takes `f32 offset[2][3]` and the
+ * game hands it a Mtx cast to that (m405, m417): the first six floats of the
+ * 3x4, which is what the hardware sees too. */
 void GXSetIndTexMtx(GXIndTexMtxID id, const void* offset, s8 scale_exp) {
     GX_STATE_TOUCH();
-    (void)id;
-    (void)offset;
-    (void)scale_exp;
+    if ((unsigned)id >= 1 && (unsigned)id <= 3 && offset) {
+        GXIndMtx* m = &gx.ind_mtx[id - 1];
+        const f32* f = (const f32*)offset;
+        int i;
+        for (i = 0; i < 6; i++) {
+            m->m[i / 3][i % 3] = f[i];
+        }
+        m->exp = scale_exp;
+    }
 }
 void GXSetTevIndWarp(GXTevStageID tev, GXIndTexStageID ind, GXBool signed_offset,
                      GXBool replace_mode, GXIndTexMtxID mtx) {
     GX_STATE_TOUCH();
-    (void)tev;
-    (void)ind;
-    (void)signed_offset;
-    (void)replace_mode;
-    (void)mtx;
-    gx_warn("GXSetTevIndWarp: dropped; --gxshader (M8) is where this comes back");
+    if ((unsigned)tev >= GX_TEV_STAGES || (unsigned)ind >= 4) {
+        gx_warn("GXSetTevIndWarp: stage out of range; dropped");
+        return;
+    }
+    gx.tev[tev].direct = 0;
+    gx.ind_tile[tev].on = 0;
+    gx.ind_warp[tev].on = 1;
+    gx.ind_warp[tev].ind = (u8)ind;
+    gx.ind_warp[tev].mtx = (u8)mtx;
+    gx.ind_warp[tev].sgn = (u8)(signed_offset ? 1 : 0);
+    gx.ind_warp[tev].rep = (u8)(replace_mode ? 1 : 0);
+    if (!gl13_have_tfs || !port_opt.tfs) {
+        gx_warn("GXSetTevIndWarp: the warp needs GL_ATI_text_fragment_shader and --tfs "
+                "(M35); the direct stage is drawn unwarped");
+    }
 }
 /* The one indirect form the port reproduces exactly.
  *
@@ -915,6 +936,7 @@ void GXSetTevIndTile(GXTevStageID tev, GXIndTexStageID ind, u16 ts_s, u16 ts_t,
         return;
     }
     gx.tev[tev].direct = 0;
+    gx.ind_warp[tev].on = 0;
     gx.ind_tile[tev].on = 1;
     gx.ind_tile[tev].ind = (u8)ind;
     gx.ind_tile[tev].fmt = (u8)fmt;

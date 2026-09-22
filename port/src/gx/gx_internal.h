@@ -57,6 +57,21 @@ typedef struct GXIndTile {
     u16 tsp_s, tsp_t; /* tile spacing, in texels of the tile sheet             */
 } GXIndTile;
 
+/* M35 (PLAN.md 50.13): the warp form, GXSetTevIndWarp -- the direct stage's
+ * texel coordinate offset by an indirect texel through a 2x3 matrix.  Built
+ * on GL_ATI_text_fragment_shader by gx_tfs.c; recorded here. */
+typedef struct GXIndMtx {
+    f32 m[2][3];      /* GXSetIndTexMtx's offset matrix                        */
+    s8 exp;           /* its scale exponent                                    */
+} GXIndMtx;
+typedef struct GXIndWarp {
+    u8 on;            /* 0 once GXSetTevDirect / GXSetNumIndStages(0) undoes it */
+    u8 ind;           /* which GXIndTexStageID                                   */
+    u8 mtx;           /* GX_ITM_0..2 (0 = GX_ITM_OFF: no offset)                 */
+    u8 sgn;           /* signed offsets (the texel biased by -128)               */
+    u8 rep;           /* replace mode: the offset alone, no direct coordinate    */
+} GXIndWarp;
+
 typedef struct GXTexGen {
     u8 func, src, mtx, normalize, postmtx;
 } GXTexGen;
@@ -139,6 +154,8 @@ typedef struct GXState {
      * (GXSetTevIndTile).  See gx_tex.c's gx_tex_bind_tiled. */
     GXIndStage ind[4];
     GXIndTile ind_tile[GX_TEV_STAGES];
+    GXIndMtx ind_mtx[3];               /* M35: GX_ITM_0..2 */
+    GXIndWarp ind_warp[GX_TEV_STAGES]; /* M35: GXSetTevIndWarp per TEV stage */
 
     /* pixel */
     u8 z_enable, z_func, z_update, z_comploc;
@@ -394,6 +411,20 @@ void glc_color_sum(int on);
 
 void gx_vprog_probe(void);            /* needs a live GL context */
 int gx_tev_unit_stage(int u); /* M30: the stage a GL unit samples for (gx_tev.c) */
+/* M35: what GL unit `u` samples this draw -- the texgen slot and the texmap --
+ * or 0 when it samples nothing.  The stage's own (gx_tev_unit_stage) on the
+ * fixed-function path; on the fragment-shader path (gx_tfs.c) the units past
+ * the stages carry the indirect maps.  Both vertex paths bind by this. */
+int gx_tev_unit_source(int u, u8* coord, u8* map);
+
+/* gx_tfs.c -- M35 (PLAN.md 50.13): the indirect warp on GL_ATI_text_fragment_shader */
+extern int gl13_have_tfs;                /* the extension is on the card's list */
+int gx_tfs_layout(int u, u8* coord, u8* map); /* 1: this draw is the shader's, and unit u's source; -1: not the shader's draw */
+int gx_tfs_apply(int stages, int emit);  /* 1: the draw's TEV is bound as a fragment program */
+void gx_tfs_off(void);                   /* the fixed-function draw that follows: shader off */
+void gx_tfs_invalidate(void);            /* the GL context's state is unknown again */
+void gx_tfs_probe(void);                 /* --tfsprobe: compile, draw, read back, print */
+void gx_tfs_report(void);
 int gx_vprog_available(void);
 int gx_vprog_native_instr_limit(void);
 /* 1 = this draw's vertices are on the GPU; the caller must skip phase 2 and

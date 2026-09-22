@@ -1553,6 +1553,13 @@ static u32 tev_sig_hash(int stages, u32 have_tex_bits) {
     for (i = 0; i < stages; i++) {
         TEV_MIX(&gx.tev[i], sizeof(gx.tev[i]));
         TEV_MIX(&gx.ind_tile[i], sizeof(gx.ind_tile[i]));
+        TEV_MIX(&gx.ind_warp[i], sizeof(gx.ind_warp[i])); /* M35 */
+    }
+    if (gx.num_ind) {
+        /* M35: the warp's program is a function of the matrices and the
+         * indirect stages too (gx_tfs.c) */
+        TEV_MIX(gx.ind, sizeof(gx.ind));
+        TEV_MIX(gx.ind_mtx, sizeof(gx.ind_mtx));
     }
 #undef TEV_MIX
     return h;
@@ -1585,6 +1592,9 @@ void gx_tev_cache_invalidate(void) { tev_cache_live = 0; }
 static void regfix_decide(int stages);
 int gx_tev_unit_stage(int u) {
     regfix_decide(gx.num_tev ? gx.num_tev : 1);
+    if (regfix_shape == -1) {
+        return u; /* M35: the fragment shader's draw, units as stages */
+    }
     if (regfix_shape == 5 && regfix_k >= 0) {
         if (u == regfix_k + 2) {
             return u + 1;
@@ -1598,10 +1608,36 @@ int gx_tev_unit_stage(int u) {
 
 /* The shape decision, on its own so that the vertex paths can ask which
  * stage a unit samples for (gx_tev_unit_stage) before the TEV is applied. */
+int gx_tev_unit_source(int u, u8* coord, u8* map) {
+    int stage;
+    int t = gx_tfs_layout(u, coord, map);
+    if (t >= 0) {
+        return t; /* M35: the fragment shader's units, the indirect maps past the stages */
+    }
+    stage = u < (gx.num_tev ? gx.num_tev : 1) ? gx_tev_unit_stage(u) : -1;
+    if (stage < 0 || stage >= GX_TEV_STAGES) {
+        return 0;
+    }
+    *coord = gx.tev[stage].coord;
+    *map = gx.tev[stage].map;
+    return 1;
+}
+
 static void regfix_decide(int stages) {
     int rk = -1; /* the first stage of a matched register triple, or -1 */
     int j;
     regfix_shape = 0;
+    {
+        /* M35: a draw the fragment shader takes (or would take: the layout,
+         * not the compile) keeps unit = stage, so the vertex paths and the
+         * fallback bind the same thing */
+        u8 c, m;
+        if (gx_tfs_layout(0, &c, &m) >= 0) {
+            regfix_shape = -1;
+            regfix_k = -1;
+            return;
+        }
+    }
     for (j = 0; j + 2 < stages; j++) {
         if (regfix5_match(j, stages) >= 0) {
             rk = j;
@@ -1674,6 +1710,12 @@ void gx_tev_apply(void) {
         cfg_konst_collisions = 0;
     }
     stat_draws_applied++;
+    /* M35 (PLAN.md 50.13): a draw with an indirect warp goes to the fragment
+     * shader when the card has one; the shader replaces the whole unit
+     * chain, so nothing below runs for it */
+    if (gx_tfs_apply(stages, emit)) {
+        return;
+    }
     regfix_decide(stages);
     {
         int rk = regfix_k;

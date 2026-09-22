@@ -43,6 +43,7 @@ int gl13_have_crossbar = 1;
 int gl13_have_s3tc = 1;
 int gl13_have_blend_subtract = 1;
 int gl13_have_depth_texture = 1;
+int gl13_have_tfs = 0; /* M35: GL_ATI_text_fragment_shader, off until the string says so */
 int gl13_max_tex_units = 6; /* the Radeon 9000's number, not the host's */
 
 #define EFB_W 640
@@ -243,6 +244,7 @@ void glc_invalidate(void) {
      * shadow that has forgotten them is a cache that must forget too. */
     gx_vprog_invalidate();
     gx_tev_cache_invalidate();
+    gx_tfs_invalidate(); /* M35: the fragment program's bind and enable likewise */
     /* The white texture's *name* survives: it is a texture object, not
      * shadowed state, and the context is the same one.  M15 zeroed it here,
      * so every EFB copy-with-clear (which invalidates) re-created it on the
@@ -654,7 +656,11 @@ void glc_get_tex_scale(int unit, float* su, float* sv) {
     float tv;
     glc_get_tex_fold(unit, su, sv, &tv);
 }
+int gx_tfs_fold(int unit, float* su, float* sv, float* tv);
 void glc_get_tex_fold(int unit, float* su, float* sv, float* tv) {
+    if (gx_tfs_fold(unit, su, sv, tv)) {
+        return; /* M35: the shader's draw has the GL matrix at the identity; the program keeps the fold */
+    }
     /* The shadow starts at zero, and zero here is not "no fold" -- it is a
      * texture matrix that collapses every coordinate onto one texel.  The
      * fixed-function path never noticed, because GL only applies the matrix
@@ -969,11 +975,14 @@ static void report_caps(void) {
         if (!strstr(ext, "depth_texture")) {
             gl13_have_depth_texture = 0;
         }
+        if (strstr(ext, "GL_ATI_text_fragment_shader")) {
+            gl13_have_tfs = 1; /* M35: the indirect warp (gx_tfs.c) */
+        }
     }
     port_log("port> GL feature set used: combine3 %d, crossbar %d, s3tc %d, "
-             "blend_subtract %d, depth_texture %d, %d units\n",
+             "blend_subtract %d, depth_texture %d, text_fragment_shader %d, %d units\n",
              gl13_have_combine3, gl13_have_crossbar, gl13_have_s3tc,
-             gl13_have_blend_subtract, gl13_have_depth_texture, gl13_max_tex_units);
+             gl13_have_blend_subtract, gl13_have_depth_texture, gl13_have_tfs, gl13_max_tex_units);
     /* --glinfo is the N64 ports' driver dump: the whole GL identity and every
      * extension string, one per line, plus the limits the backend leans on.
      * The card is the specification for this port and this is how it is
@@ -1098,6 +1107,9 @@ int gl13_init(void) {
      * in report_caps: it compiles and loads a program. */
     if (port_opt.vprobe || port_opt.glinfo || !port_opt.cpuxf) {
         gx_vprog_probe();
+    }
+    if (port_opt.tfsprobe) {
+        gx_tfs_probe(); /* M35: prints and quits */
     }
     GL(glPixelStorei)(GL_UNPACK_ALIGNMENT, 1);
     GL(glEnable)(GL_SCISSOR_TEST);

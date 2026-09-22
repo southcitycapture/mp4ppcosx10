@@ -38,6 +38,7 @@
 #include "gx_internal.h"
 #include "gx_skin.h"
 
+#include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -357,6 +358,12 @@ typedef struct VpKey {
     u8 mat1_reg, amb1_reg;
     u8 l0mask, l1mask; /* which of the packed lights each channel reads
                         * (all of them for channel 0 without the fold)    */
+    u8 alit;           /* M35: the alpha channel lit by channel 0's sum
+                        * (its control equal to channel 0's; otherwise the
+                        * draw goes to the CPU path, which lights it by its
+                        * own) -- amb.a + sum(lcol.a * factor), times mat.a */
+    u8 spec0;          /* M35: channel 0's GX_AF_SPEC as the specular
+                        * attenuation (the hilite path's), not the distance's */
 } VpKey;
 
 /* ---- the parameter block ---------------------------------------------------
@@ -570,7 +577,7 @@ static void vp_gen(const VpKey* k, VpBuf* b) {
     } else {
         vpi(b, "MOV mt, %s;\n",
             k->mat_reg ? "program.env[6]" : "vertex.color");
-        vpi(b, "MOV ac.xyz, %s;\n",
+        vpi(b, "MOV ac%s, %s;\n", k->alit ? "" : ".xyz",
             k->amb_reg ? "program.env[7]" : "vertex.color");
         for (i = 0; i < k->nlights; i++) {
             int lp = VPE_LIGHT + VPE_LSTRIDE * i;
@@ -593,7 +600,29 @@ static void vp_gen(const VpKey* k, VpBuf* b) {
             } else {
                 vpi(b, "MOV t1.y, 1.0;\n");
             }
-            if (k->attn_fn != GX_AF_NONE) {
+            if (k->spec0) {
+                /* M35 (PLAN.md 50.14): GX_AF_SPEC on channel 0, the hilite
+                 * path's sum (below) on this channel: nh gated by N . ldir,
+                 * the numerator a . (1, nh, nh^2), the denominator k . (1,
+                 * nh, nh^2) with k normalised (unless DF_NONE: gx_vprog_bind
+                 * uploads it so).  m425's Thwomps: a = (0, 0, 1), k = (2, 0,
+                 * -1) -- what M3..M35 read as a distance attenuation. */
+                vpi(b, "DP3 t1.w, nr, t0;\n");                   /* N . ldir      */
+                vpi(b, "SGE t1.w, t1.w, 0.0;\n");                /* the gate      */
+                vpi(b, "DP3 t1.x, nr, program.env[%d];\n", lp + 4); /* N . H      */
+                vpi(b, "MAX t1.x, t1.x, 0.0;\n");
+                vpi(b, "MUL t1.x, t1.x, t1.w;\n");               /* nh            */
+                vpi(b, "MUL t1.z, t1.x, t1.x;\n");               /* nh^2          */
+                vpi(b, "MAD t1.w, program.env[%d].y, t1.x, program.env[%d].x;\n", lp + 3, lp + 3);
+                vpi(b, "MAD t1.w, program.env[%d].z, t1.z, t1.w;\n", lp + 3); /* numerator */
+                vpi(b, "MAX t1.w, t1.w, 0.0;\n");
+                vpi(b, "MAD t1.z, program.env[%d].z, t1.z, program.env[%d].x;\n", lp + 2, lp + 2);
+                vpi(b, "MAD t1.z, program.env[%d].y, t1.x, t1.z;\n", lp + 2); /* denominator */
+                vpi(b, "MAX t1.z, t1.z, 1.0e-20;\n");
+                vpi(b, "RCP t1.z, t1.z;\n");
+                vpi(b, "MUL t1.w, t1.w, t1.z;\n");               /* attn          */
+                vpi(b, "MUL t1.y, t1.y, t1.w;\n");
+            } else if (k->attn_fn != GX_AF_NONE) {
                 vpi(b, "MAD t1.z, program.env[%d].y, t1.x, program.env[%d].x;\n",
                     lp + 2, lp + 2);
                 vpi(b, "MAD t1.z, program.env[%d].z, t0.w, t1.z;\n", lp + 2);
@@ -616,7 +645,13 @@ static void vp_gen(const VpKey* k, VpBuf* b) {
                 vpi(b, "MAX t1.w, t1.w, 0.0;\n");
                 vpi(b, "MUL t1.y, t1.y, t1.w;\n");
             }
-            vpi(b, "MAD ac.xyz, program.env[%d], t1.y, ac;\n", lp + 1);
+            vpi(b, "MAD ac%s, program.env[%d], t1.y, ac;\n", k->alit ? "" : ".xyz", lp + 1);
+        }
+        if (k->alit) {
+            /* M35: the alpha channel's sum, clamped before the material */
+            vpi(b, "MAX ac.w, ac.w, 0.0;\n");
+            vpi(b, "MIN ac.w, ac.w, 1.0;\n");
+            vpi(b, "MUL mt.w, ac.w, mt.w;\n");
         }
         vpi(b, "MUL t0.xyz, ac, mt;\n");
         vpi(b, "MAX t0.xyz, t0, 0.0;\n");
@@ -790,6 +825,7 @@ static VpVariant* vp_tab[VP_BUCKETS];
 static int vp_nvariants;
 static unsigned vp_bound;     /* the program currently bound, 0 = none        */
 static int vp_enabled;        /* GL_VERTEX_PROGRAM_ARB is on                  */
+static unsigned long stat_alit_cpu; /* M35: draws whose alpha channel's control differs from the colour's */
 static unsigned stat_gpu_draws, stat_gpu_verts;
 static unsigned stat_cpu_draws, stat_cpu_verts;
 static unsigned stat_compiles, stat_dead;
@@ -955,13 +991,32 @@ static void vp_build_key(const GxXfDesc* d, VpKey* k, int* nlights_out,
     k->pal = (u8)(d->pal_n > 0 && !port_opt.palnoarl);
     k->fog = (u8)(gx.fog_type != GX_FOG_NONE);
     if (k->lit) {
+        const GXChanCtrl* ca = &gx.chan[GX_ALPHA0];
         k->mat_reg = (u8)(cc->mat_src == GX_SRC_REG);
         k->amb_reg = (u8)(cc->amb_src == GX_SRC_REG);
         k->diff_fn = cc->diff_fn;
         k->attn_fn = cc->attn_fn;
+        k->spec0 = (u8)(cc->attn_fn == GX_AF_SPEC && !port_opt.oldspec0);
         for (i = 0; i < 8; i++) {
             if ((cc->light_mask & (1u << i)) && gx.light[i].used) {
                 lightidx[nl++] = i;
+            }
+        }
+        if (ca->enable && !port_opt.nolitalpha) {
+            /* M35: the lit alpha (PLAN.md 50.14).  Sharing channel 0's
+             * per-light factor needs the same control; the CPU path lights
+             * a different one by its own. */
+            int match = ca->light_mask == cc->light_mask && ca->diff_fn == cc->diff_fn &&
+                        ca->attn_fn == cc->attn_fn && ca->amb_src == cc->amb_src &&
+                        ca->mat_src == cc->mat_src;
+            if (d->hilite == 2) {
+                k->alit = 0; /* the primary alpha carries the highlight's luminance (M22) */
+            } else if (match) {
+                k->alit = 1;
+            } else if (d->hilite) {
+                k->alit = 0; /* the CPU path has no fold: keep it, the alpha stays the material's */
+            } else {
+                k->alit = 2; /* refused below: the CPU path lights it by its own control */
             }
         }
     }
@@ -1007,11 +1062,10 @@ static void vp_build_key(const GxXfDesc* d, VpKey* k, int* nlights_out,
     /* exactly draw_run's own unit -> texgen mapping, so the two paths bind
      * the same thing */
     for (u = 0; u < gl13_max_tex_units && u < GX_TEX_UNITS; u++) {
-        int stage = u < gx.num_tev ? gx_tev_unit_stage(u) : -1;
-        if (stage >= 0 && gx.tev[stage].coord < d->ntexgen &&
-            gx_bound_tex(gx.tev[stage].map) != NULL) {
+        u8 coord = 0, map = 0;
+        if (gx_tev_unit_source(u, &coord, &map) && coord < d->ntexgen && gx_bound_tex(map) != NULL) {
             k->unit_on[u] = 1;
-            k->unit_tg[u] = gx.tev[stage].coord;
+            k->unit_tg[u] = coord;
             k->nunits++;
         }
     }
@@ -1041,7 +1095,10 @@ int gx_vprog_draw(const GxXfDesc* d, int nverts) {
     }
     vp_build_key(d, &pending_key, &nl, pending_lightidx);
     pending_nl = nl;
-    v = vp_lookup(&pending_key);
+    v = pending_key.alit == 2 ? NULL : vp_lookup(&pending_key);
+    if (pending_key.alit == 2) {
+        stat_alit_cpu++;
+    }
     if (!v || !v->ok) {
         stat_cpu_draws++;
         stat_cpu_verts += (unsigned)nverts;
@@ -1177,16 +1234,25 @@ void gx_vprog_bind(const GxXfDesc* d) {
         }
         if (key.amb_reg) {
             env4(VPE_AMB, cc->amb.r / 255.0f, cc->amb.g / 255.0f,
-                 cc->amb.b / 255.0f, 1.0f);
+                 cc->amb.b / 255.0f, cc->amb.a / 255.0f); /* M35: .w for the lit alpha */
         }
         for (i = 0; i < nl && i < VPE_NLIGHTS; i++) {
             const GXLight* l = &gx.light[pending_lightidx[i]];
             int lp = VPE_LIGHT + VPE_LSTRIDE * i;
             env4(lp + 0, l->pos[0], l->pos[1], l->pos[2], 1.0f);
             env4(lp + 1, l->color.r / 255.0f, l->color.g / 255.0f,
-                 l->color.b / 255.0f, 1.0f);
-            env4(lp + 2, l->k[0], l->k[1], l->k[2], 0.0f);
-            if (key.hilite || key.attn_fn == GX_AF_SPOT) { /* M30: the spot cone reads both */
+                 l->color.b / 255.0f, l->color.a / 255.0f); /* M35: .w for the lit alpha */
+            if (key.spec0 && key.diff_fn != GX_DF_NONE) {
+                /* M35: the specular denominator's k, normalised (Dolphin's
+                 * LightingShaderGen, the hardware's rule for a diffuse
+                 * function other than NONE) */
+                float n2 = l->k[0] * l->k[0] + l->k[1] * l->k[1] + l->k[2] * l->k[2];
+                float rn = n2 > 0.0f ? 1.0f / (float)sqrt((double)n2) : 1.0f;
+                env4(lp + 2, l->k[0] * rn, l->k[1] * rn, l->k[2] * rn, 0.0f);
+            } else {
+                env4(lp + 2, l->k[0], l->k[1], l->k[2], 0.0f);
+            }
+            if (key.hilite || key.attn_fn == GX_AF_SPOT || key.spec0) { /* M30: the spot cone reads both */
                 env4(lp + 3, l->a[0], l->a[1], l->a[2], 0.0f);
                 env4(lp + 4, l->dir[0], l->dir[1], l->dir[2], 0.0f);
             }
@@ -1264,6 +1330,10 @@ void gx_vprog_report(void) {
              tot > 0 ? 100.0 * stat_gpu_verts / tot : 0.0, worst_frame_cpu);
     port_log("port> vprog: env params %u emitted (%u of them M21 bulk matrix uploads), %u elided\n",
              stat_env_set, stat_env_bulk, stat_env_elided);
+    if (stat_alit_cpu) {
+        port_log("port> vprog: %lu draws to the CPU path for an alpha channel lit by a control "
+                 "other than the colour's (M35)\n", stat_alit_cpu);
+    }
     if (stat_pal_batches) {
         port_log("port> vprog: palette on %u batches: %u uploads of %u rows (%.1f rows a "
                  "batch; %d slots of %d rows)\n",
