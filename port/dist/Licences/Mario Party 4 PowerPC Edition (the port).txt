@@ -17,6 +17,10 @@ the port it is changed through exact-text substitutions applied at build
 time (port/patches.txt).  Mario Party 4 is the property of Nintendo and
 Hudson Soft.
 
+The THP movie decoder (port/src/thp) is the port's own; its inverse DCT,
+Huffman lookahead tables and sign-extension trick follow stb_image by Sean
+Barrett, under the MIT licence (see "stb_image (MIT).txt").
+
 The MusyX audio library is Axiomatic Data Laboratories' reimplementation,
 under the MIT licence (see "MusyX (MIT).txt").  SDL2 is under the zlib
 licence (see "SDL2 (zlib).txt"); the copy in the application is built

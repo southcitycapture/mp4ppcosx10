@@ -31,8 +31,8 @@ extern "C" {
 /* ---- settings, from argv ------------------------------------------------- */
 /* M32: the shipped version (the dmg's name, the plist, the --defaults header)
  * and the milestone that built it. */
-#define PORT_VERSION_STRING "0.9.6"
-#define PORT_MILESTONE "M37"
+#define PORT_VERSION_STRING "0.9.7"
+#define PORT_MILESTONE "M38"
 
 typedef struct PortOptions {
     const char* image;      /* --image  disc image or extracted files/ tree   */
@@ -506,6 +506,9 @@ typedef struct PortOptions {
                              *   call, patches.txt), four players set up with
                              *   CHAR first -- e.g. mstory2dll:4:0, the story
                              *   ending (PLAN.md 53.8) */
+    int foldxbar;           /* --foldxbar  the M30 three-texture fold's units A and
+                             *   B read across with the crossbar, as M30-M37 did
+                             *   (m448's felt is black on the Radeon that way) */
     int foldcap;            /* --foldcap N  cut the M30 three-texture fold after
                              *   N units (9: N = 1..6 by frame) -- m448's
                              *   felt bisect, PLAN.md 53.10                   */

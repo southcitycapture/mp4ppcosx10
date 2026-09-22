@@ -1103,3 +1103,40 @@ is either ready to offer upstream or has a case to remove.
   the character select's 70 texture-only run boundaries carry different
   position matrices, so the batch ends at `GXLoadPosMtxImm` whatever
   the texture does: a 1024×1024 page would fold 24 of 175 runs, 14%.
+
+## 0ab. Seven things M38 paid for *(2026-09-22)*
+
+* **The movies move every fast-forward recipe.** With THP playing, the
+  reference walk (`board-start-com4.play`) reaches the minigames about
+  **1,226 frames earlier** (m432 at 13,251 instead of 14,477, m448 at
+  12,917 instead of 14,143), so M35's gallery recipes (`--ffto 14000`,
+  a dump at entry + 400) can land inside the fast-forward, where
+  `--dumpframe` is refused. Run any recipe written before 0.9.7 with
+  `--nomovies`; it gives M37's schedule and M37's md5s exactly.
+* **`g4 stop` on a chain kills the game, not the chain.** The chain's
+  `/bin/sh` survives and starts the next run. Kill the shell by its pid
+  (`ps -axo pid,command | grep MacOS/isle`), then check again: the run
+  it had already started may still be alive (the runner kills it at the
+  next `g4 run`).
+* **littlejelly's wired link can drop with nobody touching the lid**
+  (15:19–15:30, `tg3 … Link is down`, no suspend in the journal). The G4
+  keeps running its chain; watch `/sys/class/net/enp1s0f0/carrier` in a
+  background loop and read the results when it is 1 again. There is no
+  second route to 192.168.0.x.
+* **Linux Dolphin needs `DISPLAY=:0`** (the Flatpak's Qt aborts
+  otherwise), its frame dump is FFV1 video whose muxer **drops frames**
+  (the index ran 6% behind the port's retraces), and ffmpeg's raw
+  extraction must be `-fps_mode passthrough` or its frame numbers and
+  `select=eq(n,…)`'s disagree. Its 640×528 is the whole frame scaled by
+  1.1, not a window to crop. Match frames by content (`m38_match.py`).
+  `DumpAudio = True` wrote nothing.
+* **A shell script is read as it runs.** Never rewrite
+  `~/MarioParty4-chain.app/Contents/MacOS/isle` while a chain is going;
+  queue the change for the next `g4 run`.
+* **`grep -c "^X EXIT" index.txt` counts every chain's X.** Wait on the
+  lines after the last `# m38 chain start` (`~/m38/lastchain.sh`).
+* **`--goto` from the boot, not instead of it.** An overlay started as
+  the first one (`omMasterInit`) runs before the boot's sound setup and
+  faulted in `msmSysLoadGroupBase`; the boot hands off after its own
+  `HuAudSndGrpSetSet(0)`. The story ending waits for A on every line
+  (`--play ending-a.play`); the staff roll's movie comes 4½ minutes in.

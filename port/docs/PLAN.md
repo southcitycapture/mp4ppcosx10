@@ -18749,3 +18749,638 @@ The G4 keeps `~/m37/` (the fourteen arm logs, the index, the three
 diagnostics and the two singles, with `m448dl/frame-15343.ppm` and
 `m432dl2/frame-14877.ppm` as their named snapshots); `~/m37_chain.sh`
 is in `~/MarioParty4-chain.app`.
+
+## 53. M38 log: the movies *(2026-09-22, littlejelly)*
+
+The port has skipped every THP movie since M2 (§1.12's plan was never to
+port THPDec.c's paired-single IDCT, and until now nothing replaced it).
+M38 plays them: a small JPEG decoder of the port's own behind the SDK's
+`THPVideoDecode`, Nintendo's own `THPAudioDecode` compiled as it stands,
+and the game's own movie player — `thpmain.c`, `THPSimple.c`,
+`THPDraw.c`'s setup and restore — running unmodified on top. First
+milestone run on Opus 5.5.
+
+### 53.1 The soak, read
+
+§52.10's leave-behind — `isle --soak --com4 --rtc dolphin --freshcard
+--realtime --snap-every 5000 --snap-keep 3 --status --ovllog --stuckwatch
+200 --perf` on the M37 final build (0.9.6) — ran from 13:36 to 14:04 G4
+time and was ended with `g4 stop` for this milestone: **27 min 50 s,
+100,140 frames, 1,669 status lines**
+(`docs/soak/m38-soak28-m37-leave.log.gz`, `soak_read.py`).
+
+| | |
+|---|---|
+| speed / presented fps | **100.1%** mean, 28.1 fps overall; `w01dll`'s turns 28.2–29.1 fps, `rt` 15.0–16.4 ms, `dec` 5.1–6.5 |
+| where it got | **nine turns of the first board**, into the tenth at the stop |
+| minigames | 11 entries of 10 modules (m406 29.6 fps, m412 26.0, m416 29.6, m420 29.5, m423 25.8, m428 29.5, m429 28.8, m430 26.5, m438 25.3, m444 ×2 24.1) |
+| faults / guard hits / mismatches | **0 / 0 / 0** (no `*** port` line; `skin: … 0 guard hits`; `musyx_mix … 0 position mismatches`) |
+| resyncs / STUCK | **0 / 0**; worst late 801 ms |
+| loader | `DVD: 654 reads, 196 MB, 0 ms in reads, 0 over 100 ms`; prefetch 129 jobs, 110 MB off the game thread; resident set 79 files, **654 of 654 reads from memory** |
+| card | 9 writes, 20 image flushes, 141 ms on the game thread in all, worst 75 ms behind it |
+| audio | 92 underruns, 1.35 s over the 28 minutes |
+
+Nothing in it outranks a number: the second soak with the loader on, and
+the shape of the first (§52.1) twice as long.
+
+### 53.2 The movies' shape
+
+Read off the disc image (`dtk` is an arm64 binary on littlejelly, so a
+twenty-line FST reader, then each file's own header and first frame's
+markers). **All twelve have the same shape:**
+
+| file | where | frames | length | first frame |
+|---|---|---:|---:|---|
+| `opmov_a00.thp` | the opening (bootDll) | 2,390 | 79.7 s | 7,372 + 1,312 B |
+| `opmov_s00.thp` | into the mode select (modeseldll `main.c:112`) | 113 | 3.8 s | 21,948 + 1,312 B |
+| `opmov_c00.thp` | a mode chosen (modeseldll `modesel.c:175`) | 216 | 7.2 s | 25,128 + 1,312 B |
+| `endmov_{ma0,lu0,pe0,yo0,wa0,do0,da0,wl0}.thp` | the eight story endings (mstory2Dll `ending.c:320`) | 1,858 each | 62.0 s | 4,868 + 1,312 B |
+| `stmov_a00.thp` | the staff credits (staffDll) | 562 | 18.8 s | 41,544 + 1,312 B |
+
+* **608×448 at 29.97 fps**, THP version 1.0, two components a frame
+  (video, then audio).
+* **Video: baseline JPEG, 8-bit, three components, Y 2×2 and Cb/Cr 1×1
+  (4:2:0), one interleaved scan, no restart interval.** Huffman and
+  quantisation tables are **in every frame**: two DQT and four DHT
+  segments, or one DQT and one DHT holding all four tables (`s00`,
+  `stmov`). Largest frame (`mBufferSize`) 27–73 KB.
+* **Audio: every movie has a track**, stereo 32,000 Hz, THP's 4-bit ADPCM
+  (DSP-ADPCM frames, per-channel coefficients and history in a 1,312-byte
+  record a frame): 1,067–1,068 samples per video frame, 79.8 s for the
+  opening, which is the movie's length to the frame.
+* **A correction to the brief:** the two mode-select movies do not loop
+  behind the menu. Both are opened with `loop = 0` and waited out with
+  `HuTHPEndCheck`: `s00` is the 3.8 s transition into the mode select,
+  `c00` the 7.2 s one after a mode is chosen (the 3D menu moves in front
+  of it). Nothing in the game loops a movie.
+* **The bitstream has no byte stuffing.** `__THPPrepBitStream` and
+  `__THPHuffDecodeTab` in `src/dolphin/thp/THPDec.c` read the scan as raw
+  32-bit words; a 0xFF in a THP scan is data, not a marker (ffmpeg's
+  mjpegdec special-cases `AV_CODEC_ID_THP` the same way). A restart
+  interval, where there is one, is honoured by aligning to the next byte
+  and resetting the predictors, with no marker bytes skipped.
+* **The output THPDec.c hands the game is three GX I8 tiled planes**
+  (8×4-texel tiles of 32 bytes, a tile row `width*4` bytes): Y 608×448,
+  U and V 304×224. An 8×8 IDCT block is exactly two vertically adjacent
+  tiles.
+
+### 53.3 How the game plays a movie, and what the port had to supply
+
+`HuTHPSprCreateVol` starts `THPTestProc` (a HuPrc process) and calls
+`THPSimpleInit(2)`; the process opens the file, allocates THPSimple's
+buffers (a read ring of ten compressed frames, two sets of Y/U/V tile
+buffers, four audio slots), preloads ten frames and then makes
+`THPDecodeFunc` **the idle function**:
+
+```c
+while (1) { if (THPStat == 2) break;
+            if (THPSimpleDecode() == 1) OSReport("Fail to decode video data");
+            VIWaitForRetrace(); }
+```
+
+`THPSimpleDecode` decodes one frame — `THPVideoDecode` into the next tile
+set, `THPAudioDecode` into the next audio slot — **only when that audio
+slot is free**, and returns 3 otherwise. The slots drain in THPSimple's
+own mixer, `THPAudioMixCallback`, chained in front of the game's AI DMA
+callback: every 160-sample AI period it asks the AI for the buffer about
+to play (`AIGetDMAStartAddr() + 0x80000000`), adds 160 of the movie's
+samples to it into one of its own two buffers at the movie's volume, and
+points the AI at that one (`AIInitDMA`). **So the movie is paced by its
+audio being played**, at 32 kHz — 1,067.7 samples a video frame, one
+decode every two retraces — and the sprite's draw function
+(`THPViewSprFunc`) draws whichever tile set was decoded last and sets
+`THPFrame`, which `HuTHPEndCheck` and the opening's subtitles
+(`UpdateDemoMess`, keyed to movie frame numbers) read.
+
+What was missing, each found by reading before building:
+
+| the game needs | the port had | M38 |
+|---|---|---|
+| `THPInit`, `THPVideoDecode`, `THPAudioDecode` | generated stubs returning 0 | a decoder (53.4); THPAudio.c compiled as is (53.5) |
+| `OSSetIdleFunction` | returns NULL; the function never runs | one pass a retrace (below) |
+| `AIInitDMA` / `AIGetDMAStartAddr` | empty / returns 0 (THPSimple would have read address 0x80000000) | a DMA source per AI period (53.5) |
+| THPDraw's colour matrix | the port's TEV translation (53.4) | cannot draw it; the frame is converted on the CPU |
+
+**The idle function** (`port/src/os/sreset_poll.c`). On the console the
+idle thread runs while every other thread waits — in this game, while
+the game thread waits for the retrace — so it gets one pass of its loop
+a retrace, after the frame's work. The body keeps no state across its own
+`VIWaitForRetrace`, so one pass is exactly one call from the top:
+`port_idle_tick` calls the function under a `setjmp` at the top of the
+port's `VIWaitForRetrace` (after the workers' retrace join), and the
+function's own `VIWaitForRetrace` (`port_idle_trap`, the first line of
+the port's) `longjmp`s back out. The retrace is the game thread's, not
+the idle thread's, so the retrace count and everything paced by it are
+untouched. A function that returns (`THPStat == 2`) is over;
+`OSCancelThread` on the handle it returned cancels it. It runs on the
+game thread's stack, a few hundred bytes deep; the 8 KB stack the game
+offers is not used. The soft-reset watcher (§10.4) is the same pattern.
+
+### 53.4 The picture: the decoder, and the YUV-path decision
+
+**`port/src/thp/thp_jpeg.c`** is a baseline decoder in THP's shape and
+nothing more: SOF0 with 8-bit samples and 4:2:0 only, tables per frame,
+no byte stuffing, THPDec.c's restart rule, a 9-bit Huffman lookahead with
+stb_image's `fast_ac` table (a short AC code's run, size and value in one
+entry), and stb_image's integer IDCT (itself after the IJG's `jidctint`
+"islow"; `port/docs/licences/stb_image.txt`, and a copy in the dmg's
+Licences). It writes either GX I8 tiled planes (what `THPVideoDecode`
+owes the game) or row-major ones, and allocates nothing: its tables and
+scratch are a per-caller `ThpjCtx`, because the worker and the game
+thread's inline twin can decode at the same time (53.6). `thp_test`
+(`make thptest`, `port/tests/thp_test.c`) decodes a whole movie file
+alone and times it; on the host and on the G4 it produces **bit-identical
+output** (the same md5 for frame 300 of the opening), and on all five
+movie files tried it decodes every frame with no error.
+
+**THPDraw's colour matrix cannot go through the port's TEV.**
+`THPGXYuv2RgbSetup` converts Y/U/V in five TEV stages whose coefficients
+are konst colours, with **one signed register** (`GXSetTevColorS10(C0,
+{-90, 0, -114, 135})`) and a **`GX_TEV_SUB`**, and it computes green in the
+*alpha* channel and moves it across with a `K2 = (1, 0, 1)` interpolate.
+The port's GL 1.3 combiner translation clamps the S10 register to 0..255,
+draws SUB as ADD (under the wrong warning, "a comparison op"), and loses
+one of two constants a stage wants. So:
+
+* **the CPU path (ships):** the decoder writes row-major planes, and
+  `thpj_to_rgba` does THPDraw's arithmetic — the game's own constants,
+  `R = Y + 2(V·0xB3/255 − 90)`, `G = Y + 135 − U·0x58/255 − V·0xB6/255`,
+  `B = Y + 2(U·0xE2/255 − 114)`, not the textbook's — with the chroma
+  upsampled the way the console samples a half-size `GX_LINEAR` texture at
+  the pixel centres (a 3/4–1/4 triangle filter in each axis). The output
+  is A R G B bytes, which with `GL_BGRA / GL_UNSIGNED_INT_8_8_8_8_REV` is
+  the Mac's native texel order on a big-endian machine. One exact-text
+  patch at the top of `THPGXYuv2RgbDraw` hands the draw to
+  `portTHPDraw`, which draws the game's own quad in the state the setup
+  left, with one stage — texture × `C1` (the sprite's colour register),
+  alpha `A1` — which is what survives of the game's fifth stage.
+* **the game's TEV path (`--thpyuv`, the A/B):** the decoder writes the
+  three I8 planes into the game's own tile buffers, `portTHPDraw` marks
+  them dirty for the texture cache (`port_gx_tex_dirty`: its hash samples
+  four 256-byte windows of a 272 KB plane, so without the mark a changed
+  frame could be missed) and returns 0, and the game's five stages run
+  through the port's GX.
+
+The port-owned texture is a new GX texture format, `GX_TF_PORT_RGBA`
+(`port.h`, `gx_tex.c`'s `tex_bind_port`): a `GXTexObj` whose image is a
+`PortTexture`, one GL name made once at 1024×512, and a new frame
+uploaded as a 608×448 **sub-image** (`rt_texsubimage2d_owned`, a new
+render-thread record) — no hash, no pad copy, no decode of a GX format.
+Everything else about the draw — the quad, the matrix, the blend, the z
+mode, the sprite's colour — is the game's and goes through the port's
+GX as any sprite does.
+
+The A/B, the opening from boot at real time on the G4 (`Q` against `Y`,
+the same binary):
+
+| | CPU RGBA (`Q`) | the game's TEV (`Y`, `--thpyuv`) |
+|---|---:|---:|
+| the picture | right (53.8) | **wrong**: washed out and yellow; `GXSetTevColorS10: a TEV register outside 0..255 is clamped`, `a comparison op … is drawn as an add`, `a stage needs two different constants` |
+| decode (+ convert) on the worker | 8.0 + 7.1 ms a frame | 8.1 ms a frame |
+| the render thread (`rt`) | 0.7–6.4 ms a frame | **48.5–52.4 ms** a frame: three I8 textures decoded to RGBA, padded to 1024×512 / 512×256 and uploaded whole, every movie frame |
+| presented, status lines | 30.0 fps | **13.3–17.9 fps** |
+
+**The CPU path ships** (`docs/screenshots/m38-thpyuv-vs-cpu.jpg`: the same
+frame, CPU on the left, the game's TEV on the right). It is the only one
+of the two that draws the right picture, and it is also the cheap one: the conversion costs the
+second core 7 ms a frame, where the game's path costs the render thread
+about 50.
+
+**The decoder's cost** (`thp_test` on the G4, the opening's 2,390
+frames, nothing else running): **decode 7.8 ms a frame** (worst 9.4); the
+conversion, first cut, **12.2 ms** — its chroma terms came out of four
+16 KB tables, twice the 7450's 32 KB L1 between them — and **6.8 ms**
+rewritten with multiplies, two pixels a chroma sample and one 32-bit
+store a pixel. `dcbz` on the output lines (to spare the bus the
+read-for-ownership of 1.1 MB of stores) bought nothing (7.0 ms) and is
+not in. **No AltiVec**: the scalar decoder is not too slow (53.6), so
+§15.6's and §32.4's rule is not even tested.
+
+In the game the worker's decode + convert first measured **19.9 ms** a
+frame against `thp_test`'s 15: each frame's 1.1 MB RGBA buffer was a
+fresh `malloc`, which on Mac OS X is fresh pages, faulted in 270 at a
+time on the worker. A pool of six buffers that the render thread hands
+back after the upload (the record carries a flag it raises, where it
+used to `free`) took it to **15.1 ms**.
+
+### 53.5 The sound
+
+**`THPAudioDecode` is Nintendo's.** `src/dolphin/thp/THPAudio.c` is plain
+C — DSP-ADPCM with the record's own coefficients and history — so it is
+compiled as it stands (`mirror_src.py`'s list and `GAME_C`, beside the
+five MTX files), and the port supplies only what it calls into.
+
+**The AI's DMA source** (`port/src/audio/musyx_sal.c`). The port's AI
+interrupt is simulated on the game thread, 3 or 4 periods of 160 samples a
+retrace (§22.5), and each period queued `ai_buffers[ai_index]` — MusyX's
+mix — to the output ring *before* the callback chain ran, with
+`AIInitDMA` empty and `AIGetDMAStartAddr` returning 0. THPSimple's mixer
+would have read the game's audio from address `0 + 0x80000000`. Now:
+
+* each period has a **DMA source**, MusyX's buffer by default;
+  `AIGetDMAStartAddr` returns it `- 0x80000000` and `AIInitDMA` re-points
+  it. The address makes the round trip through a `u32` both ways, which
+  wraps back to the pointer on a 32-bit machine — and cannot on a 64-bit
+  host, where `portTHPAvailable()` is 0 and the movies stay skipped;
+* while THPSimple's mixer is the installed link (`THPInit` marks the next
+  registration as THPSimple's; `THPSimpleQuit` puts the old one back), a
+  period **queues after the callback**, whatever the source then is, and
+  the tick is **fused** rather than split onto the mixer worker (§39.2):
+  the mixer reads the period's MusyX buffer on the game thread and the
+  queue must see periods in order — 4,811 fused ticks for the opening;
+* with no mixer at all (`--noaudio`), a movie still needs its audio
+  *consumed* or `THPSimpleDecode` stops at the fourth frame, so the
+  periods still come — the callback chain alone, a silent source, nothing
+  queued.
+
+**The channel order.** The console's AI plays (right, left) pairs —
+Nintendo's decoder writes the header's *left* channel one sample after the
+right, and Dolphin's mixer reads the AI's buffer the same way — while the
+port's AI buffers are (left, right), the order SDL plays; MusyX never
+noticed because it writes both ends of its own pipe. So a movie came out
+mirrored, and the witness found it: `tools/m38_audio.py` fits the port's
+`--wav` against the track decoded by something else entirely (ffmpeg's
+`adpcm_thp`), and the port's left channel matched the track's *right* one
+11 dB closer than its left. One exact-text patch swaps the interleaved
+path's two pointers in THPAudio.c (patches.txt, `dolphin/thp/THPAudio.c`).
+
+**The verdict** (`A`, the opening from boot at real time with `--wav`,
+against ffmpeg's decode of `opmov_a00.thp`): the movie is in the port's
+output from 10.190 s (envelope correlation 1.000); **gain 0.9228 in both
+channels — exactly THPSimple's `VolumeTable[122]` = 0x761E / 32768, the
+opening's volume**; the residual, second by second, a median of **52 dB
+below the signal** in both channels (worst −36 dB, the first second, and
+−29 dB at the very end, where ffmpeg reports its one decode error). The
+sound is the track, sample for sample to the rounding of the volume
+multiply, in the right channels. **0 periods short** of decoded audio in
+any movie of any run. The output device's underruns during a boot with
+the opening (48–53, 0.73–0.79 s) are the boot's own: a `--nomovies` boot
+of the same length has 52 (787 ms).
+
+### 53.6 Pacing: the game's clock, and a late frame left out
+
+The movie's clock is the game's: decodes happen when THPSimple's audio
+slots free up, which is a function of the AI's periods, which are a
+function of the retrace count (§22.5) — so under `--rtc` the movie's frame
+numbers, its sound, the subtitles keyed to them and `HuTHPEndCheck`'s
+answer are the same in every run and on every machine, and the game's
+schedule is console-exact whatever the decode costs. The opening runs
+**79.7 s** on the wall at 100% speed, against the track's 79.8.
+
+**The decode is a worker job published at the retrace.** `THPVideoDecode`
+(called from the idle pass) copies the compressed frame (≤ 73 KB) into
+one of two slots keyed by the game's tile buffer, takes an RGBA buffer
+from the pool, publishes the job to the decode worker and returns 0 at
+once: the game's frame counter advances as on the console. The draw a
+frame later finishes the slot — joined if the worker has it, **run inline
+if it was never published** (the inline twin: with one CPU, or
+`--threads 0`, no job is built and a frame is decoded only when a drawn
+frame asks for it).
+
+**A late frame is left out, never waited for.** Under frame mode
+(`--realtime`, the player's default) the draw does not wait: it shows the
+newest frame that is ready — the one it asked for, or the one before it
+that the worker has finished and nobody has shown — and a frame is
+*dropped* only when a newer one is ready before any drawn frame showed it.
+A consumed frame (§32.1) draws nothing and decodes nothing on the game
+thread. The first cut waited at the draw (`slot_finish`): with the
+decode at 25 ms and one retrace of lead, the game's frame ran late, frame
+mode consumed the next, and the opening presented **28.3** movie frames a
+second; the second cut showed the *last uploaded* frame when the newest
+was not ready, which never showed the one in between and presented
+**14.6**; the third (the newest ready of either slot) and the buffer pool
+present **29.37**. A frame `--dumpframe` or F12 wants waits for its
+decode, so a named frame's picture is the same in every run (53.9's md5s
+are identical between turbo and real time).
+
+The opening, the mode select's two and one story ending, at real time on
+the G4, on the release candidate (`f6c6609c…`; the shipped `56298d9f…`
+differs by 53.10's fold and the version strings, and its own run of the
+opening drew 2,302 frames, 28.88 a second — the spread between two runs
+of the same movie code):
+
+| movie (run) | frames | drawn | dropped | presented, a second | decode + convert (decode) | the draw waited |
+|---|---:|---:|---:|---:|---:|---:|
+| the opening (`Q`) | 2,390 | 2,341 | 49 | **29.37** | 15.12 (8.02) ms | 0 |
+| the opening, a frame dumped every 300 (`B`) | 2,390 | 2,324 | 66 | 29.15 | 15.17 (8.06) ms | 8 (the dumps) |
+| the opening's first 61, then START (`W`) | 61 | 56 | 5 | 29.44 | 14.93 (7.70) ms | 0 |
+| into the mode select, `s00` (`W`) | 113 | 91 | 22 | **24.75** | 18.15 (9.18) ms | 0 |
+| a mode chosen, `c00` (`W`) | 216 | 195 | 21 | **27.36** | 15.52 (8.06) ms | 0 |
+| Mario's ending, `endmov_ma0` (`G`) | 1,858 | 1,806 | 52 | **29.18** | 14.79 (7.69) ms | 2 |
+
+Every frame of every movie is decoded and published (the game's schedule);
+"dropped" is a decoded frame no drawn frame showed before a newer one was
+ready. The opening loses 2%, the ending 3%; the two mode-select movies,
+which play behind the menu's own 3D scene and so share the machine with a
+heavier frame, lose 10–19%. 0 decode errors and 0 short audio periods
+anywhere.
+
+**A single-CPU 1 GHz G4.** `--threads 0 --renderthread 1` is this
+machine's one-CPU shape — no workers, the render thread replayed inline —
+with the caveat that the OS, the window server and the GL driver still
+have a second processor to themselves. In it every drawn frame is decoded
+inline at its draw, in the same ~15 ms, and consumed frames decode
+nothing:
+
+| movie, one-CPU shape | frames | drawn | dropped (never decoded) | presented, a second | decode + convert inline |
+|---|---:|---:|---:|---:|---:|
+| the opening (`S`) | 2,390 | 2,295 | 95 | **28.79** | 14.96 ms |
+| `s00` (`WS`) | 113 | 85 | 28 | **23.16** | 16.05 ms |
+| `c00` (`WS`) | 216 | 179 | 37 | **25.05** | 14.83 ms |
+
+The one cost it has that two CPUs do not is **sound**: on one CPU the
+mixer runs on the game thread, and a 15 ms decode inside a drawn frame
+that is already long behind the mode select's 3D makes the output device
+run dry. The one-CPU real-time walk has **335 underruns (4.5 s)** with the
+movies and **84 (1.3 s)** without (`WSN`, the same walk under
+`--nomovies`): about 3 s of gaps over the walk's 11 s of mode-select
+movies. The opening, with nothing behind it, does not (`S`: 49 underruns,
+the boot's own).
+
+So **a single-CPU 1 GHz G4 plays the opening at about 29 frames a second
+and the mode-select movies at 23–25**: 15 ms of decode inside a 33 ms
+movie frame fits beside the opening's light scene; behind the mode
+select's 3D menu it does not always, and there the picture skips
+frames while the sound, the subtitles and the game stay on time. An
+800 MHz G4 (the Read Me's minimum) scales the 15 ms to about 19 and would
+show fewer.
+
+### 53.7 The two stub patches, and `--nomovies`
+
+§2's two exact-text patches on `src/game/thpmain.c` made the game survive
+`THPSimpleOpen` returning 0: `HuTHPEndCheck` answered TRUE at once, and
+`THPTestProc` tore itself down before the open (`port/src/dvd/thp_stub.c`,
+now deleted, told why). **The game no longer needs either**: with a
+decoder, `portTHPAvailable()` is 1 and both fall straight through to the
+game's own code, which then runs exactly as written.
+
+**They are kept, as the flag.** `--nomovies` has to be the M2–M37
+behaviour, and there is no other way to tell this game "no movie": a
+`THPSimpleOpen` that fails is retried for ever, and `HuTHPEndCheck` reads
+"no movie open" (a total of 0 frames) as "not finished". So the two
+patches are `--nomovies`'s implementation, `portTHPAvailable()` is
+`!port_opt.nomovies` (and 0 on a 64-bit host, 53.5), and `THPInit`
+returns it too — so `THPSimpleInit` never chains its mixer under
+`--nomovies`, which is the old behaviour to the byte: **the N run
+reproduces M37's three md5s exactly** (53.9). `thp_stub.c`'s two
+functions moved into `port/src/thp/thp_port.c`; patches.txt's comment
+says what they are now.
+
+M38 adds four patches of its own: `THPDraw.c` (the draw hand-off, 53.4),
+`dolphin/thp/THPAudio.c` (the channel order, 53.5), `REL/bootDll`
+(`--goto`, 53.8) — and none to `thpmain.c` or `THPSimple.c`.
+
+### 53.8 The witness: three movies at real time, and the console
+
+All on the G4 at real time from boot, the final build (`--rtc dolphin`,
+the player's defaults otherwise), `tools/m38_chain.sh`:
+
+* **the opening** (`Q`, and `B` with a frame dumped every 300): all 2,390
+  frames decoded and published, the subtitles on their frames
+  (`UpdateDemoMess`), the title after it; 53.6's table.
+  `docs/screenshots/m38-opening-port-vs-console.jpg` is three frames of
+  it beside the console's.
+* **the mode select's two** (`W`, the md5 walk at real time: the opening
+  is skipped by the walk's START at frame 700, as a player's press would,
+  after 61 frames); both play whole behind the menu.
+* **a story ending**: Mario's (`endmov_ma0.thp`), reached with **`--goto
+  mstory2dll:4:0 --play ending-a.play`** (`G`). `--goto OVL[:EVT[:CHAR]]`
+  leaves the boot for an overlay at an event, with four players set up
+  from CHAR, at the first point the boot has done its own setup — its
+  sound groups: the first cut replaced `omMasterInit`'s first overlay and
+  died in `msmSysLoadGroupBase` with no groups loaded (a SIGBUS at 0x2) —
+  and the way the boot itself leaves (`omOvlCallEx`, `HuPrcEnd`; one
+  patch in `REL/bootDll`). `ending-a.play` is an A metronome for the
+  ending's dialogue (Bowser's lines wait for A; the movie's own loop reads
+  no pad). The ending's dialogue, then the movie (Mario, close up), **1,858
+  frames, 1,806 drawn, 29.18 a second**
+  (`docs/screenshots/m38-story-ending-mario.jpg`); the staff roll that
+  follows it is staffDll's own sprites.
+* **the staff credits** (`C`, `--goto staffdll:0:0`): staffDll creates
+  the movie shrunk to 0.65 in a sprite group, `HuTHPStop`s it at once
+  (`THPSimpleLoadStop` every frame while stopped), and `HuTHPRestart`s it
+  near the end of the roll — at retrace ~16,100, 4½ minutes in — then
+  closes it when `HuTHPFrameGet()` passes 450 and its cover has faded:
+  **511 of 562 frames published, 506 drawn, 29.91 a second, 0 errors**.
+  The restart (the movie's frame numbers going back to 0) is what
+  `thp_port.c` watches for; it works.
+
+**The console.** Dolphin on littlejelly (one instance, the pinned user
+directory from `port/ref/dolphin-user`, `DISPLAY=:0` — the Flatpak's Qt
+aborts without it) captured a cold boot through the opening, 115 s,
+killed after. Linux Dolphin dumps an FFV1 AVI whose muxer drops frames
+(reference-dolphin.md §4) — its index runs 6% behind the port's retraces
+and falls further behind as it goes — so a frame is found by its content:
+`tools/m38_match.py` scales every port dump and every capture frame
+whole into 160×120 grey (Dolphin's 640×528 is the whole 480-line frame
+scaled by 1.1, the movie's black bars included; the first cut cropped it
+to "the active picture" and matched nonsense), finds the capture frame of
+least difference (0.8–1.9 grey levels for every one of 13 frames), cuts
+that frame out of the AVI at full size (with `-fps_mode passthrough`, or
+ffmpeg's frame numbering and the raw extraction's disagree) and compares
+colour over the movie's rectangle:
+
+| | mean R / G / B, port − console | mean \|diff\| | within 2 levels | within 8 |
+|---|---|---:|---:|---:|
+| round-to-nearest (the first build) | **+2.0 / +1.2 / +2.5** | 2.2–3.0 | 26–38% | 89–99% |
+| **truncating (the final build)** | **+0.4 / +0.8 / +0.6** | **1.4–2.5** | **48–72%** | **91–99%** |
+
+The first build's picture was two levels bright, and the sign and size
+say why: the console's IDCT stores its floats through a u8-quantised
+`psq_st`, which truncates, and each TEV stage floors; the port's stb IDCT
+and colour matrix rounded. Both now truncate. What is left is under a
+level, plus the scaling of Dolphin's 528 lines back to 480, which a
+bilinear resample of a JPEG picture cannot avoid. **The movie is the
+console's picture to a level.**
+
+### 53.9 The md5s: re-based, because the game's schedule moved
+
+With the movies on, the reference walk (`board-start-com4.play`, turbo,
+9,000 frames) sees the opening start and its first START at frame 700 skip
+it after 61 frames; the title then comes up behind a wipe, and the two
+mode-select movies play whole (3.8 s and 7.2 s). **Every frame after the
+opening moves**, and the three reference frames show the same scenes at
+different moments of them:
+
+| frame | M37 (and now `--nomovies`) | M38 (movies on) |
+|---|---|---|
+| 800 | `0b58c5ee` the title, settled | **`d2d40344`** the title's logo mid zoom-in |
+| 3000 | `2b99c60a` the character select | **`59008ce4`** "Party Mode", just before it |
+| 7000 | `4a9a640c` the board's turn-order roll | **`3f98f882`** the same roll, another moment |
+
+**The references are re-based to `d2d40344` / `59008ce4` / `3f98f882`,
+and the reason is the schedule, not the picture**: none of the three
+frames holds a movie frame, the drawing code for all three is unchanged,
+and **`--nomovies` gives `0b58c5ee` / `2b99c60a` / `4a9a640c` exactly** on
+the final build (N). The new ones are the same on two turbo runs (M, M2),
+on the real-time walk (W) and on the one-CPU real-time walk (WS) — a
+dumped frame waits for its decode, so a movie never makes one differ.
+On the shipping binary (`56298d9f…`, 0.9.7): **M `d2d40344` / `59008ce4`
+/ `3f98f882`, N `0b58c5ee` / `2b99c60a` / `4a9a640c`** — and the m448 fix
+(53.10) moved none of them.
+
+A consequence for every recipe that fast-forwards to a frame: with the
+movies on, the walk reaches the minigames about **1,200 frames earlier**
+(m432 at frame 13,251, m448 at 12,917 — the metronome's presses land
+differently once the title and the mode select come up at different
+times), so a recipe written for M37's schedule (`--ffto 14000` then a dump
+at entry + 400) can land inside the fast-forward. The gallery's recipes
+and §52.9's two snapshots are M37's schedule: run them with `--nomovies`.
+
+### 53.10 m448, Goomba's Chip Flip's felt: the alpha, and not the chain
+
+§52.9 left the felt with a bisect to do: six units, every combine legal,
+black on the Radeon and green on the Intel bench. `--foldcap N` cuts the
+M30 three-texture fold after N units (every unit from the Nth on
+overwritten with a pass); `9` cycles N = 1..6 by frame, so six dumped
+frames in a row are the whole bisect on one card (`F`); `10 + N` also
+forces the chain's last unit's alpha to 1 (`F2`).
+
+* **F: black at every cap, one unit to six.** So no single unit of the
+  chain turns a green felt black; at N = 1 the felt is unit A alone, and
+  it is already gone.
+* **F2: green at every cap, the full chain included.** With the last
+  alpha forced to 1, **the Radeon draws the felt's colour right** —
+  through all six units, every combine the fold emits.
+
+The felt draw alpha-tests (`GX_GEQUAL` 1 on both comparisons) and blends
+`SRCALPHA / INVSRCALPHA` over a black clear. **Its alpha arrives at zero
+on the Radeon, and the alpha test kills the felt.** In the fold the felt's
+alpha is made at unit B, `MODULATE(T_A.a, konst.a)` — unit A's texture
+alpha **read backward through the crossbar** (`GL_TEXTURE0` from unit 1),
+times the stage's konst — and passed on by every unit after; unit A's own
+alpha is the lerp factor, the environment map's alpha read *forward*
+(`GL_TEXTURE1` from unit 0).
+Two more levers split those two (`F21`: unit B's alpha from the crossbar
+read alone; `F22`: from the constant alone): **black with the crossbar
+read, green with the constant.** On the Radeon 9000, in this six-unit
+chain, **unit 1's crossbar read of unit 0's texture returns alpha 0** —
+where the Intel driver returns the texel's alpha (T_A is RGB565, uploaded
+RGBA8 at alpha 255). The M16 triple's other users read across the same way
+in shorter chains and draw right (the characters' eyes), so it is this
+chain's depth or shape the Leopard driver mishandles, not the crossbar as
+such; nothing on the port's side changes that.
+
+**The fix needs no crossbar at all, in this shape.** When stage C's lerp
+factor is T_B's alpha itself (`c = TEXA`, m448's case), unit B can read it
+from **its own** texture, and unit A can make stage A's alpha from **its
+own** texture times the konst; unit B's alpha is then PREVIOUS. Every
+value is the same as the crossbar fold's — the eyes' triple keeps its
+emission; only `regfix5_emit`'s two calls (the M30 three-texture shape)
+take the new one (`regfix_no_xbar`, `gx_tev.c`), with `--foldxbar` the old
+one for the A/B. On the G4 (`F3`, `F3X`): **the felt is green**, a patch
+of it beside the grid at (51, 88, 39) against the console's (54, 89, 39),
+and black again under `--foldxbar`; 346 unit emissions took the new form.
+The md5 frames hold no shape-5 draw (53.9: unchanged).
+`docs/screenshots/m38-m448-felt-fixed.png` is the three: the old fold, the
+new, the console.
+
+`docs/screenshots/m38-m448-foldcap.png` is the two strips: F above (six
+caps, black) and F2 below (six caps, alpha forced, green).
+
+### 53.11 m432, Dungeon Duos' walls: no channel bug; a level of rounding
+
+`--drawlog` now prints chan0's **ambient** colour and source, its diffuse
+and attenuation functions, its light mask, and every light in the mask —
+colour, position, direction, both attenuation vectors (`L`, `--nomovies`
+so frame 14,877 is §52.9's). The wall (`obj440`, one stage `T × RAS`):
+
+```
+chan0 enable 1 matsrc 0 mat 255 255 255 255  ambsrc 0 amb 127 127 127 255  diff 2 attn 1 lights 01
+  light 0 colour 255 255 255 255  pos -0 948683 316228  dir 0 -0.948683 -0.316228  k 1 0 0  a -15.5817 16.5817 0
+```
+
+Ambient 0.5 from the register, one white **spot** (`GX_AF_SPOT`) whose
+cone (`−15.58 + 16.58·cos θ`, about 20° wide) points from 10⁶ units away
+straight at the room — so every vertex is inside it at cos θ ≈ 0.99999
+and the spot term is 1 — with no distance falloff (`k = 1, 0, 0`). The
+port implements the cone (M30) on both paths, renormalises the normal as
+Dolphin's vertex shader does, and for the floor (view-space normal
+`(0, 0.77, 0.64)`) gets N·L ≈ 0.93: **ambient + diffuse = 1.43, clamped to
+1** — the floor is `T × 1.0` on both machines. §52.9's pair measured
+(the same crops of the port's and the console's frame): the port is
+**1–2 levels brighter** everywhere — floor, walls, the whole lower frame
+(R 45.6 against 44.7) — and its contrast is not lower but slightly higher
+(luma SD 37.1 against 34.9). "Lighter" is a uniform level, the size and
+sign of the TEV's truncation the movie measured (53.8), which GL's fixed
+function rounds; "flatter" does not survive a measurement (§52.9 also
+compared two different moments: the characters stand elsewhere). **No
+channel bug; not fixed; the snapshot stays** (`~/m37/tfs/m432dl2/`, and
+`~/m38/L.log` beside it).
+
+### 53.12 What M38 shipped, the disk image, and what is left running
+
+| | |
+|---|---|
+| `port/src/thp/thp_jpeg.c`, `thp_jpeg.h` | the THP-shaped baseline JPEG decoder (tiled or row-major planes, per-caller context) and the CPU colour matrix with THPDraw's constants, truncating as the console does |
+| `port/src/thp/thp_port.c` | `THPInit`, `THPVideoDecode` (slots, the worker job, the inline twin, the buffer pool), `portTHPDraw` (the draw, the newest-ready rule), `portTHPAvailable` / `portTHPSkip` (`--nomovies`), the movie's log line and `--status` field (`thp F/N drawn D drop X`); replaces `port/src/dvd/thp_stub.c` |
+| `src/dolphin/thp/THPAudio.c` | compiled as it stands (`Makefile` `GAME_C`, `mirror_src.py`), one patch for the channel order |
+| `port/src/os/sreset_poll.c`, `platform/vi.c` | `OSSetIdleFunction` / `OSCancelThread`: the idle function, one pass a retrace (`port_idle_tick`, `port_idle_trap`) |
+| `port/src/audio/musyx_sal.c` | `AIInitDMA` / `AIGetDMAStartAddr`: the period's DMA source; the queue after the callback and fused ticks while THPSimple mixes; silent periods under `--noaudio` |
+| `port/src/gx/gx_tex.c`, `rt.c`, `gx_rt.h`, `include/port.h` | `GX_TF_PORT_RGBA` / `PortTexture` (`tex_bind_port`), `rt_texsubimage2d_owned` (a new record, freeing or raising a pool's flag) |
+| `port/src/gx/gx_tev.c` | the M30 three-texture fold without the crossbar (m448's felt, 53.10); `--foldxbar`, `--foldcap N` |
+| `port/src/gx/gx_draw.c` | `--drawlog` prints chan0's ambient, diffuse and attenuation functions, light mask and lights (m432, 53.11) |
+| `port/src/debug/selfplay.c`, `patches.txt` (`REL/bootDll`) | `--goto OVL[:EVT[:CHAR]]` |
+| `patches.txt` | `THPDraw.c` (the draw hand-off), `THPAudio.c` (the channel order), `REL/bootDll` (`--goto`); the two `thpmain.c` patches kept as `--nomovies` |
+| `port/src/platform/main.c`, `include/port.h` | `--nomovies`, `--thpyuv`, `--thplog`, `--goto`, `--foldxbar`, `--foldcap`; 0.9.7, M38 |
+| `port/tests/thp_test.c` (`make thptest`) | the decoder alone on a movie file, timed |
+| `port/tools/m38_chain.sh`, `m38_match.py`, `m38_audio.py` | the G4 chain; the console match by content; the audio verdict |
+| `port/ref/movies/ending-a.play` | the story ending's A metronome |
+| `port/docs/licences/stb_image.txt`, `dist/Licences/stb_image (MIT).txt` | the attribution |
+| `dist/Read Me.txt` | 0.9.7: a MOVIES section, Goomba's Chip Flip off the list, the credit |
+
+**No game data**: the repository holds three small witness JPEGs of
+movie frames (`m38-opening-port-vs-console.jpg`,
+`m38-story-ending-mario.jpg`, `m38-thpyuv-vs-cpu.jpg`) and nothing else of
+a movie; the THP files
+extracted for `thp_test` stayed in `/tmp` on littlejelly and `~/m38` on
+the G4; the dmg holds the bundle, the Read Me and the licences.
+
+**The md5s** (53.9): with the movies, **800 `d2d40344` / 3000 `59008ce4`
+/ 7000 `3f98f882`** — re-based, because the game's schedule moved;
+`--nomovies` keeps **`0b58c5ee` / `2b99c60a` / `4a9a640c`**.
+
+**The disk image.** `port/tools/make_dmg.sh` on the final build (`56298d9f…`):
+**`Mario Party 4 PowerPC Edition 0.9.7.dmg`, 4,272,475 bytes, md5
+`5af9b914da23908d26501ad22ab4b9cf`**, at
+`littlejelly:~/MarioParty4-PowerPC-0.9.7.dmg` and on the G4 at
+`~/Mario Party 4 PowerPC Edition 0.9.7.dmg`; no game data in it.
+
+**What is left running.** `~/MarioParty4.app` is `56298d9f…` (0.9.7,
+M38), and the G4 runs the same real-time soak M37 left:
+
+```
+isle --soak --com4 --rtc dolphin --freshcard --realtime --snap-every 5000 \
+     --snap-keep 3 --status --ovllog --stuckwatch 200 --perf
+```
+
+— now with movies: the walk's START skips the opening after 61 frames, the
+two mode-select movies play whole, and the `thp` field is on the status
+line while one is open. The G4 keeps `~/m38/` (the chain's runs by round,
+`r1`–`r5` and the last in place, `index.txt`) and `~/m38/opmov_a00.thp` /
+`thp_test` (the decoder bench; not game data anyone ships).
+
+### 53.13 What M39 starts with
+
+* **The one-CPU sound during the mode-select movies** (53.6): 335
+  underruns against 84 on the one-CPU walk. The decode inline at the draw
+  is 15 ms on a frame already long; a one-CPU rule that decodes a movie
+  frame only when the frame has the slack (the loader's §51 rule for its
+  slices) would trade a few more dropped pictures for the sound.
+  Reproduction: `m38_chain.sh WS` against `WSN`.
+* **Dolphin's audio dump** came out empty (`DumpAudio = True` in the pinned
+  user directory writes nothing on the Flatpak build); the audio verdict
+  stands on ffmpeg's independent decode of the same track, but a console
+  capture of the mix would close it.
+* **The fold's other users.** The crossbar fold stays for the M16 triple
+  and its shapes 2–4 (the eyes and the rest draw right); if another six-
+  unit chain turns up black on the Radeon, `--foldcap 19` / `21` / `22`
+  are the bisect, one run each.
+* **The GX's truncation.** The movie measured it (+2 levels where the
+  port rounds) and m432 shows the same level on a TEV multiply; GL's fixed
+  function rounds, so the whole picture is probably a level bright
+  against the console. A bias register in the fold's last unit could buy
+  it back; nothing has measured whether a player could see it.
+* §52.10's standing list is otherwise unchanged: the warp's `SampleMap`
+  (`--tfsall 2`), m405's layer order, m403's lamp, the character select's
+  replay cost per vertex.

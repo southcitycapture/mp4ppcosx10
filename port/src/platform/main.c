@@ -408,9 +408,12 @@ static void usage(const char* argv0) {
             "                    planes through THPDraw's TEV -- not as the CPU's\n"
             "                    RGBA (an A/B; its colours are wrong, PLAN.md 53.4)\n"
             "  --thplog          one log line per movie frame drawn\n"
+            "  --foldxbar        the M30 three-texture fold reads across units with\n"
+            "                    the crossbar, as before 0.9.7 (m448's felt black)\n"
             "  --foldcap N       cut the M30 three-texture fold after N units (9: N\n"
             "                    cycles 1..6 by frame; 10+N also forces the chain's\n"
-            "                    last alpha to 1): the m448 felt bisect\n"
+            "                    last alpha to 1; 21/22: unit B's alpha from its\n"
+            "                    crossbar read / its constant alone): the m448 bisect\n"
             "  --goto OVL[:EVT[:CHAR]]  boot straight into overlay OVL (a name as in\n"
             "                    the status line) at event EVT, four players set\n"
             "                    up with character CHAR first: mstory2dll:4:0 is\n"
@@ -922,6 +925,8 @@ int port_parse_args(int argc, char** argv) {
             port_opt.thpyuv = 1;
         } else if (!strcmp(a, "--thplog")) {
             port_opt.thplog = 1;
+        } else if (!strcmp(a, "--foldxbar")) {
+            port_opt.foldxbar = 1;
         } else if (!strcmp(a, "--foldcap") && i + 1 < argc) {
             port_opt.foldcap = atoi(argv[++i]);
         } else if (!strcmp(a, "--goto") && i + 1 < argc) {

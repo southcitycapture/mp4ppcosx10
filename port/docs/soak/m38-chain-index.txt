@@ -1,0 +1,39 @@
+# m38 chain start Tue Sep 22 14:17:03 EDT 2026  isle md5 eea3cf0f9dcfbc62777751deb99d0dd8
+N EXIT=0 wall=235s md5 800:0b58c5ee 3000:2b99c60a 7000:4a9a640c movies=0 args='--com4 --rtc dolphin --freshcard --noconfig --status --ovllog --perf --dumpframe 800,3000,7000 --turbo --play board-start-com4.play --frames 9000 --nomovies'
+M EXIT=0 wall=229s md5 800:d2d40344 3000:59008ce4 7000:3f98f882 movies=3 args='--com4 --rtc dolphin --freshcard --noconfig --status --ovllog --perf --dumpframe 800,3000,7000 --turbo --play board-start-com4.play --frames 9000'
+B EXIT=0 wall=95s md5 800:-------- 3000:b97f76ec 7000:-------- movies=1 args='--rtc dolphin --noconfig --status --frames 5600 --dumpframe 600,900,1200,1500,1800,2100,2400,2700,3000,3300,3600,3900,4200,4500,4800,5100,5400'
+Q EXIT=0 wall=95s md5 800:-------- 3000:-------- 7000:-------- movies=1 args='--rtc dolphin --noconfig --status --frames 5600'
+BN EXIT=0 wall=95s md5 800:-------- 3000:-------- 7000:-------- movies=0 args='--rtc dolphin --noconfig --status --frames 5600 --nomovies'
+Y EXIT=0 wall=96s md5 800:-------- 3000:-------- 7000:-------- movies=1 args='--rtc dolphin --noconfig --status --frames 5600 --thpyuv --dumpframe 1200,2400,3600'
+S EXIT=0 wall=95s md5 800:-------- 3000:-------- 7000:-------- movies=1 args='--rtc dolphin --noconfig --status --frames 5600 --threads 0 --renderthread 1'
+# m38 chain all done Tue Sep 22 14:33:20 EDT 2026
+# m38 chain start Tue Sep 22 14:34:37 EDT 2026  isle md5 d321a72f3765c37db538787f6c697287
+G EXIT=138 wall=5s md5 800:-------- 3000:-------- 7000:-------- movies=0 args='--rtc dolphin --noconfig --status --goto mstory2dll:4:0 --frames 9000 --dumpframe 1200,1800,2400,3000,3600,4200,4800,5400,6000,6600,7200,7800,8400'
+M EXIT=0 wall=234s md5 800:d2d40344 3000:59008ce4 7000:3f98f882 movies=3 args='--com4 --rtc dolphin --freshcard --noconfig --status --ovllog --perf --dumpframe 800,3000,7000 --turbo --play board-start-com4.play --frames 9000'
+M2 EXIT=0 wall=234s md5 800:d2d40344 3000:59008ce4 7000:3f98f882 movies=3 args='--com4 --rtc dolphin --freshcard --noconfig --status --ovllog --perf --dumpframe 800,3000,7000 --turbo --play board-start-com4.play --frames 9000'
+Q EXIT=0 wall=96s md5 800:-------- 3000:-------- 7000:-------- movies=1 args='--rtc dolphin --noconfig --status --frames 5600'
+B EXIT=0 wall=95s md5 800:-------- 3000:66a10c15 7000:-------- movies=1 args='--rtc dolphin --noconfig --status --frames 5600 --dumpframe 600,900,1200,1500,1800,2100,2400,2700,3000,3300,3600,3900,4200,4500,4800,5100,5400'
+W EXIT=0 wall=273s md5 800:d2d40344 3000:59008ce4 7000:3f98f882 movies=3 args='--com4 --rtc dolphin --freshcard --noconfig --status --ovllog --perf --dumpframe 800,3000,7000 --soak --realtime --frames 16000'
+# m38 chain all done Tue Sep 22 14:50:46 EDT 2026
+# m38 chain start Tue Sep 22 14:51:20 EDT 2026  isle md5 48f278b3a3742d87cf5b955bb3c74ad3
+G EXIT=0 wall=155s md5 800:-------- 3000:29ca4884 7000:-------- movies=0 args='--rtc dolphin --noconfig --status --goto mstory2dll:4:0 --frames 9000 --dumpframe 1200,1800,2400,3000,3600,4200,4800,5400,6000,6600,7200,7800,8400'
+F EXIT=0 wall=65s md5 800:-------- 3000:-------- 7000:-------- movies=3 args='--minigame m448 --turns 1 --com4 --rtc dolphin --freshcard --play board-start-com4.play --noconfig --lockstep --status --ovllog --ffto 14000 --frames 20000 --mgdump 1200,1201,1202,1203,1204,1205 --mgend 1260 --foldcap 9'
+L EXIT=0 wall=65s md5 800:-------- 3000:-------- 7000:-------- movies=3 args='--minigame m432 --turns 1 --com4 --rtc dolphin --freshcard --play board-start-com4.play --noconfig --lockstep --status --ovllog --ffto 14000 --frames 20000 --drawlog 3000 --drawlog-at 14877 --mgdump 400 --mgend 420'
+A EXIT=0 wall=96s md5 800:-------- 3000:-------- 7000:-------- movies=1 args='--rtc dolphin --noconfig --status --frames 5600 --wav /Users/zach/m38/A.wav'
+Q EXIT=0 wall=95s md5 800:-------- 3000:-------- 7000:-------- movies=1 args='--rtc dolphin --noconfig --status --frames 5600'
+W EXIT=0 wall=273s md5 800:d2d40344 3000:59008ce4 7000:3f98f882 movies=3 args='--com4 --rtc dolphin --freshcard --noconfig --status --ovllog --perf --dumpframe 800,3000,7000 --soak --realtime --frames 16000'
+S EXIT=0 wall=96s md5 800:-------- 3000:-------- 7000:-------- movies=1 args='--rtc dolphin --noconfig --status --frames 5600 --threads 0 --renderthread 1'
+# m38 chain all done Tue Sep 22 15:06:01 EDT 2026
+# m38 chain start Tue Sep 22 15:06:42 EDT 2026  isle md5 f6c6609c2a1d7c30c143be6bef55a763
+A EXIT=0 wall=95s md5 800:-------- 3000:-------- 7000:-------- movies=1 args='--rtc dolphin --noconfig --status --frames 5600 --wav /Users/zach/m38/A.wav'
+F2 EXIT=0 wall=65s md5 800:-------- 3000:-------- 7000:-------- movies=3 args='--minigame m448 --turns 1 --com4 --rtc dolphin --freshcard --play board-start-com4.play --noconfig --lockstep --status --ovllog --ffto 14000 --frames 20000 --mgdump 1200,1201,1202,1203,1204,1205 --mgend 1260 --foldcap 19'
+L EXIT=0 wall=91s md5 800:-------- 3000:-------- 7000:-------- movies=0 args='--minigame m432 --turns 1 --com4 --rtc dolphin --freshcard --play board-start-com4.play --noconfig --lockstep --status --ovllog --ffto 14000 --frames 20000 --drawlog 3000 --drawlog-at 14877 --mgdump 400 --mgend 420 --nomovies'
+G EXIT=0 wall=206s md5 800:-------- 3000:5ca475b4 7000:f4e8e5f0 movies=1 args='--rtc dolphin --noconfig --status --goto mstory2dll:4:0 --play ending-a.play --frames 12000 --thplog --dumpframe 3000,4000,5000,6000,7000,8000,9000,10000,11000'
+WS EXIT=0 wall=276s md5 800:d2d40344 3000:59008ce4 7000:3f98f882 movies=3 args='--com4 --rtc dolphin --freshcard --noconfig --status --ovllog --perf --dumpframe 800,3000,7000 --soak --realtime --frames 16000 --threads 0 --renderthread 1'
+Q EXIT=0 wall=95s md5 800:-------- 3000:-------- 7000:-------- movies=1 args='--rtc dolphin --noconfig --status --frames 5600'
+W EXIT=0 wall=272s md5 800:d2d40344 3000:59008ce4 7000:3f98f882 movies=3 args='--com4 --rtc dolphin --freshcard --noconfig --status --ovllog --perf --dumpframe 800,3000,7000 --soak --realtime --frames 16000'
+S EXIT=0 wall=95s md5 800:-------- 3000:-------- 7000:-------- movies=1 args='--rtc dolphin --noconfig --status --frames 5600 --threads 0 --renderthread 1'
+B EXIT=0 wall=96s md5 800:-------- 3000:66a10c15 7000:-------- movies=1 args='--rtc dolphin --noconfig --status --frames 5600 --dumpframe 600,900,1200,1500,1800,2100,2400,2700,3000,3300,3600,3900,4200,4500,4800,5100,5400'
+M EXIT=0 wall=234s md5 800:d2d40344 3000:59008ce4 7000:3f98f882 movies=3 args='--com4 --rtc dolphin --freshcard --noconfig --status --ovllog --perf --dumpframe 800,3000,7000 --turbo --play board-start-com4.play --frames 9000'
+N EXIT=0 wall=239s md5 800:0b58c5ee 3000:2b99c60a 7000:4a9a640c movies=0 args='--com4 --rtc dolphin --freshcard --noconfig --status --ovllog --perf --dumpframe 800,3000,7000 --turbo --play board-start-com4.play --frames 9000 --nomovies'
+# m38 chain all done Tue Sep 22 15:37:04 EDT 2026

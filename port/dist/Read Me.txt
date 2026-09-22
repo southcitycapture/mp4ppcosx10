@@ -1,6 +1,6 @@
 Mario Party 4 PowerPC Edition
 =============================
-Version 0.9.6
+Version 0.9.7
 
 
 WHAT THIS IS
@@ -127,6 +127,29 @@ Nothing is copied anywhere: the set is built from your own disc image at
 every start and is gone when the game quits.
 
 
+MOVIES
+
+The game's movies play: the opening, the two short ones at the mode
+select, the eight story-mode endings and the staff credits, with their
+sound.  They are the disc's own files, decoded as the game plays them --
+nothing is converted or stored anywhere -- by the game's own movie player
+with a small decoder in the port standing in for the console's.  START or
+A skips the opening, as on the console.
+
+A movie is 608x448 at 30 frames a second, and a frame takes the reference
+machine's second processor about 15 ms to decode.  The movie always runs
+at its own speed, locked to its sound: on a machine that cannot keep up,
+the picture shows fewer of the movie's frames -- a late frame is left out,
+never waited for -- while the sound, the subtitles and the game around the
+movie carry on exactly on time.  On the dual 1 GHz reference machine the
+opening shows about 29 of its 30 frames a second, the two mode-select
+movies (which play behind the menu's own 3D) 25 to 28.  On one processor
+the same G4 shows about 29 and 23 to 25, and the sound can break up for
+a moment during those two short mode-select movies.
+
+--nomovies skips every movie, as versions before 0.9.7 did.
+
+
 CONTROLS
 
 Keyboard (always active, beside a pad too)
@@ -203,8 +226,6 @@ games); what is left that a player can see:
                         ripples it
     Cheep Cheep Sweep   the pond is clear where the console's reflects
                         the sky (the same missing ripple)
-    Goomba's Chip Flip  the felt is black on the Radeon 9000 (the same
-                        picture is green on an Intel card)
 
 The ripple of those three pools is a warp the card's fixed pipeline
 cannot do; a fragment-program path for it is in this build behind
@@ -218,7 +239,7 @@ and 1% fewer on the title, by not starting a new batch of triangles
 when the game re-sends a setting it already had; the picture is
 identical to the last version's, frame for frame, and the frame rate
 moves by less than the difference between two runs of the same walk.
-Intro movies are skipped.  The game's memory card is one card in slot A;
+The game's memory card is one card in slot A;
 slot B is always empty.  A second controller works (checked with a pad on
 port 1 and the keyboard standing in as player 2); three and four are
 wired the same way but untested, there being one pad in the house.
@@ -232,7 +253,9 @@ repository has never contained one.
 
 The game's code comes from the mariopartyrd/marioparty4 decompilation,
 compiled as is.  The MusyX audio library is Axiomatic Data Laboratories'
-reimplementation (MIT).  SDL2 is under the zlib licence.  The licence texts
+reimplementation (MIT).  The movie decoder's inverse DCT and Huffman
+tables follow Sean Barrett's stb_image (MIT).  SDL2 is under the zlib
+licence.  The licence texts
 are in the Licences folder beside this file, with a note on the port layer
 itself.
 

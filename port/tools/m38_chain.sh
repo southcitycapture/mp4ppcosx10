@@ -19,12 +19,19 @@
 #   G    --goto mstory2dll:4:0, Mario's story ending (endmov_ma0.thp) at real
 #        time: its movie's log line, frames every 600 to 9000
 #   M2   M again: the re-based md5s are the same run to run
+#   WSN  WS with --nomovies: the one-CPU walk's own underruns
+#   C    --goto staffdll: the staff credits (stmov_a00.thp, stopped and
+#        restarted by the module: HuTHPStop / HuTHPRestart)
 #   WS   W with --threads 0 --renderthread 1: the mode-select movies in one
 #        CPU's shape
 #   A    Q with --wav: the mixed output, for the audio verdict against the
 #        movie's own track (PLAN.md 53.5)
 #   F    m448 with --foldcap 9: the felt's bisect, six caps in six frames
 #   F2   F with --foldcap 19: the same six caps with the last alpha forced to 1
+#   F21/F22  unit B's alpha from the crossbar alone / the constant alone
+#   F3   m448 as a player gets it (the fold without the crossbar, 53.10)
+#   F3X  the same with --foldxbar (the old fold: the felt black)
+#   FD   the felt's --drawlog and --gltrace at 14117 on this schedule
 #   L    m432 with --drawlog at the wall's frame: chan0's ambient and lights
 #        (--nomovies: M37's schedule, so 14877 is M37's frame -- with the
 #        movies the walk reaches m432 at 13251, inside --ffto 14000)
@@ -90,12 +97,21 @@ for r in ${M38_RUNS:-N M}; do
         G)  run G 400 --rtc dolphin --noconfig --status --goto mstory2dll:4:0 --play ending-a.play --frames 12000 \
                 --thplog --dumpframe 3000,4000,5000,6000,7000,8000,9000,10000,11000 ;;
         M2) run M2 900 $WALK $TURBO ;;
+        WSN) run WSN 900 $WALK --soak --realtime --frames 16000 --threads 0 --renderthread 1 --nomovies ;;
+        C)  run C 900 --rtc dolphin --noconfig --status --goto staffdll:0:0 --play ending-a.play \
+                --frames 30000 --thplog --dumpframe 2000,10000 ;;
         WS) run WS 900 $WALK --soak --realtime --frames 16000 --threads 0 --renderthread 1 ;;
         A)  run A 400 $BOOT --wav "$D/A.wav" ;;
         F)  run F 900 --minigame m448 --turns 1 $MG --mgdump 1200,1201,1202,1203,1204,1205 \
                 --mgend 1260 --foldcap 9 ;;
         F2) run F2 900 --minigame m448 --turns 1 $MG --mgdump 1200,1201,1202,1203,1204,1205 \
                 --mgend 1260 --foldcap 19 ;;
+        F21) run F21 900 --minigame m448 --turns 1 $MG --mgdump 1200 --mgend 1260 --foldcap 21 ;;
+        F22) run F22 900 --minigame m448 --turns 1 $MG --mgdump 1200 --mgend 1260 --foldcap 22 ;;
+        F3) run F3 900 --minigame m448 --turns 1 $MG --mgdump 1200 --mgend 1260 ;;
+        F3X) run F3X 900 --minigame m448 --turns 1 $MG --mgdump 1200 --mgend 1260 --foldxbar ;;
+        FD) run FD 900 --minigame m448 --turns 1 $MG --mgdump 1200 --mgend 1260 --drawlog 3000 \
+                --drawlog-at 14117 --gltrace 14117 ;;
         L)  run L 900 --minigame m432 --turns 1 $MG --drawlog 3000 --drawlog-at 14877 \
                 --mgdump 400 --mgend 420 --nomovies ;;
         *)  echo "chain: unknown run $r" ;;

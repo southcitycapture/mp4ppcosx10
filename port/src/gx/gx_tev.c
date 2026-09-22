@@ -931,6 +931,18 @@ static void regfix2_emit(int which, int unit, int k) {
 
 /* One of the three units of a matched triple: `which` is 0 (A), 1 (B), 2 (C)
  * and `unit` is the GL unit it lands on (== the stage index). */
+/* M38 (PLAN.md 53.10): the fold without the crossbar, for the M30 three-
+ * texture shape.  When the M16 triple's lerp factor is T_B.a itself
+ * (stage C's c = TEXA), unit B can read it from its own texture, and unit A
+ * can make stage A's alpha from its own; nothing is read across.  Exactly
+ * the same values as the crossbar fold -- and on the Radeon 9000, in m448's
+ * six-unit felt chain, unit 1's crossbar read of unit 0's texture comes back
+ * with alpha 0, which the draw's alpha test (>= 1) turned into a black
+ * table.  Set by regfix5_emit around its two calls; --foldxbar keeps the
+ * crossbar fold for the A/B. */
+static int regfix_no_xbar;
+static unsigned stat_regfix_no_xbar;
+
 static void regfix_emit(int which, int unit, int k) {
     const GXTevStage* a = &gx.tev[k];
     const GXTevStage* b = &gx.tev[k + 1];
@@ -942,6 +954,46 @@ static void regfix_emit(int which, int unit, int k) {
     glc_texenvi(unit, GL_TEXTURE_ENV_MODE, GL_COMBINE);
     glc_texenvf(unit, GL_RGB_SCALE, 1.0f);
     glc_texenvf(unit, GL_ALPHA_SCALE, 1.0f);
+    if (regfix_no_xbar && c->cin[2] == GX_CC_TEXA && which <= 1) {
+        if (which == 0) {
+            /* rgb = T_A;  a = stage A's alpha, from this unit's own texture */
+            int i, n = 0;
+            glc_texenvi(unit, GL_COMBINE_RGB, GL_REPLACE);
+            glc_texenvi(unit, GL_SOURCE0_RGB, GL_TEXTURE);
+            glc_texenvi(unit, GL_OPERAND0_RGB, GL_SRC_COLOR);
+            for (i = 1; i <= 2; i++) {
+                u8 v = a->ain[i];
+                GLenum src;
+                if (v == GX_CA_ZERO) {
+                    continue;
+                }
+                src = v == GX_CA_TEXA ? GL_TEXTURE : v == GX_CA_RASA ? GL_PRIMARY_COLOR : GL_CONSTANT;
+                if (v == GX_CA_KONST) {
+                    konst_color(a, 1, konst);
+                }
+                glc_texenvi(unit, n == 0 ? GL_SOURCE0_ALPHA : GL_SOURCE1_ALPHA, (int)src);
+                glc_texenvi(unit, n == 0 ? GL_OPERAND0_ALPHA : GL_OPERAND1_ALPHA, GL_SRC_ALPHA);
+                n++;
+            }
+            glc_texenvi(unit, GL_COMBINE_ALPHA, GL_MODULATE); /* n is 2: the matcher says so */
+        } else {
+            /* rgb = lerp(PREV = T_A, T_B, T_B.a) -- T_B.a is this unit's own
+             * texel alpha;  a = PREV, stage A's */
+            glc_texenvi(unit, GL_COMBINE_RGB, GL_INTERPOLATE);
+            glc_texenvi(unit, GL_SOURCE0_RGB, GL_TEXTURE);
+            glc_texenvi(unit, GL_OPERAND0_RGB, GL_SRC_COLOR);
+            glc_texenvi(unit, GL_SOURCE1_RGB, GL_PREVIOUS);
+            glc_texenvi(unit, GL_OPERAND1_RGB, GL_SRC_COLOR);
+            glc_texenvi(unit, GL_SOURCE2_RGB, GL_TEXTURE);
+            glc_texenvi(unit, GL_OPERAND2_RGB, GL_SRC_ALPHA);
+            glc_texenvi(unit, GL_COMBINE_ALPHA, GL_REPLACE);
+            glc_texenvi(unit, GL_SOURCE0_ALPHA, GL_PREVIOUS);
+            glc_texenvi(unit, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
+        }
+        glc_texenv_color(unit, konst);
+        stat_regfix_no_xbar++;
+        return;
+    }
     if (which == 0) {
         /* rgb = T_A;  a = q, read across from unit B */
         glc_texenvi(unit, GL_COMBINE_RGB, GL_REPLACE);
@@ -1067,7 +1119,9 @@ static void regfix5_emit(int which, int unit, int k) {
         return;
     }
     if (which <= 1) {
+        regfix_no_xbar = !port_opt.foldxbar;
         regfix_emit(which, unit, k); /* units A and B are the M16 triple's */
+        regfix_no_xbar = 0;
         return;
     }
     glc_texenvi(unit, GL_TEXTURE_ENV_MODE, GL_COMBINE);
@@ -1919,7 +1973,19 @@ void gx_tev_apply(void) {
      * after it) is overwritten with a pass, so the picture is the chain cut
      * after N units; 9 cycles N = 1..6 by frame, and six dumped frames in a
      * row are the whole bisect on one card. */
-    if (port_opt.foldcap && regfix_shape == 5 && regfix_k >= 0 && gl13_live()) {
+    if ((port_opt.foldcap == 21 || port_opt.foldcap == 22) && regfix_shape == 5 &&
+        regfix_k >= 0 && gl13_live()) {
+        /* 21: unit B's alpha is its crossbar read of unit A's texture alone
+         * (GL_TEXTURE0 + k); 22: its constant alone.  The fold makes the
+         * felt's alpha there -- MODULATE(T_A.a, konst.a) -- and every unit
+         * after passes it on (PLAN.md 53.10). */
+        int u = regfix_k + 1;
+        glc_texenvi(u, GL_COMBINE_ALPHA, GL_REPLACE);
+        glc_texenvi(u, GL_SOURCE0_ALPHA,
+                    port_opt.foldcap == 21 ? (int)(GL_TEXTURE0 + regfix_k) : GL_CONSTANT);
+        glc_texenvi(u, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
+        tev_cache_live = 0;
+    } else if (port_opt.foldcap && regfix_shape == 5 && regfix_k >= 0 && gl13_live()) {
         /* 10 + N: the same, and the chain's last unit's alpha forced to 1 --
          * the draw alpha-tests at >= 1, so this shows the colour the chain
          * makes whatever its alpha is */
@@ -1975,6 +2041,9 @@ void gx_tev_report(void) {
     if (stat_regfix5) {
         port_log("port> tev: %u unit emissions of the M30 three-texture shape (the M16 triple "
                  "and a second lerp-by-alpha pair; PLAN.md 45)\n", stat_regfix5);
+        port_log("port> tev: %u of them without the crossbar (M38, PLAN.md 53.10; --foldxbar "
+                 "for the old fold)\n",
+                 stat_regfix_no_xbar);
     }
     if (stat_rc_carried) {
         port_log("port> tev: %u configs carried a grey-texture product in the alpha (m417's "
