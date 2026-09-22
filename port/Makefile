@@ -72,9 +72,9 @@ EXE := $(BUILD)/marioparty4
 GAME_C   := $(patsubst $(ROOT)/%,%,$(wildcard $(ROOT)/src/game/*.c $(ROOT)/src/game/board/*.c \
                         $(ROOT)/src/msm/*.c $(ROOT)/src/libhu/*.c)) \
             src/dolphin/mtx/mtx.c src/dolphin/mtx/mtxvec.c src/dolphin/mtx/mtx44.c \
-            src/dolphin/mtx/vec.c src/dolphin/mtx/quat.c
+            src/dolphin/mtx/vec.c src/dolphin/mtx/quat.c src/dolphin/thp/THPAudio.c
 PORT_C   := $(wildcard src/platform/*.c src/os/*.c src/gx/*.c src/dvd/*.c \
-                       src/card/*.c src/pad/*.c src/audio/*.c src/debug/*.c)
+                       src/card/*.c src/pad/*.c src/audio/*.c src/debug/*.c src/thp/*.c)
 # ---- MusyX (extern/musyx, MIT) -----------------------------------------------
 # AxioDL's MusyX reimplementation, compiled from the decomp's own checkout with
 # MUSY_TARGET=MUSY_TARGET_PC, which GAME_DEFS already sets.  Everything above
@@ -193,7 +193,7 @@ LDFLAGS   = $(TARGET_LDFLAGS) -lm $(SDL_LIBS) \
 SDK_PREFIXES := ^(GX|OS|VI|DVD|CARD|PAD|AI|AR|ARQ|SI|DSP|THP|DEMO|PS|MTX|VEC|QUAT|C_|snd|DC|IC|LC|PPC|__GX|__OS|__AI|__DVD)
 
 # ---- rules -------------------------------------------------------------------
-.PHONY: all clean list mirror stubs rels mtxtest
+.PHONY: all clean list mirror stubs rels mtxtest thptest
 .SECONDARY:
 
 all: $(EXE) rels
@@ -434,6 +434,12 @@ $(MTXTEST): tests/mtx_test.c $(BUILD)/game/src/dolphin/mtx/mtx.o \
         $(BUILD)/game/src/dolphin/mtx/quat.o $(BUILD)/port/src/os/psmtx_c.o
 	@mkdir -p $(dir $@)
 	$(CC) $(PORT_CFLAGS) -o $@ $^ -lm
+
+# M38: the THP decoder alone, on a movie file (tests/thp_test.c, PLAN.md 53)
+thptest: $(BUILD)/thp_test
+$(BUILD)/thp_test: tests/thp_test.c src/thp/thp_jpeg.c src/thp/thp_jpeg.h
+	@mkdir -p $(BUILD)
+	$(CC) -std=gnu11 -O2 -Wall $(TUNE) $(TARGET_CFLAGS) -o $@ tests/thp_test.c src/thp/thp_jpeg.c $(TARGET_LDFLAGS)
 
 mtxtest: $(MTXTEST)
 	$(MTXTEST)

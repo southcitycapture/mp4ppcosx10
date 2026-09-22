@@ -192,19 +192,39 @@ host:src/REL/bootDll/main.c	void *NintendoDataDecode(void);\n\nvoid ObjectSetup(
 host:src/game/data.c	static void GetFileInfo(HUDATASTAT *readStat, s32 fileNum)\n{\n    u32 *ptr;\n    ptr = (u32 *)PTR_OFFSET(readStat->dirP, (fileNum * 4))+1;\n    readStat->fileDataP = PTR_OFFSET(readStat->dirP, *ptr);\n    ptr = readStat->fileDataP;\n    readStat->rawLen = *ptr++;\n    readStat->decodeType = *ptr++;	u32 portBE32(u32 v);\n\nstatic void GetFileInfo(HUDATASTAT *readStat, s32 fileNum)\n{\n    u32 *ptr;\n    ptr = (u32 *)PTR_OFFSET(readStat->dirP, (fileNum * 4))+1;\n    readStat->fileDataP = PTR_OFFSET(readStat->dirP, portBE32(*ptr));\n    ptr = readStat->fileDataP;\n    readStat->rawLen = portBE32(*ptr); ptr++;\n    readStat->decodeType = portBE32(*ptr); ptr++;
 
 # ----------------------------------------------------------- game/thpmain.c
-# THP movies are not decoded yet (M8) and the game cannot survive being told
-# so: THPTestProc retries THPSimpleOpen forever, and HuTHPEndCheck asks
-# THPSimpleGetTotalFrame(), whose stub returns 0 -- which its own
-# `if (temp_r31 <= 0) return FALSE;` reads as "not finished".  BootExec then
-# waits on `while (!HuTHPEndCheck())` and the boot stops at the opening movie,
-# yielding at a healthy 60 fps forever.  See port/src/dvd/thp_stub.c for the
-# reasoning; when the decoder lands, portTHPAvailable() returns 1 and both of
-# these fall through to the original code.
+# --nomovies (M38): skip every THP movie, which is how M2-M37 survived having
+# no decoder.  The game cannot be told "no movie" any other way: THPTestProc
+# retries THPSimpleOpen forever, and HuTHPEndCheck asks
+# THPSimpleGetTotalFrame(), which is 0 with no movie open -- and its own
+# `if (temp_r31 <= 0) return FALSE;` reads that as "not finished", so
+# BootExec's `while (!HuTHPEndCheck())` would wait for ever.  Since M38
+# portTHPAvailable() (port/src/thp/thp_port.c) is 1 unless --nomovies (or on
+# a 64-bit host, where the AI's u32 addresses cannot round-trip), and both
+# patches fall straight through to the game's own code: they are the flag,
+# not a workaround.  PLAN.md 53.7.
 src/game/thpmain.c	BOOL HuTHPEndCheck(void)\n{\n    s32 temp_r31;\n	int portTHPAvailable(void);\n\nBOOL HuTHPEndCheck(void)\n{\n    s32 temp_r31;\n\n    if (!portTHPAvailable()) {\n        return TRUE;\n    }\n
 # Tear the movie process down exactly as its own tail does: kill the sprite or
 # model it was drawing into, clear THPProc so a later HuTHPSprCreateVol still
 # works, and HuPrcKill itself.
 src/game/thpmain.c	    while (THPSimpleOpen(THPFileName) == 0) {\n        OSReport("THPSimpleOpen fail");\n        HuPrcVSleep();\n    }	    if (!portTHPAvailable()) {\n        void portTHPSkip(const char *);\n        portTHPSkip(THPFileName);\n        if (SimpleControl.unk19C == 1) {\n            Hu3DModelKill(SimpleControl.unk19E);\n        } else {\n            HuSprKill(SimpleControl.unk19E);\n        }\n        THPProc = NULL;\n        HuPrcKill(HuPrcCurrentGet());\n        while (1) {\n            HuPrcVSleep();\n        }\n    }\n    while (THPSimpleOpen(THPFileName) == 0) {\n        OSReport("THPSimpleOpen fail");\n        HuPrcVSleep();\n    }
+
+# ------------------------------------------------------------ game/THPDraw.c
+# M38 (PLAN.md 53.4): the movie frame is drawn by the port.  THPDraw's colour
+# matrix is five TEV stages with a negative S10 register (GXSetTevColorS10
+# C0 = -90, 0, -114, 135) and a TEV_SUB, and the port's GL 1.3 combiners
+# clamp the one and draw the other as an add; so the port converts the frame
+# on the CPU with THPDraw's own constants and draws it as one RGBA texture
+# times the sprite's colour -- this function's quad, in the state the setup
+# left.  portTHPDraw returns 0 under --thpyuv (the planes and the game's TEV
+# through the port's GX, for the A/B), and the lines below run as written.
+src/game/THPDraw.c	    GXTexObj sp14;\n\n    GXInitTexObj(&sp54, yImage, texWidth, texHeight, GX_TF_I8, GX_CLAMP, GX_CLAMP, GX_FALSE);	    GXTexObj sp14;\n    int portTHPDraw(void *, s16, s16, s16, s16);\n\n    if (portTHPDraw(yImage, x, y, polyWidth, polyHeight)) {\n        return;\n    }\n    GXInitTexObj(&sp54, yImage, texWidth, texHeight, GX_TF_I8, GX_CLAMP, GX_CLAMP, GX_FALSE);
+
+# ------------------------------------------------------------ game/objmain.c
+# M38 (PLAN.md 53.8): --goto OVL[:EVT[:CHAR]] boots straight into an overlay
+# at an event -- the story ending is mstory2dll event 4, behind a whole story
+# mode otherwise.  portGotoEvt (port/src/debug/selfplay.c) returns 0 and
+# leaves start_ovl alone without the flag.
+src/game/objmain.c	    omOvlCallEx(start_ovl, 1, 0, 0);	    {\n        int portGotoEvt(int *);\n        int port_ovl = (int)start_ovl;\n        int port_evt = portGotoEvt(&port_ovl);\n        omOvlCallEx((OMOVL)port_ovl, 1, port_evt, 0);\n    }
 
 # ---------------------------------------------------------------- game/window.c
 # "Is this a message id or a pointer to a string?"

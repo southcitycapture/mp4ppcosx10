@@ -402,6 +402,16 @@ static void usage(const char* argv0) {
             "  --resample1       linear interpolation; the default, kept so that an\n"
             "                    A/B can name both sides\n"
             "  --clickstat       count mix discontinuities as they are produced\n"
+            "  --nomovies        skip the THP movies (the opening, the mode select's,\n"
+            "                    the story endings, the credits) as M2-M37 did\n"
+            "  --thpyuv          draw a movie frame the game's way -- three I8\n"
+            "                    planes through THPDraw's TEV -- not as the CPU's\n"
+            "                    RGBA (an A/B; its colours are wrong, PLAN.md 53.4)\n"
+            "  --thplog          one log line per movie frame drawn\n"
+            "  --goto OVL[:EVT[:CHAR]]  boot straight into overlay OVL (a name as in\n"
+            "                    the status line) at event EVT, four players set\n"
+            "                    up with character CHAR first: mstory2dll:4:0 is\n"
+            "                    Mario's story ending\n"
             "  --noaicb          do not call the game's AI DMA callback, which\n"
             "                    leaves msmSe/Mus/StreamPeriodicProc dead as\n"
             "                    the stub did before M9b (PLAN.md 22.4)\n"
@@ -903,6 +913,14 @@ int port_parse_args(int argc, char** argv) {
             port_opt.olddecode = 1;
         } else if (!strcmp(a, "--noaicb")) {
             port_opt.noaicb = 1;
+        } else if (!strcmp(a, "--nomovies")) {
+            port_opt.nomovies = 1;
+        } else if (!strcmp(a, "--thpyuv")) {
+            port_opt.thpyuv = 1;
+        } else if (!strcmp(a, "--thplog")) {
+            port_opt.thplog = 1;
+        } else if (!strcmp(a, "--goto") && i + 1 < argc) {
+            port_opt.gotoovl = argv[++i];
         } else if (!strcmp(a, "--perfwin") && i + 1 < argc) {
             port_opt.perfwin = argv[++i];
             port_opt.perf = 1;

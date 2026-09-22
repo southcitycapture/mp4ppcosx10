@@ -1,0 +1,38 @@
+port/src/thp/thp_jpeg.c -- attribution
+======================================
+
+The THP movie decoder (port/src/thp/thp_jpeg.c, M38) is written for this
+port, but three of its parts follow stb_image.h by Sean Barrett
+(https://github.com/nothings/stb), and are credited to it:
+
+  * the integer inverse DCT (the IDCT_1D butterfly and its 12-bit fixed-point
+    constants; stb_image derives it from the IJG's jidctint.c "islow");
+  * the Huffman decoder's 9-bit lookahead table and the AC "fast_ac" table
+    that folds a short code's run, size and value into one entry;
+  * the sign-extension trick of `extend_receive` (the jbias / bmask tables).
+
+The THP-specific parts -- no byte stuffing, THPDec.c's restart handling, the
+GX I8 tiled output, the colour conversion with THPDraw.c's TEV constants and
+the triangle-filtered chroma -- are this port's.
+
+stb_image is available under either of two licences; this port takes it under
+the MIT licence:
+
+------------------------------------------------------------------------------
+Copyright (c) 2017 Sean Barrett
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+of the Software, and to permit persons to whom the Software is furnished to do
+so, subject to the following conditions:
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+------------------------------------------------------------------------------

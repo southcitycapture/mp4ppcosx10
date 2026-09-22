@@ -831,6 +831,7 @@ void port_snap_init(void) {
     gx_state_snap_register();
     os_misc_snap_register();
     musyx_sal_snap_register();
+    port_idle_snap_register();
     port_card_snap_register();
     port_selfplay_snap_register();
     port_aram_snap_register();

@@ -1,0 +1,86 @@
+#!/bin/sh
+# M38 (PLAN.md 53): the movies, ON THE G4 as the console runner's job
+# (`cp tools/m38_chain.sh` into ~/MarioParty4-chain.app/Contents/MacOS/isle,
+# `g4 use MarioParty4-chain.app; g4 run [RUNS...]`), the M37 chain's shape.
+#
+# One binary (~/MarioParty4.app).  Runs:
+#
+#   N    the md5 walk with --nomovies: must give M37's 800/3000/7000 exactly
+#   M    the md5 walk with the movies: the re-based references
+#   B    the opening from boot at real time, no input: a frame every 300 from
+#        600 to 5400 dumped (a dumped frame waits for its decode, the rest do
+#        not), the movie's own log line
+#   Q    the same without the dumps (the clean presented-fps and drop count)
+#   BN   the same boot with --nomovies (the audio-underrun baseline)
+#   Y    B with --thpyuv (the game's TEV through the port's GX: the A/B)
+#   S    Q with --threads 0 --renderthread 1 (one CPU's shape on this one)
+#   W    the md5 walk at real time with movies (--soak --realtime, 16000):
+#        the two mode-select movies at the cap, logged
+#   G    --goto mstory2dll:4:0, Mario's story ending (endmov_ma0.thp) at real
+#        time: its movie's log line, frames every 600 to 9000
+#   M2   M again: the re-based md5s are the same run to run
+#
+#   ~/m38/NAME.log, ~/m38/NAME/frame-*.ppm, ~/m38/index.txt
+cd "$HOME"
+D="${M38_DIR:-$HOME/m38}"; mkdir -p "$D"
+IDX="$D/index.txt"
+WALK="--com4 --rtc dolphin --freshcard --noconfig --status --ovllog --perf \
+--dumpframe 800,3000,7000"
+TURBO="--turbo --play board-start-com4.play --frames 9000"
+BOOTSEQ="600,900,1200,1500,1800,2100,2400,2700,3000,3300,3600,3900,4200,4500,4800,5100,5400"
+BOOT="--rtc dolphin --noconfig --status --frames 5600"
+echo "# m38 chain start $(date)  isle md5 $(md5 -q "$HOME/MarioParty4.app/Contents/MacOS/isle")" >> "$IDX"
+
+run() {
+    name=$1; ceiling=$2; shift 2
+    mkdir -p "$D/$name"
+    rm -f "$D/$name"/*.ppm
+    echo "chain: $name start $(date)"
+    t0=$(date +%s)
+    "$HOME/MarioParty4.app/Contents/MacOS/isle" --shotdir "$D/$name" "$@" > "$D/$name.log" 2>&1 &
+    pid=$!
+    while kill -0 $pid 2>/dev/null; do
+        sleep 5
+        if [ $(( $(date +%s) - t0 )) -gt "$ceiling" ]; then
+            echo "chain: $name over the $ceiling s ceiling -- killed" | tee -a "$D/$name.log"
+            kill -9 $pid 2>/dev/null
+        fi
+    done
+    wait $pid; e=$?
+    t1=$(date +%s)
+    m=""
+    for f in 800 3000 7000; do
+        p="$D/$name/frame-0$f.ppm"
+        [ $f -lt 1000 ] && p="$D/$name/frame-00$f.ppm"
+        if [ -f "$p" ]; then
+            h=$(md5 -q "$p" | cut -c1-8)
+        else
+            h="--------"
+        fi
+        m="$m $f:$h"
+    done
+    thp=$(grep -c 'THP: the movie closes' "$D/$name.log")
+    echo "$name EXIT=$e wall=$((t1 - t0))s md5$m movies=$thp args='$*'" >> "$IDX"
+    echo "chain: $name done EXIT=$e $(date)"
+    sleep 5
+}
+
+[ $# -gt 0 ] && M38_RUNS="$*"
+for r in ${M38_RUNS:-N M}; do
+    case $r in
+        N)  run N 700 $WALK $TURBO --nomovies ;;
+        M)  run M 900 $WALK $TURBO ;;
+        B)  run B 400 $BOOT --dumpframe $BOOTSEQ ;;
+        Q)  run Q 400 $BOOT ;;
+        BN) run BN 400 $BOOT --nomovies ;;
+        Y)  run Y 400 $BOOT --thpyuv --dumpframe 1200,2400,3600 ;;
+        S)  run S 400 $BOOT --threads 0 --renderthread 1 ;;
+        W)  run W 900 $WALK --soak --realtime --frames 16000 ;;
+        G)  run G 400 --rtc dolphin --noconfig --status --goto mstory2dll:4:0 --frames 9000 \
+                --dumpframe 1200,1800,2400,3000,3600,4200,4800,5400,6000,6600,7200,7800,8400 ;;
+        M2) run M2 900 $WALK $TURBO ;;
+        *)  echo "chain: unknown run $r" ;;
+    esac
+done
+echo "# m38 chain all done $(date)" >> "$IDX"
+echo "chain: all done $(date)"

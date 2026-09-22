@@ -91,7 +91,7 @@ enum {
     OP_BEGIN, OP_END, OP_TEXCOORD2F, OP_VERTEX2F,
     OP_VERTEX_PTR, OP_COLOR_PTR, OP_NORMAL_PTR, OP_TEXCOORD_PTR, OP_FOGCOORD_PTR,
     OP_DRAW_ARRAYS, OP_MULTI_DRAW, OP_DRAW_RANGE,
-    OP_DELETE_TEX, OP_TEXIMAGE, OP_COPY_TEX_SUB,
+    OP_DELETE_TEX, OP_TEXIMAGE, OP_COPY_TEX_SUB, OP_TEXSUBIMAGE,
     OP_READ_PIXELS, OP_GET_TEX_IMAGE, OP_GET_ERROR,
     OP_FLUSH_VAR, OP_SET_FENCE, OP_WAIT_FENCE,
     OP_BIND_PROG, OP_ENV4, OP_ENVN,
@@ -114,7 +114,7 @@ static const char* const op_name[OP_N] = {
     "Begin", "End", "TexCoord2f", "Vertex2f",
     "VertexPointer", "ColorPointer", "NormalPointer", "TexCoordPointer", "FogCoordPointerEXT",
     "DrawArrays", "MultiDrawArraysEXT", "DrawRangeElements",
-    "DeleteTextures", "TexImage2D", "CopyTexSubImage2D",
+    "DeleteTextures", "TexImage2D", "CopyTexSubImage2D", "TexSubImage2D",
     "ReadPixels", "GetTexImage", "GetError",
     "FlushVertexArrayRangeAPPLE", "SetFenceAPPLE", "wait fence",
     "BindProgramARB", "ProgramEnvParameter4fvARB", "ProgramEnvParameters4fvEXT",
@@ -153,6 +153,10 @@ typedef struct {
     GLenum target; GLint level, ifmt; GLsizei w, h; GLint border; GLenum fmt, type;
     void* px; u32 owned; /* owned: free(px) after the call; else px is in the stream or NULL */
 } A_teximg;
+/* M38: a sub-image upload whose pixels the replay frees (the movie texture) */
+typedef struct {
+    GLenum target; GLint level, xo, yo; GLsizei w, h; GLenum fmt, type; void* px;
+} A_texsub;
 typedef struct { GLenum target; GLint level, xo, yo, x, y; GLsizei w, h; } A_copysub;
 typedef struct { GLint x, y; GLsizei w, h; GLenum fmt, type; GLvoid* out; } A_readpx;
 typedef struct { GLenum target; GLint level; GLenum fmt, type; GLvoid* out; } A_gettex;
@@ -400,7 +404,7 @@ static void done_op(u32 op) {
     switch (op) {
         case OP_DRAW_ARRAYS: case OP_MULTI_DRAW: case OP_DRAW_RANGE: case OP_PRESENT:
         case OP_CALL: case OP_READ_PIXELS: case OP_GET_TEX_IMAGE: case OP_GET_ERROR:
-        case OP_TEXIMAGE: case OP_COPY_TEX_SUB: case OP_CLEAR: case OP_FINISH:
+        case OP_TEXIMAGE: case OP_COPY_TEX_SUB: case OP_TEXSUBIMAGE: case OP_CLEAR: case OP_FINISH:
         case OP_BEGIN: case OP_END: case OP_WAIT_FENCE: case OP_SET_FENCE: case OP_DECODE:
             unpublished = 0;
             publish();
@@ -747,6 +751,21 @@ void rt_teximage2d_owned(GLenum target, GLint level, GLint ifmt, GLsizei w, GLsi
         REC(OP_TEXIMAGE, A_teximg);
         a->target = target; a->level = level; a->ifmt = ifmt; a->w = w; a->h = h;
         a->border = border; a->fmt = fmt; a->type = type; a->px = px; a->owned = 1;
+    }
+    done();
+}
+/* M38 (PLAN.md 53): the movie frame, into the POT texture made for it once */
+void rt_texsubimage2d_owned(GLenum target, GLint level, GLint xo, GLint yo, GLsizei w, GLsizei h,
+                            GLenum fmt, GLenum type, void* px) {
+    if (!rt_recording) {
+        glTexSubImage2D(target, level, xo, yo, w, h, fmt, type, px);
+        free(px);
+        return;
+    }
+    {
+        REC(OP_TEXSUBIMAGE, A_texsub);
+        a->target = target; a->level = level; a->xo = xo; a->yo = yo; a->w = w; a->h = h;
+        a->fmt = fmt; a->type = type; a->px = px;
     }
     done();
 }
@@ -1396,6 +1415,14 @@ static void replay_one(const Hdr* h) {
                 free(a->px);
                 st_owned_frees++;
             }
+            cls = RC_TEX;
+            break;
+        }
+        case OP_TEXSUBIMAGE: {
+            const A_texsub* a = p;
+            glTexSubImage2D(a->target, a->level, a->xo, a->yo, a->w, a->h, a->fmt, a->type, a->px);
+            free(a->px);
+            st_owned_frees++;
             cls = RC_TEX;
             break;
         }

@@ -1149,6 +1149,53 @@ static void tex_bind_finish(int unit, GXTexObjPort* o, int slot) {
     }
 }
 
+/* M38 (PLAN.md 53): a port-owned RGBA8 image drawn through GX -- the movie
+ * frame.  It is not in the cache: it has one owner (port/src/thp), one GL
+ * name made once at its power-of-two size, and a new frame arrives as a
+ * malloc'd row-major image in `pending`, uploaded here as a sub-image and
+ * handed to the render thread to free.  No hash, no pad copy, no decode:
+ * the owner says when the texels changed because it is the one that
+ * changed them. */
+static void tex_bind_port(int unit, GXTexObjPort* o) {
+    PortTexture* t = (PortTexture*)(void*)o->image;
+    if (!t || !gl13_live()) {
+        return;
+    }
+    if (!t->gl_name) {
+        GLuint name;
+        t->pw = pot_up(t->w);
+        t->ph = pot_up(t->h);
+        GL(glGenTextures)(1, &name);
+        t->gl_name = name;
+        glc_active_texture(unit);
+        GL(glBindTexture)(GL_TEXTURE_2D, name);
+        glc_note_bind(unit, name);
+        rt_glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, t->pw, t->ph, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+                        NULL);
+        GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        GL(glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    }
+    if (t->pending) {
+        glc_active_texture(unit);
+        GL(glBindTexture)(GL_TEXTURE_2D, t->gl_name);
+        glc_note_bind(unit, t->gl_name);
+        /* ARGB bytes are the Mac's native texel order on a big-endian
+         * machine: BGRA as 8_8_8_8_REV is the upload the driver does not
+         * swizzle (Apple's "fast path", PLAN.md 53.4) */
+        rt_texsubimage2d_owned(GL_TEXTURE_2D, 0, 0, 0, t->w, t->h, t->argb ? GL_BGRA : GL_RGBA,
+                               t->argb ? GL_UNSIGNED_INT_8_8_8_8_REV : GL_UNSIGNED_BYTE,
+                               t->pending);
+        t->pending = NULL;
+        t->uploads++;
+    }
+    o->gl_name = t->gl_name;
+    gx_unit_alpha_min[unit & 7] = 255;
+    glc_bind_texture(unit, t->gl_name);
+    glc_tex_matrix(unit, (float)t->w / (float)t->pw, (float)t->h / (float)t->ph);
+}
+
 /* Re-encode a decoded RGBA8 image through a GX texture swap table.
  *
  * This is the exact half of PLAN.md 21's swap-table work.  A GX TEV stage
@@ -1182,6 +1229,7 @@ static void swizzle_rgba(u8* rgba, int w, int h, u8 swap) {
 void gx_tex_bind(int unit, GXTexObjPort* o) { gx_tex_bind_swapped(unit, o, GX_SWAP_IDENTITY); }
 
 static void tex_bind_body(int unit, GXTexObjPort* o, u8 swap);
+static void tex_bind_port(int unit, GXTexObjPort* o);
 
 void gx_tex_bind_swapped(int unit, GXTexObjPort* o, u8 swap) {
     if (!o || o->magic != TEXOBJ_MAGIC) {
@@ -1200,6 +1248,10 @@ static void tex_bind_body(int unit, GXTexObjPort* o, u8 swap) {
         /* --nodraw: nothing will sample it, and decoding a texture is the
          * second most expensive thing this backend does.  The cache is
          * flushed when drawing comes back, so nothing stale survives. */
+        return;
+    }
+    if (o->format == GX_TF_PORT_RGBA) {
+        tex_bind_port(unit, o);
         return;
     }
 
@@ -1510,6 +1562,7 @@ void GXLoadTexObj(GXTexObj* obj, GXTexMapID id) {
         /* M24: on a consumed frame nothing binds, so this is the earliest
          * word that the next drawn frame wants this texture */
         if (gl13_draw_off() && ((const GXTexObjPort*)obj)->magic == TEXOBJ_MAGIC &&
+            ((const GXTexObjPort*)obj)->format != GX_TF_PORT_RGBA &&
             port_framemode_active() && predecode_on()) {
             predecode_request((const GXTexObjPort*)obj);
         }

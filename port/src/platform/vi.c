@@ -152,6 +152,8 @@ double port_vi_slack_seconds(void) {
 static double last_exit_at; /* M33: the game thread's work on a frame, entry to exit */
 
 void VIWaitForRetrace(void) {
+    /* M38: the idle function's own wait ends its pass (os/sreset_poll.c) */
+    port_idle_trap();
     /* M33 (PLAN.md 48.2): the frame that just ended and what the game thread
      * spent on it -- before the join below, which is a wait on the render
      * thread and not work of this thread's */
@@ -167,6 +169,11 @@ void VIWaitForRetrace(void) {
      * anything below reads what it wrote -- the snapshot serialises the
      * mixer's state, the texture cache takes the staged decodes. */
     port_workers_retrace_join();
+    /* M38 (PLAN.md 53.3): the idle function's pass -- the movie's decode --
+     * after the frame's work and before the retrace, where the console's
+     * idle thread ran; it publishes its job here, at the boundary */
+    port_idle_tick();
+    port_thp_retrace();
     /* Before the present, because it decides whether the *next* frame is
      * drawn: --ffto's switch, and the snapshot ring's safe point (the top of
      * the retrace is the one moment in the frame at which no GX call and no

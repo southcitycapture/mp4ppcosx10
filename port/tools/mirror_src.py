@@ -61,7 +61,9 @@ SRC_GLOBS = ["src/game/*.c", "src/game/board/*.c", "src/msm/*.c", "src/libhu/*.c
              "src/REL/*.c", "src/REL/*/*.c"]
 MTX_SRCS = ["src/dolphin/mtx/mtx.c", "src/dolphin/mtx/mtxvec.c",
             "src/dolphin/mtx/mtx44.c", "src/dolphin/mtx/vec.c",
-            "src/dolphin/mtx/quat.c"]
+            "src/dolphin/mtx/quat.c",
+            # M38: THP's audio decoder -- Nintendo's own, plain C (PLAN.md 53.5)
+            "src/dolphin/thp/THPAudio.c"]
 
 
 ESCAPES = {"n": "\n", "t": "\t", "\\": "\\"}

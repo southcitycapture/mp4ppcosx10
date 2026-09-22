@@ -73,9 +73,18 @@ s32 OSResumeThread(OSThread* thread) {
     return 0;
 }
 
+/* M38: the idle function's stand-in thread (below) */
+static OSThread idle_thread;
+static OSIdleFunction idle_fn;
+static void* idle_param;
+
 void OSCancelThread(OSThread* thread) {
     if (thread == toe_thread) {
         toe_resumed = 0;
+    }
+    if (thread == &idle_thread && idle_fn) {
+        port_log("port> OSCancelThread: the idle function %p is cancelled\n", (void*)idle_fn);
+        idle_fn = NULL;
     }
 }
 
@@ -97,12 +106,64 @@ void OSWakeupThread(OSThreadQueue* queue) {
     toe_awake = 1;
 }
 
+/* M38 (PLAN.md 53.3): the idle function, polled the way the soft-reset
+ * watcher is.
+ *
+ * The one caller is the movie player: `THPTestProc` (src/game/thpmain.c)
+ * makes `THPDecodeFunc` the idle function, and its body is
+ *
+ *     while (1) { if (THPStat == 2) break;
+ *                 if (THPSimpleDecode() == 1) OSReport(...);
+ *                 VIWaitForRetrace(); }
+ *
+ * On the console the idle thread runs while every other thread waits -- in
+ * this game, while the game thread waits for the retrace -- so it gets one
+ * pass of that loop per retrace, after the frame's work.  The body keeps no
+ * state across its own `VIWaitForRetrace`, so one pass is exactly one call
+ * from the top: `port_idle_tick` calls the function under a setjmp at the
+ * top of the port's VIWaitForRetrace, and the function's own call to
+ * VIWaitForRetrace (`port_idle_trap`) jumps back out -- the retrace is the
+ * game thread's, not the idle thread's.  A function that returns is over.
+ * The stack the game offers is not used: the pass runs on the game thread's,
+ * a few hundred bytes deep. */
+static int in_idle;
+static jmp_buf idle_out;
+static unsigned long idle_passes;
+
 OSThread* OSSetIdleFunction(OSIdleFunction f, void* param, void* stack, u32 size) {
-    (void)f;
-    (void)param;
     (void)stack;
     (void)size;
-    return NULL;
+    idle_fn = f;
+    idle_param = param;
+    port_log("port> OSSetIdleFunction %p (one pass per retrace, on the game thread)\n",
+             (void*)f);
+    return f ? &idle_thread : NULL;
+}
+
+void port_idle_tick(void) {
+    if (!idle_fn || in_idle) {
+        return;
+    }
+    in_idle = 1;
+    idle_passes++;
+    if (setjmp(idle_out) == 0) {
+        idle_fn(idle_param);
+        port_log("port> the idle function %p returned after %lu passes\n", (void*)idle_fn,
+                 idle_passes);
+        idle_fn = NULL;
+    }
+    in_idle = 0;
+}
+
+void port_idle_trap(void) {
+    if (in_idle) {
+        longjmp(idle_out, 1);
+    }
+}
+
+void port_idle_snap_register(void) {
+    port_snap_register("os.idle_fn", &idle_fn, sizeof(idle_fn));
+    port_snap_register("os.idle_param", &idle_param, sizeof(idle_param));
 }
 
 void OSInitMessageQueue(OSMessageQueue* mq, OSMessage* msgArray, s32 msgCount) {

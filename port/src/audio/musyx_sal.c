@@ -87,6 +87,13 @@ static void ai_dma_tick(void); /* defined with AIRegisterDMACallback below */
 #define RETRACE_DEN 100
 
 static u8* ai_buffers;   /* DMA_BUFFERS * DMA_BUFFER_LEN */
+static AIDCallback ai_dma_cb; /* the game's AI DMA callback chain (below) */
+static AIDCallback thp_cb;    /* M38: THPSimple's link in it, once registered */
+static int thp_next;
+/* M38: the AI's DMA source for the period (AIInitDMA / AIGetDMAStartAddr) */
+static u8* dma_src;
+static u8 dma_silence[DMA_BUFFER_LEN];
+static unsigned long stat_thp_periods, stat_thp_redirects, stat_dma_refused, stat_thp_silent;
 static u8 ai_index;
 static SND_SOME_CALLBACK user_callback;
 static int ai_started;
@@ -251,6 +258,8 @@ void port_audio_join(void) {
     mixjob.pool_used = 0;
 }
 
+static int ai_thp_active(void);
+static unsigned long stat_ticks_fused_thp;
 static void job_tick_begin(void) {
     if (!mix_threaded() || !sal_up) {
         tick_split = 0;
@@ -264,6 +273,15 @@ static void job_tick_begin(void) {
     }
     if (port_musyx_mix_needs_inline()) {
         stat_ticks_fused_inline++;
+        tick_split = 0;
+        return;
+    }
+    /* M38 (PLAN.md 53.5): a movie's mixer is chained into the AI callback
+     * and reads the buffer due this period on the game thread, then hands
+     * the AI a buffer of its own to play -- both need the period's frame
+     * whole and queued in order, so a movie's ticks are fused. */
+    if (ai_thp_active()) {
+        stat_ticks_fused_thp++;
         tick_split = 0;
         return;
     }
@@ -577,6 +595,22 @@ void port_sal_aux_hook(void) {
  * one but two. */
 static void ai_interrupt(void) {
     ai_index = (u8)((ai_index + 1) % DMA_BUFFERS);
+    /* M38: the period's DMA source is MusyX's buffer unless the callback
+     * chain re-points it (AIInitDMA): THPSimple's mixer adds the movie's
+     * samples to this buffer into one of its own and plays that instead.
+     * Then the queue has to wait for the callback, and it does. */
+    dma_src = ai_buffers + ai_index * DMA_BUFFER_LEN;
+    if (ai_thp_active()) {
+        if (user_callback) {
+            user_callback();
+        }
+        port_audio_out_queue(dma_src, DMA_BUFFER_LEN);
+        stat_thp_periods++;
+        if (dma_src != ai_buffers + ai_index * DMA_BUFFER_LEN) {
+            stat_thp_redirects++;
+        }
+        return;
+    }
     if (tick_split) {
         MixStep* st = job_step(STEP_QUEUE);
         if (st) {
@@ -607,6 +641,22 @@ void port_audio_tick(void) {
     int fired = 0;
 
     if (!sal_up || !ai_started || !port_audio_enabled) {
+        /* M38: no mixer, but a movie's decode is paced by its audio being
+         * consumed (THPSimpleDecode waits for a free audio slot), so the
+         * AI's periods still come -- silent ones, the callback chain alone,
+         * nothing queued -- or the movie would stop at its fourth frame. */
+        if (ai_thp_active() && ai_dma_cb != NULL) {
+            tick_credit += per_retrace;
+            if (tick_credit > per_frame * 64) {
+                tick_credit = per_frame * 64;
+            }
+            while (tick_credit >= per_frame) {
+                tick_credit -= per_frame;
+                dma_src = dma_silence;
+                ai_dma_cb();
+                stat_thp_silent++;
+            }
+        }
         return;
     }
     tick_credit += per_retrace;
@@ -661,6 +711,13 @@ void port_audio_report(void) {
                  stat_ticks_split, stat_steps_total, stat_ticks_fused_inline, stat_ticks_poisoned,
                  stat_ticks_pool_out, stat_jobs_run_at_submit, stat_flushes);
     }
+    if (stat_thp_periods || stat_thp_silent) {
+        port_log("port> audio: M38 movie periods: %lu mixed by THPSimple into its own buffer "
+                 "(%lu re-pointed by AIInitDMA), %lu silent (no mixer), %lu fused ticks; "
+                 "%lu AIInitDMA refused\n",
+                 stat_thp_periods, stat_thp_redirects, stat_thp_silent, stat_ticks_fused_thp,
+                 stat_dma_refused);
+    }
     port_musyx_aram_report();
     port_audio_out_report();
 }
@@ -705,7 +762,6 @@ static u32 stream_play;
  * the rest of this port does with MusyX for determinism.  It runs *before*
  * the mix because on the console the game's handler ran before the MusyX one
  * it chained to.  `--noaicb` puts the old behaviour back for an A/B. */
-static AIDCallback ai_dma_cb;
 
 /* Never NULL: the game calls whatever this returned as `sys.oldAIDCallback`
  * without checking, because on the console MusyX's own callback was always
@@ -715,6 +771,10 @@ static void ai_dma_none(void) {}
 AIDCallback AIRegisterDMACallback(AIDCallback callback) {
     AIDCallback old = ai_dma_cb != NULL ? ai_dma_cb : ai_dma_none;
     ai_dma_cb = callback;
+    if (thp_next && callback != NULL) {
+        thp_cb = callback;
+        thp_next = 0;
+    }
     port_log("port> AI: DMA callback %s (one call per %d-sample DSP frame)\n",
              callback != NULL ? "registered" : "cleared", FRAME_SAMPLES);
     return old;
@@ -727,13 +787,39 @@ static void ai_dma_tick(void) {
 }
 
 void AIInit(u8* stack) { (void)stack; }
+
+/* M38 (PLAN.md 53.5): the DMA source, for the one caller that re-points it.
+ *
+ * THPSimple's mixer (src/game/THPSimple.c THPAudioMixCallback, AudioSystem
+ * 2) is chained in front of the game's msmSysServer and, once per 160-sample
+ * period, asks the AI for the buffer it is about to play
+ * (`AIGetDMAStartAddr() + 0x80000000` -- the console's physical-to-cached
+ * mapping), adds the movie's samples to it into one of its own two buffers,
+ * and points the AI at that one with `AIInitDMA`.  So the port keeps what
+ * the console keeps: a DMA source per period, MusyX's buffer by default.
+ * The address travels through a u32 both ways, and `- 0x80000000` then
+ * `+ 0x80000000` wraps back to the pointer on a 32-bit machine; on a 64-bit
+ * host it cannot, and the movies stay off there (port/src/thp).  The
+ * physical form a 64-bit host would need is not faked. */
 void AIInitDMA(u32 addr, u32 len) {
-    (void)addr;
-    (void)len;
+    if (sizeof(void*) == 4 && addr && len == DMA_BUFFER_LEN) {
+        dma_src = (u8*)(unsigned long)addr;
+    } else if (addr) {
+        stat_dma_refused++;
+    }
 }
 void AIStartDMA(void) {}
 void AIStopDMA(void) {}
-u32 AIGetDMAStartAddr(void) { return 0; }
+u32 AIGetDMAStartAddr(void) {
+    return (u32)((unsigned long)(dma_src ? dma_src : dma_silence) - 0x80000000UL);
+}
+
+/* The chain's THP link: THPInit (port/src/thp) says the next registration is
+ * THPSimple's, and the link is live for as long as that callback is the one
+ * installed -- THPSimpleQuit puts the old one back. */
+void port_ai_next_callback_is_thp(void) { thp_next = 1; }
+static int ai_thp_active(void) { return thp_cb != NULL && ai_dma_cb == thp_cb; }
+int port_thp_audio_active(void) { return ai_thp_active(); }
 void AISetStreamVolLeft(u8 vol) { stream_vol_l = vol; }
 void AISetStreamVolRight(u8 vol) { stream_vol_r = vol; }
 u8 AIGetStreamVolLeft(void) { return stream_vol_l; }
@@ -759,6 +845,7 @@ void musyx_sal_snap_register(void) {
     port_snap_register("musyx.tick_credit", &tick_credit, sizeof(tick_credit));
     port_snap_register("musyx.user_callback", &user_callback, sizeof(user_callback));
     port_snap_register("musyx.ai_dma_cb", &ai_dma_cb, sizeof(ai_dma_cb));
+    port_snap_register("musyx.thp_cb", &thp_cb, sizeof(thp_cb)); /* M38 */
     port_snap_register("musyx.irq_level", &irq_level, sizeof(irq_level));
     port_snap_register("musyx.stream_vol_l", &stream_vol_l, sizeof(stream_vol_l));
     port_snap_register("musyx.stream_vol_r", &stream_vol_r, sizeof(stream_vol_r));

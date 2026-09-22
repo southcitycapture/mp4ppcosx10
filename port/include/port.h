@@ -494,6 +494,20 @@ typedef struct PortOptions {
                              *   RAM, 128 at 1 GB, 256 at 1.5 GB+), 0 = off  */
     int dvdlog;             /* --dvdlog  one line per DVD read: the frame, the
                              *   file, the range, the time, where it came from */
+    /* ---- M38: the movies (PLAN.md 53) ---- */
+    int nomovies;           /* --nomovies  skip every THP movie the way M2-M37
+                             *   did (patches.txt's two thpmain.c patches) */
+    int thpyuv;             /* --thpyuv  draw a movie frame the game's way --
+                             *   three I8 planes and THPDraw.c's five TEV
+                             *   stages through the port's GX -- instead of
+                             *   the CPU's RGBA (the A/B of PLAN.md 53.4)    */
+    const char* gotoovl;    /* --goto OVL[:EVT[:CHAR]]  boot straight into an
+                             *   overlay at an event (omMasterInit's first
+                             *   call, patches.txt), four players set up with
+                             *   CHAR first -- e.g. mstory2dll:4:0, the story
+                             *   ending (PLAN.md 53.8) */
+    int thplog;             /* --thplog  one line per movie frame: decoded,
+                             *   drawn, dropped, the decode's ms              */
 } PortOptions;
 
 extern PortOptions port_opt;
@@ -689,6 +703,31 @@ void port_mg_dealt(int mg_index); /* the patch hook: mg_setup.c's roulette */
 double port_vi_slack_seconds(void); /* vi.c: the pacing sleep this retrace would take */
 const char* port_dll_bundle_path(const char* relpath);
 void port_thp_report(void);
+/* M38 (PLAN.md 53): the movies, port/src/thp */
+void port_thp_retrace(void);
+void port_idle_tick(void);          /* os/sreset_poll.c: the idle function's pass */
+void port_idle_trap(void);          /* the top of VIWaitForRetrace */
+void port_idle_snap_register(void);
+void port_ai_next_callback_is_thp(void); /* musyx_sal.c: THPInit's mark */        /* VIWaitForRetrace: the game's idle function, once */
+void port_thp_status(char* buf, unsigned long n); /* the --status field, "" when no movie */
+int port_thp_audio_active(void);    /* THPSimple's mixer is chained into the AI callback */
+/* the AI's DMA source for the current 160-sample period (musyx_sal.c) */
+void port_ai_dma_period(void* musyx_buf);
+void* port_ai_dma_take(void);
+
+/* M38: a port-owned RGBA8 image drawn through GX (gx_tex.c's tex_bind_port):
+ * GXInitTexObj with format GX_TF_PORT_RGBA and image = a PortTexture*.  The
+ * owner puts a malloc'd w*h*4 row-major frame in `pending`; the next bind
+ * uploads it as a sub-image of a power-of-two texture made once and passes
+ * the buffer to the render thread to free. */
+#define GX_TF_PORT_RGBA 0x7E
+typedef struct PortTexture {
+    unsigned gl_name;
+    int w, h, pw, ph;
+    void* pending;
+    int argb;          /* pending is A R G B bytes: GL_BGRA / 8_8_8_8_REV, the Mac's own */
+    unsigned long uploads;
+} PortTexture;
 void port_card_report(void);
 void port_card_service(void);        /* M29: reap the image writer (per retrace) */
 void port_arq_service(void);
