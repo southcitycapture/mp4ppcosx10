@@ -973,3 +973,34 @@ is either ready to offer upstream or has a case to remove.
   `S_c = entry_gc − 351` for every game); a trimmer that keeps frames by
   `gc` keeps the wrong ones (four games re-captured).  Keep ±40 around
   `entry_gc − 351 + {64, 404, 1204, 2304}`.
+
+## 0y. The fragment shader's night: what the Radeon 9000's Leopard driver taught M35's second pass *(2026-09-22)*
+
+* **A probe inside the port is polluted by the port's own GL state.**
+  `--tfsprobe` runs after `gl13_init` set the port up, and its draws
+  inherited the vertex array range, the texture environments and a
+  transparent clear colour: "not drawn" read as (0, 0, 0, 0) and looked
+  like "sampled black", identical draws succeeded and failed in turn,
+  client arrays drew nothing.  Set a coloured clear before every
+  read-back test (51, 102, 153 = not drawn), and read a driver's
+  behaviour in the *game's* draws (`--tfsdbg N` replaces the warp
+  draw's program; `--tfsall N` sends every draw of N stages through the
+  shader) rather than in a synthetic quad.
+* **The fragment shader's constants are eight bits and truncated** on
+  this driver (`c0 = 3/510` reads as 1/255): round to the nearest step
+  before `glProgramEnvParameter`, and carry small offsets through the
+  MUL's `eighth` rather than the constant.
+* **Two behaviours with no model yet** (PLAN.md 50.14): a one-texture
+  draw samples grey (0.64) through the shader whatever its program while
+  two-texture draws sample right; and m434's EFB copies sample white at
+  any coordinate while m417's sample right — not the texture matrix,
+  environment, program binding, storage, padding or the bind shadow
+  (each a flag now).  The next session starts from `--tfsall 2` (the
+  working base) and m434's unit 0.
+* **The chain app takes the run list as its arguments** (`g4 run m405
+  m417 dbg12`): one `g4 run` per experiment, ~90 s a park, the index
+  says what ran.  Clear `~/m35/tfs` between chains or the `until grep`
+  matches the last run's line.
+* **The G4's real time budget**: a park is 90 s, a whole gallery 2 h 45
+  (63 games), a `--tfscopycpu` park 8 min (a 1.2 MB read-back a frame).
+  Sixty parks fit a night; a gallery fits once.

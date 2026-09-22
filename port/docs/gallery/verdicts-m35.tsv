@@ -1,7 +1,7 @@
 m401	match	M35: the black band across the sea at +1200 is the background colour now (the quad after the shadow pass, PLAN.md 50.5); the console has the same (10,60,160) there
 m403	match	M35 control: the lamp's halo still duller than the console's (read, not fixed)
 m404	match	M35: the players' crayon trails on every lane (the CPU-painted canvases, 50.4); the guide line from M34
-m405	minor	M35: the water surface draws (the caster-stage collision had killed its alpha); grey-green where the console is blue: the indirect warp
+m405	minor	M35: the water surface draws (the caster-stage collision had killed its alpha); grey-green where the console is blue: the indirect warp -- and, the second pass found, its stage-0 copy (buffer 2) holds the clear colour and the sprites, not the pool floor (50.14)
 m406	match	M35: the sky beyond the jump is the background colour, as m401's band (50.5)
 m407	match	M35: the whomps' shadows on the ground and the card's box on its floor (50.3)
 m412	match	M35: the players' shadows on the ice at the console's darkness (50.3)
@@ -12,7 +12,7 @@ m421	match	M35: the shadows under the ball and the balloons at the console's dar
 m422	match	M35: the shadows on the belts (50.3)
 m423	match	M35: the three players' shadows on the pitch (50.3)
 m424	match	M35: the shadows on the turntable (50.3)
-m425	minor	M35: the sea behind the Thwomps on the final build (lerp(a,b,0), 50.6); the Thwomps opaque where the console's are translucent (read, not fixed)
+m425	match	M35: the sea behind the Thwomps (lerp(a,b,0), 50.6); second pass: the Thwomps translucent with opaque highlights (the specular channel and the lit alpha, 50.13) -- the towel through the slab to the level
 m426	match	M35: the bombs' shadows on the lanes (50.3)
 m427	match	M35: the lamps' glow on the river (the eight-light program, 50.7): 95/43 -> 96/23 at +400
 m432	match	M35 control: the walls as before (read, not fixed)

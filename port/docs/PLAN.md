@@ -17344,7 +17344,7 @@ console; the screenshots named in the last column are the witnesses.
 | m422-1 | m422 Money Belts | entry +400 | - | shadows | 95%/70% | 95%/70% (m35) | **fixed** | §50.3 |
 | m423-1 | m423 GOOOOOOOAL!! | entry +400 | - | Shadows, and it effecting the colours | 93%/82% | 94%/82% (m35) | **fixed** | §50.3 (1.9% moved: the shadows under the three players) |
 | m424-1 | m424 Blame it on the Crane | entry +400 | - | shadows | 93%/72% | 93%/72% (m35) | **fixed** | §50.3 |
-| m425-1 | m425 The Great Deflate | entry +400 | major | Red: Black background wrong / Yellow: rendered incorrect | 93%/58% | 95%/53% (m35, second pass) | **fixed** (red and yellow) | red: §50.6, the sea; yellow: §50.13, the specular channel and the lit alpha — the slabs translucent with opaque highlights, the towel through them to the level |
+| m425-1 | m425 The Great Deflate | entry +400 | major | Red: Black background wrong / Yellow: rendered incorrect | 93%/58% | 95%/49% (m35, second pass) | **fixed** (red and yellow) | red: §50.6, the sea; yellow: §50.13, the specular channel and the lit alpha — the slabs translucent with opaque highlights, the towel through them to the level |
 | m426-1 | m426 Revers-a-Bomb | entry +400 | - | shadows, plus the light is rendered wrong | 97%/57% | 97%/60% (m35) | **fixed** | §50.3: the bombs' shadows on the lanes (5.2% moved) |
 | m427-1 | m427 Right Oar Left? | entry +400 | major | Lighting is off by. a lot | 95%/43% | 96%/23% (m35) | **fixed** | §50.7: the lamps' glow on the river, (5,8,7) → (5,17,14) against the console's (6,15,14) |
 | m432-1 | m432 Dungeon Duos | entry +400 | minor | G4 looks different on the walls | 97%/38% | 97%/42% (m35) | read-not-fixed | 1.2% moved (the shadows); the walls' lit panels as before; snapshot = the gallery row |
@@ -17474,7 +17474,7 @@ Party 4 PowerPC Edition 0.9.3.dmg`) and at
 The lines the notes closed are not on it: the shadows (17 notes), the
 black backgrounds, the stamps and the crayons, the lamps, the sea.
 
-### 50.12 What the G4 is doing, and what is left
+### 50.12 What the G4 is doing, and what is left *(the first pass; §50.15 for the second)*
 
 **The leave-behind**: `~/MarioParty4-chain.app` runs `m35_final.sh` — the
 md5 run, the realtime run, the whole gallery into `~/gallery-m35f`, and
@@ -17728,3 +17728,74 @@ the six-stage chain compiled and drawn: still black on the G4) says the
 fixed-function fold is not the only thing the Radeon disagrees with the
 Intel bench about — but the shader's own two unexplained behaviours make
 that run inconclusive; the row stands as §50.8 left it.
+
+### 50.15 The second pass's gallery, disk image and leave-behind
+
+**The gallery.** The whole gallery once more on the second pass's final
+build (`685fdd43…`, 0.9.4: the Thwomps' lighting on, the warp shader
+built and off), `m35_final2.sh` on the G4, 03:11–06:03: the md5 run
+(**0b58c5ee / 2b99c60a / 4a9a640c**, the first pass's three to the
+byte), the realtime run, and 63 games into `~/gallery-m35g`, every one
+`EXIT=0`, no fault (m433 included). Pulled as the M35 rows
+(`gallery_pull_m35.sh` with `G4DIR=gallery-m35g`, `compare_m35.py`):
+**57 match / 3 minor / 2 oracle-failed / 1 port-faulted** (the first
+pass: 56 / 4 / 2 / 1 — m425 from minor to match; the three minors are
+m405, m417 and m448). Against the first pass's final gallery
+(`9ac4788f…`, `~/gallery-m35a` on littlejelly; `m35_gallery_delta.py`),
+every position of every row, the pixels that moved between the two
+builds and the `sim/>8` of each against the console:
+
+| game | position | pixels moved | first pass | second pass |
+|---|---|---|---|---|
+| m425 | +60 | 45.6% | 95/52 | **97/35** |
+| m425 | +400 | 29.1% | 94/60 | **95/53** |
+| m425 | +1200 | 18.0% | 93/54 | **94/53** |
+| m425 | +2300 | 10.2% | 87/77 | 87/77 |
+| m427 | +1200 | 15.1% | 95/54 | 94/58 |
+| m427 | +2300 | 19.0% | 89/75 | **91/66** |
+| m405 | +1200 | 0.3% | 86/92 | 86/92 |
+| m433 | card +164 | 0.8% | 96/52 | 96/52 |
+
+**433 of 441 positions byte-identical to the level**; the eight that
+moved are the Thwomps (the slabs and the towels behind them: §50.13)
+and Right Oar Left?'s boats, whose lamps light their alpha and specular
+too (the river a few levels apart, the play different from the console's
+in both frames); m405's and m433's fractions are the sprites' animation
+frames. The mean `sim` over the 428 positions with a console frame:
+93.95% → 93.96%. The user's 37 positions on the final build
+(`m35_findings.py`, `screenshots/m35-finding-*.jpg` regenerated): every
+row as §50.9 lists it, m425-1 now 95/49 with the slabs translucent.
+
+**The realtime run** (`~/m35/final2/RD`, `docs/soak/m35-final2-rt-
+perfdump.csv.gz`, `m33_perfstat.py`): title 25.2 presented fps (the
+first pass's run 25.6), character select **21.3** (23.1), board **29.6**
+(28.6). The character select's replay went 24.6 → 25.1 ms per drawn
+frame and its decode 11.5 → 12.0 — the lit alpha's instructions on the
+hosts' lit program, and the cycle rounding from 2.6 to 2.8 retraces;
+the game thread 14.1 → 14.4 ms. A 2% cost on the one scene that was
+already the Read Me's slowest; the Read Me's "about 23" stands (M33's
+three runs read 23.0–23.5, this one rounds down a retrace).
+
+**The disk image.** `port/tools/make_dmg.sh` on the final build: **`Mario
+Party 4 PowerPC Edition 0.9.4.dmg`, 4,263,044 bytes, md5
+`bd516cfee3a018216fb2ce278dedd0e8`**, at
+`littlejelly:~/MarioParty4-PowerPC-0.9.4.dmg` and on the G4 at
+`~/Mario Party 4 PowerPC Edition 0.9.4.dmg`; no game data in it. The Read
+Me's list: the three pools (with the shader named as built and off),
+Goomba's Chip Flip's felt, the character select at 23 fps, the intro
+movies, the one card, the controllers — **the Thwomps' line is off it.**
+
+**The leave-behind.** `~/MarioParty4-chain.app` (`m35_final2.sh`)
+`exec`'d the soak at 06:03 on `685fdd43…`: `isle --soak --com4 --rtc
+dolphin --freshcard --realtime --snap-every 5000 --snap-keep 3 --status
+--ovllog --stuckwatch 200 --perf` — the first soak with the lit alpha and
+the specular channel on every lit draw. M36 reads it first, and then
+starts where §50.14 stops: `--tfsall 2` as the shader's working base,
+m434's unit 0 as the case, m405's buffer 2 as the frame-composition
+question. The G4 keeps `~/MarioParty4.app` (`685fdd43…`, the build in
+the dmg), `~/MarioParty4-m35a.app` (`9ac4788f…`, the first pass's
+final), `~/MarioParty4-tfs.app` (the last test build), `~/m35_final2.sh`,
+`~/m35_tfs.sh`, `~/m35/final2/`, `~/m35/tfs*/`, `~/gallery-m35g/`;
+littlejelly keeps `~/gallery-m35a/` (the first pass's final gallery, the
+"before" of the table above) and `~/m35-tfs/` (every diagnostic park's
+frames and logs).
