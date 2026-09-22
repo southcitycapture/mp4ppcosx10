@@ -19384,3 +19384,214 @@ line while one is open. The G4 keeps `~/m38/` (the chain's runs by round,
 * §52.10's standing list is otherwise unchanged: the warp's `SampleMap`
   (`--tfsall 2`), m405's layer order, m403's lamp, the character select's
   replay cost per vertex.
+
+## 54. M39 log: the release candidate *(2026-09-22, littlejelly)*
+
+0.9.8, the build M39 offers as the release candidate: M38's movies with a
+one-CPU rule for their decode, and nothing else in the game's path. The
+milestone reads M38's soak, settles §53.13's open item (the one-CPU sound
+during the movies), walks the app from an empty home as a player meets it,
+soaks it for six and a half hours cold, re-runs the gallery, checks the
+Read Me line by line and writes the v1.0 checklist
+(`docs/release-checklist.md`) — the evidence for a decision the milestone
+does not take. The milestone ran in two sessions: the first (16:17–16:59)
+wrote the one-CPU path and its first A/B and ended while a G4 chain was
+still running; the second read that chain and did the rest.
+
+### 54.1 The soak, read
+
+§53.12's leave-behind — `isle --soak --com4 --rtc dolphin --freshcard
+--realtime --snap-every 5000 --snap-keep 3 --status --ovllog --stuckwatch
+200 --perf` on the M38 final build (0.9.7, `56298d9f…`), the first soak
+with the movies on — was started at the end of M38 and ended with
+`g4 stop` at 16:18 G4 time for this milestone: **9 min 16 s, 33,394
+paced retraces, 556 status lines** — a short one; M38 closed late
+(`docs/soak/m39-soak29-m38-leave.log.gz`, `soak_read.py`).
+
+| | |
+|---|---|
+| speed / presented fps | **100.1%** mean, 27.2 fps presented over the run (15,163 drawn of 33,394 retraces); `w01dll`'s turns 27.2–28.9 fps, `rt` 14.9–15.9 ms, `dec` 5.5–7.0 |
+| where it got | the opening (skipped by the walk's START after 61 frames), the two mode-select movies, the character select, **three turns of the first board and into the fourth** |
+| minigames | 3 entries of 3 modules: m415 20.2 fps (the canvas's copy reads), m410 25.9, m411 29.4 — a different deal from M37's, because the movies move the board's setup and so the clock the roulette seeds from (§53.9) |
+| faults / guard hits / mismatches | **0 / 0 / 0** (no `*** port` line; `skin: … 0 guard hits`; `musyx_mix … 0 position mismatches`) |
+| resyncs / STUCK | **0 / 0**; worst late 674 ms (the board's first load) |
+| the movies (`THP:` lines) | opening: 61 of 2,390 published before the START, 56 drawn, 5 dropped, 29.44 a second; `s00`: 113 of 113, 88 drawn, 25 dropped, **23.92** a second, decode+convert 18.68 ms; `c00`: 216 of 216, 189 drawn, 27 dropped, **26.51** a second, 16.53 ms; all on the worker, 0 inline, 0 decode errors, **0 audio periods short**; 2,596 movie periods mixed by THPSimple, 0 `AIInitDMA` refused; 0 frame buffers from outside the pool |
+| loader | `DVD: 695 reads, 94 MB, 96 ms in reads, 0 over 100 ms`; prefetch 103 jobs, 111 MB off the game thread; resident set 83 files (109 MB), 282 reads from memory |
+| card | 4 writes, 10 image flushes; 96 ms on the game thread in all, worst 40 ms behind it |
+| audio | **79 underruns, 1.19 s** over the 9 minutes (the boot's own ~50 are most of them, §53.5); `aud` 0.28 ms mean on the game thread |
+| rss | 164–289 MB (the resident set filling to 109 MB), flat on the board |
+
+Nothing outranks a number: no fault, no resync, no stall past 605 ms
+(the board's first frame), and the movies' line is the one §53.6
+measured, on the worker, in the soak's own walk.
+
+### 54.2 One CPU and the movies: the sound was never the movies'
+
+§53.6 put the one-CPU walk's extra underruns — **335 with the movies, 84
+without** — on the mode-select movies, a 15 ms decode inline in a drawn
+frame already long behind the menu's 3D. M39 built the fix §53.13 asked
+for before it measured *where* the underruns were, and the measurement
+says the premise was wrong.
+
+**What was built** (`thp_port.c`, `thp_jpeg.c`, `vi.c`; 19bfec36). Two
+rules, both only on the owed slot (no worker: `--threads 0` or a
+single-processor Mac); the worker's path is unchanged:
+
+* **the slack** — at the retrace, after the frame's work and the audio
+  tick and before the pacing sleep, the newest owed frame is decoded one
+  MCU row at a time, then converted 32 rows at a time, for as long as the
+  schedule has room (`port_thp_slack` from `vi.c`): time the game thread
+  would otherwise sleep. `thpj_decode_begin` / `thpj_decode_rows` /
+  `thpj_to_rgba_rows` are the whole decode's arithmetic in pieces —
+  **byte-identical to the whole decode on 2,749 frames of four movies**
+  (`thp_test`), and the md5s below agree;
+* **the guard** — a drawn frame finishes what is left of the owed frame
+  only if the audio already queued covers that work plus `--thpguard MS`
+  (60); otherwise it shows the newest ready frame and the owed one goes on
+  in the slack. Audio beats video.
+
+`--nothpslice --thpguard 0` is M38's path, the A/B's other arm. The
+`--status` line carries the output device's underrun count (`ur N`) and
+`soak_read.py` splits it by scene — which is what found the answer.
+
+**The A/B** — `m39_chain.sh` on the G4, two rounds on two builds of the
+same path (`a1409164…`, and `fcf94d24…` = the shipped 0.9.8, which only
+added the status field), each run the md5 walk at real time, 16,000
+retraces; one-CPU = `--threads 0 --renderthread 1`
+(`docs/soak/m39-ab1-*.log.gz`, `m39-ab2-*.log.gz`):
+
+| run | shape | underruns, the whole walk | during the movies (`THP: … ran dry`) | opening (first 61) / `s00` / `c00` presented fps | drawn / dropped | md5 800 / 3000 / 7000 |
+|---|---|---:|---:|---|---|---|
+| `WS` r1 | one CPU, M39 | 343 | **0 / 0 / 0** | 30.05 / 23.06 / 25.37 | 57/4, 85/28, 181/35 | `d2d40344` / `59008ce4` / `3f98f882` |
+| `WS0` r1 | one CPU, M38's path | 356 | **0 / 0 / 0** | 21.10 / 23.43 / 24.97 | 41/20, 86/27, 178/38 | same |
+| `WS` r2 | one CPU, M39 | 366 | **0 / 0 / 0** | 21.08 / 23.04 / 25.70 | 41/20, 85/28, 183/33 | same |
+| `WS0` r2 | one CPU, M38's path | 347 | **0 / 0 / 0** | 30.06 / 23.59 / 25.03 | 57/4, 87/26, 179/37 | same |
+| `WSN` r1 / r2 | one CPU, `--nomovies` | 84 / 83 | — | — | — | `0b58c5ee` / `2b99c60a` / `4a9a640c` |
+| `W` r1 / r2 | two CPUs, M39 | 77 / 77 | **0 / 0 / 0** | 29.44 / 25.29 / 27.36 · 29.97 / 24.47 / 27.92 | 56/5, 93/20, 195/21 · 57/4, 90/23, 199/17 | movies' md5s |
+| `S` / `S0` | one CPU, the whole opening from boot, M39 / M38 | 50 / 49 | **0 / 0** | 28.69 / 28.92 (2,390 frames) | 2,288/102 · 2,306/84 | — |
+
+**The movies never starve the sound on one CPU, in either arm.** Every
+movie in every run closes with `the output device ran dry 0 time(s)`.
+Where the one-CPU walk's underruns are, by the status line's `ur` field
+(`soak_read.py`, round 2):
+
+| scene | `WS` (movies) | `WS0` (movies, M38's path) | `WSN` (no movies) | `W` (two CPUs, movies) |
+|---|---:|---:|---:|---:|
+| boot (`bootdll`) | 11 | 10 | 9 | 12 |
+| menus (`mentdll`) | 9 | 6 | 9 | 5 |
+| mode select (`modeseldll`, the two movies) | **0** | **0** | 0 | 0 |
+| the board (`w01dll`) | 22 | 32 | 24 | 20 |
+| **the minigame** | **m415: 285** | **m415: 258** | m412: 0 | m415: 0 |
+
+(the status lines stop at frame 15,960; the ~40 more in each run's
+closing `audio out:` total are the shutdown's.) **The difference is the
+minigame.** The movies move the game's schedule (§53.9: the board is
+reached ~1,226 frames earlier), the roulette seeds from the clock, and the
+walk with movies deals **m415, Stamp Out!** where `--nomovies` deals
+**m412**. Stamp Out! reads its own picture back to paint with (§20's
+canvas copy reads) and on one CPU runs at **13.5 frames a second and
+94% of the console's speed, with four one-second resyncs**; the sound
+underruns with it. On two CPUs the same m415 runs at 20.0 fps, 100.6%,
+and 0 underruns. Same scene against same scene, the movies add nothing:
+the mode select is 0 in every arm, and the boot, menus and board are
+within the run-to-run spread.
+
+**The slice itself is neutral.** Presented rates are the same within a
+run's spread (the 21-against-30 of the opening's first 61 frames swaps
+arms between rounds: it is where the walk's START lands, not the path);
+the slack did its work (`WS` r2: 41–100 of the drawn frames started in
+the slack, 13–36 finished there; the guard held back 0 draws — the queued
+audio always covered the rest). It stays on as the default because it is
+bit-exact, costs the two-CPU path nothing (it never runs there) and moves
+decode work out of the drawn frame on a machine whose drawn frame is the
+tight one; `--nothpslice --thpguard 0` gives M38's path back.
+
+**The dual-CPU numbers do not regress:** `W` 77 / 77 underruns (M38's
+`W`: 76, `docs/soak/m38-W.log.gz`), the movies at 29.4–30.0 / 24.5–25.3 / 27.4–27.9 against M38's
+29.44 / 24.75 / 27.36, the md5s unchanged.
+
+**What stands, and its snapshot.** A single-CPU G4 falls behind in
+Stamp Out! and its sound breaks up there; it is m415's canvas copy reads
+on one processor, not the movies, and it is in the Read Me now (54.6).
+The named snapshot: `~/m39/final/m415-onecpu/snaps/` on the G4 (the
+gallery recipe with `--threads 0 --renderthread 1`, `--snap-every 800
+--snap-keep 3`, from the final chain; 54.5) and the gallery's own
+two-CPU `~/gallery-m39/m415/snaps/`.
+
+### 54.3 The first-run walk, from an empty home
+
+§47.2's walk again on 0.9.8 (`fcf94d24…`), by the same route:
+`~/MarioParty4-fresh.app` (HOME = `~/mp4-fresh-home`, emptied — M32's is
+kept as `~/mp4-fresh-home-m32`), launched with `open` from ssh, which is
+LaunchServices (the `-psn`, the Dock, the foreground); keys by
+`~/key.py` (Quartz events, held 0.15–0.3 s), clicks by `~/click.py`,
+pictures by the console runner's `shot`. The wrapper now also reads
+`~/mp4-fresh.args` for extra arguments (absent for this walk: a player's
+launch, no flags). The player's own Application Support was not touched.
+Log: `docs/soak/m39-first-run-walk.log.gz`.
+
+1. **The machine check**, first: `PowerMac3,5, 2 CPUs at 1000 MHz …
+   Radeon 9000 … verdict ok`, `--resident 256`, prefetch on, stacks ×2;
+   no dialog on an `ok` machine.
+2. **The chooser**, once — Navigation Services opened in `~/MarioParty4/`
+   (the dialog's own remembered folder); a click on `mp4.nkit.iso` and a
+   click on Choose: `config: disc image … (chosen; remembered)`.
+
+   ![the chooser, first run](screenshots/m39-first-run-01-chooser.jpg)
+3. **Application Support** made from nothing: `config`, `MarioParty4.log`,
+   `.metadata_never_index`, and `memcard-slot-a.raw (new, formatted, 59
+   free blocks)`; **fullscreen**, letterboxed: `1680x1050, the picture at
+   1400x1050 from (140,0)`.
+4. **The opening movie, with its sound**, whole: `2390 of 2390 frames
+   published, 2310 drawn, 80 dropped … 0 errors … 28.98 frames a second
+   presented over 79.7 s; 0 audio periods short`, `the output device ran
+   dry 0 time(s)`.
+
+   ![the opening, fullscreen, four moments](screenshots/m39-first-run-02-opening-movie.jpg)
+5. **The title** — which, left alone, goes back to the opening (the
+   console's attract loop; START skips it, as the Read Me says):
+
+   ![the title](screenshots/m39-first-run-03-title-fullscreen.jpg)
+6. **Start (Return) → SELECT A FILE → slot A → File 1** (A = the Z key),
+   the new-file scene, and the mode select with its two movies — `s00`
+   113 frames, 105 drawn, **28.60** a second; `c00` 216, 167 drawn,
+   **23.41**; both `ran dry 0`:
+
+   ![select a file](screenshots/m39-first-run-04-select-a-file.jpg)
+   ![a movie after the file select](screenshots/m39-first-run-05-movie-after-the-file.jpg)
+7. **Party Mode**: one human (the keyboard beside the Xbox One pad,
+   `PADInit: controller 1 = Xbox One controller … the keyboard works
+   beside controller 1`, rumble available) and three computer players;
+   the character select, Toad's Midway Madness's settings:
+
+   ![party mode](screenshots/m39-first-run-06-party-mode.jpg)
+   ![the character select](screenshots/m39-first-run-07-character-select.jpg)
+   ![the board's settings](screenshots/m39-first-run-08-board-settings.jpg)
+8. **The board**, two turns (A to roll), **two minigames** — Booksquirm,
+   then Makin' Waves (the pool's flat tint: the known ripple) — and
+   **the results**:
+
+   ![the board](screenshots/m39-first-run-09-board.jpg)
+   ![Booksquirm](screenshots/m39-first-run-10-minigame-booksquirm.jpg)
+   ![Makin' Waves](screenshots/m39-first-run-11-minigame-makin-waves.jpg)
+   ![the results](screenshots/m39-first-run-12-results.jpg)
+9. **Cmd-Q** (System Events' ⌘Q): `reset requested: handing it to the
+   game's own reset path` → `OSResetSystem: … quitting cleanly`; `CARD: 0
+   reads, 2 writes, 1 files created … 6 image flushes, 57 of 59 blocks
+   free`, the writer joined (`flushes on a thread: 69 ms on the game thread
+   in all`); `DVD: … 0 over 100 ms`; 4 movies, 3,395 frames drawn, 170
+   dropped; **0 `*** port` lines**; 89 underruns over the 23 minutes
+   (1.3 s — the boot's and the loads', §53.5). The last line, `xone: …
+   read failed (e00002eb), controller gone`, is the pad's pipe closing at
+   exit, as in M32's walk.
+
+**One thing the walk found in the Read Me, not the game:** Leopard's
+`open` has no `--args` (10.6 added it; `open -h` on the G4), so the
+Read Me's three `open -a "Mario Party 4" --args …` lines could not work on
+the reference machine's own system. They name the executable inside the
+bundle now (54.6).
+
+**Verdict: the app as a player meets it works on 0.9.8** — the check, the
+chooser, the first run's folder and card, fullscreen, the opening with
+its sound, the title, the file, the mode select's movies, a party board,
+two minigames, the results and a clean quit with the card written.

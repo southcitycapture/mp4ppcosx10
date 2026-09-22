@@ -6,7 +6,7 @@ stall over a second, CARD flush, mismatch)."""
 import gzip, re, sys, statistics as st
 path = sys.argv[1]
 f = gzip.open(path, 'rt', errors='replace') if path.endswith('.gz') else open(path, errors='replace')
-st_re = re.compile(r'status f(\d+)\s+(\S+)\s+board (\d+) turn (\d+)/(\d+)\s+mg (\d+) \((\S+)\).*?speed (\d+)%\s+([\d.]+) fps presented.*?rss (\d+) MB.*?rt ([\d.]+) ms dec ([\d.]+)')
+st_re = re.compile(r'status f(\d+)\s+(\S+)\s+board (\d+) turn (\d+)/(\d+)\s+mg (\d+) \((\S+)\).*?speed (\d+)%\s+([\d.]+) fps presented.*?rss (\d+) MB(?:.*?rt ([\d.]+) ms dec ([\d.]+))?')
 turns = {}; games = {}; events = []; n = 0; first = last = None
 ur_re = re.compile(r'machine \S+\s+ur (\d+)'); ur_prev = None; ur_by = {}  # M39: underruns per scene
 rss_t = []  # M39: (frame, rss) for the rss-over-time line
@@ -20,7 +20,7 @@ for line in f:
         key = (ovl if not ovl.startswith('m4') else ovl, int(turn)) if ovl.startswith('w0') else (ovl, 0)
         d = games if ovl.startswith('m4') else turns
         k = ovl if ovl.startswith('m4') else 'turn %02d (%s)' % (int(turn), ovl)
-        d.setdefault(k, []).append((int(speed), float(fps), float(rt), float(dec), int(rss)))
+        d.setdefault(k, []).append((int(speed), float(fps), float(rt or 0), float(dec or 0), int(rss)))
         rss_t.append((int(fr), int(rss)))
         mu = ur_re.search(line)
         if mu:

@@ -1,6 +1,6 @@
 Mario Party 4 PowerPC Edition
 =============================
-Version 0.9.7
+Version 0.9.8
 
 
 WHAT THIS IS
@@ -78,9 +78,10 @@ THE SCREEN
 
 A first run comes up fullscreen: the 640x480 picture scaled to the largest
 4:3 rectangle that fits your display, letterboxed black at the sides, and the
-choice is remembered.  For a window instead, run it once from the Terminal:
+choice is remembered.  For a window instead, run it once from the Terminal
+(with the application in your Applications folder):
 
-    open -a "Mario Party 4" --args --windowed
+    "/Applications/Mario Party 4.app/Contents/MacOS/isle" --windowed
 
 or change `fullscreen = 1` to `fullscreen = 0` in the config file.  Either is
 remembered from then on; --fullscreen puts it back.
@@ -143,9 +144,9 @@ the picture shows fewer of the movie's frames -- a late frame is left out,
 never waited for -- while the sound, the subtitles and the game around the
 movie carry on exactly on time.  On the dual 1 GHz reference machine the
 opening shows about 29 of its 30 frames a second, the two mode-select
-movies (which play behind the menu's own 3D) 25 to 28.  On one processor
-the same G4 shows about 29 and 23 to 25, and the sound can break up for
-a moment during those two short mode-select movies.
+movies (which play behind the menu's own 3D) 23 to 28.  On one processor
+the same G4 shows about 29 and 23 to 26, and the sound does not break up
+during any of them.
 
 --nomovies skips every movie, as versions before 0.9.7 did.
 
@@ -174,7 +175,7 @@ Xbox One pads first, then the others, up to four.  With one pad the
 keyboard works beside it as player 1; to make the keyboard a controller
 of its own -- player 2 on the keys, say -- run once from the Terminal:
 
-    open -a "Mario Party 4" --args --kbport 2
+    "/Applications/Mario Party 4.app/Contents/MacOS/isle" --kbport 2
 
 (A port that has a controller makes that player human on the character
 select, as on a console; players without one are computer players.  The
@@ -195,9 +196,10 @@ game's own reset, as the console's Reset button does: the game fades, the
 memory card is written, and the application leaves.  There is no separate
 pause outside the game's own (Start, in a minigame).
 
-For a bug report:  open -a "Mario Party 4" --args --defaults   prints every
-setting the game would run with;  --keys  prints the table above.  The log
-of the last run is in the folder below.
+For a bug report, the same line with --defaults prints every setting the
+game would run with, and --keys the table above.  (Mac OS X 10.6's
+open -a "Mario Party 4" --args ... does the same; the open of 10.4 and
+10.5 has no --args.)  The log of the last run is in the folder below.
 
 
 WHERE YOUR THINGS LIVE
@@ -233,12 +235,15 @@ cannot do; a fragment-program path for it is in this build behind
 the three pools wrong through it (the notes say how far it got).
 
 The character select screen runs at about 23 frames a second on the
-reference machine (the board and most minigames run at the 30 cap).
-This version sends the card 7% fewer drawing commands on that screen
-and 1% fewer on the title, by not starting a new batch of triangles
-when the game re-sends a setting it already had; the picture is
-identical to the last version's, frame for frame, and the frame rate
-moves by less than the difference between two runs of the same walk.
+reference machine (the board and most minigames run at the 30 cap); the
+game's own speed there is the console's, only the picture is slower.
+
+On a single-processor G4 the heaviest minigames fall behind the
+console's speed -- Stamp Out!, which reads its own picture back to
+paint with, draws about 13 frames a second on one 1 GHz processor --
+and there the sound breaks up now and then while the game catches up.
+A two-processor Mac does not.
+
 The game's memory card is one card in slot A;
 slot B is always empty.  A second controller works (checked with a pad on
 port 1 and the keyboard standing in as player 2); three and four are

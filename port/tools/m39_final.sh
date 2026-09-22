@@ -1,13 +1,17 @@
 #!/bin/sh
 # M39 final (PLAN.md 54): on the release candidate (~/MarioParty4.app): the two
-# md5 walks (movies on, --nomovies), the whole gallery with --nomovies (the
-# recipes are M37's schedule, PLAN.md 53.9), then exec the LONG soak with the
-# player's defaults plus only --soak --com4 --rtc dolphin --freshcard --status
-# --perf (no --snap-every: a player has no snapshots).  ON THE G4 as the
+# md5 walks (movies on, --nomovies); the LONG soak with the player's defaults
+# plus only --soak --com4 --rtc dolphin --freshcard --status --perf (no
+# --snap-every: a player has no snapshots), cold -- before the gallery, which
+# reads every file on the disc (PLAN.md 51.1) -- ended after SOAK_S seconds
+# with SIGINT (the game's own reset path: the card written, the reports
+# printed); the whole gallery with --nomovies (M37's schedule, PLAN.md 53.9);
+# m415 once on one CPU with its snapshots kept (the one-CPU underruns' named
+# snapshot, PLAN.md 54.2); then exec M38's leave-behind soak.  ON THE G4 as the
 # console runner's job (`cp tools/m39_final.sh` into
 # ~/MarioParty4-chain.app/Contents/MacOS/isle, `g4 use MarioParty4-chain.app;
-# g4 run`); the soak's log is the runner's ~/isle-log.txt.  Nothing is killed
-# by name: a run is waited for, or killed by its own pid at its ceiling.
+# g4 run`); the leave-behind's log is the runner's ~/isle-log.txt.  Nothing is
+# killed by name: a run is waited for, or killed by its own pid.
 cd "$HOME"
 sleep "${M39_SETTLE:-90}"
 APP="$HOME/MarioParty4.app/Contents/MacOS/isle"
@@ -45,6 +49,20 @@ for arm in M N; do
     sleep 5
 done
 
+# the long soak, cold, as a player meets it
+SOAK_S=${SOAK_S:-23400}
+echo "final: long soak start $(date) for $SOAK_S s" >> "$D/index.txt"
+"$APP" --soak --com4 --rtc dolphin --freshcard --status --perf > "$D/soak.log" 2>&1 &
+pid=$!; t0=$(date +%s)
+while kill -0 $pid 2>/dev/null && [ $(( $(date +%s) - t0 )) -lt "$SOAK_S" ]; do sleep 20; done
+if kill -0 $pid 2>/dev/null; then
+    echo "final: soak SIGINT after $(( $(date +%s) - t0 )) s $(date)" >> "$D/soak.log"; kill -INT $pid
+    i=0; while kill -0 $pid 2>/dev/null && [ $i -lt 60 ]; do sleep 2; i=$((i+1)); done
+    kill -0 $pid 2>/dev/null && { echo "final: soak did not leave in 120 s -- killed" >> "$D/soak.log"; kill -9 $pid; }
+fi
+wait $pid; echo "final: long soak done EXIT=$? $(date)" >> "$D/index.txt"
+sleep 10
+
 # the gallery (gallery_chain.sh's run, pid-watched), every game with --nomovies
 P="--com4 --rtc dolphin --freshcard --play board-start-com4.play --noconfig --nomovies"
 IDX="$G/index.txt"
@@ -72,6 +90,13 @@ for n in ${GAMES:-$ALL}; do
 done
 echo "# gallery chain all done $(date)" >> "$IDX"
 echo "final: gallery done $(date)" >> "$D/index.txt"
+# m415 on one CPU, the gallery's recipe, its snapshots kept (PLAN.md 54.2)
+S1="$D/m415-onecpu"; mkdir -p "$S1/snaps"
+run m415-onecpu 1500 "$D/m415-onecpu.log" --minigame m415 --turns 1 $P --ffto 14000 --lockstep --frames 20000 \
+    --mgend 2600 --shotdir "$S1" --snap-every 800 --snap-keep 3 --snap-dir "$S1/snaps" \
+    --status --ovllog --perf --threads 0 --renderthread 1
+echo "m415-onecpu EXIT=$RC $(date)" >> "$D/index.txt"
 sleep 5
-echo "final: long soak start $(date)" >> "$D/index.txt"
-exec "$APP" --soak --com4 --rtc dolphin --freshcard --status --perf
+echo "final: leave-behind start $(date)" >> "$D/index.txt"
+exec "$APP" --soak --com4 --rtc dolphin --freshcard --realtime --snap-every 5000 \
+     --snap-keep 3 --status --ovllog --stuckwatch 200 --perf
