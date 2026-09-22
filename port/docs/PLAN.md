@@ -18218,3 +18218,289 @@ the stack you think it is.
   and 310 runs of equal state, 86–87% of them next to a segment of the
   same state, and the 224 quad segments of the character select's
   sprite path the densest part of it.
+
+## 52. M37 log: the character select's batch enders *(2026-09-22, littlejelly)*
+
+### 52.1 The soak, read
+
+§51.6's leave-behind — `isle --soak --com4 --rtc dolphin --freshcard
+--realtime --snap-every 5000 --snap-keep 3 --status --ovllog --stuckwatch
+200 --perf` on the M36 final build (`4dd5da7d…`, 0.9.5), **the first soak
+with the loader on** — ran from 10:31 to 10:50 G4 time and was ended with
+`g4 stop` for this milestone. It is a *short* soak: M36 started it eleven
+minutes before this session opened, so what it has is **18 min 32 s,
+67,260 frames, 1,121 status lines**
+(`docs/soak/m37-soak27-m36-leave.log.gz`, `soak_read.py`).
+
+| | |
+|---|---|
+| speed / presented fps | **100.1%** mean over 1,121 lines (`machine ok`, `cpu 2` on every one); 28.0 fps overall; `w01dll`'s six turns 28.2–29.1 fps, `rt` 15.1–16.7 ms, `dec` 5.5–6.8 |
+| where it got | **six turns of the first board** and into the seventh at the stop |
+| minigames | 7 modules (m412 26.1 fps, m420 29.1, m423 25.6, m428 29.6, m429 28.9, m438 25.1, m444 24.5) |
+| faults / guard hits / mismatches / `stack overlap` | **0 / 0 / 0 / 0** (no `*** port` line, `skin: … 0 guard hits`, `musyx_mix … 0 position mismatches`) |
+| resyncs / STUCK | **0 / 0**; worst late 982 ms |
+| **the loader's lines — the first ever taken** | **`DVD: 464 reads, 136,963,470 bytes, 0 ms in reads, 0 over 100 ms`** |
+| — the prefetch | **114 jobs, 114 files read ahead** (0 skipped as resident), **109.3 MB in 2,921 ms off the game thread** (worst 1,535 ms); **0 inline slices**; `disk reads after a prefetch of the same file: 0` |
+| — the resident set | 256 MB budget, **79 files held (107 MB, 69 of them from the list)**; **464 of 464 reads (130.6 MB) served from memory, 0 from the disk, 0 adopted, 0 evicted**; `mlock allowed (107 MB locked)` |
+| card | 6 writes, 14 image flushes, 106 ms on the game thread in all and 1,759 ms behind it (worst 1,469 ms), no `stall:` beside any |
+| rss | 163 MB at boot to 240 MB in the board; `res 98/256 MB` at boot, `107/256` from the first load on |
+
+**The read.** Every number the loader exists to move is at its floor:
+**not one read in the soak touched the disk** (§51.3's set answered all
+464 of them, 130.6 of the 137.0 MB, and the prefetch covered the rest
+before the game asked), **0 ms in reads**, **0 evictions** at the 256 MB
+step — which is §51.8's fourth leftover confirmed from the other side:
+a twenty-turn board's working set does not reach the budget, so nothing
+about eviction is exercised by an ordinary soak and `--resident 24`
+remains the only thing that tests it. The 2,921 ms the prefetch spent is
+all on the loader thread and none of it is on the status line's `speed`,
+which is 100.1% throughout. The caveat §51.1 raised still applies in the
+other direction: this soak follows a morning of M36 chains, so the *page
+cache* was warm as well — but that is not what is being claimed here.
+The claim is narrower and is on the report line: the game asked for 464
+reads and the loader answered 464 of them out of its own memory.
+
+A fault outranks everything in this milestone's brief. There was none.
+
+### 52.2 The instrument: `--endlog`, and what a batch end costs
+
+§51.5 counted *segments* through `--drawlog` and put the character
+select's floor at 310 runs against 367 GL calls. That model over-counts
+the floor, because a run of segments breaks at every change of primitive
+type and at every konst the drawlog resolves, while a *batch* already
+holds segments of different primitive types under one state. M37 counts
+the thing the driver is actually charged for: **the batch**.
+
+`--endlog F[,F...]` (gx_draw.c, `endlog_armed` / `batch_flush`) prints
+one line per batch submitted on each drawn frame listed:
+
+```
+endlog> b174   who=GXLoadPosMtxImm  verts=24 segs=1 calls=1 prim=98 \
+        rec=51e0a2c6 notex=9b1d4477 lay=6f0ad3a1 mtx=0f2c9b80 \
+        tex=64x64/0/14 u0=64x64/f4/w00/ci1/g212
+```
+
+* `who` is the setter that ended the *previous* batch — `gx_batch_touch`
+  and `gx_batch_flush_from` carry the name (`__func__`, M16's
+  `--submitstats` table), and every other flush site names itself
+  (`prepare:layout`, `prepare:matrix`, `prepare:full`, `prepare:context`,
+  `add:late`, `ring:wrap`, `immediate`, `dlcache:hit`, `list:end`).
+* `rec` is an FNV of **exactly the bytes the submit reads** — M22's
+  `SubmitRec` (`submit_rec_capture`), which is the honest signature: the
+  transform, the viewport and scissor, the channels and the lights in
+  use, the texgens and the texture matrices they name, every TEV stage
+  with its bound texture's *contents* and TLUT, the registers and konst,
+  the alpha test, the z mode, the blend, the cull, the fog. Taken at the
+  flush, where the state is still the batch's, because a setter touches
+  before it changes anything.
+* `notex` is the same capture with each bound texture reduced to what an
+  atlas page would have to share (format, wrap, filters, CI-ness) and its
+  identity dropped — the atlas question of §37.2, made countable.
+* `lay` is the vertex layout, `mtx` the batch's own position and normal
+  matrices (`batch_posm` / `batch_nrmm`), and `calls` the GL draw calls
+  this batch issued (`stat_draws` across the submit).
+
+`port/tools/m37_ends.py` reads it. **Two consecutive batches whose `rec`
+and `lay` agree could have been one batch** — the same draws in the same
+order, one boundary fewer — and the setter named on the second line is
+the one that ended the first's run. If their `mtx` agrees too the merge
+needs nothing at all; if it does not, it needs the matrix carried, which
+is the matrix palette (§33.2) or the pre-transform (§37.2), and both are
+measured slower on this hardware.
+
+**The instrument agrees with `--gltrace` to the call.** On the M36 shape
+the trace's armed window is forty *drawn* frames and holds 12,295
+`glDrawArrays` and 2,404 `glMultiDrawArraysEXT` = **367.5 calls a drawn
+frame**, against §51.5's 367 and `--endlog`'s 368.
+
+**And a batch end costs a draw call and nothing else.** The whole
+`--gltrace` inventory of the same window, M36 shape against M37's:
+
+| call | M36 (`--cmpmask 255`) | M37 (`--cmpmask 8191`) |
+|---|---:|---:|
+| `glDrawArrays` | 12,295 | **11,295** |
+| `glMultiDrawArraysEXT` | 2,404 | 2,404 |
+| `glBindTexture` | 7,095 | 7,095 |
+| `glTexEnvi` | 4,360 | 4,360 |
+| `glActiveTexture` | 3,900 | 3,900 |
+| `glEnable` | 2,950 | 2,950 |
+| everything else | 5,000 | 5,000 |
+| **all GL calls** | **35,994** | **34,994** |
+
+Exactly a thousand calls over forty drawn frames, all of them draws:
+the `glc_*` shadow (§28.5) was already eliding the state walk of a
+same-state batch, so what a redundant batch boundary buys the driver is
+one `glDrawArrays` at ~80 µs (§48.2) and no state at all. That is the
+whole size of this milestone's lever, and it is worth knowing before
+building anything.
+
+### 52.3 The batch ends the state did not need, by class
+
+The M36 shape (`--cmpmask 255`), one drawn frame each of the three
+scenes, `--endlog 800,3000,7000` on the 7,100-frame turbo walk:
+
+| | title (800) | character select (3000) | board (7000) |
+|---|---:|---:|---:|
+| segments | 1,300 | 1,734 | 774 |
+| batches | 104 | 249 | 228 |
+| **GL draw calls** | **235** | **368** | **346** |
+| runs of equal state | 91 | 175 | 171 |
+| runs of equal state **and matrix** | 91 | 217 | 227 |
+| **batch ends the state did not need** | **13** | **74** | **57** |
+| — of them, the matrices agree too (**free**) | **13** | **32** | **1** |
+| — of them, the matrices moved (needs the palette) | 0 | 42 | 56 |
+
+So §51.5's "57 calls a frame" on the character select is, counted at the
+batch, **74 ends the state did not need, of which 32 are free** and 42
+are the matrix question §33.2 and §37.2 both closed. The free ones, by
+the setter that ended them:
+
+| ended by | title | charsel | board | what it was |
+|---|---:|---:|---:|---|
+| `immediate` | 0 | **25** | 0 | every `GXBegin`/`GXEnd` primitive got a batch of its own and was flushed at once (`draw_now`) |
+| `GXLoadPosMtxImm` | **10** | 4 | 1 | a matrix load into a slot the batch does not draw with |
+| `GXClearVtxDesc` and the descriptor setters | 0 | 2 | 0 | the vertex descriptor, re-sent per object, which nothing in a pending batch reads |
+| `GXLoadTexObj` | 2 | 0 | 0 | a texture loaded into a unit no stage in use reads |
+| `GXSetTexCoordGen2` | 1 | 0 | 0 | a texgen written with the value it already holds |
+| `GXCopyTex` | 0 | 1 | 0 | a copy: it *must* flush (`GX_FLUSH_NOW`), and is not a class |
+
+**Five classes, each a bit of `--cmpmask`** — the bisect lever every
+compare-first setter has had since M18 (§33.2), so each fix has its A/B
+on the same binary and the default mask is **8191** now:
+
+| bit | name | the fix |
+|---:|---|---|
+| 256 | `GX_CMP_M37` | **the setters that were still flushing unconditionally**, made compare-first: `GXSetTexCoordGen2`, `GXSetTexCoordScaleManually`, `GXSetTevOp` (whose four callees all compare already — its own flush was the whole of its cost), `GXSetTevColorS10`, `GXSetTevSwapModeTable`, `GXSetTevDirect`, `GXSetNumIndStages`, `GXSetIndTexOrder` / `GXSetIndTexCoordScale` / `GXSetIndTexMtx`, `GXSetTevIndWarp` / `GXSetTevIndTile`, `GXSetFog` (compared *after* §45.4's degenerate-range guard, because the guard is what the port keeps), `GXSetColorUpdate` / `GXSetAlphaUpdate`, `GXLoadLightObjImm`, `GXSetScissorBoxOffset`, `GXSetViewportJitter` |
+| 512 | `GX_CMP_DESC` | **the vertex descriptor, the attribute formats and the arrays end no batch.** M18 already knew why (`GX_STATE_TOUCH_DECODE`'s comment): they are read by the *decode* of the next primitive and by nothing in a pending batch, whose vertices are already in the ring and whose layout `batch_prepare` compares anyway. Until M37 that was only true with the palette or the pre-transform on (`gx_batch_spans`), so on the shipped defaults `hsfdraw.c`'s per-object re-send (`vtxModeBak`) ended a batch for every object |
+| 1024 | `GX_CMP_MSLOT` | **a matrix load into a slot nothing in the pending batch draws with ends no batch.** `begin_attr_order` reads `gx.pos_mtx[gx.cur_pnmtx]` and that slot alone (gx_draw.c:795), and a primitive that will read another slot must first come through `GXSetCurrentMtx`, which is compare-first. Ten of the title's thirty ends charged to `GXLoadPosMtxImm` were loads into a slot nothing drew with |
+| 2048 | `GX_CMP_TEXU` | **a texture, or a palette, loaded into a unit no stage in use reads ends no batch** — M22's `GXLoadTexObj` compare one step further, with `submit_rec_capture`'s own walk (`gx.tev[i].map` for `i < num_tev`, `gx.ind[i].map` for `i < num_ind`) as the definition of "in use"; and `GXLoadTlut` the same, for a palette no CI texture on a unit in use names |
+| 4096 | `GX_CMP_IMM` | **an immediate-mode primitive joins the pending batch** instead of being flushed at once. `GXBegin` has already run `begin_attr_order`, `batch_prepare` and `ring_claim` for it, exactly as a display list's primitive does, so `draw_now`'s `batch_flush()` was the only thing keeping 115 of the character select's 249 batches apart |
+
+**The net under the last one.** A batch's phase 2 runs for *every* vertex
+in it under the **first** primitive's `PrimInv` and output layout
+(`bctx` / `bctx_pi`), so a primitive whose own differ may not join it.
+Until M37 that held indirectly — every piece of state those are derived
+from has a setter that ends the batch when it changes — and letting
+immediate primitives batch makes it worth checking rather than arguing.
+`prim_ctx_differs()` compares the matrices' pointers, `have_nrm`,
+`no_clr0`, `chan_mode`, `ntexgen`, `tex_copy_n`, the output layout, the
+highlight, and each texgen below `ntexgen`; an extra flush can never
+move a pixel, so the net is free to be conservative.
+
+**It cost two builds to get right, and the reason is worth keeping.**
+The first build compared `memcmp(&pi, bctx_pi, offsetof(PrimInv, arr))`
+and fired **754 times on a character-select frame** — 972 batches
+instead of 249, 1,075 calls instead of 368, the milestone's lever
+pointing backwards. `begin_attr_order` writes `tg[]` only up to
+`ntexgen`, and `tg[t].mtx_slot` only for a texgen that names a matrix;
+everything past that is whatever the last primitive to use *that buffer*
+left there, and `pi_cur` alternates between two buffers whose stale
+tails differ. **A struct compare is only as good as the struct's
+written extent**: compare the fields, and only the live ones.
+
+### 52.4 The five classes, measured: the calls
+
+The same three frames on the same binary, `--cmpmask 255` against
+`--cmpmask 8191` (`docs/soak/m37-E255.log.gz`, `m37-E8191.log.gz`):
+
+| | title (800) | | character select (3000) | | board (7000) | |
+|---|---:|---:|---:|---:|---:|---:|
+| | **M36** | **M37** | **M36** | **M37** | **M36** | **M37** |
+| batches | 104 | **91** | 249 | **218** | 228 | 228 |
+| **GL draw calls a drawn frame** | 235 | **233** | 368 | **343** | 346 | 346 |
+| batch ends the state did not need | 13 | **0** | 74 | **43** | 57 | 57 |
+| — free (the matrices agree) | 13 | **0** | 32 | **1** | 1 | 1 |
+| — needing the matrix carried | 0 | 0 | 42 | 42 | 56 | 56 |
+| runs of equal state and matrix (the floor) | 91 | 91 | 217 | 217 | 227 | 227 |
+| md5 800 / 3000 / 7000 | `0b58c5ee` / `2b99c60a` / `4a9a640c` | **identical** | | | | |
+
+**Every free batch end in the game's three fixed scenes is gone**: the
+title is at 91 batches for 91 runs and **zero** ends its state did not
+need, and the character select is at 218 batches for a floor of 217 —
+the one left is the `GXCopyTex` of the scene's EFB copy, which must
+flush. **−2 calls on the title (0.9%), −25 on the character select
+(6.8%), none on the board**, whose 57 ends are all the matrix's: its
+objects genuinely move between draws, and folding them needs the
+palette that §33.2 measured at 66.7 ms a charsel frame against 38.8.
+
+The md5s hold on both arms of the endlog walk and on the full 9,000-frame
+turbo walk (§52.7) — as they must: the same draws in the same order with
+fewer boundaries between them.
+
+### 52.5 The atlas question, answered: 14%, and the brief's floor was 30%
+
+§37.2 left one lever open and named it: *"of the 2.81M calls 2.4M are
+single-strip objects whose texture differs from their neighbours' —
+sprites — which no pre-transform can join without an atlas."* M37's
+brief set the bar at folding **30%** of a scene's runs. `--endlog`'s
+`notex` hash makes the count exact, and `m37_ends.py` applies the three
+filters that decide it, in this order:
+
+1. **the boundary must differ in the texture alone** — `notex` and `lay`
+   equal while `rec` differs;
+2. **a page must be able to reproduce the sampling** — `GL_CLAMP_TO_EDGE`
+   on both axes (a repeated or mirrored texture tiles the whole page,
+   which no sub-rectangle can do) and a size that is a tile of a
+   1024×1024 page. *The format and the palette decide nothing*: every
+   texture in this port is decoded on the CPU and uploaded as `GL_RGBA8`
+   (gx_tex.c), so a CI texture is an ordinary image by the time GL sees
+   it — which was the first, wrong, reading of this count;
+3. **the matrices must agree too**, or the batch ends at the matrix
+   whatever the texture does.
+
+| | title (800) | character select (3000) | board (7000) |
+|---|---:|---:|---:|
+| runs of equal state | 91 | 175 | 171 |
+| boundaries differing in the texture alone | 5 (5%) | **70 (40%)** | 29 (17%) |
+| — of them, the matrices differ too | 0 | **46** | 27 |
+| — of them, a texture past a 256 tile | 1 | 3 | 1 |
+| **boundaries a 1024×1024 page would actually fold** | **4 (4%)** | **24 (14%)** | **2 (1%)** |
+| the page it would take | 0.23 pages | 0.36 pages | 0.09 pages |
+
+**The verdict is no, and the number that decides it is 46.** Forty of
+the character select's seventy texture-only boundaries look like the
+atlas's case and are not: the two batches carry different position
+matrices, so the batch ends at `GXLoadPosMtxImm` whether or not the
+texture moved. An atlas would fold **24 of 175 runs — 14%**, less than
+half the brief's floor, for a page, a skyline allocator, a border per
+tile, a texcoord remap in the decode with a range check per run (a
+clamped texture sampled outside [0,1] is a clamp an atlas tile cannot
+reproduce), and a second upload path on the render thread. **Recorded,
+and not built.** `--atlas` does not exist.
+
+What this closes is bigger than the count: the sprite-atlas lever of
+§37.2 was the last one named against the character select's draw calls,
+and the reason it does not pay is the *same* reason the pre-transform
+did not — the matrices, not the textures, are what separate this
+scene's draws. Both roads out of the character select's 343 calls now
+end at the matrix palette, which this card runs in software (§33.2).
+
+### 52.6 The five classes, measured: the frames a second
+
+`port/tools/m37_chain.sh` as `~/MarioParty4-chain.app` (the M33/M36
+chain's shape), one binary, the **16,000-frame real-time walk three
+times per arm**, medians by `m33_perfstat.py`; the arms are the same
+binary under `--cmpmask 255` (the M36 shape) and `--cmpmask 8191` (all
+five classes). `docs/soak/m37-walk-*.log.gz`, `m37-chain-index.txt`.
+
+**The first round said the lever pointed backwards**, and the columns
+said where:
+
+| | charsel consumed | charsel drawn (game / gx / rt + dec) | cycle | **charsel presented** | title | board |
+|---|---:|---:|---:|---:|---:|---:|
+| `--cmpmask 255` ×3 | 4.58 / 4.56 / 4.57 | 34.2 / 34.5 / 34.5 (14.1 / 19.6 / 24.3 + 11.6) | 2.6 | **23.20 / 23.01 / 22.67** | 24.42 / 25.50 / 23.49 | 29.15 / 29.38 / 29.30 |
+| `--cmpmask 8191` ×3 (first build) | 4.79 / 4.88 / 4.82 | 34.4 / 34.6 / 34.4 (14.6 / 19.1 / 24.2 + 11.9) | 2.7 | **22.27 / 22.08 / 21.83** | 25.24 / 25.24 / 24.89 | 29.34 / 28.78 / 28.93 |
+
+Twenty-five fewer draw calls a drawn frame and **a fifth of a frame a
+second lost**. The `consumed` column is the tell: a consumed frame
+issues no GL at all (§32.1), and it went **4.57 → 4.83 ms**. Something
+in the fixes was being paid by frames that draw nothing.
+
+It was, and it is the lesson of the milestone (witness §0aa):
+`GXLoadLightObjImm`'s eight-slot compare and `GXSetNumIndStages`'
+sixteen-stage scan were computed **before** `GX_STATE_TOUCH_IF`, so
+they ran on every call whether or not a batch was pending and whether
+or not the group was on. `Hu3DLightSet` is four million calls on a
+twenty-turn soak. The compare belongs inside the two tests the macro
+makes first; with the three offenders guarded (`gx_batch_pending &&
+(port_opt.cmpmask & GX_CMP_M37)`), the second round is §52.7's.

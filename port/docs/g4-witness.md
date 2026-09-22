@@ -1055,3 +1055,51 @@ is either ready to offer upstream or has a case to remove.
 * **The G4's day, again**: a 60,000-frame real-time arm is 16.7 min and
   a purge 2.8, so a three-arm A/B in three runs is three hours — one
   morning, and nothing else can use the machine while it runs.
+
+## 0aa. Six things M37 paid for *(2026-09-22)*
+
+* **A compare that runs outside `GX_STATE_TOUCH_IF`'s short circuit is
+  paid on every call — including on frames that draw nothing.** M37's
+  first build computed `GXLoadLightObjImm`'s eight-slot compare and
+  `GXSetNumIndStages`' sixteen-stage scan *before* the macro, so they
+  ran whether or not a batch was pending and whether or not the group
+  was on. `Hu3DLightSet` is four million calls on a soak: the character
+  select's **consumed** frame went 4.57 → 4.83 ms, its cycle 2.6 → 2.7
+  retraces, and the milestone's whole lever (−25 draw calls a drawn
+  frame) was spent twice over. The compare belongs *inside* the two
+  tests the macro makes first, or in the macro's own expression.
+* **A `memcmp` of a struct is only as good as the struct's written
+  extent.** `begin_attr_order` fills `PrimInv.tg[]` up to `ntexgen` and
+  `tg[t].mtx_slot` only for a texgen that names a matrix; the rest is
+  whatever the last primitive to use *that buffer* left there, and
+  `pi_cur` alternates between two buffers whose stale tails differ. A
+  whole-struct compare therefore failed for **every** primitive: 972
+  batches on a character-select frame instead of 249, 1,075 GL calls
+  instead of 368. Compare the fields, and only the live ones.
+* **`--drawlog`'s segment runs over-count the floor; count batches.**
+  §51.5 put the character select's floor at 310 runs of 1,734 segments
+  because a segment run breaks at every change of primitive type, while
+  a *batch* already holds several primitive types under one state. At
+  the batch the floor is 217 and the frame makes 368 calls, so the
+  target was 74 ends, not 57 — and 42 of those need the matrix carried.
+* **A redundant batch boundary costs one `glDrawArrays` and no state.**
+  The whole `--gltrace` inventory of forty drawn frames moves by
+  **1,000 `glDrawArrays` and nothing else** between the two arms:
+  `glBindTexture`, `glTexEnvi`, `glActiveTexture`, `glEnable` are
+  identical to the call, because the `glc_*` shadow already elides the
+  state walk of a same-state batch (§28.5). Know the size of the lever
+  before building for it.
+* **The calls a batcher removes are the cheapest calls in the frame.**
+  §48.2's ~80 µs a call is the frame's *average*, dominated by the
+  vertices; the 25 calls M37 removes from the character select are
+  four-vertex sprite quads, and the render thread's replay does not
+  move by a millisecond for them (`rt` 24.3 ms in both arms). A
+  per-call cost taken from a frame average will over-promise by an
+  order of magnitude on the small draws.
+* **The sprite-atlas question dies on the matrices, not the palettes.**
+  Every texture in this port reaches GL as CPU-decoded `GL_RGBA8`, so a
+  CI texture is an ordinary image and the palette decides nothing —
+  which was the first, wrong, reading. What decides it is that 46 of
+  the character select's 70 texture-only run boundaries carry different
+  position matrices, so the batch ends at `GXLoadPosMtxImm` whatever
+  the texture does: a 1024×1024 page would fold 24 of 175 runs, 14%.

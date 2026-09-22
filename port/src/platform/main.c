@@ -238,6 +238,10 @@ static void usage(const char* argv0) {
             "                    ring's start (--fixbase restores)\n"
             "  --submitstats     batches, merged draws, primitives per list,\n"
             "                    ring fence waits\n"
+            "  --endlog F[,F..]  M37: name every batch end of the drawn frames listed:\n"
+            "                    the setter that ended it, and hashes of the state, the\n"
+            "                    layout and the matrices it was submitted under.\n"
+            "                    port/tools/m37_ends.py reads it (PLAN.md 52)\n"
             "  --nohilitetex     M22: the textured highlight and the mask/reflect\n"
             "                    register triple (the results portraits) as before\n"
             "  --nocopyhalf      M23: a half-scale EFB copy (the shadow map) copies\n"
@@ -659,7 +663,7 @@ int port_parse_args(int argc, char** argv) {
      * it is the flag now and linear is the default. */
     port_opt.resample4 = 0;
     port_opt.resident = -1; /* M36: the resident set's budget by the installed RAM (machine.c) */
-    port_opt.cmpmask = 255; /* every compare-first group on; see gx_internal.h (M18:
+    port_opt.cmpmask = 8191; /* every compare-first group on; see gx_internal.h (M18:
                              * 15 left Z mode, Z comp loc, cull and alpha compare
                              * flushing unconditionally, PLAN.md 33.2) */
     /* M21 (PLAN.md 36): measured on the 9,000-frame walk and both *off*.
@@ -990,6 +994,8 @@ int port_parse_args(int argc, char** argv) {
             port_opt.segrebase = atoi(argv[++i]); /* 1 + 2 tev + 4 vprog + 8 raster */
         } else if (!strcmp(a, "--gltrace") && i + 1 < argc) {
             port_opt.gltrace = atoi(argv[++i]);
+        } else if (!strcmp(a, "--endlog") && i + 1 < argc) {
+            port_opt.endlog = argv[++i];
         } else if (!strcmp(a, "--nomerge")) {
             port_opt.nomerge = 1;
         } else if (!strcmp(a, "--nohilite")) {

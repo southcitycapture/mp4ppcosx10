@@ -144,9 +144,14 @@ GXFifoObj* GXInit(void* base, u32 size) {
  * pre-transform (gx_batch_spans covers both) -- they end no batch, which
  * is what lets a batch span objects (each new object re-sends all of them,
  * hsfdraw.c FaceDraw with vtxModeBak reset per object). */
+/* M37 (PLAN.md 52): and with GX_CMP_DESC set they end no batch at all --
+ * hsfdraw.c's FaceDraw re-sends every one of them per object (vtxModeBak is
+ * reset per object), which on the character select was 40 batch ends a drawn
+ * frame with nothing about the batch's state or layout moved. */
 #define GX_STATE_TOUCH_DECODE()                                                          \
     do {                                                                                 \
-        if (gx_batch_pending && !gx_batch_spans) {                                       \
+        if (gx_batch_pending && !gx_batch_spans &&                                       \
+            !(port_opt.cmpmask & GX_CMP_DESC)) {                                         \
             gx_batch_touch(__func__);                                                    \
         }                                                                                \
     } while (0)
@@ -242,8 +247,18 @@ void GXLoadPosMtxImm(const void* mtx, u32 id) {
      * is transformed into the pending batch or the batch is flushed under
      * the matrices it keeps its own copy of. */
     u32 slot = id / 3;
-    GX_STATE_TOUCH_IF(GX_CMP_MATRIX, !gx_batch_spans &&
-                                         (slot >= 10 || memcmp(gx.pos_mtx[slot], mtx, 48) != 0));
+    /* M37 (PLAN.md 52): a batch's vertices are decoded under gx.pos_mtx of
+     * the *current* slot alone (gx_draw.c:795), so a load into any other
+     * slot changes nothing the pending batch reads -- and the primitive
+     * that will read it must first come through GXSetCurrentMtx, which
+     * ends the batch on a change.  On the title ten of the thirty batch
+     * ends charged to this setter were loads into a slot nothing drew
+     * with. */
+    u32 eff = gx.cur_pnmtx < 10 ? gx.cur_pnmtx : 0;
+    GX_STATE_TOUCH_IF(GX_CMP_MATRIX,
+                      !gx_batch_spans &&
+                          (slot >= 10 || memcmp(gx.pos_mtx[slot], mtx, 48) != 0) &&
+                          (!(port_opt.cmpmask & GX_CMP_MSLOT) || slot == eff || slot >= 10));
     if (port_opt.drawlog || port_opt.forceobj || port_opt.skipobj || port_opt.probeobj) {
         /* M33: the object diagnostics name draws through this pointer too
          * (--forceobj alone never matched anything before; M32's runs all
@@ -264,10 +279,13 @@ void GXLoadNrmMtxImm(const void* mtx, u32 id) {
         int r;
         /* bit-exact, like GXLoadPosMtxImm's memcmp: a state call that
          * changes nothing ends no batch, and "nothing" means the bytes */
-        GX_STATE_TOUCH_IF(GX_CMP_MATRIX, !gx_batch_spans &&
-                                             (memcmp(&gx.nrm_mtx[slot][0], m, 12) != 0 ||
-                                              memcmp(&gx.nrm_mtx[slot][3], m + 4, 12) != 0 ||
-                                              memcmp(&gx.nrm_mtx[slot][6], m + 8, 12) != 0));
+        u32 eff = gx.cur_pnmtx < 10 ? gx.cur_pnmtx : 0;
+        GX_STATE_TOUCH_IF(GX_CMP_MATRIX,
+                          !gx_batch_spans &&
+                              (memcmp(&gx.nrm_mtx[slot][0], m, 12) != 0 ||
+                               memcmp(&gx.nrm_mtx[slot][3], m + 4, 12) != 0 ||
+                               memcmp(&gx.nrm_mtx[slot][6], m + 8, 12) != 0) &&
+                              (!(port_opt.cmpmask & GX_CMP_MSLOT) || slot == eff));
         for (r = 0; r < 3; r++) {
             gx.nrm_mtx[slot][r * 3 + 0] = m[r * 4 + 0];
             gx.nrm_mtx[slot][r * 3 + 1] = m[r * 4 + 1];
@@ -363,7 +381,7 @@ void GXSetViewport(f32 left, f32 top, f32 wd, f32 ht, f32 nearz, f32 farz) {
  * put it. */
 void GXSetViewportJitter(f32 left, f32 top, f32 wd, f32 ht, f32 nearz, f32 farz,
                          u32 field) {
-    GX_STATE_TOUCH();
+    /* M37: GXSetViewport below is compare-first; this added nothing */
     (void)field;
     GXSetViewport(left, top, wd, ht, nearz, farz);
 }
@@ -407,7 +425,9 @@ void GXSetScissor(u32 left, u32 top, u32 wd, u32 ht) {
 }
 
 void GXSetScissorBoxOffset(s32 x, s32 y) {
-    GX_STATE_TOUCH();
+    /* M37: the port has no scissor box offset; it reads nothing and ends
+     * nothing (the pre-M37 shape is --cmpmask without GX_CMP_M37) */
+    GX_STATE_TOUCH_IF(GX_CMP_M37, 0);
     (void)x;
     (void)y;
 }
@@ -643,8 +663,30 @@ void GXInitSpecularDir(GXLightObj* o, f32 x, f32 y, f32 z) {
 }
 
 void GXLoadLightObjImm(GXLightObj* o, GXLightID id) {
-    GX_STATE_TOUCH();
     int i;
+    /* M37: the same light object loaded into the same slot again -- the
+     * next object of a material that shares the scene's light -- changes
+     * nothing the pending batch reads.  `used` is the port's own flag and
+     * is set below either way. */
+    int changed = 1;
+    /* M37: the compare itself is only worth making when there is a batch to
+     * save and the group is on -- exactly what GX_STATE_TOUCH_IF tests
+     * first.  Computed outside that short circuit it is paid on every call
+     * and on consumed frames too, which is how the first M37 build lost
+     * 0.26 ms a consumed character-select frame (Hu3DLightSet is four
+     * million calls on a soak). */
+    if (gx_batch_pending && (port_opt.cmpmask & GX_CMP_M37)) {
+        changed = 0;
+        for (i = 0; i < 8; i++) {
+            if (id & (1u << i)) {
+                if (!gx.light[i].used ||
+                    memcmp(&gx.light[i], light_of(o), offsetof(GXLight, used)) != 0) {
+                    changed = 1;
+                }
+            }
+        }
+    }
+    GX_STATE_TOUCH_IF(GX_CMP_M37, changed);
     for (i = 0; i < 8; i++) {
         if (id & (1u << i)) {
             gx.light[i] = *light_of(o);
@@ -659,7 +701,18 @@ void GXSetNumTexGens(u8 n) { GX_STATE_TOUCH_IF(GX_CMP_CHAN, gx.num_texgens != n)
 
 void GXSetTexCoordGen2(GXTexCoordID dst, GXTexGenType func, GXTexGenSrc src, u32 mtx,
                        GXBool normalize, u32 postmtx) {
-    GX_STATE_TOUCH();
+    /* M37 (PLAN.md 52): hsfdraw.c's material setup writes texgen 0 to the
+     * identity and then back to TEXMTX0 for every object, and the sprite
+     * path re-sends the same texgen per sprite -- 37.2 named this setter as
+     * the one that took over the title's same-state pairs when GXInitTexObj
+     * was silenced.  A texgen written with the value it already holds ends
+     * no batch. */
+    GX_STATE_TOUCH_IF(GX_CMP_M37,
+                      (unsigned)dst >= GX_TEXCOORDS ||
+                          gx.texgen[dst].func != (u8)func || gx.texgen[dst].src != (u8)src ||
+                          gx.texgen[dst].mtx != (u8)mtx ||
+                          gx.texgen[dst].normalize != (u8)(normalize ? 1 : 0) ||
+                          gx.texgen[dst].postmtx != (u8)postmtx);
     if ((unsigned)dst < GX_TEXCOORDS) {
         gx.texgen[dst].func = (u8)func;
         gx.texgen[dst].src = (u8)src;
@@ -673,7 +726,8 @@ void GXSetTexCoordGen2(GXTexCoordID dst, GXTexGenType func, GXTexGenSrc src, u32
 }
 
 void GXSetTexCoordScaleManually(GXTexCoordID coord, u8 enable, u16 ss, u16 ts) {
-    GX_STATE_TOUCH();
+    /* M37: the port reads none of this (below); it ends no batch */
+    GX_STATE_TOUCH_IF(GX_CMP_M37, 0);
     (void)coord;
     (void)enable;
     (void)ss;
@@ -752,7 +806,11 @@ void GXSetTevAlphaOp(GXTevStageID s, GXTevOp op, GXTevBias bias, GXTevScale scal
 /* GXSetTevOp is the SDK's own shorthand; the decomp's src/dolphin/gx/GXTev.c
  * spells out exactly which in/op pair each mode is, and this is that table. */
 void GXSetTevOp(GXTevStageID id, GXTevMode mode) {
-    GX_STATE_TOUCH();
+    /* M37: every write this makes goes through GXSetTevColorIn /
+     * GXSetTevAlphaIn / GXSetTevColorOp / GXSetTevAlphaOp, all four of
+     * which compare first (M16).  Its own unconditional flush was the
+     * whole of its cost. */
+    GX_STATE_TOUCH_IF(GX_CMP_M37, 0);
     GXTevColorArg c = GX_CC_RASC;
     GXTevAlphaArg a = GX_CA_RASA;
     if (id != GX_TEVSTAGE0) {
@@ -793,12 +851,15 @@ void GXSetTevColor(GXTevRegID id, GXColor c) {
 }
 
 void GXSetTevColorS10(GXTevRegID id, GXColorS10 c) {
-    GX_STATE_TOUCH();
     GXColor o;
     o.r = (u8)(c.r < 0 ? 0 : c.r > 255 ? 255 : c.r);
     o.g = (u8)(c.g < 0 ? 0 : c.g > 255 ? 255 : c.g);
     o.b = (u8)(c.b < 0 ? 0 : c.b > 255 ? 255 : c.b);
     o.a = (u8)(c.a < 0 ? 0 : c.a > 255 ? 255 : c.a);
+    /* M37: the clamped colour is the whole of what the port keeps, so the
+     * comparison is GXSetTevColor's */
+    GX_STATE_TOUCH_IF(GX_CMP_M37,
+                      (unsigned)id >= 4 || memcmp(&gx.tev_reg[id], &o, sizeof(o)) != 0);
     if ((unsigned)id < 4) {
         gx.tev_reg[id] = o;
     }
@@ -836,7 +897,12 @@ void GXSetTevSwapMode(GXTevStageID s, GXTevSwapSel ras, GXTevSwapSel tex) {
 
 void GXSetTevSwapModeTable(GXTevSwapSel table, GXTevColorChan r, GXTevColorChan g,
                            GXTevColorChan b, GXTevColorChan a) {
-    GX_STATE_TOUCH();
+    /* M37: hsfdraw.c writes the four tables back to the SDK's defaults per
+     * material; a table rewritten with what it holds ends no batch */
+    GX_STATE_TOUCH_IF(GX_CMP_M37,
+                      (unsigned)table >= 4 || gx.swap_tbl[table][0] != (u8)r ||
+                          gx.swap_tbl[table][1] != (u8)g || gx.swap_tbl[table][2] != (u8)b ||
+                          gx.swap_tbl[table][3] != (u8)a);
     if ((unsigned)table < 4) {
         gx.swap_tbl[table][0] = (u8)r;
         gx.swap_tbl[table][1] = (u8)g;
@@ -846,7 +912,12 @@ void GXSetTevSwapModeTable(GXTevSwapSel table, GXTevColorChan r, GXTevColorChan 
 }
 
 void GXSetTevDirect(GXTevStageID s) {
-    GX_STATE_TOUCH();
+    /* M37: hsfdraw.c resets every stage to direct per material (as it
+     * resets all sixteen konst selects -- 37.2's list), and all but the
+     * three indirect games' stages are direct already */
+    GX_STATE_TOUCH_IF(GX_CMP_M37,
+                      (unsigned)s >= GX_TEV_STAGES || !gx.tev[s].direct ||
+                          gx.ind_tile[s].on || gx.ind_warp[s].on);
     if ((unsigned)s < GX_TEV_STAGES) {
         gx.tev[s].direct = 1;
         gx.ind_tile[s].on = 0;
@@ -855,7 +926,17 @@ void GXSetTevDirect(GXTevStageID s) {
 }
 
 void GXSetNumIndStages(u8 n) {
-    GX_STATE_TOUCH();
+    int i, any = 0;
+    if (gx_batch_pending && (port_opt.cmpmask & GX_CMP_M37)) {
+        for (i = 0; !n && i < GX_TEV_STAGES; i++) {
+            if (gx.ind_tile[i].on || gx.ind_warp[i].on) {
+                any = 1;
+            }
+        }
+    }
+    /* M37: GXSetNumIndStages(0) per material, and the game has no indirect
+     * stage on all but three minigames */
+    GX_STATE_TOUCH_IF(GX_CMP_M37, gx.num_ind != n || any);
     gx.num_ind = n;
     if (!n) {
         int i;
@@ -867,14 +948,16 @@ void GXSetNumIndStages(u8 n) {
 }
 
 void GXSetIndTexOrder(GXIndTexStageID s, GXTexCoordID c, GXTexMapID m) {
-    GX_STATE_TOUCH();
+    GX_STATE_TOUCH_IF(GX_CMP_M37, (unsigned)s >= 4 || gx.ind[s].coord != (u8)c ||
+                                      gx.ind[s].map != (u8)m);
     if ((unsigned)s < 4) {
         gx.ind[s].coord = (u8)c;
         gx.ind[s].map = (u8)m;
     }
 }
 void GXSetIndTexCoordScale(GXIndTexStageID s, GXIndTexScale ss, GXIndTexScale ts) {
-    GX_STATE_TOUCH();
+    GX_STATE_TOUCH_IF(GX_CMP_M37, (unsigned)s >= 4 || gx.ind[s].scale_s != (u8)ss ||
+                                      gx.ind[s].scale_t != (u8)ts);
     if ((unsigned)s < 4) {
         gx.ind[s].scale_s = (u8)ss;
         gx.ind[s].scale_t = (u8)ts;
@@ -885,7 +968,19 @@ void GXSetIndTexCoordScale(GXIndTexStageID s, GXIndTexScale ss, GXIndTexScale ts
  * game hands it a Mtx cast to that (m405, m417): the first six floats of the
  * 3x4, which is what the hardware sees too. */
 void GXSetIndTexMtx(GXIndTexMtxID id, const void* offset, s8 scale_exp) {
-    GX_STATE_TOUCH();
+    if (gx_batch_pending) {
+        int same = 0;
+        if ((unsigned)id >= 1 && (unsigned)id <= 3 && offset) {
+            const GXIndMtx* q = &gx.ind_mtx[id - 1];
+            const f32* f = (const f32*)offset;
+            int i;
+            same = q->exp == scale_exp;
+            for (i = 0; same && i < 6; i++) {
+                same = memcmp(&q->m[i / 3][i % 3], &f[i], sizeof(f32)) == 0;
+            }
+        }
+        GX_STATE_TOUCH_IF(GX_CMP_M37, !same);
+    }
     if ((unsigned)id >= 1 && (unsigned)id <= 3 && offset) {
         GXIndMtx* m = &gx.ind_mtx[id - 1];
         const f32* f = (const f32*)offset;
@@ -898,7 +993,12 @@ void GXSetIndTexMtx(GXIndTexMtxID id, const void* offset, s8 scale_exp) {
 }
 void GXSetTevIndWarp(GXTevStageID tev, GXIndTexStageID ind, GXBool signed_offset,
                      GXBool replace_mode, GXIndTexMtxID mtx) {
-    GX_STATE_TOUCH();
+    GX_STATE_TOUCH_IF(GX_CMP_M37,
+                      (unsigned)tev >= GX_TEV_STAGES || (unsigned)ind >= 4 ||
+                          gx.tev[tev].direct || gx.ind_tile[tev].on || !gx.ind_warp[tev].on ||
+                          gx.ind_warp[tev].ind != (u8)ind || gx.ind_warp[tev].mtx != (u8)mtx ||
+                          gx.ind_warp[tev].sgn != (u8)(signed_offset ? 1 : 0) ||
+                          gx.ind_warp[tev].rep != (u8)(replace_mode ? 1 : 0));
     if ((unsigned)tev >= GX_TEV_STAGES || (unsigned)ind >= 4) {
         gx_warn("GXSetTevIndWarp: stage out of range; dropped");
         return;
@@ -927,7 +1027,14 @@ void GXSetTevIndWarp(GXTevStageID tev, GXIndTexStageID ind, GXBool signed_offset
 void GXSetTevIndTile(GXTevStageID tev, GXIndTexStageID ind, u16 ts_s, u16 ts_t,
                      u16 tsp_s, u16 tsp_t, GXIndTexFormat fmt, GXIndTexMtxID mtx,
                      GXIndTexBiasSel bias, GXIndTexAlphaSel alpha) {
-    GX_STATE_TOUCH();
+    /* HuSprDisp draws every tiled window background with this, per sprite,
+     * with the same numbers (M37) */
+    GX_STATE_TOUCH_IF(GX_CMP_M37,
+                      (unsigned)tev >= GX_TEV_STAGES || (unsigned)ind >= 4 ||
+                          gx.tev[tev].direct || gx.ind_warp[tev].on || !gx.ind_tile[tev].on ||
+                          gx.ind_tile[tev].ind != (u8)ind || gx.ind_tile[tev].fmt != (u8)fmt ||
+                          gx.ind_tile[tev].ts_s != ts_s || gx.ind_tile[tev].ts_t != ts_t ||
+                          gx.ind_tile[tev].tsp_s != tsp_s || gx.ind_tile[tev].tsp_t != tsp_t);
     (void)mtx;
     (void)bias;
     (void)alpha;
@@ -994,12 +1101,17 @@ void GXSetAlphaCompare(GXCompare c0, u8 r0, GXAlphaOp op, GXCompare c1, u8 r1) {
     gx.alpha_ref1 = r1;
 }
 
-void GXSetColorUpdate(GXBool e) { GX_STATE_TOUCH(); gx.color_update = (u8)(e ? 1 : 0); }
-void GXSetAlphaUpdate(GXBool e) { GX_STATE_TOUCH(); gx.alpha_update = (u8)(e ? 1 : 0); }
+void GXSetColorUpdate(GXBool e) {
+    GX_STATE_TOUCH_IF(GX_CMP_M37, gx.color_update != (u8)(e ? 1 : 0));
+    gx.color_update = (u8)(e ? 1 : 0);
+}
+void GXSetAlphaUpdate(GXBool e) {
+    GX_STATE_TOUCH_IF(GX_CMP_M37, gx.alpha_update != (u8)(e ? 1 : 0));
+    gx.alpha_update = (u8)(e ? 1 : 0);
+}
 void GXSetDither(GXBool e) { (void)e; }
 
 void GXSetFog(GXFogType type, f32 startz, f32 endz, f32 nearz, f32 farz, GXColor color) {
-    GX_STATE_TOUCH();
     /* M30 (PLAN.md 45, cause C): the SDK's own guard (GXPixel.c:31) -- a
      * range with endz == startz or farz == nearz "makes the fog function
      * invalid" and the hardware gets A = 0, C = 0: no fog at all.  m414's
@@ -1009,6 +1121,14 @@ void GXSetFog(GXFogType type, f32 startz, f32 endz, f32 nearz, f32 farz, GXColor
     if (!port_opt.oldfog && type != GX_FOG_NONE && (endz == startz || farz == nearz)) {
         type = GX_FOG_NONE;
     }
+    /* M37: the scene's fog is re-sent per object and per sprite with the
+     * value it already holds; compared after the guard above, because the
+     * guard is what the port keeps */
+    GX_STATE_TOUCH_IF(GX_CMP_M37,
+                      gx.fog_type != (u8)type || gx.fog_startz != startz ||
+                          gx.fog_endz != endz || gx.fog_nearz != nearz ||
+                          gx.fog_farz != farz ||
+                          memcmp(&gx.fog_color, &color, sizeof(color)) != 0);
     gx.fog_type = (u8)type;
     gx.fog_startz = startz;
     gx.fog_endz = endz;

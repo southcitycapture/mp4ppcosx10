@@ -31,8 +31,8 @@ extern "C" {
 /* ---- settings, from argv ------------------------------------------------- */
 /* M32: the shipped version (the dmg's name, the plist, the --defaults header)
  * and the milestone that built it. */
-#define PORT_VERSION_STRING "0.9.5"
-#define PORT_MILESTONE "M36"
+#define PORT_VERSION_STRING "0.9.6"
+#define PORT_MILESTONE "M37"
 
 typedef struct PortOptions {
     const char* image;      /* --image  disc image or extracted files/ tree   */
@@ -200,6 +200,10 @@ typedef struct PortOptions {
                              *   own base with first = 0                     */
     int gltrace;            /* --gltrace F  log every GL call the shadow lets
                              *   through during frame F, with arguments      */
+    const char* endlog;     /* --endlog F[,F...]  M37: name every batch end of
+                             *   the drawn frames listed -- who ended each
+                             *   batch and the state, the layout and the
+                             *   matrices it was submitted under (PLAN.md 52) */
     int nomerge;            /* --nomerge  do not merge contiguous list
                              *   primitives (triangles/quads) into one call */
     int nomultidraw;        /* --nomultidraw  one glDrawArrays per strip

@@ -252,6 +252,30 @@ void gx_batch_touch(const char* who);
 #define GX_CMP_MATRIX 2
 #define GX_CMP_TEV 4
 #define GX_CMP_CHAN 8
+/* M37 (PLAN.md 52): the two classes of batch end the character select's
+ * state did not need.  GX_CMP_M37 is the setters that were still flushing
+ * unconditionally -- the texgens, GXSetTevOp and the TEV register/swap
+ * table, the indirect setup, the fog, the colour/alpha update and the
+ * light loads -- each of which hsfdraw.c's material setup and the sprite
+ * path re-send with the value the state already holds.  GX_CMP_DESC is
+ * the vertex descriptor, the attribute formats and the arrays: read by
+ * the *decode* of the next primitive and by nothing in a pending batch,
+ * whose layout batch_prepare compares anyway.  Clearing either bit of
+ * --cmpmask is the A/B. */
+#define GX_CMP_M37 256
+#define GX_CMP_DESC 512
+/* M37: a matrix load into a slot nothing in the pending batch draws with
+ * (only gx.cur_pnmtx is read, gx_draw.c:795) ends no batch. */
+#define GX_CMP_MSLOT 1024
+/* M37: a texture loaded into a unit no TEV or indirect stage in use reads
+ * ends no batch -- the same argument as M22's GXLoadTexObj compare, one
+ * step further. */
+#define GX_CMP_TEXU 2048
+/* M37: an immediate-mode primitive (GXBegin/GXEnd, the sprite path) no
+ * longer gets a batch of its own -- it joins the pending batch exactly as
+ * a display list's primitive does, and batch_prepare's compare decides.
+ * 115 of the character select's 249 batches are immediate primitives. */
+#define GX_CMP_IMM 4096
 
 /* gx_tev.c */
 void gx_tev_apply(void);          /* GXState -> GL texture environment */

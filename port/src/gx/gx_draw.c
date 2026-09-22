@@ -362,6 +362,44 @@ static struct {
 } flushers[FLUSHER_SLOTS];         /* which state setters ended batches      */
 static int last_flusher = -1;      /* the slot that ended the previous batch */
 static int pending_flusher = -1;   /* the slot ending the batch being flushed  */
+
+/* M37 (PLAN.md 52): --endlog F names every batch end of one drawn frame --
+ * who ended it, and a hash of exactly the state the submit read (the
+ * SubmitRec of M22), of the layout and of the batch's own matrices.  Two
+ * consecutive batches whose three hashes agree could have been one batch
+ * with the same draws in the same order: that is the "batch end the state
+ * did not need" of PLAN.md 51.5, and the log says which setter made it. */
+static const char* end_who = "?";
+static u32 endlog_fnv(const void* p, size_t n, u32 h) {
+    const u8* b = (const u8*)p;
+    while (n--) {
+        h = (h ^ *b++) * 16777619u;
+    }
+    return h;
+}
+static int endlog_armed(void) {
+    const char* p = port_opt.endlog;
+    unsigned f = gl13_frame_number() + 1;
+    if (!p) {
+        return 0;
+    }
+    while (*p) {
+        unsigned v = 0;
+        while (*p >= '0' && *p <= '9') {
+            v = v * 10 + (unsigned)(*p++ - '0');
+        }
+        if (v == f) {
+            return 1;
+        }
+        while (*p && *p != ',') {
+            p++;
+        }
+        if (*p == ',') {
+            p++;
+        }
+    }
+    return 0;
+}
 /* Draws whose position matrix puts the object sideways off the world.
  *
  * M4 had to bolt a throwaway instrument on to count these (1,264 of 1,756 on
@@ -2294,7 +2332,7 @@ static void rec_put(SubmitRec* r, const void* p, size_t n) {
  * the arrays or the position/normal matrices (the layout compare and the
  * pre-transform own those), not the copy setup, and of the indexed tables
  * only the entries in use. */
-static void submit_rec_capture(SubmitRec* r) {
+static void submit_rec_capture_body(SubmitRec* r, int with_tex) {
     int i;
     u8 lmask;
     r->len = 0;
@@ -2322,9 +2360,16 @@ static void submit_rec_capture(SubmitRec* r) {
         PUT(tev[i]);
         PUT(ind_tile[i]);
         if (u < GX_TEX_UNITS && gx_bound_tex(u)) {
-            rec_put(r, &gx.bound[u], offsetof(GXTexObjPort, gl_name));
-            if (gx.bound[u].is_ci && gx.bound[u].tlut_name < 64) {
-                PUT(tlut[gx.bound[u].tlut_name]);
+            if (with_tex) {
+                rec_put(r, &gx.bound[u], offsetof(GXTexObjPort, gl_name));
+                if (gx.bound[u].is_ci && gx.bound[u].tlut_name < 64) {
+                    PUT(tlut[gx.bound[u].tlut_name]);
+                }
+            } else {
+                /* M37: the atlas view -- what two draws must share for one
+                 * page of a texture atlas to serve both (PLAN.md 52) */
+                PUT(bound[u].format); PUT(bound[u].wrap_s); PUT(bound[u].wrap_t);
+                PUT(bound[u].min_filt); PUT(bound[u].mag_filt); PUT(bound[u].is_ci);
             }
         } else {
             rec_put(r, &i, sizeof(i)); /* "unit has nothing" */
@@ -2338,6 +2383,8 @@ static void submit_rec_capture(SubmitRec* r) {
     PUT(fog_type); PUT(fog_startz); PUT(fog_endz); PUT(fog_nearz); PUT(fog_farz); PUT(fog_color);
 #undef PUT
 }
+
+static void submit_rec_capture(SubmitRec* r) { submit_rec_capture_body(r, 1); }
 
 static int submit_rec_differs(void) {
     submit_rec_capture(&rec_now);
@@ -2386,6 +2433,7 @@ void gx_batch_touch(const char* who) {
                 pending_flusher = i;
             }
         }
+        end_who = who;
         batch_flush();
     }
     port_perf_gx_end();
@@ -2657,6 +2705,7 @@ static int pal_victim(void) {
 static void pal_flush_for_room(void) {
     Layout cur = sl;
     sl = batch_sl;
+    end_who = "palette:room";
     batch_flush();
     sl = cur;
     stat_pal_flushes++;
@@ -2946,6 +2995,7 @@ static void batch_flush(void) {
         out_off_clr = bctx.out_off_clr;
         out_off_tex = bctx.out_off_tex;
         out_ntex = bctx.out_ntex;
+        unsigned calls0 = stat_draws;
         if (applied) {
             /* the state walk ran at the setter (gx_batch_touch); only the
              * draw calls are left, and nothing has touched GL since */
@@ -2954,6 +3004,48 @@ static void batch_flush(void) {
         } else {
             draw_submit(src_buf + batch_pos, (int)nv, batch, n, 1);
         }
+        if (endlog_armed()) {
+            /* the state is still the batch's: a setter touches before it
+             * changes anything, and batch_prepare has not written yet */
+            static unsigned endlog_n;
+            u32 rec, notex, lay, mtx;
+            const GXTexObjPort* t0 = gx.num_tev ? gx_bound_tex(gx.tev[0].map) : NULL;
+            submit_rec_capture_body(&rec_now, 1);
+            rec = endlog_fnv(rec_now.bytes,
+                             rec_now.len < SUBMIT_REC_MAX ? rec_now.len : SUBMIT_REC_MAX,
+                             2166136261u ^ rec_now.len);
+            submit_rec_capture_body(&rec_now, 0);
+            notex = endlog_fnv(rec_now.bytes,
+                               rec_now.len < SUBMIT_REC_MAX ? rec_now.len : SUBMIT_REC_MAX,
+                               2166136261u ^ rec_now.len);
+            lay = endlog_fnv(&batch_sl, sizeof(batch_sl), 2166136261u);
+            mtx = endlog_fnv(batch_posm, sizeof(batch_posm), 2166136261u);
+            mtx = endlog_fnv(batch_nrmm, sizeof(batch_nrmm), mtx);
+            port_log("endlog> b%-5u who=%-24s verts=%-5u segs=%-4d calls=%-3u prim=%02x "
+                     "rec=%08x notex=%08x lay=%08x mtx=%08x tex=%ux%u/%u/%u",
+                     ++endlog_n, end_who, (unsigned)nv, n, stat_draws - calls0,
+                     n ? batch[0].prim : 0u, rec, notex, lay, mtx,
+                     t0 ? (unsigned)t0->width : 0u, t0 ? (unsigned)t0->height : 0u,
+                     t0 ? (unsigned)t0->format : 0u, t0 ? (unsigned)t0->gl_name : 0u);
+            {
+                /* every unit the batch draws under, for the atlas question:
+                 * a page can only serve a draw whose texture is clamped on
+                 * both axes and small enough to be a tile of one */
+                int st;
+                for (st = 0; st < (int)gx.num_tev && st < GX_TEV_STAGES; st++) {
+                    const GXTexObjPort* t = gx_bound_tex(gx.tev[st].map);
+                    if (t) {
+                        port_log(" u%d=%ux%u/f%u/w%u%u/ci%u/g%u", (int)gx.tev[st].map,
+                                 (unsigned)t->width, (unsigned)t->height,
+                                 (unsigned)t->format, (unsigned)t->wrap_s,
+                                 (unsigned)t->wrap_t, (unsigned)t->is_ci,
+                                 (unsigned)t->gl_name);
+                    }
+                }
+            }
+            port_log("\n");
+        }
+        end_who = "?";
         pi_cur = pi_save;
         sl = sl_save;
         gx_hilite_stage = hs_save;
@@ -3019,6 +3111,7 @@ static size_t ring_claim(size_t need) {
         }
     }
     if (ring_cursor + need > src_cap) {
+        end_who = "ring:wrap";
         batch_flush();
         ring_cursor = 0;
         ring_wrapped = 1;
@@ -3026,6 +3119,49 @@ static size_t ring_claim(size_t need) {
     }
     gl13_var_enter(ring_cursor, need);
     return ring_cursor;
+}
+
+/* M37 (PLAN.md 52): the batch's phase 2 runs for every vertex in it under
+ * the *first* primitive's PrimInv and output layout (bctx / bctx_pi), so a
+ * primitive whose own differ may not join it.  Until M37 that was
+ * guaranteed indirectly -- every piece of state those are derived from has
+ * a setter that ends the batch when it changes -- and the compare is the
+ * net under the immediate-mode batching below.  An extra flush can never
+ * move a pixel.
+ *
+ * Only the texgens below `ntexgen` are compared: begin_attr_order writes
+ * `tg[]` up to that index and leaves the rest as the last primitive that
+ * used this buffer left them, and `pi_cur` alternates between two buffers
+ * whose stale tails differ -- a memcmp of the whole struct fails for every
+ * primitive, which is what the first build of this did (972 batches on the
+ * character select instead of 249). */
+static int prim_ctx_differs(void) {
+    int t;
+    if (pi.pos_mtx != bctx_pi->pos_mtx || pi.nrm_mtx != bctx_pi->nrm_mtx ||
+        pi.have_nrm != bctx_pi->have_nrm || pi.no_clr0 != bctx_pi->no_clr0 ||
+        pi.chan_mode != bctx_pi->chan_mode || pi.ntexgen != bctx_pi->ntexgen ||
+        pi.tex_copy_n != bctx_pi->tex_copy_n || out_stride != bctx.out_stride ||
+        out_off_clr != bctx.out_off_clr || out_off_tex != bctx.out_off_tex ||
+        out_ntex != bctx.out_ntex || gx_hilite_stage != bctx.hilite_stage ||
+        gx_hilite_mode != bctx.hilite_mode) {
+        return 1;
+    }
+    for (t = 0; t < pi.ntexgen && t < GX_TEXCOORDS; t++) {
+        if (pi.tg[t].src_kind != bctx_pi->tg[t].src_kind ||
+            pi.tg[t].src_k != bctx_pi->tg[t].src_k ||
+            pi.tg[t].divide != bctx_pi->tg[t].divide ||
+            pi.tg[t].mtx != bctx_pi->tg[t].mtx) {
+            return 1;
+        }
+        /* `mtx_slot` is written only for a texgen that names a matrix, and
+         * is stale otherwise -- reading it when `mtx` is NULL is what made
+         * the first build of this compare fail 754 times a character-select
+         * frame (the two PrimInv buffers carry different stale tails). */
+        if (pi.tg[t].mtx && pi.tg[t].mtx_slot != bctx_pi->tg[t].mtx_slot) {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 /* Before a primitive is decoded: if it cannot join the pending batch -- the
@@ -3047,10 +3183,18 @@ static void batch_prepare(u32 count) {
                     flushers[pending_flusher].n++;
                 }
             }
+            end_who = applied_who; /* the setter whose change the compare found */
             batch_flush(); /* issues under the GL state that is still the batch's */
         } else {
             stat_lazy_transient++;
         }
+    }
+    if (batch_n && prim_ctx_differs()) {
+        Layout cur = sl;
+        end_who = "prepare:context";
+        sl = batch_sl;
+        batch_flush();
+        sl = cur;
     }
     if (batch_n &&
         (port_opt.oldsubmit || batch_n >= BATCH_MAX ||
@@ -3068,6 +3212,10 @@ static void batch_prepare(u32 count) {
          * -- except in the one case this guards, where it is restored for
          * the flush. */
         Layout cur = sl;
+        end_who = memcmp(&batch_sl, &sl, sizeof(sl)) != 0 ? "prepare:layout"
+                  : (batch_n >= BATCH_MAX || batch_verts + count > MAX_VERTS ||
+                     port_opt.oldsubmit || port_opt.batchmax) ? "prepare:full"
+                  : "prepare:matrix";
         sl = batch_sl;
         batch_flush();
         sl = cur;
@@ -3091,6 +3239,7 @@ static void batch_add(void) {
          batch_pos + (size_t)batch_verts * batch_sl.stride != run_pos)) {
         Layout cur = sl;
         sl = batch_sl;
+        end_who = "add:late";
         batch_flush();
         sl = cur;
         stat_late_flush++;
@@ -3133,6 +3282,7 @@ void gx_batch_flush_from(const char* who) {
             pending_flusher = i;
         }
     }
+    end_who = who;
     port_perf_gx_begin();
     batch_flush();
     port_perf_gx_end();
@@ -3795,10 +3945,20 @@ static int batch_apply_now(void) {
     return ok;
 }
 
-/* An immediate-mode primitive: its own batch, flushed at once. */
+/* An immediate-mode primitive.  Until M37 it was its own batch, flushed at
+ * once; with GX_CMP_IMM it joins the pending batch exactly as a display
+ * list's primitive does -- GXBegin has already run begin_attr_order,
+ * batch_prepare and ring_claim for it, so the batch's contiguity, layout
+ * and context have all been decided by the same code -- and the next state
+ * setter or the next primitive ends the batch.  115 of the character
+ * select's 249 batches were immediate primitives, 25 of them next to a
+ * batch of exactly the same state and matrices (PLAN.md 52). */
 static void draw_now(void) {
     batch_add();
-    batch_flush();
+    if (!(port_opt.cmpmask & GX_CMP_IMM)) {
+        end_who = "immediate";
+        batch_flush();
+    }
 }
 
 void GXEnd(void) {
@@ -5121,6 +5281,7 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
             int i;
             hit->last_frame = frame;
             stat_dlc_hit++;
+            end_who = "dlcache:hit";
             batch_flush();
             for (i = 0; i < hit->nsegs && i < BATCH_MAX; i++) {
                 const DlSeg* g = &hit->segs[i];
@@ -5380,6 +5541,7 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
         stat_list_hist[nops == 1 ? 0 : nops <= 4 ? 1 : nops <= 16 ? 2 : nops <= 64 ? 3 : 4]++;
     }
     if (port_opt.oldsubmit) {
+        end_who = "list:end";
         batch_flush();
     }
     if (caching) {

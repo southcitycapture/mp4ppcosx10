@@ -1,6 +1,6 @@
 Mario Party 4 PowerPC Edition
 =============================
-Version 0.9.5
+Version 0.9.6
 
 
 WHAT THIS IS

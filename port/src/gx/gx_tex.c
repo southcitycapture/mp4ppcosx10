@@ -1469,13 +1469,39 @@ void GXInitTexObjWrapMode(GXTexObj* obj, GXTexWrapMode s, GXTexWrapMode t) {
     }
 }
 
+/* M37: is this texture unit read by any stage the pending batch draws
+ * under -- a TEV stage below GXSetNumTevStages, or an indirect stage below
+ * GXSetNumIndStages?  Exactly the units submit_rec_capture walks. */
+static int gx_unit_in_use(unsigned unit) {
+    int i;
+    for (i = 0; i < (int)gx.num_tev && i < GX_TEV_STAGES; i++) {
+        if (gx.tev[i].map == unit) {
+            return 1;
+        }
+    }
+    for (i = 0; i < (int)gx.num_ind && i < 4; i++) {
+        if (gx.ind[i].map == unit) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 void GXLoadTexObj(GXTexObj* obj, GXTexMapID id) {
     /* Compare-first (M22): the same texture loaded again -- the next object
      * of the same material -- changes nothing the pending batch reads.  The
      * fields from gl_name on are the cache's, filled in at bind time in the
      * copy and zero in the game's object, so they are not compared. */
+    /* M37 (PLAN.md 52): ...and a unit no stage in use reads is not read by
+     * the submit either (the SubmitRec walks gx.tev[i].map for i < num_tev),
+     * so loading it changes nothing the pending batch draws with.  A stage
+     * that later names the unit must come through GXSetTevOrder or
+     * GXSetNumTevStages, both compare-first. */
     GX_STATE_TOUCH_IF(GX_CMP_TEV, (unsigned)id >= GX_TEX_UNITS || !obj ||
-                                      memcmp(&gx.bound[id], obj, offsetof(GXTexObjPort, gl_name)) != 0);
+                                      (memcmp(&gx.bound[id], obj,
+                                              offsetof(GXTexObjPort, gl_name)) != 0 &&
+                                       ((port_opt.cmpmask & GX_CMP_TEXU) == 0 ||
+                                        gx_unit_in_use((unsigned)id))));
     /* Copy, do not alias: see the comment on GXState::bound.  This is what
      * the console's write to the texture registers is, and the game's sprite
      * path depends on it -- HuSprTexLoad's GXTexObj is a stack local. */
@@ -1513,10 +1539,29 @@ void GXInitTlutObj(GXTlutObj* obj, void* lut, GXTlutFmt fmt, u16 n) {
     t->n = n;
 }
 
+/* M37: is this palette named by a CI texture on a unit in use? */
+static int gx_tlut_in_use(u32 name) {
+    int i;
+    for (i = 0; i < (int)gx.num_tev && i < GX_TEV_STAGES; i++) {
+        unsigned u = gx.tev[i].map;
+        if (u < GX_TEX_UNITS && gx.bound[u].magic == TEXOBJ_MAGIC && gx.bound[u].is_ci &&
+            gx.bound[u].tlut_name == name) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 void GXLoadTlut(GXTlutObj* obj, u32 tlut_name) {
     GXTlutObjPort* t = (GXTlutObjPort*)obj;
+    /* M37: ...and a palette no CI texture the pending batch draws with
+     * names is not read by the submit either (submit_rec_capture takes
+     * gx.tlut[bound[u].tlut_name] only for a unit in use holding a CI
+     * texture), so loading it ends no batch. */
     GX_STATE_TOUCH_IF(GX_CMP_TEV, tlut_name >= 64 || t->magic != TLUT_MAGIC ||
-                                      memcmp(&gx.tlut[tlut_name], t, sizeof(*t)) != 0);
+                                      (memcmp(&gx.tlut[tlut_name], t, sizeof(*t)) != 0 &&
+                                       ((port_opt.cmpmask & GX_CMP_TEXU) == 0 ||
+                                        gx_tlut_in_use(tlut_name))));
     if (tlut_name < 64 && t->magic == TLUT_MAGIC) {
         gx.tlut[tlut_name] = *t;
         /* --tlutlog, the load half: the game's own two calls, as the game
