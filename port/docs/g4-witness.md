@@ -1004,3 +1004,49 @@ is either ready to offer upstream or has a case to remove.
 * **The G4's real time budget**: a park is 90 s, a whole gallery 2 h 45
   (63 games), a `--tfscopycpu` park 8 min (a 1.2 MB read-back a frame).
   Sixty parks fit a night; a gallery fits once.
+
+## 0z. Six things M36 paid for *(2026-09-22)*
+
+* **A patch hook runs on the game's own coroutine stack, and a
+  `port_log` from one overflows it.** `port_mg_dealt` (the roulette's
+  `mgNext = …`, PLAN.md 51.2) first did its whole job where the game
+  called it: a `snprintf`, a queue push and one `port_log` — and
+  `vfprintf` alone wants a kilobyte or two of stack, against the 4 KB
+  a `HUPROCESS` gets at `--stackmul 2`. The bench's 20-turn soak died
+  at frame 178,460 with `signal 11 at address 0x0` (a jump through a
+  trashed pointer, eight thousand frames after the last roulette —
+  which is how a scribbled stack fails). **A hook into game code notes
+  its argument in a static and nothing else; the work happens at the
+  next retrace**, on the port's own stack. The same soak on the fixed
+  build ran clean. Nothing in `--stackcheck` or the `HuPrcCall` guard
+  byte catches this: the guard is at the *bottom* of the stack and
+  `vfprintf` walks off the top into the neighbour.
+* **A soak that follows a gallery measures nothing about loading.**
+  Soak 26 read 433 MB in 1,465 DVD reads with **0 over 100 ms**,
+  because a 2 h 45 gallery had just walked every file on the disc into
+  the page cache. The cold case has to be *made*: Leopard has no
+  `purge`, so the A/B chain reads 50 of the gallery's 43 MB snapshots
+  (2.1 GB, ~2.8 min) before each arm, which is more than the machine's
+  1.5 GB and drops every page of the disc image and the bundle.
+  Cold, the same boot pays 100–400 ms a file (`title.bin` 402 ms,
+  `ment.bin` 337).
+* **`mlock` is allowed to an ordinary user on Leopard**, up to at least
+  107 MB (`RLIMIT_MEMLOCK` is not the wired-page limit it is on Linux).
+  The port tries it once per buffer and stops trying at the first
+  refusal, so a machine that says no falls back to plain memory with
+  one line in the report and no behaviour change.
+* **A second `FILE*` on the disc image would have been a second seek
+  cursor on the same fd.** The loader opens its own descriptor and
+  reads through `pread`, so the game thread's `fseek`/`fread` in
+  `dvd_fs.c` is never disturbed — and the two can be in the file at
+  once on two CPUs.
+* **`--drawlog`'s `---- draw N` is a *segment*, not a GL call.**
+  `draw_log` runs once per segment inside `draw_submit`, and the
+  submit then merges consecutive segments of the same primitive into
+  one `glDrawArrays` or one `glMultiDrawArraysEXT`. A "1,300 draws at
+  the title" read off the drawlog is 1,300 strips; what reaches the
+  driver is the batch count. Count state *runs* (PLAN.md 51.5) for the
+  batching question and `--gltrace F` for the calls.
+* **The G4's day, again**: a 60,000-frame real-time arm is 16.7 min and
+  a purge 2.8, so a three-arm A/B in three runs is three hours — one
+  morning, and nothing else can use the machine while it runs.

@@ -17937,7 +17937,38 @@ own read (one `memcpy`, no second disk pass). Nothing can be stale: the
 file tree is read-only, and the set is built at every start from the
 player's own image — nothing is copied into the bundle or the dmg.
 
-RESIDENT_LIST_PLACEHOLDER
+**The list, and where it comes from.** `--dvdlog` (new) writes one line
+per DVD read — the frame, the file, the range, the milliseconds, and
+whether the resident set or the disk answered — and
+`port/tools/m36_dvdlog.py` counts them per file. Over a **deterministic
+20-turn soak on the bench** (`--soak --com4 --rtc dolphin --freshcard
+--turns 20 --nodraw --turbo --dvdlog`, one complete board of Toad's
+Midway Madness, 19 minigames): **69 files, 1,075 reads, 319 MB read**.
+What the game reads, and how often:
+
+| file | reads | bytes read | size | what it is |
+|---|---:|---:|---:|---|
+| `sound/mpgcsnd.msm` | 277 | 44.6 MB | 35.1 MB | the sample bank; every read a seek into it |
+| `sound/mpgcstr.pdt` | 250 | 4.1 MB | 10.8 MB | the streamed music, 18 KB a read |
+| `mess/board_e.dat` | 59 | 8.6 MB | 142 KB | the board's text, read whole every screen |
+| `data/peachmdl1.bin` … `mariomdl1.bin` | 57 / 57 / 56 / 56 | 92.4 MB | 0.35–0.48 MB | **the four character models, read whole at every board re-entry** |
+| `data/instpic.bin` | 34 | 0.8 MB | 2.8 MB | the instruction screens' pictures |
+| `data/bkujiya.bin`, `byokodori.bin` | 23, 21 | 32.5 MB | 0.7 MB each | the board's two events |
+| `data/w01.bin`, `bguest.bin`, `dll/w01Dll.rel` | 20, 20, 20 | 44.9 MB | 1.4 / 0.65 / 0.12 MB | the board itself |
+| `data/inst.bin`, `result.bin`, their two RELs | 17 each | 43.9 MB | 1.5 / 0.9 MB | the instruction and results screens |
+| 19 minigames' `m4NN.bin` + `.rel` | 1–2 each | 26 MB | 0.7–2.5 MB | one read each, the cold one |
+| the rest (title, ment, modesel, the motion sets, …) | 1 each | | | the boot's |
+
+Two things fall out. The disc is read **319 MB to play one board**, six
+times its own footprint of the files involved, because the board's data
+— the four character models above all — is read again at every return
+from a minigame. And **the whole working set is small**: the 69 files
+are **98.4 MB together**, so at the 128 MB step every read of a
+twenty-turn board is served from memory, and at 64 MB (no machine gets
+that, but it is the shape) the first 25 files still answer 95.9% of the
+reads. The generated list is `port/src/dvd/resident_list.h` (69 entries,
+most-read first, with each file's count and size in a comment); anything
+the list does not hold arrives through the prefetch and the LRU.
 
 RESIDENT_AB_PLACEHOLDER
 
@@ -17967,8 +17998,63 @@ frames `screenshots/m36-m433-*.png`.
 
 ### 51.5 The draw calls of the character select and the title
 
-DRAWCALLS_PLACEHOLDER
+The measurement §37.2 asked for and M37 will act on, now that the
+render thread is those two scenes' wall (§48.2: 25 ms of replay per
+drawn frame on the character select against 14 ms of game thread).
+`--drawlog 6000 --drawlog-at F` on the G4's final build, one drawn
+frame each, read by `port/tools/m36_batches.py`: a *draw* here is one
+segment as `draw_submit` sees it (one GX primitive — the witness's
+lesson: this is not yet a GL call), and a *run* is a maximal sequence
+of consecutive segments sharing every piece of state the driver would
+have to be given — the primitive, all TEV stages with their inputs and
+konst, every bound texture's GL name, the colour channel, the alpha
+test, the z mode, the blend, the cull, the projection and the
+viewport.
+
+| | title (frame 800) | character select (frame 3000) |
+|---|---:|---:|
+| segments in the frame | 1,300 | 1,734 |
+| vertices | 97,864 (75.3 a segment) | 75,423 (43.5) |
+| quad segments (`GX_QUADS`, the sprite path) | 98 | 224 |
+| distinct texture sets | 56 | 115 |
+| **runs of equal state** | **233** | **310** |
+| segments inside a run of 2 or more | 1,116 (86%) | 1,504 (87%) |
+| longest run | 109 (`obj1`, one texture) | 108 (`obj51`) |
+| runs of equal state **and** position matrix | 233 | 341 |
+| GL calls now (`GX draw` over the run / drawn frames) | GLCALLS_TITLE | GLCALLS_CHARSEL |
+
+**The lever, named.** Between 86% and 87% of the frame's segments sit
+next to another segment that wants exactly the same driver state, and
+the state runs are 233 and 310 against 1,300 and 1,734 segments — a
+floor of **one call per five or six segments**. The title's runs are
+whole objects (109 strips of `obj1` through one texture); the character
+select's are the portraits and their backgrounds, and its 341-vs-310
+gap is the only place where the position matrix, not the texture or the
+TEV, is what ends a run — 31 runs of the frame, the sprites drawn one
+model matrix apart. That is the M37 shape: **the batcher already merges
+segments inside one batch, and what ends a batch is a state setter that
+did not have to change anything** — the 224 quad segments of the sprite
+path especially, which are 13% of the character select's segments and
+carry 4 vertices each. Measured only; nothing here is changed in M36.
 
 ### 51.6 What M36 shipped, the disk image, and what is left running
 
 SHIPPED_PLACEHOLDER
+
+### 51.7 The bench's fault, and what it was
+
+The first 20-turn `--dvdlog` soak on the bench died at frame 178,460
+with `*** port: fault: signal 11 at address 0x0` — a jump through a
+null pointer, in the middle of a board, eight thousand frames after
+anything the loader had done. It was the hook. `port_mg_dealt` is
+called from `mg_setup.c`'s roulette process, on a `HUPROCESS`
+coroutine stack of 4 KB (`--stackmul 2` over the game's 2,048), and
+the first version did its whole job there: `snprintf`, the queue push,
+and a `port_log` — whose `vfprintf` wants a kilobyte or two of stack on
+its own. The overflow walks off the top of the stack into whatever is
+above it, and the failure comes whenever the scribbled-on thing is next
+read. The `HuPrcCall` guard byte cannot see it: the guard is at the
+*bottom*. **The hook notes its argument in a static and returns**
+(`hook_mg`), and `port_dvd_cache_service` does the work at the next
+retrace on the port's own stack; the same 20-turn soak on the fixed
+build ran to the end with no fault. Witness §0z.
