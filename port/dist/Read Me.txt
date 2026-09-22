@@ -105,16 +105,23 @@ moment, and only where they come from is different.
     on for every machine; --noprefetch turns it off.
 
     The resident set.  The files every game reads -- the board's data, the
-    instruction and results screens', the characters', the menus' -- are
-    read once and kept in the game's own memory, and answered from there
-    for the rest of the run; a minigame's files join the set as they are
-    read ahead and the least recently used leave when it is full.  Its
-    size is decided by the machine check from the memory installed: none
-    under 768 MB, 128 MB with 1 GB, 256 MB with 1.5 GB or more, and never
-    so much that the system and the game have less than about 600 MB
-    between them.  --resident 0 turns it off; --resident 64 (any number of
-    megabytes) sets it by hand.  Both decisions are on the log's
-    "machine:" lines and in --defaults.
+    instruction and results screens', the four characters' models and the
+    sound banks -- are read once and kept in the game's own memory, and
+    answered from there for the rest of the run; a minigame's files join
+    the set as they are read ahead and the least recently used leave when
+    it is full.  Its size is decided by the machine check from the memory
+    installed: none under 768 MB, 128 MB with 1 GB, 256 MB with 1.5 GB or
+    more, and never so much that the system and the game have less than
+    about 600 MB between them.  --resident 0 turns it off; --resident 64
+    (any number of megabytes) sets it by hand.  Both decisions are on the
+    log's "machine:" lines and in --defaults.
+
+On the machine this was built on -- a dual 1 GHz Power Mac with 1.5 GB --
+the two together turn a twenty-turn board's 319 MB of disc reading into
+about 110 MB held in memory and one read from the disk, and a cold walk
+through six minigames goes from thirty-odd reads over a tenth of a second
+(three of them long enough to drop a second of game time) to three or
+four.  The game uses about 110 MB more memory with the set than without.
 
 Nothing is copied anywhere: the set is built from your own disc image at
 every start and is gone when the game quits.

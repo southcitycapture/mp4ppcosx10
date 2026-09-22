@@ -17971,7 +17971,56 @@ reads. The generated list is `port/src/dvd/resident_list.h` (69 entries,
 most-read first, with each file's count and size in a comment); anything
 the list does not hold arrives through the prefetch and the LRU.
 
-AB_TABLE_PLACEHOLDER
+**The A/B, cold, on the G4** (`port/tools/m36_ab.sh`, read by
+`m36_abread.py`). Leopard has no `purge`, and the milestone's own soak
+showed why it matters (§51.1: a soak that follows a gallery has *no*
+slow reads at all), so each arm is preceded by a read of 50 of the
+gallery's 43 MB snapshots — 2.1 GB against a 1.5 GB machine, which
+drops every page of the disc image, the bundle and the rels. Each run
+is then the real-time soak's own command capped at 60,000 frames
+(16.7 min), which deals **six minigames** — m412, m428, m420, m444,
+m423, m438 — plus the boot, the mode select, the character select and
+the board's own load. Three arms, three runs each, interleaved:
+
+| arm | run | reads over 100 ms | worst | resyncs | game time dropped | total in DVD reads | speed | rss |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `--noprefetch --resident 0` | 1 | 32 | 523 ms | 3 | 3.46 s | 10,541 ms | 99.6% | 129 MB |
+| | 2 | 31 | 1,781 ms | 6 | 9.33 s | 15,116 ms | 99.0% | 129 MB |
+| | 3 | 29 | 1,799 ms | 4 | 5.86 s | 11,686 ms | 99.4% | 129 MB |
+| **the prefetch alone** (`--resident 0`) | 1 | 21 | 1,041 ms | 5 | 5.92 s | 9,003 ms | 99.4% | 129 MB |
+| | 2 | 23 | 997 ms | 5 | 5.76 s | 9,123 ms | 99.4% | 129 MB |
+| | 3 | 21 | 1,015 ms | 4 | 4.41 s | 8,199 ms | 99.5% | 129 MB |
+| **both (the shipped defaults)** | 1 | **3** | 706 ms | **1** | 1.31 s | 1,377 ms | 99.8% | 236 MB |
+| | 2 | **4** | 416 ms | **1** | 1.01 s | 1,016 ms | 99.8% | 236 MB |
+| | 3 | **3** | 647 ms | **1** | 1.22 s | 1,301 ms | 99.8% | 236 MB |
+| | | | | | | | | |
+| mean: neither | | 30.7 | 1,368 | 4.3 | 6.22 s | 12,448 ms | 99.3% | 129 MB |
+| mean: the prefetch alone | | 21.7 | 1,018 | 4.7 | 5.36 s | 8,775 ms | 99.4% | 129 MB |
+| **mean: both** | | **3.3** | **590** | **1.0** | **1.18 s** | **1,231 ms** | **99.8%** | 236 MB |
+
+Read it row by row.
+
+* **Both together is the milestone**: a cold walk through six minigame
+  loads goes from **30.7 reads over 100 ms to 3.3**, from **4.3
+  resyncs to 1**, from **6.2 seconds of game time dropped to 1.2**,
+  and from **12.4 seconds in DVD reads to 1.2** — a tenth. The one
+  resync that remains is the *first* board load, where nothing is warm
+  yet and the set is still filling; every later load is served from
+  memory. Speed 99.3% → 99.8%, presented fps 27.8 → 28.1. The price is
+  **107 MB of resident set**: 129 → 236 MB of process.
+* **The prefetch on its own is a wash on this disk**, and that is the
+  honest reading: it cuts the slow reads from 30.7 to 21.7 and the
+  time in reads by a quarter, but the resyncs go *up* (4.3 → 4.7) and
+  the worst single read is no better. A shingled 13 MB/s drive has one
+  arm, and a background thread reading 77 MB of files the game has not
+  asked for yet is competing with the reads it has. What the prefetch
+  is for is making the resident set's *insertions* happen before the
+  game needs them, and in that role it pays: with the set, the
+  prefetched minigame is already in memory when instDll links.
+* **The slow reads that remain are the boot's** (`title.bin`,
+  `ment.bin`, `mpgcsnd.msm`'s first seeks) — the ones that happen
+  before the set has finished filling. Nothing in the six minigame
+  loads is over 100 ms in any "both" run.
 
 
 ### 51.4 Beach Volley Folly at real time
@@ -18019,29 +18068,85 @@ viewport.
 | vertices | 97,864 (75.3 a segment) | 75,423 (43.5) |
 | quad segments (`GX_QUADS`, the sprite path) | 98 | 224 |
 | distinct texture sets | 56 | 115 |
-| **runs of equal state** | **233** | **310** |
+| **GL draw calls a drawn frame** (`--gltrace`, 40 frames) | **234** | **367** |
+| — of them `glDrawArrays` | 187 | 307 |
+| — of them `glMultiDrawArraysEXT` | 47 (23.7 strips each) | 60 (23.8 each) |
+| **runs of equal state** (the floor at this order) | **233** | **310** |
 | segments inside a run of 2 or more | 1,116 (86%) | 1,504 (87%) |
 | longest run | 109 (`obj1`, one texture) | 108 (`obj51`) |
 | runs of equal state **and** position matrix | 233 | 341 |
-| GL calls now (`GX draw` over the run / drawn frames) | GLCALLS_TITLE | GLCALLS_CHARSEL |
 
-**The lever, named.** Between 86% and 87% of the frame's segments sit
-next to another segment that wants exactly the same driver state, and
-the state runs are 233 and 310 against 1,300 and 1,734 segments — a
-floor of **one call per five or six segments**. The title's runs are
-whole objects (109 strips of `obj1` through one texture); the character
-select's are the portraits and their backgrounds, and its 341-vs-310
-gap is the only place where the position matrix, not the texture or the
-TEV, is what ends a run — 31 runs of the frame, the sprites drawn one
-model matrix apart. That is the M37 shape: **the batcher already merges
-segments inside one batch, and what ends a batch is a state setter that
-did not have to change anything** — the 224 quad segments of the sprite
-path especially, which are 13% of the character select's segments and
-carry 4 vertices each. Measured only; nothing here is changed in M36.
+**The lever, named — and it is not the one §37.2 expected.** The
+batcher already merges runs of same-state segments: 1,300 segments
+leave the title as **234** calls against a floor of 233, so the title
+is *at* its floor and there is nothing to win there. The character
+select is **367** against 310 — **57 calls a frame that end a batch
+without the state needing to change**, and 26 of those survive even
+when the position matrix is counted as state (341). That is M37's
+target, and it is a state-setter question, not a geometry one: which
+`GXSet*` call flushes a batch that the next batch then sets back the
+same way. (`draw_submit`'s `flushers[]` table already counts who ends
+each batch; the scene's own 25 ms of replay per drawn frame, §48.2, is
+what the 367 calls buy at ~80 µs of driver cost each — 29 ms, which is
+the replay.) The 224 quad segments of the sprite path are 13% of the
+character select's segments and four vertices each; they are where the
+same-state runs are longest and the most likely source of the 57.
+Measured only; nothing here is changed in M36.
 
 ### 51.6 What M36 shipped, the disk image, and what is left running
 
-SHIPPED_PLACEHOLDER
+**What M36 shipped**, all of it in `port/`:
+
+| | |
+|---|---|
+| `port/src/dvd/dvd_cache.c` (new, ~900 lines) | the loader: the queue, the thread, the one-CPU slice, the resident set, the watches, the `--dvdlog` ring, the report |
+| `port/src/dvd/resident_list.h` (generated) | the 69 files, most-read first, from `tools/m36_dvdlog.py` |
+| `port/patches.txt` | two lines in `game/board/mg_setup.c`: the declaration and `port_mg_dealt(mgNext)` at the roulette's stop — the only game-code change, and it changes no game behaviour |
+| `port/src/dvd/dvd_fs.c` | the serve, the adoption hook, the accessors the loader needs, `port_dvd_cache_service` at the retrace |
+| `port/src/platform/machine.c` | the two new applied settings (§51.3's rule, the prefetch's line) |
+| `port/src/platform/vi.c` | `port_vi_slack_seconds` — the pacing sleep the one-CPU slice is paid out of |
+| `port/src/os/dll_load.c` | `port_dll_bundle_path` — a module's bundle is a file the prefetch can warm |
+| `port/src/platform/defaults.c`, `src/debug/selfplay.c` | the `loading` line of `--defaults`, `res N/M MB` on the status line |
+| `--noprefetch`, `--resident MB`, `--dvdlog`; `--nodcbt` | the levers; M17's `--noprefetch` (the vertex loops' `dcbt`) is `--nodcbt` now, the name freed for the loader |
+| `tools/m36_dvdlog.py`, `m36_ab.sh`, `m36_abread.py`, `m36_batches.py` | the reads counted per file and the list generated, the cold three-arm A/B, its reader, the state runs of a drawn frame |
+
+**The md5s are unchanged**, on the final build (`4dd5da7d…`) as on
+M35's: **800 `0b58c5ee…` / 3000 `2b99c60a…` / 7000 `4a9a640c…`** — a
+loading milestone must not move a pixel, and it does not. The
+deterministic runs deal the same games in the same order: soak 26's
+27-game sequence (§51.1) and, on the bench, nineteen minigames at
+**byte-identical frame numbers** with the loader on and off (10,838 /
+20,641 / 35,205 / … / 171,108 in both).
+
+**The disk image.** `port/tools/make_dmg.sh` on the final build:
+**`Mario Party 4 PowerPC Edition 0.9.5.dmg`, 4,248,777 bytes, md5
+`88274faca59d1768f32d22106c8eb458`**, at
+`littlejelly:~/MarioParty4-PowerPC-0.9.5.dmg` and on the G4 at
+`~/Mario Party 4 PowerPC Edition 0.9.5.dmg`; no game data in it, and
+the resident set is built at run time from the player's own image —
+nothing is ever copied into the bundle. The Read Me gains a **LOADING**
+section: what the read-ahead does, what the resident set holds, the
+machine check's rule by installed memory, the two flags, and the
+measured numbers (319 MB of disc reading for a twenty-turn board
+becomes ~110 MB held and one read from the disk; a cold six-minigame
+walk goes from thirty-odd long reads to three or four; the game uses
+about 110 MB more memory).
+
+**What is left running.** `~/MarioParty4.app` is `4dd5da7d…` (0.9.5,
+M36) and the G4 was started at 10:31 on the same real-time soak the
+milestone read at its start:
+
+```
+isle --soak --com4 --rtc dolphin --freshcard --realtime --snap-every 5000 \
+     --snap-keep 3 --status --ovllog --stuckwatch 200 --perf
+```
+
+— the first soak with the loader on, `res 98/256 MB` on its status
+lines from the first one. The G4 keeps `~/MarioParty4-m35final.app`
+(`685fdd43…`, M35's final), `~/m36_ab.sh`, `~/m36_final.sh`,
+`~/m36/ab/` (the nine A/B logs and the index), `~/m36/TD`, `~/m36/m433`,
+`~/m36/gltrace*.log`; the bench keeps `~/MarioParty4-m36c.app` and
+`~/m36/*.log` (the five arms of §51.7 and the eviction run).
 
 ### 51.7 The bench's fault at frame 178,460: `--dvdlog` inside the read path
 
@@ -18090,3 +18195,26 @@ it held.
 The wider lesson is the witness's (§0z): **nothing below `do_read` may
 call `port_log`**, because `do_read` is re-entrant and is not always on
 the stack you think it is.
+
+### 51.8 The leftovers, and what M37 starts with
+
+* **The prefetch on its own is not worth having on this disk** (§51.3's
+  middle row: fewer slow reads, *more* resyncs). It ships on because
+  the resident set ships on and the two together are the measured win;
+  a machine with under 768 MB gets the prefetch and no set, which is
+  the one configuration the table says is a wash. If a G4 with 512 MB
+  ever runs this, `--noprefetch` is the honest default for it and the
+  machine check should say so — measure it there first.
+* **The one-CPU inline twin is written and not witnessed.** No machine
+  in the lab has one core; `--threads 0` forces it and the report
+  counts the slices, but the G4 always takes the thread. An iMac G4 or
+  an eMac would settle it.
+* **`mlock` is asked for and granted on Leopard** up to 109 MB; what a
+  machine with 1 GB and a 128 MB budget does is untested.
+* **Eviction is exercised only by a budget smaller than the working
+  set** (`--resident 24`); at the shipped 128 and 256 MB steps a
+  twenty-turn board never evicts.
+* **M37 is the draw calls** (§51.5): 1,300 and 1,734 segments in 233
+  and 310 runs of equal state, 86–87% of them next to a segment of the
+  same state, and the 224 quad segments of the character select's
+  sprite path the densest part of it.
