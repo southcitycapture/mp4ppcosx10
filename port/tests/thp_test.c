@@ -46,6 +46,11 @@ int main(int argc, char** argv) {
     V = malloc(w * h / 4);
     rgba = malloc(w * h * 4);
     ThpjCtx* ctx = malloc(thpj_ctx_size());
+    /* M39: the same frame decoded a row at a time and converted in bands of
+     * 32 rows must be byte-identical to the whole-frame path */
+    ThpjCtx* ctx2 = malloc(thpj_ctx_size());
+    unsigned char *Y2 = malloc(w * h * 3 / 2), *rgba2 = malloc(w * h * 4);
+    unsigned sliced_diff = 0;
     thpj_init();
     off = first;
     sz = ffs;
@@ -68,6 +73,21 @@ int main(int argc, char** argv) {
         t0 = now();
         thpj_to_rgba(ctx, Y, U, V, (int)w, (int)h, rgba, (int)w * 4, 0);
         tcvt += now() - t0;
+        {
+            int r2 = thpj_decode_begin(ctx2, vid, vsz, Y2, Y2 + w * h, Y2 + w * h * 5 / 4,
+                                       (int)w, (int)h, 0, NULL), yb;
+            if (r2 == 0) {
+                do r2 = thpj_decode_rows(ctx2, 1);
+                while (r2 == THPJ_MORE);
+            }
+            for (yb = 0; yb < (int)h; yb += 32)
+                thpj_to_rgba_rows(ctx2, Y2, Y2 + w * h, Y2 + w * h * 5 / 4, (int)w, (int)h,
+                                  rgba2, (int)w * 4, 0, yb, yb + 32);
+            if (r2 != r || memcmp(Y2, Y, w * h) || memcmp(Y2 + w * h, U, w * h / 4) ||
+                memcmp(Y2 + w * h * 5 / 4, V, w * h / 4) || memcmp(rgba2, rgba, w * h * 4)) {
+                if (sliced_diff++ < 5) fprintf(stderr, "frame %u: the sliced decode differs\n", i);
+            }
+        }
         if (want) {
             char name[64];
             FILE* o;
@@ -84,5 +104,7 @@ int main(int argc, char** argv) {
     printf("%s: %u frames %ux%u, %d errors, decode %.2f ms/frame mean (worst %.2f), "
            "to-RGBA %.2f ms/frame\n",
            argv[1], nf, w, h, bad, tdec * 1000 / nf, worst * 1000, tcvt * 1000 / nf);
-    return bad != 0;
+    printf("sliced decode (one MCU row a call, 32-row conversion bands): %u of %u frames "
+           "differ from the whole-frame path\n", sliced_diff, nf);
+    return bad != 0 || sliced_diff != 0;
 }

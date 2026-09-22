@@ -408,6 +408,11 @@ static void usage(const char* argv0) {
             "                    planes through THPDraw's TEV -- not as the CPU's\n"
             "                    RGBA (an A/B; its colours are wrong, PLAN.md 53.4)\n"
             "  --thplog          one log line per movie frame drawn\n"
+            "  --nothpslice      one CPU: no movie decode in the retrace's slack\n"
+            "                    (an owed frame decoded whole at its draw, M38)\n"
+            "  --thpguard MS     one CPU: a drawn frame decodes an owed movie frame\n"
+            "                    only if the queued audio covers it + MS (60; 0 =\n"
+            "                    always, M38) -- else the newest ready one shows\n"
             "  --foldxbar        the M30 three-texture fold reads across units with\n"
             "                    the crossbar, as before 0.9.7 (m448's felt black)\n"
             "  --foldcap N       cut the M30 three-texture fold after N units (9: N\n"
@@ -925,6 +930,11 @@ int port_parse_args(int argc, char** argv) {
             port_opt.thpyuv = 1;
         } else if (!strcmp(a, "--thplog")) {
             port_opt.thplog = 1;
+        } else if (!strcmp(a, "--nothpslice")) {
+            port_opt.nothpslice = 1;
+        } else if (!strcmp(a, "--thpguard") && i + 1 < argc) {
+            port_opt.thpguard = atoi(argv[++i]);
+            port_opt.thpguard_set = 1;
         } else if (!strcmp(a, "--foldxbar")) {
             port_opt.foldxbar = 1;
         } else if (!strcmp(a, "--foldcap") && i + 1 < argc) {
@@ -1243,6 +1253,9 @@ int port_parse_args(int argc, char** argv) {
     }
     if (!port_opt.audiolead_set) {
         port_opt.audiolead = 100;
+    }
+    if (!port_opt.thpguard_set) {
+        port_opt.thpguard = 60;
     }
 
     /* After the loop, so --rtc and --rtcoffset may be given in either order. */

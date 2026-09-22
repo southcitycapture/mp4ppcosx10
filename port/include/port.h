@@ -31,8 +31,8 @@ extern "C" {
 /* ---- settings, from argv ------------------------------------------------- */
 /* M32: the shipped version (the dmg's name, the plist, the --defaults header)
  * and the milestone that built it. */
-#define PORT_VERSION_STRING "0.9.7"
-#define PORT_MILESTONE "M38"
+#define PORT_VERSION_STRING "0.9.8"
+#define PORT_MILESTONE "M39"
 
 typedef struct PortOptions {
     const char* image;      /* --image  disc image or extracted files/ tree   */
@@ -514,6 +514,15 @@ typedef struct PortOptions {
                              *   felt bisect, PLAN.md 53.10                   */
     int thplog;             /* --thplog  one line per movie frame: decoded,
                              *   drawn, dropped, the decode's ms              */
+    /* ---- M39: the movies on one CPU (PLAN.md 54.2) ---- */
+    int nothpslice;         /* --nothpslice  no decode in the retrace's slack:
+                             *   an owed frame is decoded whole at its draw,
+                             *   as in M38                                    */
+    int thpguard_set;
+    int thpguard;           /* --thpguard MS  a drawn frame finishes an owed
+                             *   movie frame only if the queued audio covers
+                             *   the work left + MS (default 60; 0 = always,
+                             *   M38)                                         */
 } PortOptions;
 
 extern PortOptions port_opt;
@@ -711,6 +720,7 @@ const char* port_dll_bundle_path(const char* relpath);
 void port_thp_report(void);
 /* M38 (PLAN.md 53): the movies, port/src/thp */
 void port_thp_retrace(void);
+void port_thp_slack(double deadline); /* M39: one CPU, the owed frame in the slack */
 void port_idle_tick(void);          /* os/sreset_poll.c: the idle function's pass */
 void port_idle_trap(void);          /* the top of VIWaitForRetrace */
 void port_idle_snap_register(void);
@@ -838,6 +848,8 @@ void port_workers_retrace_join(void); /* the top of VIWaitForRetrace: every retr
 int port_audio_out_init(void);
 void port_audio_out_queue(const void* samples, unsigned bytes);
 unsigned port_audio_out_queued(void);
+int port_audio_out_opened(void);           /* M39: the device is playing the ring */
+unsigned long port_audio_out_underruns(void); /* M39: the count so far */
 void port_audio_out_prime(unsigned ms); /* --audiolead: silence ahead of the mix */
 void port_audio_out_shutdown(void);
 void port_audio_out_report(void);

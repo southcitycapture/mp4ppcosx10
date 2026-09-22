@@ -191,6 +191,8 @@ void port_audio_out_queue(const void* samples, unsigned bytes) {
 }
 
 unsigned port_audio_out_queued(void) { return (unsigned)(ring_write - ring_read); }
+int port_audio_out_opened(void) { return opened; }
+unsigned long port_audio_out_underruns(void) { return stat_underruns; }
 
 /* --audiolead (M17): under --realtime the producer is paced to real time, so
  * the ring's fill level is only ever what the game got ahead by -- and a

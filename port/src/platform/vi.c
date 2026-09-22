@@ -221,7 +221,16 @@ void VIWaitForRetrace(void) {
             next_retrace_at = now;
         } else if (paced && next_retrace_at > now) {
             struct timespec req;
-            double d = next_retrace_at - now;
+            double d;
+            /* M39 (PLAN.md 54.2): one CPU's movie decode, in the time this
+             * thread would sleep; it stops a millisecond short of the
+             * retrace, so the sleep below is shorter, never skipped late */
+            port_thp_slack(next_retrace_at - 0.001);
+            now = now_seconds();
+            d = next_retrace_at - now;
+            if (d < 0.0) {
+                d = 0.0;
+            }
             req.tv_sec = (time_t)d;
             req.tv_nsec = (long)((d - (double)req.tv_sec) * 1e9);
             nanosleep(&req, NULL);

@@ -8,6 +8,8 @@ path = sys.argv[1]
 f = gzip.open(path, 'rt', errors='replace') if path.endswith('.gz') else open(path, errors='replace')
 st_re = re.compile(r'status f(\d+)\s+(\S+)\s+board (\d+) turn (\d+)/(\d+)\s+mg (\d+) \((\S+)\).*?speed (\d+)%\s+([\d.]+) fps presented.*?rss (\d+) MB.*?rt ([\d.]+) ms dec ([\d.]+)')
 turns = {}; games = {}; events = []; n = 0; first = last = None
+ur_re = re.compile(r'machine \S+\s+ur (\d+)'); ur_prev = None; ur_by = {}  # M39: underruns per scene
+rss_t = []  # M39: (frame, rss) for the rss-over-time line
 enter = re.compile(r'soak: enter minigame (\S+)\s+at frame (\d+)')
 for line in f:
     m = st_re.search(line)
@@ -19,6 +21,13 @@ for line in f:
         d = games if ovl.startswith('m4') else turns
         k = ovl if ovl.startswith('m4') else 'turn %02d (%s)' % (int(turn), ovl)
         d.setdefault(k, []).append((int(speed), float(fps), float(rt), float(dec), int(rss)))
+        rss_t.append((int(fr), int(rss)))
+        mu = ur_re.search(line)
+        if mu:
+            u = int(mu.group(1))
+            if ur_prev is not None and u > ur_prev:
+                ur_by[k] = ur_by.get(k, 0) + u - ur_prev
+            ur_prev = u
         continue
     if re.search(r'resync|\*\*\* port|signal \d+|STUCK|mismatch|CARD: image flush|late \(|guard', line):
         events.append(line.rstrip()[:200])
@@ -37,3 +46,12 @@ print("\nminigames:")
 for k in sorted(games): print("  " + row(k, games[k]))
 print("\nevents (%d):" % len(events))
 for e in events: print("  " + e)
+if ur_by:
+    hours = (last - first) / 59.94 / 3600 if last and first is not None and last > first else 0
+    tot = sum(ur_by.values())
+    print("\nunderruns (the status line's ur field, M39): %d in all%s" % (tot, (", %.1f an hour" % (tot / hours)) if hours else ""))
+    for k in sorted(ur_by, key=lambda k: -ur_by[k]): print("  %-24s %d" % (k, ur_by[k]))
+if rss_t:
+    step = max(1, len(rss_t) // 12)
+    print("\nrss over the run (frame:MB): " + "  ".join("%d:%d" % x for x in rss_t[::step] + [rss_t[-1]]))
+

@@ -331,13 +331,21 @@ static inline int be16(const u8* p) { return (p[0] << 8) | p[1]; }
 struct ThpjCtx {
     Frame fr;
     int urow[THPJ_MAX_W], vrow[THPJ_MAX_W], vtmp[THPJ_MAX_W / 2];
+    /* M39 (PLAN.md 54.2): the scan in progress, so a decode can stop after
+     * any MCU row and go on later (thpj_decode_rows) -- the one-CPU path
+     * spends the schedule's slack on it a row at a time */
+    Bits b;
+    const u8* src;
+    u8 *ty, *tu, *tv;
+    int pred[3], togo, my, tiled;
+    ThpjStats* stats;
 };
 
 unsigned thpj_ctx_size(void) { return (unsigned)sizeof(ThpjCtx); }
 
-int thpj_decode(ThpjCtx* ctx, const unsigned char* src, unsigned size, unsigned char* tileY,
-                unsigned char* tileU, unsigned char* tileV, int want_w, int want_h, int tiled,
-                ThpjStats* stats) {
+int thpj_decode_begin(ThpjCtx* ctx, const unsigned char* src, unsigned size,
+                      unsigned char* tileY, unsigned char* tileU, unsigned char* tileV,
+                      int want_w, int want_h, int tiled, ThpjStats* stats) {
     /* ~12 KB of tables: in the caller's context, never on a coroutine stack */
     Frame* fr = &ctx->fr;
     const u8* p = src;
@@ -423,22 +431,41 @@ int thpj_decode(ThpjCtx* ctx, const unsigned char* src, unsigned size, unsigned 
             if (!(fr->qvalid & (1 << fr->comp_q[i]))) return THPJ_ERR_SYNTAX;
         }
     }
+    ctx->b.p = p;
+    ctx->b.end = end;
+    ctx->b.buf = 0;
+    ctx->b.n = 0;
+    ctx->src = src;
+    ctx->ty = tileY;
+    ctx->tu = tileU;
+    ctx->tv = tileV;
+    ctx->pred[0] = ctx->pred[1] = ctx->pred[2] = 0;
+    ctx->togo = fr->ri;
+    ctx->my = 0;
+    ctx->tiled = tiled;
+    ctx->stats = stats;
+    return 0;
+}
+
+int thpj_decode_rows(ThpjCtx* ctx, int rows) {
+    Frame* fr = &ctx->fr;
     {
-        Bits b;
+        Bits b = ctx->b;
         short blk[64];
-        int pred[3] = {0, 0, 0};
-        int mx, my, mcux = fr->w / 16, mcuy = fr->h / 16;
+        int pred[3];
+        int mx, my, mcux = fr->w / 16, mcuy = fr->h / 16, myend;
         int ypitch = fr->w * 4, cpitch = fr->w * 2; /* one tile row */
-        int togo = fr->ri;
+        int togo = ctx->togo, tiled = ctx->tiled;
+        u8 *tileY = ctx->ty, *tileU = ctx->tu, *tileV = ctx->tv;
         const Huff *ydc = &fr->huff[fr->comp_dc[0] << 1], *yac = &fr->huff[(fr->comp_ac[0] << 1) + 1];
         const Huff *udc = &fr->huff[fr->comp_dc[1] << 1], *uac = &fr->huff[(fr->comp_ac[1] << 1) + 1];
         const Huff *vdc = &fr->huff[fr->comp_dc[2] << 1], *vac = &fr->huff[(fr->comp_ac[2] << 1) + 1];
         const u16 *yq = fr->q[fr->comp_q[0]], *uq = fr->q[fr->comp_q[1]], *vq = fr->q[fr->comp_q[2]];
-        b.p = p;
-        b.end = end;
-        b.buf = 0;
-        b.n = 0;
-        for (my = 0; my < mcuy; my++) {
+        pred[0] = ctx->pred[0];
+        pred[1] = ctx->pred[1];
+        pred[2] = ctx->pred[2];
+        myend = rows <= 0 || ctx->my + rows > mcuy ? mcuy : ctx->my + rows;
+        for (my = ctx->my; my < myend; my++) {
             for (mx = 0; mx < mcux; mx++) {
                 u8 *y0, *y1, *y2, *y3, *u0, *u1, *v0, *v1;
                 int ys, cs;
@@ -487,11 +514,27 @@ int thpj_decode(ThpjCtx* ctx, const unsigned char* src, unsigned size, unsigned 
                 }
             }
         }
-        if (stats) {
-            stats->bytes_used = (unsigned)(b.p - src) - (unsigned)(b.n / 8);
+        ctx->b = b;
+        ctx->pred[0] = pred[0];
+        ctx->pred[1] = pred[1];
+        ctx->pred[2] = pred[2];
+        ctx->togo = togo;
+        ctx->my = myend;
+        if (myend < mcuy) {
+            return THPJ_MORE;
+        }
+        if (ctx->stats) {
+            ctx->stats->bytes_used = (unsigned)(b.p - ctx->src) - (unsigned)(b.n / 8);
         }
     }
     return 0;
+}
+
+int thpj_decode(ThpjCtx* ctx, const unsigned char* src, unsigned size, unsigned char* tileY,
+                unsigned char* tileU, unsigned char* tileV, int want_w, int want_h, int tiled,
+                ThpjStats* stats) {
+    int e = thpj_decode_begin(ctx, src, size, tileY, tileU, tileV, want_w, want_h, tiled, stats);
+    return e ? e : thpj_decode_rows(ctx, 0);
 }
 
 /* The picture the game's TEV makes of the three planes, on the CPU.
@@ -557,6 +600,12 @@ static void chroma_vrow(const u8* c, int cw, int ch, int y, int* v) {
 void thpj_to_rgba(ThpjCtx* ctx, const unsigned char* planeY, const unsigned char* planeU,
                   const unsigned char* planeV, int w, int h, unsigned char* rgba, int pitch,
                   int argb) {
+    thpj_to_rgba_rows(ctx, planeY, planeU, planeV, w, h, rgba, pitch, argb, 0, h);
+}
+
+void thpj_to_rgba_rows(ThpjCtx* ctx, const unsigned char* planeY, const unsigned char* planeU,
+                       const unsigned char* planeV, int w, int h, unsigned char* rgba, int pitch,
+                       int argb, int y0, int y1) {
     int y, cw = w / 2, ch = h / 2;
     int *vu = ctx->urow, *vv = ctx->vrow;
     const u8* cl = tab_clamp + 384;
@@ -571,7 +620,8 @@ void thpj_to_rgba(ThpjCtx* ctx, const unsigned char* planeY, const unsigned char
 #endif
     if (w > THPJ_MAX_W || (w & 1)) return;
     thpj_init();
-    for (y = 0; y < h; y++) {
+    if (y1 > h) y1 = h;
+    for (y = y0; y < y1; y++) {
         const u8* yp = planeY + y * w;
         u32* o = (u32*)(void*)(rgba + y * pitch);
         int cx;

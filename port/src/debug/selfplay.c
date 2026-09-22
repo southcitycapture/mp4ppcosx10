@@ -421,11 +421,14 @@ static void status_line(u32 frame) {
         port_thp_status(thp, sizeof(thp)); /* M38: "  thp F/N drawn D drop X" in a movie */
         port_log("port> status f%-7u %-12s board %d turn %d/%d  mg %d (%s)  "
                  "coins/stars %s  aud %.2f ms  speed %.0f%%  %.1f fps presented  "
-                 "tex %u/%u KB  rss %u MB%s  cpu %d%s  machine %s%s\n",
+                 "tex %u/%u KB  rss %u MB%s  cpu %d%s  machine %s  ur %lu%s\n",
                  frame, screen_name((int)omcurovl), (int)GWSystem.board,
                  (int)GWSystem.turn, (int)GWSystem.max_turn, mg + 0x191,
                  screen_name(mg_ovl), players, aud, speed, pfps, tex_n, tex_kb,
-                 port_rss_mb(), res, port_threads_on() ? 2 : 1, rt, port_machine_verdict(), thp);
+                 port_rss_mb(), res, port_threads_on() ? 2 : 1, rt, port_machine_verdict(),
+                 /* M39: the output device's underruns so far, so a soak's read
+                  * can say which scene they came in (PLAN.md 54.2) */
+                 port_audio_out_underruns(), thp);
         return;
     }
     port_log("port> status f%-7u %-12s board %d turn %d/%d  mg %d (%s)  "

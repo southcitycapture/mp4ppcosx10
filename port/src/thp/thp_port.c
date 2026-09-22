@@ -38,6 +38,23 @@
  * was still queued, freed if it was done.  The movie's clock is the game's,
  * and the game's is the console's; a slow machine shows fewer of the frames.
  *
+ * One CPU (M39, PLAN.md 54.2).  With no worker a frame is owed, and the
+ * draw that wants it used to decode it whole, ~15 ms inside a drawn frame
+ * that on the mode select was already long: the output ring ran dry (335
+ * underruns against 84 without movies).  Two rules now, both on the owed
+ * slot only (the worker's path is unchanged):
+ *   - the slack: at the retrace, after the frame's work and the audio tick
+ *     and before the pacing sleep, the newest owed frame is decoded a MCU row
+ *     (and then converted 32 rows) at a time for as long as the schedule has
+ *     room (port_thp_slack, called from vi.c) -- time the game thread would
+ *     otherwise sleep; `--thpslice 0` turns it off;
+ *   - the guard: a drawn frame finishes what is left of the owed frame only
+ *     if the audio already queued covers that work and `--thpguard MS` more
+ *     (default 60); if not, it shows the newest frame that is ready and the
+ *     owed one goes on in the slack -- audio beats video.  0 = always finish.
+ * The slices are the same arithmetic as the whole decode, in pieces
+ * (thpj_decode_rows, thpj_to_rgba_rows), so the pictures are the same bytes.
+ *
  * Nothing below do_read calls port_log (PLAN.md 51): this file is called from
  * the game thread only, and the job logs nothing.
  */
@@ -87,6 +104,10 @@ typedef struct ThpSlot {
     double ms;                   /* decode + convert, on whichever thread ran it */
     double ms_dec;               /* the decode alone */
     s32 movie_frame;
+    /* M39: an owed frame done in pieces on the game thread */
+    int phase;                   /* 0 not begun, 1 decoding MCU rows, 2 converting, 3 done */
+    int conv_y;                  /* the next row to convert */
+    int pieces;                  /* slack calls that did some of it */
 } ThpSlot;
 
 static ThpSlot slots[NSLOT];
@@ -156,6 +177,10 @@ static struct {
     unsigned long waited, shown_previous;
     double first_draw, last_draw;
     s32 last_drawn_frame, last_published;
+    /* M39, one CPU */
+    unsigned long guarded, slack_calls, slack_done, sliced_frames;
+    double slack_ms;
+    unsigned long underruns0, underruns;
 } mv;
 
 static unsigned long total_movies, total_frames_drawn, total_dropped;
@@ -189,6 +214,50 @@ BOOL THPInit(void) {
      * period's buffer may be re-pointed (musyx_sal.c) */
     port_ai_next_callback_is_thp();
     return TRUE;
+}
+
+/* M39: the owed frame, in pieces, until done or `deadline` (port_now_seconds
+ * time; 0 = no deadline).  1 when the frame is complete. */
+#define THP_BAND 32
+static int slot_step(ThpSlot* s, double deadline) {
+    double t = port_now_seconds();
+    int did = 0;
+    while (s->phase < 3 && (deadline == 0.0 || t < deadline)) {
+        int ph = s->phase;
+        double t1;
+        if (ph == 0) {
+            s->ms = s->ms_dec = 0.0;
+            s->err = thpj_decode_begin(s->ctx, s->comp, s->comp_len,
+                                       s->tiled ? s->gy : s->py, s->tiled ? s->gu : s->pu,
+                                       s->tiled ? s->gv : s->pv, s->w, s->h, s->tiled, NULL);
+            s->phase = s->err ? 3 : 1;
+            s->conv_y = 0;
+        } else if (ph == 1) {
+            int r = thpj_decode_rows(s->ctx, 1);
+            if (r != THPJ_MORE) {
+                s->err = r;
+                s->phase = r || s->tiled || !s->rgba ? 3 : 2;
+            }
+        } else {
+            thpj_to_rgba_rows(s->ctx, s->py, s->pu, s->pv, s->w, s->h, s->rgba, s->w * 4,
+                              THP_ARGB, s->conv_y, s->conv_y + THP_BAND);
+            s->conv_y += THP_BAND;
+            if (s->conv_y >= s->h) {
+                s->phase = 3;
+            }
+        }
+        t1 = port_now_seconds();
+        s->ms += (t1 - t) * 1000.0;
+        if (ph <= 1) {
+            s->ms_dec += (t1 - t) * 1000.0;
+        }
+        t = t1;
+        did = 1;
+    }
+    if (did) {
+        s->pieces++;
+    }
+    return s->phase == 3;
 }
 
 static void slot_run(PortJob* j) {
@@ -243,7 +312,11 @@ static void slot_retire(ThpSlot* s) {
             mv.dropped_done++; /* the worker had begun it: done, and never drawn */
         }
     } else if (s->state == S_OWED) {
-        mv.cancelled++;
+        if (s->phase == 3) {
+            mv.dropped_done++; /* finished in the slack, and never drawn */
+        } else {
+            mv.cancelled++;
+        }
     } else if (s->state == S_DONE) {
         mv.dropped_done++;
     }
@@ -264,7 +337,11 @@ static void slot_finish(ThpSlot* s) {
             mv.worker++;
         }
     } else if (s->state == S_OWED) {
-        slot_run(&s->job);
+        /* what the slack left (all of it, with --nothpslice or no slack) */
+        if (s->pieces) {
+            mv.sliced_frames++;
+        }
+        slot_step(s, 0.0);
         mv.inline_++;
     } else {
         return;
@@ -310,6 +387,7 @@ static void movie_begin(void) {
     mv.h = (int)SimpleControl.unk80.unk04;
     mv.audio = SimpleControl.unk9F;
     mv.last_drawn_frame = -1;
+    mv.underruns0 = port_audio_out_underruns();
     total_movies++;
     port_log("port> THP: a movie opens: %dx%d, %.2f fps, %u frames (%.1f s), %s, "
              "buffer %u bytes; decode on the %s%s\n",
@@ -323,6 +401,7 @@ static void movie_begin(void) {
 static void movie_end(void) {
     double wall = mv.last_draw - mv.first_draw;
     unsigned long decoded = mv.worker + mv.inline_;
+    mv.underruns = port_audio_out_underruns() - mv.underruns0;
     port_log("port> THP: the movie closes: %lu of %u frames published, %lu drawn, "
              "%lu dropped (%lu never decoded, %lu decoded and superseded); "
              "decoded %lu (%lu on the worker, %lu inline), %lu errors; "
@@ -335,6 +414,18 @@ static void movie_end(void) {
              mv.dec_worst, mv.waited, decoded ? mv.join_ms / decoded : 0.0, mv.join_worst,
              mv.shown_previous,
              wall > 0 && mv.drawn > 1 ? (mv.drawn - 1) / wall : 0.0, wall, mv.audio_short);
+    {
+        char one[256] = "";
+        if (!port_threads_on()) {
+            snprintf(one, sizeof(one),
+                     "; one CPU: the slack worked on %lu of the drawn frames and finished %lu "
+                     "(%lu calls, %.1f ms), %lu draw(s) held back for the audio (--thpguard %d%s)",
+                     mv.sliced_frames, mv.slack_done, mv.slack_calls, mv.slack_ms, mv.guarded,
+                     port_opt.thpguard, port_opt.nothpslice ? ", --nothpslice" : "");
+        }
+        port_log("port> THP: while it played the output device ran dry %lu time(s)%s\n",
+                 mv.underruns, one);
+    }
     total_frames_drawn += mv.drawn;
     total_dropped += mv.cancelled + mv.dropped_done;
     mv.open = 0;
@@ -416,6 +507,8 @@ s32 THPVideoDecode(void* file, void* tileY, void* tileU, void* tileV, void* work
         s->rgba = pool_get((size_t)w * h * 4, &s->rgba_flag);
     }
     s->job.run = slot_run;
+    s->phase = 0;
+    s->pieces = 0;
     s->state = S_OWED;
     mv.published++;
     if (port_worker_submit(port_worker_decode(), &s->job)) {
@@ -429,6 +522,36 @@ s32 THPVideoDecode(void* file, void* tileY, void* tileU, void* tileV, void* work
 static int must_wait(void) {
     return !port_framemode_active() || gl13_frame_wanted(gl13_frame_number() + 1) ||
            gl13_shot_pending();
+}
+
+/* M39 (one CPU): a frame the slack has finished, or the worker has */
+static int slot_ready(ThpSlot* s) {
+    return s->state == S_DONE || (s->state == S_OWED && s->phase == 3) ||
+           (s->state == S_QUEUED && port_worker_done(&s->job));
+}
+
+/* M39: would finishing this owed frame now eat into the audio the device
+ * needs?  The queued audio (the ring, 128 bytes a ms) must cover the work
+ * left -- the frame's mean cost so far, by its progress -- and --thpguard
+ * more, for the rest of the frame's own work. */
+static int guard_holds(ThpSlot* s) {
+    unsigned long decoded = mv.worker + mv.inline_;
+    double est = decoded ? mv.dec_ms / decoded : 16.0, left, ring;
+    if (port_opt.thpguard <= 0 || !port_audio_out_opened()) {
+        return 0;
+    }
+    if (s->phase == 0) {
+        left = est;
+    } else if (s->phase == 1) {
+        left = est - s->ms; /* the decode's share is the bigger half */
+    } else {
+        left = est * 0.47 * (1.0 - (double)s->conv_y / s->h);
+    }
+    if (left < 0.5) {
+        left = 0.5;
+    }
+    ring = port_audio_out_queued() / 128.0;
+    return ring < left + port_opt.thpguard;
 }
 
 /* THPGXYuv2RgbDraw's first line (patches.txt): 1 = drawn here, 0 = the
@@ -445,7 +568,23 @@ int portTHPDraw(void* yImage, s16 x, s16 y, s16 polyWidth, s16 polyHeight) {
         mv.consumed_draws++;
         return 1;
     }
-    if (!port_opt.thpyuv && s->state == S_QUEUED && !port_worker_done(&s->job) && !must_wait()) {
+    if (!port_opt.thpyuv && s->state == S_OWED && s->phase < 3 && !must_wait() &&
+        guard_holds(s)) {
+        /* One CPU, and the audio is short: the newest ready frame shows and
+         * this one goes on in the retrace's slack (port_thp_slack) */
+        ThpSlot* o = &slots[s == &slots[0] ? 1 : 0];
+        mv.guarded++;
+        mv.shown_previous++;
+        if (slot_ready(o) && o->movie_frame > mv.last_drawn_frame) {
+            s = o;
+        } else {
+            if (!ptex.w) {
+                return 1;
+            }
+            goto draw;
+        }
+    } else if (!port_opt.thpyuv && s->state == S_QUEUED && !port_worker_done(&s->job) &&
+               !must_wait()) {
         /* Under --realtime the draw does not wait for a decode: it shows the
          * last frame that is ready, and this one at the next drawn frame if
          * it is still the current one -- late, never slowing the game's
@@ -453,8 +592,7 @@ int portTHPDraw(void* yImage, s16 x, s16 y, s16 polyWidth, s16 polyHeight) {
          * a named frame's picture is the same in every run. */
         ThpSlot* o = &slots[s == &slots[0] ? 1 : 0];
         mv.shown_previous++;
-        if ((o->state == S_DONE || (o->state == S_QUEUED && port_worker_done(&o->job))) &&
-            o->movie_frame > mv.last_drawn_frame) {
+        if (slot_ready(o) && o->movie_frame > mv.last_drawn_frame) {
             /* the frame before this one is ready and was never shown: that
              * is the newest picture there is, so it goes up now */
             s = o;
@@ -541,6 +679,38 @@ draw:
 }
 
 /* ---- the retrace, the status, the report --------------------------------- */
+
+/* M39 (one CPU): vi.c calls this at the retrace, after the frame's work and
+ * the audio tick, when the schedule has room before the next one: the newest
+ * owed frame is worked on in pieces until `deadline` (a MCU row or 32
+ * converted rows is ~0.3-0.5 ms on the G4), so the draw that wants it finds
+ * less or nothing left.  Never past the deadline: the retrace is not late. */
+void port_thp_slack(double deadline) {
+    ThpSlot* s = NULL;
+    int i;
+    double t0;
+    if (!mv.open || port_opt.nothpslice) {
+        return;
+    }
+    for (i = 0; i < NSLOT; i++) {
+        ThpSlot* c = &slots[i];
+        if (c->state == S_OWED && c->phase < 3 && (!s || c->movie_frame > s->movie_frame)) {
+            s = c;
+        }
+    }
+    if (!s) {
+        return;
+    }
+    t0 = port_now_seconds();
+    if (t0 >= deadline) {
+        return;
+    }
+    mv.slack_calls++;
+    if (slot_step(s, deadline)) {
+        mv.slack_done++;
+    }
+    mv.slack_ms += (port_now_seconds() - t0) * 1000.0;
+}
 
 void port_thp_retrace(void) {
     if (!mv.open) {
