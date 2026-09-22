@@ -79,6 +79,10 @@ void port_print_effective(FILE* f, int live) {
           port_opt.deterministic ? " (deterministic clock)" : "", port_prc_stack_mul(),
           gx_tex_budget_mb(), port_opt.resample4 ? "4-tap" : "linear",
           port_opt.depop ? "on" : "off");
+    /* M36: the loader's two settings, as the machine check resolved them */
+    emitf(f, "%sloading       roulette prefetch %s (--noprefetch); resident set %d MB "
+          "(--resident MB; the machine check's rule by the installed RAM)\n",
+          pre, port_opt.noprefetch ? "off" : "on", port_dvd_cache_budget_mb());
     emitf(f, "%severy field of PortOptions (0/NULL = off or unset):\n", pre);
     line[0] = '\0';
 #define OPT_ADD(text)                                                          \

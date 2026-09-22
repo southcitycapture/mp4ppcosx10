@@ -137,6 +137,18 @@ void port_vi_rebase_schedule(void) {
 }
 static double first_retrace_at;
 
+/* M36: how far ahead of the schedule the game thread is at this retrace's
+ * service point -- the time the pacing sleep below would spend.  The
+ * loader's one-CPU slice reads only inside it, so it never delays a retrace. */
+double port_vi_slack_seconds(void) {
+    double s;
+    if (first_retrace_at == 0.0) {
+        return 0.0;
+    }
+    s = next_retrace_at + 1.0 / 59.94 - now_seconds();
+    return s > 0.0 ? s : 0.0;
+}
+
 static double last_exit_at; /* M33: the game thread's work on a frame, entry to exit */
 
 void VIWaitForRetrace(void) {

@@ -4580,7 +4580,7 @@ DECODE_RUN(decode_run_tracked, 1)
  * stored it).  TEX: 0 none, 1 f32 s/t into slot 0.  Every step GX_INDEX16. */
 #define DECODE_FAST(NAME, NRM, CLR, TEX, SKIN)                                           \
     static const u8* NAME(const u8* p, const u8* end, u32 count) {                       \
-        const int PREFETCH = !port_opt.noprefetch;                                       \
+        const int PREFETCH = !port_opt.nodcbt;                                       \
         const int off_skin = sl.off_skin;                                                \
         const f32 slotf = pi.slotf;                                                      \
         const f32* entf = (SKIN == 2) ? pi.skin->ent_slotf : NULL;                       \
@@ -5029,7 +5029,7 @@ static int rtdec_build(GxDecJob* j, const u8* p, const u8* end, u32 count) {
     j->off_tex = sl.off_tex;
     j->clr_const = plan_clr_const;
     j->clr = plan_clr.u;
-    j->prefetch = !port_opt.noprefetch;
+    j->prefetch = !port_opt.nodcbt;
     j->fast = plan_fast ? fast_index_of(plan_fast) : -1;
     if (plan_fast && j->fast < 0) {
         return 0; /* a palette shape: the loops above */

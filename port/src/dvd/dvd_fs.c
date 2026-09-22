@@ -263,7 +263,11 @@ static s32 do_read(DVDFileInfo* fi, void* addr, s32 length, s32 offset) {
                (size_t)(length - (s32)(entries[n].length - offset)));
         length = (s32)(entries[n].length - offset);
     }
-    if (image) {
+    /* M36 (PLAN.md 51): the resident set answers first.  Same bytes, no
+     * disk; the completion below lands at the same instant either way. */
+    if (port_dvd_cache_serve(n, (u32)offset, addr, (u32)length)) {
+        got = (size_t)length;
+    } else if (image) {
         /* M24: a read over 100 ms is named -- the 1.7 s game-side stall at
          * the results screen's last frame (PLAN.md 38.3, 39.1) is not the
          * card flush, and the disc image's reads are the other synchronous
@@ -281,6 +285,7 @@ static s32 do_read(DVDFileInfo* fi, void* addr, s32 length, s32 offset) {
             port_log("port> DVD: read of %s (%d bytes at %d) took %.0f ms (frame %u)\n",
                      entries[n].path, length, offset, dt * 1000.0, gl13_frame_number());
         }
+        port_dvd_cache_disk_read(n, (u32)offset, addr, (u32)got, dt);
     } else {
         char full[1200];
         FILE* f;
@@ -328,7 +333,22 @@ s32 DVDCancel(DVDCommandBlock* block) {
     return 0;
 }
 
-void port_dvd_service(void) { /* nothing pending: reads complete inline */ }
+void port_dvd_service(void) {
+    /* nothing pending: reads complete inline.  M36: the loader's watches and
+     * its one-CPU slice run here, at the retrace, and change no completion. */
+    port_dvd_cache_service();
+}
+
+/* ---- M36: what the loader (dvd_cache.c) needs of the table --------------- */
+
+int port_dvd_entry_count(void) { return entry_count; }
+const char* port_dvd_entry_path(int n) { return (n >= 0 && n < entry_count) ? entries[n].path : NULL; }
+unsigned port_dvd_entry_length(int n) { return (n >= 0 && n < entry_count) ? entries[n].length : 0; }
+unsigned port_dvd_entry_offset(int n) { return (n >= 0 && n < entry_count) ? entries[n].offset : 0; }
+/* the image's path, or NULL for the extracted tree (then the file is
+ * tree_root/path) */
+const char* port_dvd_image_path(void) { return image ? port_opt.image : NULL; }
+const char* port_dvd_tree_root(void) { return image ? NULL : tree_root; }
 
 void port_dvd_stats(void) {
     port_log("port> DVD: %lu reads, %lu bytes, %.0f ms in reads, %lu over 100 ms\n", reads, bytes_read,

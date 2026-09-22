@@ -1,6 +1,6 @@
 Mario Party 4 PowerPC Edition
 =============================
-Version 0.9.4
+Version 0.9.5
 
 
 WHAT THIS IS
@@ -84,6 +84,40 @@ choice is remembered.  For a window instead, run it once from the Terminal:
 
 or change `fullscreen = 1` to `fullscreen = 0` in the config file.  Either is
 remembered from then on; --fullscreen puts it back.
+
+
+LOADING
+
+Loading a minigame or a board is a read of your disc image, and on a slow
+or busy disk that read can hold the game for half a second or more (the
+picture and the music pause together; the game then catches up).  Two things
+in this version make those reads come from memory instead.  Neither changes
+what the game does or when: the game reads the same bytes at the same
+moment, and only where they come from is different.
+
+    The read-ahead.  The moment the roulette stops on a minigame -- several
+    seconds before the game loads it -- the module and its data are read
+    into the system's file cache in the background, so the game's own read
+    finds them there.  The same for the board at the results screen and for
+    the board set at the mode select.  On a two-processor Mac this runs on
+    the second processor; on a single processor it runs in small pieces in
+    the idle time between frames, and not at all when there is none.  It is
+    on for every machine; --noprefetch turns it off.
+
+    The resident set.  The files every game reads -- the board's data, the
+    instruction and results screens', the characters', the menus' -- are
+    read once and kept in the game's own memory, and answered from there
+    for the rest of the run; a minigame's files join the set as they are
+    read ahead and the least recently used leave when it is full.  Its
+    size is decided by the machine check from the memory installed: none
+    under 768 MB, 128 MB with 1 GB, 256 MB with 1.5 GB or more, and never
+    so much that the system and the game have less than about 600 MB
+    between them.  --resident 0 turns it off; --resident 64 (any number of
+    megabytes) sets it by hand.  Both decisions are on the log's
+    "machine:" lines and in --defaults.
+
+Nothing is copied anywhere: the set is built from your own disc image at
+every start and is gone when the game quits.
 
 
 CONTROLS

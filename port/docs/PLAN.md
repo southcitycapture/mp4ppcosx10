@@ -17799,3 +17799,176 @@ final), `~/MarioParty4-tfs.app` (the last test build), `~/m35_final2.sh`,
 littlejelly keeps `~/gallery-m35a/` (the first pass's final gallery, the
 "before" of the table above) and `~/m35-tfs/` (every diagnostic park's
 frames and logs).
+
+## 51. M36 log: loading *(2026-09-22, littlejelly)*
+
+The milestone after the picture work: the loads. The G4's disk is a
+shingled 2.5" FireCuda on the Quicksilver's ATA bus, 13 MB/s when the
+page cache has dropped a file (§46.1), and every module link is a
+synchronous read of it on the game thread — the REL out of the disc
+image, the Mach-O bundle through `dlopen`, the module's data directory
+image of one to three megabytes. Warm, a link is 15 ms; cold it is the
+`DVD: read of … took N ms` line and the resync that follows (soak 21's
+worst: `m415.bin` 811 ms). Two enhancements, both sized by the machine
+check (§40's applied-settings mechanism grows two lines), neither a
+change to *when* a read completes: §32.1's rule stands, `dvd_fs.c`
+still answers every `DVDReadAsync` inline before it returns, and the
+completion lands at the same retrace in every mode. What changes is
+where the bytes come from.
+
+### 51.1 The soak, read
+
+§50.15's leave-behind — `isle --soak --com4 --rtc dolphin --freshcard
+--realtime --snap-every 5000 --snap-keep 3 --status --ovllog --stuckwatch
+200 --perf` on the M35 final build (`685fdd43…`, 0.9.4) — ran from 06:03
+to 07:10 G4 time and was ended with `g4 stop` for this milestone:
+**1 h 08 min, 243,420 frames, 4,057 status lines**
+(`docs/soak/m36-soak26-m35-leave.log.gz`, `soak_read.py`).
+
+| | |
+|---|---|
+| speed / presented fps | **100.1%** mean over 4,057 lines (`machine ok`, `cpu 2` on every one); 27.0 fps overall; `w01dll`'s twenty turns 27.1–29.5 fps, `rt` 14.8–18.0 ms, `dec` 4.9–7.8 |
+| where it got | **one complete 20-turn board** and into the twenty-first turn's minigame at the stop |
+| minigames | **27 plays of 24 modules** (m428 ×2, m444 ×2, m438 ×2, m404 ×2, …), 17.1 fps (m412, §32.4's shape) to 29.6 |
+| faults / guard hits / mismatches / `stack overlap` | **0 / 0 / 0 / 0** (`skin: … 0 guard hits`, `musyx_mix … 0 position mismatches`, no `*** port` line) |
+| resyncs / STUCK | **0 / 0** — the first soak of the project with neither; worst late 889 ms |
+| DVD | 1,465 reads, 433 MB, **2,751 ms in reads, 0 over 100 ms** — and that is the finding: the soak started minutes after a 2 h 45 gallery had read every file on the disc, so *every* load in it was warm. The cold case this milestone is about does not appear in a soak that follows a gallery; it has to be made (§51.2's purge). |
+| card | flushes on the writer thread as §44.6 left them, no `stall:` beside any |
+| rss | 82 MB at boot to 185 MB in the board (§38.1's shape) |
+
+**The 27-game sequence** — `m412 m428 m420 m444 m423 m438 m429 m444 m430
+m406 m416 m405 m438 m431 m422 m410 m407 m421 m424 m436 m404 m427 m455
+m401 m414 m418 m404` — is the determinism check for everything below: a
+`--rtc dolphin --freshcard --play` run of the M36 build deals the same
+games in the same order, on the G4 and on the bench (the bench's
+20-turn run reached the nineteenth, `m412 … m424`, identically).
+
+### 51.2 The roulette prefetch (`--noprefetch`)
+
+**The game's own moment.** The roulette is `mg_setup.c`'s process: it
+spins over `activeMG[]`, slows (`case 3`), and the frame it stops —
+`mgNext = activeMG[cursorPos].unk_02; HuWinMesSet(...)` at
+`mg_setup.c:1142` — is the frame the game knows which minigame it dealt.
+`mgNext` is a static of that file (§41b poked it at `0x801D4208` on the
+console); the board reads it 350–525 frames later, after the blink, the
+window and the wipe, at `BoardDataDirReadAsync(mgInfoTbl[mgNext].data_dir)`
+(line 270), and copies it into `GWSystem.mg_next` only at line 290, which
+is what `selfplay.c`'s `watch_roulette` and the M25 soak's `roulette:`
+line see. So the hook is one exact-text patch (`port/patches.txt`,
+`game/board/mg_setup.c`): the assignment gains `port_mg_dealt(mgNext);`
+on the next line, and the port's loader (`port/src/dvd/dvd_cache.c`) has
+the index the moment the game does. The other dealers — `bowser.c:456`,
+`battle.c:291`, `fortune.c:175`, the story boards' `mg_miss.c` /
+`board_clear.c`, the free-play menus — write `GWSystem.mg_next` directly,
+and a watch of it at the retrace (in `port_dvd_service`, §32.1's service
+point) catches those with whatever lead they give; it is gated to the
+board overlays and to an index other than 0, because `board/main.c:306`
+writes a 0 at every board start and 0 is `m401`'s index (a real Manta
+Rings comes through the hook). The lead measured on the deterministic
+walk: the hook fires at 10,313 for `m412dll`'s link at 10,838 (525
+frames, 8.8 s), at 20,116 for `m428dll`'s at 20,641.
+
+**What is read ahead.** `mgInfoTbl[idx].ovl` names the overlay, and the
+loader's copy of `ovl_table.h` turns it into `dll/<name>.rel` (the FST's
+mixed case through the same case-insensitive compare `DVDConvertPathToEntrynum`
+uses) and, through `port_dll_bundle_path`, the bundle `dlopen` will map;
+`mgInfoTbl[idx].data_dir >> 16` is the index into the loader's copy of
+`datadir_table.h`, the same table `data.c` builds `DataDirStat[]` from,
+so the two cannot drift. The REL, the bundle, the data image, and — since
+they come next — `instDll`'s REL and bundle, `inst.bin`, `instpic.bin`,
+`resultDll`'s and `result.bin`. At the results screen (`omnextovl`
+becoming `resultdll`, watched at the same service point) the board the
+game re-enters: `w0Ndll`'s REL and bundle, `w0N.bin`, `board.bin`,
+`bguest.bin`. At the mode select (`omnextovl` becoming `modeseldll`)
+the board set: those plus `mgconst.bin` and all six boards' RELs, bundles
+and data (12 MB, a second of disk while the menus run, since the board
+is not known yet).
+
+**How.** A single low-priority pthread of the loader's own (the card
+writer's shape, §44.6: never joined at the retrace — a job may take a
+second cold and the game thread never waits for it), with its own
+descriptor on the image (`pread`; the game thread's `FILE*` is never
+touched), reading each file whole in 256 KB pieces and dropping them, so
+the game's own `fread` of the same bytes seconds later is a page-cache
+copy. Finished jobs are logged by the game thread at the next retrace
+(`loader: roulette data/m428.bin 980682 bytes in 336 ms (asked at frame
+20116, done at 20163)`), so the log's order is the game's. **The inline
+twin** (§39's rule): with the workers off — one CPU, `--threads 0` — no
+thread starts; the same queue is drained at the retrace in 64 KB slices,
+each taken only when `port_vi_slack_seconds()` (new in `vi.c`: the time
+the pacing sleep is about to spend) is over 8 ms, so a slice is paid out
+of the sleep and never out of a frame; when there is no slack there is
+no slice, and the load is what it was. Off is `--noprefetch`; the
+machine check prints `machine: the roulette prefetch is on (every
+machine; --noprefetch)`.
+
+PREFETCH_AB_PLACEHOLDER
+
+### 51.3 The resident set (`--resident MB`)
+
+**The rule.** `machine.c` decides the budget from `hw.memsize` beside
+the thread and texture-budget decisions of §40.2(c): **0 under 768 MB,
+128 MB at 1 GB, 256 MB at 1.5 GB and up** (the steps sit at 736 and
+1,408 so a firmware that keeps a few megabytes back still reports a
+"1 GB" or "1.5 GB" machine as one), and whatever the step says, the
+budget is cut to what leaves **384 MB for the OS plus the process's own
+200 MB peak** (§46.1's 194 MB), rounded down to 32 MB. `--resident MB`
+given wins and is printed as such; the line is `machine: applying
+--resident 256 (1536 MB of RAM; 0 under 768 MB, 128 at 1 GB, 256 at
+1.5 GB+, 584 MB kept for the OS and the game)`, `--defaults` carries a
+`loading` line with both settings, and the status line gains `res N/M
+MB` when a set exists (`soak_read.py`'s pattern still matches: the field
+sits between `rss` and `rt`).
+
+**The set.** `dvd_cache.c` keeps one buffer per FST entry — the whole
+file — and `dvd_fs.c`'s `do_read` asks it first: a hit is a `memcpy`
+under the set's mutex (uncontended; the loader's thread takes it only to
+insert), the same bytes the disc holds, and the read completes exactly
+where it did. The buffers are `mlock`'d as they arrive while the OS
+allows it to an ordinary user (the first refusal ends the attempts; the
+report says which), else plain `malloc`. The budget is spent in the
+order of `resident_list.h` — the list below, most-read first — until the
+next file does not fit (**pinned**); a file the roulette prefetch reads
+joins the set when it fits and, when it does not, the **least recently
+used unpinned** file leaves first and a pinned one only after every
+unpinned one is gone (the budget is the budget). A listed file the game
+reads whole before the fill reached it is **adopted** from the game's
+own read (one `memcpy`, no second disk pass). Nothing can be stale: the
+file tree is read-only, and the set is built at every start from the
+player's own image — nothing is copied into the bundle or the dmg.
+
+RESIDENT_LIST_PLACEHOLDER
+
+RESIDENT_AB_PLACEHOLDER
+
+### 51.4 Beach Volley Folly at real time
+
+`m433` (Beach Volley Folly) has never been dealt by the roulette in a
+real-time soak — M35 saw it only in the gallery's `--lockstep` dumps,
+where every frame is drawn and the game's clock is the frame counter, so
+"it crawls" was a reading of the dump rate, not of the game. Teleported
+to it on the final build — `--minigame m433 --turns 1 --com4 --rtc
+dolphin --freshcard --play board-start-com4.play --ffto 14300 --realtime
+--perf --frames 17100`, entry at 14,477 — **it runs at speed**: over the
+play window (14,900–16,800, 31.7 s of wall) **100.1% game speed and 23.3
+presented fps**, and over the entry (14,550–14,900) 99.3% and 27.0 fps;
+the whole 2,796 paced retraces are 99.1% with 1,095 drawn (60.8%
+skipped), 37 of them forced by the skip cap. The frame behind that:
+game thread 9.79 ms consumed, render thread **21.7 ms replay + 9.8 ms
+decode** per drawn frame, `rt` 20–29 ms and `dec` 8–14 on the status
+lines, `tex 175/15056 KB`, `rss 204 MB` (`res 110/256`). One drawn
+frame costs about 31 ms of render thread against 9.8 of game thread, so
+the cycle is 3 consumed to 1 drawn and 60/(2.57) ≈ 23 — the §32.1
+arithmetic exactly, the same shape as the character select. Nothing
+here is under 20 fps and nothing is a fault; it is the beach's
+translucent water and sand on a 6-unit card, priced at the replay, not
+at the draw count. Log `docs/soak/m36-m433-realtime.log.gz`,
+frames `screenshots/m36-m433-*.png`.
+
+### 51.5 The draw calls of the character select and the title
+
+DRAWCALLS_PLACEHOLDER
+
+### 51.6 What M36 shipped, the disk image, and what is left running
+
+SHIPPED_PLACEHOLDER

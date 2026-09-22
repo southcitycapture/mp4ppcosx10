@@ -363,14 +363,16 @@ static void status_line(u32 frame) {
         /* --realtime: the retrace rate is the speed, the frames that reached
          * the screen are the fps, and they are different numbers now */
         char rt[32];
+        char res[40];
         rt_status(rt, sizeof(rt)); /* M27: "  rt N ms" when the render thread is on */
+        port_dvd_cache_status(res, sizeof(res)); /* M36: "  res N/M MB" with a resident set */
         port_log("port> status f%-7u %-12s board %d turn %d/%d  mg %d (%s)  "
                  "coins/stars %s  aud %.2f ms  speed %.0f%%  %.1f fps presented  "
-                 "tex %u/%u KB  rss %u MB  cpu %d%s  machine %s\n",
+                 "tex %u/%u KB  rss %u MB%s  cpu %d%s  machine %s\n",
                  frame, screen_name((int)omcurovl), (int)GWSystem.board,
                  (int)GWSystem.turn, (int)GWSystem.max_turn, mg + 0x191,
                  screen_name(mg_ovl), players, aud, speed, pfps, tex_n, tex_kb,
-                 port_rss_mb(), port_threads_on() ? 2 : 1, rt, port_machine_verdict());
+                 port_rss_mb(), res, port_threads_on() ? 2 : 1, rt, port_machine_verdict());
         return;
     }
     port_log("port> status f%-7u %-12s board %d turn %d/%d  mg %d (%s)  "

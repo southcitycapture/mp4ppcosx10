@@ -554,6 +554,13 @@ int port_dll_snap_reopen(const char* name, void** handle, void** image,
     return 1;
 }
 
+/* M36: the bundle's file, for the loader's prefetch (dvd_cache.c): a dlopen
+ * of a cold bundle is a disk read like any other. */
+const char* port_dll_bundle_path(const char* relpath) {
+    DllModule* m = find(relpath);
+    return m ? m->path : NULL;
+}
+
 /* ---- the four entry points objdll.c calls -------------------------------- */
 
 /* `fresh`: this is objdll.c's `Link DLL` path, where the console reads the REL

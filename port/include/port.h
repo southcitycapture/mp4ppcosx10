@@ -31,8 +31,8 @@ extern "C" {
 /* ---- settings, from argv ------------------------------------------------- */
 /* M32: the shipped version (the dmg's name, the plist, the --defaults header)
  * and the milestone that built it. */
-#define PORT_VERSION_STRING "0.9.4"
-#define PORT_MILESTONE "M35"
+#define PORT_VERSION_STRING "0.9.5"
+#define PORT_MILESTONE "M36"
 
 typedef struct PortOptions {
     const char* image;      /* --image  disc image or extracted files/ tree   */
@@ -414,8 +414,9 @@ typedef struct PortOptions {
     int altivec;            /* --altivec  the AltiVec PSMTXROMultVecArray.
                              *   Exact (tests/mtx_test.c) and 3.5% slower on
                              *   consumed board frames, so off (PLAN.md 32) */
-    int noprefetch;         /* --noprefetch  no dcbt of the next vertex's
-                             *   array entries in the specialised loops     */
+    int nodcbt;             /* --nodcbt  no dcbt of the next vertex's array
+                             *   entries in the specialised loops (M17's
+                             *   --noprefetch; renamed in M36 for the loader) */
     int olddecode3;         /* --olddecode3  never take the specialised loops
                              *   for the common plan shapes; the A/B lever  */
     int decodestats;        /* --decodestats  shared-index and repeated-tuple
@@ -479,6 +480,16 @@ typedef struct PortOptions {
     int nodraw_user;        /* --nodraw was on the command line (--ffto sets
                              *   nodraw itself and used to switch drawing back
                              *   on at its end whatever the user asked)     */
+    /* ---- M36: the loader (PLAN.md 51) ---- */
+    int noprefetch;         /* --noprefetch  no read-ahead of a dealt minigame's
+                             *   files (the REL, its bundle, its data) at the
+                             *   roulette, of the board's at the results, of
+                             *   the board set at the mode select          */
+    int resident;           /* --resident MB  the resident set's budget; -1 =
+                             *   the machine check's rule (0 under 768 MB of
+                             *   RAM, 128 at 1 GB, 256 at 1.5 GB+), 0 = off  */
+    int dvdlog;             /* --dvdlog  one line per DVD read: the frame, the
+                             *   file, the range, the time, where it came from */
 } PortOptions;
 
 extern PortOptions port_opt;
@@ -654,6 +665,25 @@ void port_host_service(void); /* called from VIWaitForRetrace, once per frame */
 /* ---- subsystems ---------------------------------------------------------- */
 void port_dvd_init(void);
 void port_dvd_service(void);
+/* M36: the loader -- the roulette prefetch and the resident set
+ * (src/dvd/dvd_cache.c, PLAN.md 51) */
+int port_dvd_entry_count(void);
+const char* port_dvd_entry_path(int n);
+unsigned port_dvd_entry_length(int n);
+unsigned port_dvd_entry_offset(int n);
+const char* port_dvd_image_path(void);
+const char* port_dvd_tree_root(void);
+void port_dvd_cache_init(void);
+void port_dvd_cache_shutdown(void);
+void port_dvd_cache_service(void);
+void port_dvd_cache_report(void);
+int port_dvd_cache_serve(int entry, unsigned offset, void* dst, unsigned len);
+void port_dvd_cache_disk_read(int entry, unsigned offset, const void* data, unsigned got, double dt);
+void port_dvd_cache_status(char* buf, size_t n);
+int port_dvd_cache_budget_mb(void);
+void port_mg_dealt(int mg_index); /* the patch hook: mg_setup.c's roulette */
+double port_vi_slack_seconds(void); /* vi.c: the pacing sleep this retrace would take */
+const char* port_dll_bundle_path(const char* relpath);
 void port_thp_report(void);
 void port_card_report(void);
 void port_card_service(void);        /* M29: reap the image writer (per retrace) */

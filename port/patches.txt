@@ -803,3 +803,13 @@ src/REL/m458Dll/main.c	OMOBJ *lbl_1_bss_C0;\nOMOBJ *lbl_1_bss_BC;\n	OMOBJ *lbl_1
 # a bare u16 store into the pipe, used by m430's rope and sail display lists).
 # Undeclared, it linked to an untyped stub and the lists recorded no indices.
 include/dolphin/gx/GXVert.h	void GXTexCoord1x16(u16 index);\nvoid GXTexCoord1x8(u8 index);\n	void GXTexCoord1x16(u16 index);\nvoid GXTexCoord1x8(u8 index);\nvoid GXUnknownu16(u16 x);\n
+
+# ----------------------------------------------------------- game/board/mg_setup.c
+# M36 (PLAN.md 51): the roulette's stop is the game's own moment of knowing
+# which minigame it dealt -- `mgNext` is a static of this file, written here
+# and read 350 frames later when the board preloads the module's data.  The
+# hook hands the index to the port's loader, which reads the module's files
+# ahead so the game's own reads of them come from memory.  Game behaviour is
+# unchanged: the read still happens where it always did, with the same bytes.
+src/game/board/mg_setup.c	            mgNext = activeMG[cursorPos].unk_02;\n	            mgNext = activeMG[cursorPos].unk_02;\n            port_mg_dealt(mgNext);\n
+src/game/board/mg_setup.c	static s16 mgNext;\n	static s16 mgNext;\nvoid port_mg_dealt(int mg_index); /* port: the loader's prefetch, PLAN.md 51 */\n

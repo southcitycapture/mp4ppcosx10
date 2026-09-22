@@ -92,7 +92,16 @@ static void usage(const char* argv0) {
             "                    of through the byte tables (pre-M17), for the A/B\n"
             "  --altivec         the AltiVec PSMTXROMultVecArray: bit-exact with the\n"
             "                    scalar body and measured 3.5%% slower, so off (PLAN.md 32)\n"
-            "  --noprefetch      no dcbt of the next vertex's arrays in those loops\n"
+            "  --nodcbt          no dcbt of the next vertex's arrays in those loops\n"
+            "  --noprefetch      M36: no read-ahead of a dealt minigame's files at the\n"
+            "                    roulette (nor the board's at the results, the board\n"
+            "                    set at the mode select); the game's own reads stay\n"
+            "                    exactly where they were either way\n"
+            "  --resident MB     M36: the resident set -- the files every game reads,\n"
+            "                    held in memory and served from there; 0 = off, default\n"
+            "                    by the installed RAM (0 under 768 MB, 128 at 1 GB, 256\n"
+            "                    at 1.5 GB and up), never less than 384 MB left over\n"
+            "  --dvdlog          M36: one line per DVD read (frame, file, range, ms, source)\n"
             "  --cpuskin         the game's own CPU skinning at every EnvelopeProc\n"
             "                    (M18 A/B; default: the same skinning, run only when\n"
             "                    a drawn frame first needs it -- never on a consumed\n"
@@ -649,6 +658,7 @@ int port_parse_args(int argc, char** argv) {
      * The 4-tap was there to buy quality and on this hardware it buys none, so
      * it is the flag now and linear is the default. */
     port_opt.resample4 = 0;
+    port_opt.resident = -1; /* M36: the resident set's budget by the installed RAM (machine.c) */
     port_opt.cmpmask = 255; /* every compare-first group on; see gx_internal.h (M18:
                              * 15 left Z mode, Z comp loc, cull and alpha compare
                              * flushing unconditionally, PLAN.md 33.2) */
@@ -788,8 +798,14 @@ int port_parse_args(int argc, char** argv) {
             port_opt.print_defaults = 1;
         } else if (!strcmp(a, "--keys")) {
             port_opt.print_keys = 1;
+        } else if (!strcmp(a, "--nodcbt")) {
+            port_opt.nodcbt = 1;
         } else if (!strcmp(a, "--noprefetch")) {
             port_opt.noprefetch = 1;
+        } else if (!strcmp(a, "--resident") && i + 1 < argc) {
+            port_opt.resident = atoi(argv[++i]);
+        } else if (!strcmp(a, "--dvdlog")) {
+            port_opt.dvdlog = 1;
         } else if (!strcmp(a, "--olddecode3")) {
             port_opt.olddecode3 = 1;
         } else if (!strcmp(a, "--olddecode2")) {
@@ -1217,6 +1233,7 @@ void GXInit_demo_bootstrap(void);
 void port_shutdown(int code) {
     port_audio_shutdown(); /* first: it closes the WAV, which must be complete */
     port_workers_shutdown(); /* M24: after the audio's join, before the reports */
+    port_dvd_cache_shutdown(); /* M36: the loader's thread, before its report */
     void gx_tev_report(void);
     void gx_tfs_report(void);
     gx_tev_report();
@@ -1227,6 +1244,7 @@ void port_shutdown(int code) {
     port_clock_report();
     port_gx_shutdown();
     port_dvd_stats();
+    port_dvd_cache_report(); /* M36 */
     port_thp_report();
     port_card_report();
     port_dll_report();
@@ -1359,6 +1377,7 @@ int main(int argc, char** argv) {
     port_dvd_init();
     port_gx_init();
     port_workers_init(); /* M24: the second core, if there is one */
+    port_dvd_cache_init(); /* M36: the loader -- after the FST and the thread decision */
     gl13_rt_start();     /* M27: GL to the render thread (or the inline replay) */
     port_print_effective(NULL, 1); /* M32: the block a bug report is asked for */
     /* After port_gx_init, which is what brings SDL up.  --noaudio keeps the

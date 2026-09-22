@@ -499,6 +499,7 @@ static char summary[200];
 static int want_threads = -1;
 static int want_texbudget = -1;
 static int want_cpuxf = -1;
+static int want_resident = -1; /* M36: the resident set's budget (MB) by the RAM */
 
 static void reason(int level, const char* fmt, ...) {
     va_list ap;
@@ -525,6 +526,8 @@ static const char* verdict_word(void) {
 #define MACH_MIN_OS_MINOR 4     /* the binary is built -mmacosx-version-min=10.4 */
 #define MACH_FULL_SPEED_MHZ 800
 #define MACH_MIN_RAM_MB 256
+#define MACH_RESIDENT_KEEP_MB 384    /* M36: left for the OS whatever the resident set wants */
+#define MACH_RESIDENT_PROCESS_MB 200 /* M36: the process's own peak (PLAN.md 46.1: 194 MB) */
 #define MACH_FULL_VRAM_MB 64
 #define MACH_TEXBUDGET_DEFAULT 40
 #define MACH_MIN_TEX_UNITS 4
@@ -561,6 +564,20 @@ static void decide(void) {
     if (mach.ram_mb && mach.ram_mb < MACH_MIN_RAM_MB) {
         reason(V_DEGRADED, "%u MB of RAM: the process peaks at ~170 MB resident and "
                "the system will page", mach.ram_mb);
+    }
+    /* M36 (PLAN.md 51): the resident set's budget is a function of the
+     * installed memory -- 0 under 768 MB, 128 MB at 1 GB, 256 MB at 1.5 GB
+     * and up -- and whatever the rule says, the OS and the game keep
+     * MACH_RESIDENT_KEEP_MB (384 for the OS, plus the process's own ~200 MB
+     * peak).  A firmware that reserves a few MB reports a 1.5 GB machine as
+     * 1,5xx, so the steps sit a little under their round numbers. */
+    want_resident = 0;
+    if (mach.ram_mb) {
+        unsigned room = mach.ram_mb > MACH_RESIDENT_KEEP_MB + MACH_RESIDENT_PROCESS_MB
+                            ? mach.ram_mb - MACH_RESIDENT_KEEP_MB - MACH_RESIDENT_PROCESS_MB
+                            : 0;
+        unsigned want = mach.ram_mb >= 1408 ? 256 : mach.ram_mb >= 736 ? 128 : 0;
+        want_resident = (int)(want < room ? want : (room / 32) * 32);
     }
     /* the OS */
     if (mach.os_major && !mach.host_build) {
@@ -747,6 +764,21 @@ void port_machine_check(void) {
             port_log("port> machine: --cpuxf given already (no GL_ARB_vertex_program)\n");
         }
     }
+    /* M36 (PLAN.md 51): the two loader settings.  The prefetch is on
+     * everywhere (it only warms the cache); the resident set's budget is
+     * the rule above unless --resident was given. */
+    if (port_opt.resident < 0) {
+        port_opt.resident = want_resident < 0 ? 0 : want_resident;
+        port_log("port> machine: applying --resident %d (%u MB of RAM; 0 under 768 MB, 128 at "
+                 "1 GB, 256 at 1.5 GB+, %d MB kept for the OS and the game)\n",
+                 port_opt.resident, mach.ram_mb, MACH_RESIDENT_KEEP_MB + MACH_RESIDENT_PROCESS_MB);
+    } else {
+        port_log("port> machine: --resident %d given; not applying --resident %d (%u MB of RAM)\n",
+                 port_opt.resident, want_resident < 0 ? 0 : want_resident, mach.ram_mb);
+    }
+    port_log("port> machine: the roulette prefetch is %s (%s)\n",
+             port_opt.noprefetch ? "off" : "on",
+             port_opt.noprefetch ? "--noprefetch given" : "every machine; --noprefetch");
     /* M31 (PLAN.md 46): the coroutine stacks' multiplier is a setting the
      * applied-settings block should own up to -- x2 is the default since the
      * M31 soak (6.5 h at x2, four boards, 129 minigame plays, no `stack
