@@ -154,6 +154,76 @@ static unsigned dh, dt_;
 /* the "was it prefetched" mark per entry, for the report */
 static unsigned char* prefetched;
 
+/* ---- --dvdlog's ring ------------------------------------------------------
+ *
+ * A read is answered wherever the game asks for it, and that is not always
+ * the game thread on its own stack: MusyX's stream update runs from the
+ * mixer's job, and `msmStreamDvdCallback` issues the *next* read from
+ * inside the completion of the last one (the port's completions are inline,
+ * PLAN.md 51.2), so the read path is re-entered several levels deep at a
+ * stream's loop point.  A `port_log` there puts a `vfprintf` -- a kilobyte
+ * or two of stack -- on every level of that chain, and the bench's 20-turn
+ * soak died at the same frame twice with `--dvdlog` on and never without it
+ * (PLAN.md 51.7).  So the read path only *records* its line, in a fixed
+ * ring, and the retrace prints it: no formatting, no allocation and no
+ * stdio below `do_read`, and the log comes out in the game's own order. */
+typedef struct DvdLine {
+    unsigned frame;
+    int entry;
+    unsigned offset, len;
+    float ms;      /* < 0: the resident set answered */
+    unsigned char pre;
+} DvdLine;
+#define DVDLOG_RING 512
+static DvdLine dvdlog_ring[DVDLOG_RING];
+static volatile unsigned dvdlog_head, dvdlog_tail; /* tail written by any thread */
+static unsigned long stat_dvdlog_lost;
+
+static void dvdlog_note(int entry, unsigned offset, unsigned len, float ms, int pre) {
+    unsigned t;
+    if (!port_opt.dvdlog) {
+        return;
+    }
+    pthread_mutex_lock(&mu);
+    t = dvdlog_tail;
+    if (t - dvdlog_head >= DVDLOG_RING) {
+        stat_dvdlog_lost++;
+    } else {
+        DvdLine* d = &dvdlog_ring[t % DVDLOG_RING];
+        d->frame = gl13_frame_number();
+        d->entry = entry;
+        d->offset = offset;
+        d->len = len;
+        d->ms = ms;
+        d->pre = (unsigned char)pre;
+        dvdlog_tail = t + 1;
+    }
+    pthread_mutex_unlock(&mu);
+}
+
+/* the game thread, at the retrace */
+static void dvdlog_drain(void) {
+    for (;;) {
+        DvdLine d;
+        pthread_mutex_lock(&mu);
+        if (dvdlog_head == dvdlog_tail) {
+            pthread_mutex_unlock(&mu);
+            return;
+        }
+        d = dvdlog_ring[dvdlog_head % DVDLOG_RING];
+        dvdlog_head++;
+        pthread_mutex_unlock(&mu);
+        if (d.ms < 0.0f) {
+            port_log("port> dvd: f%u %s +%u %u resident\n", d.frame, port_dvd_entry_path(d.entry),
+                     d.offset, d.len);
+        } else {
+            port_log("port> dvd: f%u %s +%u %u %.1f ms disk%s\n", d.frame,
+                     port_dvd_entry_path(d.entry), d.offset, d.len, (double)d.ms,
+                     d.pre ? " (prefetched)" : "");
+        }
+    }
+}
+
 static int find_entry(const char* path) {
     int i, n = port_dvd_entry_count();
     for (i = 0; i < n; i++) {
@@ -704,10 +774,7 @@ int port_dvd_cache_serve(int entry, unsigned offset, void* dst, unsigned len) {
     stat_served++;
     stat_served_bytes += len;
     pthread_mutex_unlock(&mu);
-    if (port_opt.dvdlog) {
-        port_log("port> dvd: f%u %s +%u %u resident\n", gl13_frame_number(), port_dvd_entry_path(entry),
-                 offset, len);
-    }
+    dvdlog_note(entry, offset, len, -1.0f, 0);
     return 1;
 }
 
@@ -724,11 +791,8 @@ void port_dvd_cache_disk_read(int entry, unsigned offset, const void* data, unsi
             stat_disk_after_pre_over100++;
         }
     }
-    if (port_opt.dvdlog) {
-        port_log("port> dvd: f%u %s +%u %u %.1f ms disk%s\n", gl13_frame_number(),
-                 port_dvd_entry_path(entry), offset, got, dt * 1000.0,
-                 (res && entry >= 0 && entry < nres && prefetched[entry]) ? " (prefetched)" : "");
-    }
+    dvdlog_note(entry, offset, got, (float)(dt * 1000.0),
+                res && entry >= 0 && entry < nres && prefetched[entry]);
     if (res && entry >= 0 && entry < nres && res[entry].pinned && !res[entry].buf && offset == 0 &&
         got == port_dvd_entry_length(entry) && budget_bytes) {
         u8* buf = (u8*)malloc(got ? got : 1);
@@ -752,6 +816,7 @@ void port_dvd_cache_service(void) {
     if (!res) {
         return;
     }
+    dvdlog_drain();
     if (hook_mg >= 0) {
         int h = hook_mg;
         hook_mg = -1;
@@ -837,8 +902,13 @@ void port_dvd_cache_report(void) {
              port_opt.noprefetch ? "off" : thread_up || stat_pre_files ? "on" : "idle", stat_pre_jobs,
              stat_pre_files, stat_pre_skipped, stat_pre_bytes / 1048576.0, stat_pre_s * 1000.0,
              stat_pre_worst_s * 1000.0, stat_slices, stat_slice_s * 1000.0);
+    dvdlog_drain();
     port_log("port> loader: disk reads after a prefetch of the same file: %lu, %lu of them over "
              "100 ms\n", stat_disk_after_pre, stat_disk_after_pre_over100);
+    if (stat_dvdlog_lost) {
+        port_log("port> loader: --dvdlog dropped %lu line(s) (more than %d reads between two "
+                 "retraces)\n", stat_dvdlog_lost, DVDLOG_RING);
+    }
     port_log("port> loader: resident set %d MB: %d files held (%lu MB, %d of them from the list), "
              "%lu reads (%.1f MB) served from memory, %lu (%.1f MB, %.0f ms) from the disk, %lu "
              "adopted from the game's own reads, %lu evicted (%.1f MB); mlock %s (%lu MB locked)\n",

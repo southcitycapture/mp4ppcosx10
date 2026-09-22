@@ -1007,20 +1007,25 @@ is either ready to offer upstream or has a case to remove.
 
 ## 0z. Six things M36 paid for *(2026-09-22)*
 
-* **A patch hook runs on the game's own coroutine stack, and a
-  `port_log` from one overflows it.** `port_mg_dealt` (the roulette's
-  `mgNext = …`, PLAN.md 51.2) first did its whole job where the game
-  called it: a `snprintf`, a queue push and one `port_log` — and
-  `vfprintf` alone wants a kilobyte or two of stack, against the 4 KB
-  a `HUPROCESS` gets at `--stackmul 2`. The bench's 20-turn soak died
-  at frame 178,460 with `signal 11 at address 0x0` (a jump through a
-  trashed pointer, eight thousand frames after the last roulette —
-  which is how a scribbled stack fails). **A hook into game code notes
-  its argument in a static and nothing else; the work happens at the
-  next retrace**, on the port's own stack. The same soak on the fixed
-  build ran clean. Nothing in `--stackcheck` or the `HuPrcCall` guard
-  byte catches this: the guard is at the *bottom* of the stack and
-  `vfprintf` walks off the top into the neighbour.
+* **Nothing below `do_read` may call `port_log`.** A DVD read is
+  answered wherever the game asks for it: MusyX's stream update runs
+  from the mixer's job, and `msmStreamDvdCallback` issues the next read
+  from *inside* the completion of the last one, so at a stream's loop
+  point the read path is several levels deep on a thread that is not
+  the game's. `--dvdlog` put a `vfprintf` — a kilobyte or two of stack
+  — on every level of that chain, and with the resident set answering
+  instantly the chain runs further in one frame than it ever does off
+  the disk: the bench's 20-turn soak died at frame **178,460**, twice,
+  on two different builds, and never without `--dvdlog` (PLAN.md 51.7).
+  A diagnostic inside a re-entrant path **records four words in a ring
+  and the retrace prints them**.
+* **Five arms are what it takes to place a fault like that.** Neither
+  feature, each alone, both, and both plus the flag: only the last
+  faulted, which is the whole answer. Guessing at the first plausible
+  cause (a hook on a 4 KB coroutine stack, which was the first theory
+  here) costs a build and a soak and proves nothing — two runs faulting
+  at the *identical* frame on *different builds* already said the cause
+  was deterministic and not a scribbled stack.
 * **A soak that follows a gallery measures nothing about loading.**
   Soak 26 read 433 MB in 1,465 DVD reads with **0 over 100 ms**,
   because a 2 h 45 gallery had just walked every file on the disc into

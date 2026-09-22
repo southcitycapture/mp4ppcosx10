@@ -17902,7 +17902,8 @@ no slice, and the load is what it was. Off is `--noprefetch`; the
 machine check prints `machine: the roulette prefetch is on (every
 machine; --noprefetch)`.
 
-PREFETCH_AB_PLACEHOLDER
+The A/B of both features is §51.3's table, since one arm of it is the
+prefetch on its own.
 
 ### 51.3 The resident set (`--resident MB`)
 
@@ -17970,7 +17971,8 @@ reads. The generated list is `port/src/dvd/resident_list.h` (69 entries,
 most-read first, with each file's count and size in a comment); anything
 the list does not hold arrives through the prefetch and the LRU.
 
-RESIDENT_AB_PLACEHOLDER
+AB_TABLE_PLACEHOLDER
+
 
 ### 51.4 Beach Volley Folly at real time
 
@@ -18041,20 +18043,50 @@ carry 4 vertices each. Measured only; nothing here is changed in M36.
 
 SHIPPED_PLACEHOLDER
 
-### 51.7 The bench's fault, and what it was
+### 51.7 The bench's fault at frame 178,460: `--dvdlog` inside the read path
 
-The first 20-turn `--dvdlog` soak on the bench died at frame 178,460
-with `*** port: fault: signal 11 at address 0x0` — a jump through a
-null pointer, in the middle of a board, eight thousand frames after
-anything the loader had done. It was the hook. `port_mg_dealt` is
-called from `mg_setup.c`'s roulette process, on a `HUPROCESS`
-coroutine stack of 4 KB (`--stackmul 2` over the game's 2,048), and
-the first version did its whole job there: `snprintf`, the queue push,
-and a `port_log` — whose `vfprintf` wants a kilobyte or two of stack on
-its own. The overflow walks off the top of the stack into whatever is
-above it, and the failure comes whenever the scribbled-on thing is next
-read. The `HuPrcCall` guard byte cannot see it: the guard is at the
-*bottom*. **The hook notes its argument in a static and returns**
-(`hook_mg`), and `port_dvd_cache_service` does the work at the next
-retrace on the port's own stack; the same 20-turn soak on the fixed
-build ran to the end with no fault. Witness §0z.
+The first 20-turn `--dvdlog` soak on the bench died at frame **178,460**
+with `*** port: fault: signal 11 at address 0x0` — a call through a null
+pointer with a backtrace the walker could not follow — in the middle of
+turn 16, four `sound/mpgcstr.pdt` reads after the status line. The
+second run of the same soak, on a *different build*, died at the same
+frame with the same board state. Five arms of the same soak told which
+of the milestone's parts it belonged to (the bench, `--soak --com4
+--rtc dolphin --freshcard --turns 20 --nodraw --turbo`, 190,000 frames):
+
+| arm | reached | fault |
+|---|---|---|
+| `--noprefetch --resident 0` (neither) | 189,960 | none |
+| `--resident 0` (the prefetch alone) | 189,960 | none |
+| `--noprefetch` (the resident set alone) | 189,960 | none |
+| **the shipping defaults** (both, no `--dvdlog`) | **189,960** | **none** |
+| the defaults **+ `--dvdlog`** | 178,460 | **signal 11, pc 0** — twice, at the same frame |
+
+So it is `--dvdlog`, and only with the reads coming from memory. **The
+cause is where the line was written.** A read is answered wherever the
+game asks for it, and that is not always the game thread on its own
+stack: MusyX's stream update runs from the mixer's job, and
+`msmStreamDvdCallback` issues the next read from *inside* the
+completion of the last one — the port's completions are inline (§5.1),
+so at a stream's loop point the read path is re-entered several levels
+deep in one frame. A `port_log` there puts a `vfprintf`, a kilobyte or
+two of stack, on every level of that chain, and with the resident set
+answering instantly the chain runs further in one frame than it ever
+does off the disk. Hence: needs the reads to be fast, needs the log,
+deterministic in the frame because the loop point is the game's.
+
+**The fix**: the read path *records* its line in a fixed ring
+(`dvdlog_ring`, 512 entries — frame, entry, range, milliseconds, four
+words, no formatting and no allocation below `do_read`) and the retrace
+drains and prints it, the same shape the finished prefetch jobs already
+used. The log comes out in the game's own order, a line is never
+written from a worker thread, and the report says if the ring ever
+overflowed. The same soak on the fixed build — the defaults **with**
+`--dvdlog`, the configuration that had faulted twice — ran all twenty
+turns to frame 189,960 with **no fault and no dropped line**, and
+served 1,093 of its 1,094 reads (309.3 of 309.8 MB) out of the 109 MB
+it held.
+
+The wider lesson is the witness's (§0z): **nothing below `do_read` may
+call `port_log`**, because `do_read` is re-entrant and is not always on
+the stack you think it is.
