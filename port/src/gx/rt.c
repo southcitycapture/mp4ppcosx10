@@ -156,6 +156,7 @@ typedef struct {
 /* M38: a sub-image upload whose pixels the replay frees (the movie texture) */
 typedef struct {
     GLenum target; GLint level, xo, yo; GLsizei w, h; GLenum fmt, type; void* px;
+    volatile int* done; /* NULL: free(px) after the call; else *done = 1 (a pool's buffer) */
 } A_texsub;
 typedef struct { GLenum target; GLint level, xo, yo, x, y; GLsizei w, h; } A_copysub;
 typedef struct { GLint x, y; GLsizei w, h; GLenum fmt, type; GLvoid* out; } A_readpx;
@@ -756,16 +757,20 @@ void rt_teximage2d_owned(GLenum target, GLint level, GLint ifmt, GLsizei w, GLsi
 }
 /* M38 (PLAN.md 53): the movie frame, into the POT texture made for it once */
 void rt_texsubimage2d_owned(GLenum target, GLint level, GLint xo, GLint yo, GLsizei w, GLsizei h,
-                            GLenum fmt, GLenum type, void* px) {
+                            GLenum fmt, GLenum type, void* px, volatile int* done_flag) {
     if (!rt_recording) {
         glTexSubImage2D(target, level, xo, yo, w, h, fmt, type, px);
-        free(px);
+        if (done_flag) {
+            *done_flag = 1;
+        } else {
+            free(px);
+        }
         return;
     }
     {
         REC(OP_TEXSUBIMAGE, A_texsub);
         a->target = target; a->level = level; a->xo = xo; a->yo = yo; a->w = w; a->h = h;
-        a->fmt = fmt; a->type = type; a->px = px;
+        a->fmt = fmt; a->type = type; a->px = px; a->done = done_flag;
     }
     done();
 }
@@ -1421,8 +1426,13 @@ static void replay_one(const Hdr* h) {
         case OP_TEXSUBIMAGE: {
             const A_texsub* a = p;
             glTexSubImage2D(a->target, a->level, a->xo, a->yo, a->w, a->h, a->fmt, a->type, a->px);
-            free(a->px);
-            st_owned_frees++;
+            if (a->done) {
+                __sync_synchronize();
+                *a->done = 1; /* the owner's pool may reuse the pixels now */
+            } else {
+                free(a->px);
+                st_owned_frees++;
+            }
             cls = RC_TEX;
             break;
         }

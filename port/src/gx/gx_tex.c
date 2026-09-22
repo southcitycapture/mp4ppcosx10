@@ -1152,8 +1152,9 @@ static void tex_bind_finish(int unit, GXTexObjPort* o, int slot) {
 /* M38 (PLAN.md 53): a port-owned RGBA8 image drawn through GX -- the movie
  * frame.  It is not in the cache: it has one owner (port/src/thp), one GL
  * name made once at its power-of-two size, and a new frame arrives as a
- * malloc'd row-major image in `pending`, uploaded here as a sub-image and
- * handed to the render thread to free.  No hash, no pad copy, no decode:
+ * row-major image in `pending`, uploaded here as a sub-image; the render
+ * thread frees it after the upload, or -- with `pending_done` -- raises that
+ * flag and leaves the buffer to the owner's pool.  No hash, no pad copy, no decode:
  * the owner says when the texels changed because it is the one that
  * changed them. */
 static void tex_bind_port(int unit, GXTexObjPort* o) {
@@ -1186,8 +1187,9 @@ static void tex_bind_port(int unit, GXTexObjPort* o) {
          * swizzle (Apple's "fast path", PLAN.md 53.4) */
         rt_texsubimage2d_owned(GL_TEXTURE_2D, 0, 0, 0, t->w, t->h, t->argb ? GL_BGRA : GL_RGBA,
                                t->argb ? GL_UNSIGNED_INT_8_8_8_8_REV : GL_UNSIGNED_BYTE,
-                               t->pending);
+                               t->pending, t->pending_done);
         t->pending = NULL;
+        t->pending_done = NULL;
         t->uploads++;
     }
     o->gl_name = t->gl_name;

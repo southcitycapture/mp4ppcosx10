@@ -91,8 +91,10 @@ void rt_glTexImage2D(GLenum target, GLint level, GLint ifmt, GLsizei w, GLsizei 
                      GLenum fmt, GLenum type, const GLvoid* px);
 void rt_teximage2d_owned(GLenum target, GLint level, GLint ifmt, GLsizei w, GLsizei h,
                          GLint border, GLenum fmt, GLenum type, void* px_malloced);
+/* M38: the replay frees px -- or, with done_flag, sets *done_flag = 1 and
+ * leaves px to its owner's pool (the movie's frame buffers) */
 void rt_texsubimage2d_owned(GLenum target, GLint level, GLint xo, GLint yo, GLsizei w, GLsizei h,
-                            GLenum fmt, GLenum type, void* px_malloced); /* M38 */
+                            GLenum fmt, GLenum type, void* px, volatile int* done_flag);
 void rt_glCopyTexSubImage2D(GLenum target, GLint level, GLint xo, GLint yo, GLint x, GLint y,
                             GLsizei w, GLsizei h);
 /* ---- reads: each is a join (the record, then a wait for the replay) ---- */

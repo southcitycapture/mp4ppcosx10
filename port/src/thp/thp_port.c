@@ -78,7 +78,8 @@ typedef struct ThpSlot {
     unsigned comp_cap, comp_len;
     u8 *py, *pu, *pv;            /* row-major planes, the port's */
     ThpjCtx* ctx;
-    u8* rgba;                    /* the job's result, taken by the draw */
+    u8* rgba;                    /* the job's output buffer (the pool's), taken by the draw */
+    volatile int* rgba_flag;     /* its pool flag: 1 again once the upload has read it */
     int w, h, tiled;
     int state;
     volatile int cancel;
@@ -89,6 +90,57 @@ typedef struct ThpSlot {
 } ThpSlot;
 
 static ThpSlot slots[NSLOT];
+
+/* The frames' RGBA buffers, 1.1 MB each: a pool the render thread hands back
+ * (rt_texsubimage2d_owned's done flag) rather than a malloc and free a
+ * frame -- a fresh large malloc is fresh pages, and faulting 270 of them in
+ * cost the worker 5 ms a frame (PLAN.md 53.4).  Game thread only, except
+ * the flag, which the render thread raises after the upload. */
+#define NPOOL 6
+static struct {
+    u8* p;
+    size_t n;
+    volatile int avail;
+} pool[NPOOL];
+static unsigned long stat_pool_miss;
+
+static u8* pool_get(size_t n, volatile int** flag) {
+    int i;
+    for (i = 0; i < NPOOL; i++) {
+        if (pool[i].p && pool[i].avail && pool[i].n == n) {
+            pool[i].avail = 0;
+            *flag = &pool[i].avail;
+            return pool[i].p;
+        }
+    }
+    for (i = 0; i < NPOOL; i++) {
+        if (!pool[i].p) {
+            pool[i].p = (u8*)malloc(n);
+            if (!pool[i].p) {
+                break;
+            }
+            pool[i].n = n;
+            pool[i].avail = 0;
+            *flag = &pool[i].avail;
+            return pool[i].p;
+        }
+    }
+    /* all in flight (or a size change): a plain buffer the upload frees */
+    stat_pool_miss++;
+    *flag = NULL;
+    return (u8*)malloc(n);
+}
+
+static void pool_release(u8* p, volatile int* flag) {
+    if (!p) {
+        return;
+    }
+    if (flag) {
+        *flag = 1;
+    } else {
+        free(p);
+    }
+}
 static int next_victim;
 static PortTexture ptex;
 
@@ -154,12 +206,8 @@ static void slot_run(PortJob* j) {
         s->err = thpj_decode(s->ctx, s->comp, s->comp_len, s->py, s->pu, s->pv, s->w, s->h, 0,
                              NULL);
         s->ms_dec = (port_now_seconds() - t0) * 1000.0;
-        if (!s->err) {
-            s->rgba = (u8*)malloc((size_t)s->w * s->h * 4);
-            if (s->rgba) {
-                thpj_to_rgba(s->ctx, s->py, s->pu, s->pv, s->w, s->h, s->rgba, s->w * 4,
-                             THP_ARGB);
-            }
+        if (!s->err && s->rgba) {
+            thpj_to_rgba(s->ctx, s->py, s->pu, s->pv, s->w, s->h, s->rgba, s->w * 4, THP_ARGB);
         }
     }
     s->ms = (port_now_seconds() - t0) * 1000.0;
@@ -199,8 +247,9 @@ static void slot_retire(ThpSlot* s) {
     } else if (s->state == S_DONE) {
         mv.dropped_done++;
     }
-    free(s->rgba);
+    pool_release(s->rgba, s->rgba_flag);
     s->rgba = NULL;
+    s->rgba_flag = NULL;
     s->state = S_EMPTY;
 }
 
@@ -361,6 +410,11 @@ s32 THPVideoDecode(void* file, void* tileY, void* tileU, void* tileV, void* work
     }
     mv.last_published = s->movie_frame;
     s->err = 0;
+    s->rgba = NULL;
+    s->rgba_flag = NULL;
+    if (!s->tiled) {
+        s->rgba = pool_get((size_t)w * h * 4, &s->rgba_flag);
+    }
     s->job.run = slot_run;
     s->state = S_OWED;
     mv.published++;
@@ -424,13 +478,16 @@ int portTHPDraw(void* yImage, s16 x, s16 y, s16 polyWidth, s16 polyHeight) {
         return 0;
     }
     if (s->state == S_DONE) {
-        if (s->rgba) {
-            free(ptex.pending); /* a frame the bind never took: superseded */
+        if (s->rgba && !s->err) {
+            /* a frame the bind never took is superseded */
+            pool_release((u8*)ptex.pending, ptex.pending_done);
             ptex.w = s->w;
             ptex.h = s->h;
             ptex.argb = THP_ARGB;
             ptex.pending = s->rgba;
+            ptex.pending_done = s->rgba_flag;
             s->rgba = NULL;
+            s->rgba_flag = NULL;
         }
         s->state = S_SHOWN;
         mv.drawn++;
@@ -514,8 +571,9 @@ void port_thp_retrace(void) {
             slot_retire(&slots[i]);
             slots[i].key = NULL;
         }
-        free(ptex.pending);
+        pool_release((u8*)ptex.pending, ptex.pending_done);
         ptex.pending = NULL;
+        ptex.pending_done = NULL;
         movie_end();
     }
 }
@@ -536,8 +594,9 @@ void port_thp_report(void) {
         port_log("port> THP: %d movie(s) skipped, first %s\n", skipped, first_skipped);
     }
     if (total_movies) {
-        port_log("port> THP: %lu movie(s) played, %lu frames drawn, %lu dropped\n", total_movies,
-                 total_frames_drawn + (mv.open ? mv.drawn : 0),
-                 total_dropped + (mv.open ? mv.cancelled + mv.dropped_done : 0));
+        port_log("port> THP: %lu movie(s) played, %lu frames drawn, %lu dropped; %lu frame "
+                 "buffers from outside the pool\n",
+                 total_movies, total_frames_drawn + (mv.open ? mv.drawn : 0),
+                 total_dropped + (mv.open ? mv.cancelled + mv.dropped_done : 0), stat_pool_miss);
     }
 }

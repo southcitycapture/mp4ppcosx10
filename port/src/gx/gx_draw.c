@@ -2095,10 +2095,29 @@ static void draw_log(u32 first, u32 count, u8 dprim) {
         }
     }
     (void)s0;
-    port_log("  chan0 enable %u matsrc %u mat %u %u %u %u  ambsrc %u\n",
+    port_log("  chan0 enable %u matsrc %u mat %u %u %u %u  ambsrc %u amb %u %u %u %u  "
+             "diff %u attn %u lights %02x\n",
              gx.chan[0].enable, gx.chan[0].mat_src, gx.chan[0].mat.r,
              gx.chan[0].mat.g, gx.chan[0].mat.b, gx.chan[0].mat.a,
-             gx.chan[0].amb_src);
+             gx.chan[0].amb_src, gx.chan[0].amb.r, gx.chan[0].amb.g, gx.chan[0].amb.b,
+             gx.chan[0].amb.a, gx.chan[0].diff_fn, gx.chan[0].attn_fn,
+             (unsigned)gx.chan[0].light_mask);
+    /* M38 (PLAN.md 53.11): the ambient and the lights, which on a one-stage
+     * lit surface are the whole of the colour (m432's walls, PLAN.md 52.9) */
+    if (gx.chan[0].enable) {
+        int li;
+        for (li = 0; li < 8; li++) {
+            const GXLight* l = &gx.light[li];
+            if (!(gx.chan[0].light_mask & (1u << li))) {
+                continue;
+            }
+            port_log("    light %d colour %u %u %u %u  pos %g %g %g  dir %g %g %g  "
+                     "k %g %g %g  a %g %g %g\n",
+                     li, l->color.r, l->color.g, l->color.b, l->color.a, l->pos[0], l->pos[1],
+                     l->pos[2], l->dir[0], l->dir[1], l->dir[2], l->k[0], l->k[1], l->k[2],
+                     l->a[0], l->a[1], l->a[2]);
+        }
+    }
     port_log("  alphacmp %u ref %u op %u / %u ref %u   zmode test %u fn %u write %u\n",
              gx.alpha_comp0, gx.alpha_ref0, gx.alpha_op, gx.alpha_comp1,
              gx.alpha_ref1, gx.z_enable, gx.z_func, gx.z_update);

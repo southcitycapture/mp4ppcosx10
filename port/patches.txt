@@ -219,12 +219,27 @@ src/game/thpmain.c	    while (THPSimpleOpen(THPFileName) == 0) {\n        OSRepo
 # through the port's GX, for the A/B), and the lines below run as written.
 src/game/THPDraw.c	    GXTexObj sp14;\n\n    GXInitTexObj(&sp54, yImage, texWidth, texHeight, GX_TF_I8, GX_CLAMP, GX_CLAMP, GX_FALSE);	    GXTexObj sp14;\n    int portTHPDraw(void *, s16, s16, s16, s16);\n\n    if (portTHPDraw(yImage, x, y, polyWidth, polyHeight)) {\n        return;\n    }\n    GXInitTexObj(&sp54, yImage, texWidth, texHeight, GX_TF_I8, GX_CLAMP, GX_CLAMP, GX_FALSE);
 
-# ------------------------------------------------------------ game/objmain.c
-# M38 (PLAN.md 53.8): --goto OVL[:EVT[:CHAR]] boots straight into an overlay
+# ------------------------------------------------------------ REL/bootDll
+# M38 (PLAN.md 53.8): --goto OVL[:EVT[:CHAR]] leaves the boot for an overlay
 # at an event -- the story ending is mstory2dll event 4, behind a whole story
-# mode otherwise.  portGotoEvt (port/src/debug/selfplay.c) returns 0 and
-# leaves start_ovl alone without the flag.
-src/game/objmain.c	    omOvlCallEx(start_ovl, 1, 0, 0);	    {\n        int portGotoEvt(int *);\n        int port_ovl = (int)start_ovl;\n        int port_evt = portGotoEvt(&port_ovl);\n        omOvlCallEx((OMOVL)port_ovl, 1, port_evt, 0);\n    }
+# mode otherwise -- at the first point the boot has finished its own setup
+# (the sound groups, HuAudSndGrpSetSet(0)), and the way the boot itself
+# leaves: omOvlCallEx, then HuPrcEnd.  portGotoOvl (port/src/debug/
+# selfplay.c) is -1 without the flag.
+src/REL/bootDll/main.c	        tick_prev = OSGetTick();\n        if (!SystemInitF) {\n            HuAudSndGrpSetSet(0);\n            SystemInitF = 1;\n        }\n        while (OSTicksToMilliseconds(OSGetTick() - tick_prev) < 1000) {\n            HuPrcVSleep();\n        }	        tick_prev = OSGetTick();\n        if (!SystemInitF) {\n            HuAudSndGrpSetSet(0);\n            SystemInitF = 1;\n        }\n        while (OSTicksToMilliseconds(OSGetTick() - tick_prev) < 1000) {\n            HuPrcVSleep();\n        }\n        {\n            int portGotoOvl(int *);\n            int port_evt = 0;\n            int port_ovl = portGotoOvl(&port_evt);\n            if (port_ovl >= 0) {\n                omOvlCallEx(port_ovl, 1, port_evt, 0);\n                HuPrcEnd();\n                while (1) {\n                    HuPrcVSleep();\n                }\n            }\n        }
+
+# --------------------------------------------------------- dolphin/thp/THPAudio.c
+# M38 (PLAN.md 53.5): the channel order.  The console's AI plays a buffer of
+# (right, left) pairs -- which is why Nintendo's decoder writes the header's
+# left channel one sample after the right -- and the port's AI buffers are
+# (left, right), the order SDL plays (musyx_mix.c writes them so).  MusyX never
+# notices, because it writes both ends of its own pipe; THP's decoder is the
+# one writer in console order, and a movie came out mirrored: the port's left
+# channel fitted the track's right one 11 dB closer than its left
+# (tools/m38_audio.py against ffmpeg's decode of the same track).  The
+# interleaved path swaps its two pointers; the planar one (flag 1) nothing
+# calls.
+src/dolphin/thp/THPAudio.c	    else {\n        decRightPtr = audioBuffer;\n        decLeftPtr = audioBuffer + 1;\n        step = 2;\n    }	    else {\n        decLeftPtr = audioBuffer;\n        decRightPtr = audioBuffer + 1;\n        step = 2;\n    }
 
 # ---------------------------------------------------------------- game/window.c
 # "Is this a message id or a pointer to a string?"

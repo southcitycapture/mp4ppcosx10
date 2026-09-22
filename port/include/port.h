@@ -506,6 +506,9 @@ typedef struct PortOptions {
                              *   call, patches.txt), four players set up with
                              *   CHAR first -- e.g. mstory2dll:4:0, the story
                              *   ending (PLAN.md 53.8) */
+    int foldcap;            /* --foldcap N  cut the M30 three-texture fold after
+                             *   N units (9: N = 1..6 by frame) -- m448's
+                             *   felt bisect, PLAN.md 53.10                   */
     int thplog;             /* --thplog  one line per movie frame: decoded,
                              *   drawn, dropped, the decode's ms              */
 } PortOptions;
@@ -725,6 +728,7 @@ typedef struct PortTexture {
     unsigned gl_name;
     int w, h, pw, ph;
     void* pending;
+    volatile int* pending_done; /* NULL: the upload frees pending; else it sets *pending_done = 1 */
     int argb;          /* pending is A R G B bytes: GL_BGRA / 8_8_8_8_REV, the Mac's own */
     unsigned long uploads;
 } PortTexture;

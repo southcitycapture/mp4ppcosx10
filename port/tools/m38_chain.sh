@@ -19,6 +19,15 @@
 #   G    --goto mstory2dll:4:0, Mario's story ending (endmov_ma0.thp) at real
 #        time: its movie's log line, frames every 600 to 9000
 #   M2   M again: the re-based md5s are the same run to run
+#   WS   W with --threads 0 --renderthread 1: the mode-select movies in one
+#        CPU's shape
+#   A    Q with --wav: the mixed output, for the audio verdict against the
+#        movie's own track (PLAN.md 53.5)
+#   F    m448 with --foldcap 9: the felt's bisect, six caps in six frames
+#   F2   F with --foldcap 19: the same six caps with the last alpha forced to 1
+#   L    m432 with --drawlog at the wall's frame: chan0's ambient and lights
+#        (--nomovies: M37's schedule, so 14877 is M37's frame -- with the
+#        movies the walk reaches m432 at 13251, inside --ffto 14000)
 #
 #   ~/m38/NAME.log, ~/m38/NAME/frame-*.ppm, ~/m38/index.txt
 cd "$HOME"
@@ -29,6 +38,8 @@ WALK="--com4 --rtc dolphin --freshcard --noconfig --status --ovllog --perf \
 TURBO="--turbo --play board-start-com4.play --frames 9000"
 BOOTSEQ="600,900,1200,1500,1800,2100,2400,2700,3000,3300,3600,3900,4200,4500,4800,5100,5400"
 BOOT="--rtc dolphin --noconfig --status --frames 5600"
+MG="--com4 --rtc dolphin --freshcard --play board-start-com4.play --noconfig --lockstep --status \
+--ovllog --ffto 14000 --frames 20000"
 echo "# m38 chain start $(date)  isle md5 $(md5 -q "$HOME/MarioParty4.app/Contents/MacOS/isle")" >> "$IDX"
 
 run() {
@@ -76,9 +87,17 @@ for r in ${M38_RUNS:-N M}; do
         Y)  run Y 400 $BOOT --thpyuv --dumpframe 1200,2400,3600 ;;
         S)  run S 400 $BOOT --threads 0 --renderthread 1 ;;
         W)  run W 900 $WALK --soak --realtime --frames 16000 ;;
-        G)  run G 400 --rtc dolphin --noconfig --status --goto mstory2dll:4:0 --frames 9000 \
-                --dumpframe 1200,1800,2400,3000,3600,4200,4800,5400,6000,6600,7200,7800,8400 ;;
+        G)  run G 400 --rtc dolphin --noconfig --status --goto mstory2dll:4:0 --play ending-a.play --frames 12000 \
+                --thplog --dumpframe 3000,4000,5000,6000,7000,8000,9000,10000,11000 ;;
         M2) run M2 900 $WALK $TURBO ;;
+        WS) run WS 900 $WALK --soak --realtime --frames 16000 --threads 0 --renderthread 1 ;;
+        A)  run A 400 $BOOT --wav "$D/A.wav" ;;
+        F)  run F 900 --minigame m448 --turns 1 $MG --mgdump 1200,1201,1202,1203,1204,1205 \
+                --mgend 1260 --foldcap 9 ;;
+        F2) run F2 900 --minigame m448 --turns 1 $MG --mgdump 1200,1201,1202,1203,1204,1205 \
+                --mgend 1260 --foldcap 19 ;;
+        L)  run L 900 --minigame m432 --turns 1 $MG --drawlog 3000 --drawlog-at 14877 \
+                --mgdump 400 --mgend 420 --nomovies ;;
         *)  echo "chain: unknown run $r" ;;
     esac
 done

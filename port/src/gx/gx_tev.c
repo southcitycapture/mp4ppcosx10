@@ -1914,6 +1914,40 @@ void gx_tev_apply(void) {
             }
         }
     }
+    /* M38 (PLAN.md 53.10): --foldcap N, the m448 bisect.  Every unit of the
+     * M30 three-texture fold from the Nth on (the fold's five and the stage
+     * after it) is overwritten with a pass, so the picture is the chain cut
+     * after N units; 9 cycles N = 1..6 by frame, and six dumped frames in a
+     * row are the whole bisect on one card. */
+    if (port_opt.foldcap && regfix_shape == 5 && regfix_k >= 0 && gl13_live()) {
+        /* 10 + N: the same, and the chain's last unit's alpha forced to 1 --
+         * the draw alpha-tests at >= 1, so this shows the colour the chain
+         * makes whatever its alpha is */
+        int mode = port_opt.foldcap % 10, force_a = port_opt.foldcap >= 10;
+        int cap = mode == 9 ? 1 + (int)(gl13_frame_number() % 6u) : mode;
+        int u;
+        for (u = regfix_k + cap; u < stages && u < gl13_max_tex_units; u++) {
+            glc_texenvi(u, GL_TEXTURE_ENV_MODE, GL_COMBINE);
+            glc_texenvi(u, GL_COMBINE_RGB, GL_REPLACE);
+            glc_texenvi(u, GL_SOURCE0_RGB, GL_PREVIOUS);
+            glc_texenvi(u, GL_OPERAND0_RGB, GL_SRC_COLOR);
+            glc_texenvi(u, GL_COMBINE_ALPHA, GL_REPLACE);
+            glc_texenvi(u, GL_SOURCE0_ALPHA, GL_PREVIOUS);
+            glc_texenvi(u, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
+            glc_texenvf(u, GL_RGB_SCALE, 1.0f);
+            glc_texenvf(u, GL_ALPHA_SCALE, 1.0f);
+        }
+        if (force_a) {
+            static const float one[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+            u = (stages < gl13_max_tex_units ? stages : gl13_max_tex_units) - 1;
+            glc_texenvi(u, GL_COMBINE_ALPHA, GL_REPLACE);
+            glc_texenvi(u, GL_SOURCE0_ALPHA, GL_CONSTANT);
+            glc_texenvi(u, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
+            glc_texenv_color(u, (float*)one);
+        }
+        tev_cache_live = 0; /* the next draw emits again: the cap moves by frame */
+    }
+
     if (emit && cfg_konst_collisions) {
         stat_konst_configs++;
     }

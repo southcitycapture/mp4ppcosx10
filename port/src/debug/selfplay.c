@@ -91,18 +91,22 @@ static const char* const ovl_name[] = {
 #undef DLL
 #define OVL_COUNT ((int)(sizeof(ovl_name) / sizeof(ovl_name[0])) - 1)
 
-/* --goto (M38, PLAN.md 53.8): omMasterInit's first overlay call asks here
- * (patches.txt).  Returns the event number and rewrites *ovl when the flag
- * names an overlay; the four players get characters CHAR, CHAR+1, ... so a
- * screen that reads GWPlayerCfg (the story ending does) finds real ones. */
-int portGotoEvt(int* ovl) {
+/* --goto (M38, PLAN.md 53.8): the boot asks here once its own setup is done
+ * (patches.txt, REL/bootDll).  Returns the overlay to go to, -1 for none,
+ * and the event in *evt; the four players get characters CHAR, CHAR+1, ...
+ * so a screen that reads GWPlayerCfg (the story ending does) finds real
+ * ones.  Once: a boot that comes round again boots. */
+int portGotoOvl(int* evt) {
     char name[64];
     const char* colon;
-    int i, evt = 0, ch = 0;
+    int i, ch = 0;
     size_t n;
-    if (!port_opt.gotoovl) {
-        return 0;
+    static int done;
+    *evt = 0;
+    if (!port_opt.gotoovl || done) {
+        return -1;
     }
+    done = 1;
     colon = strchr(port_opt.gotoovl, ':');
     n = colon ? (size_t)(colon - port_opt.gotoovl) : strlen(port_opt.gotoovl);
     if (n >= sizeof(name)) {
@@ -111,7 +115,7 @@ int portGotoEvt(int* ovl) {
     memcpy(name, port_opt.gotoovl, n);
     name[n] = 0;
     if (colon) {
-        evt = atoi(colon + 1);
+        *evt = atoi(colon + 1);
         colon = strchr(colon + 1, ':');
         if (colon) {
             ch = atoi(colon + 1);
@@ -124,18 +128,18 @@ int portGotoEvt(int* ovl) {
     }
     if (!ovl_name[i]) {
         port_log("port> --goto: no overlay named %s; booting normally\n", name);
-        return 0;
+        return -1;
     }
-    *ovl = i;
     for (n = 0; n < 4; n++) {
         GWPlayerCfg[n].character = (s16)((ch + (int)n) % 8);
         GWPlayerCfg[n].pad_idx = (s16)n;
         GWPlayerCfg[n].iscom = n ? 1 : 0;
     }
     GWSystem.storyChar = (s8)ch;
-    port_log("port> --goto: booting into %s (overlay %d) at event %d, character %d first\n",
-             ovl_name[i], i, evt, ch);
-    return evt;
+    port_log("port> --goto: from the boot into %s (overlay %d) at event %d, character %d "
+             "first\n",
+             ovl_name[i], i, *evt, ch);
+    return i;
 }
 
 static const char* screen_name(int ovl) {
