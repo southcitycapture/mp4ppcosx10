@@ -938,3 +938,38 @@ is either ready to offer upstream or has a case to remove.
 * **`kerent.c` declares every libm name as `void f(void)`.** A header
   forced onto every game unit may not include `<math.h>`; a bare macro
   does the redirect and the host math.h's own prototype carries it.
+
+## 0x. Six things M35 paid for *(2026-09-21)*
+
+* **The lab can vanish under you: littlejelly's wired NIC dropped its
+  link for forty minutes** (`tg3 … Link is down`, the PHY advertising
+  10baseT alone), taking the G4 and the mbp with it, and there is no root
+  on littlejelly to reset it.  `ip link show enp1s0f0` first when
+  everything times out at once; the reading goes on from the code and
+  the console frames, and the builds can be made blind
+  (`port/build-ppc.sh` is local) and proved when the link returns.
+* **`g4 stop` ends the runner's job, not a chain script's subshell.**
+  `sh gallery_chain.sh` kept running through the bisect started after
+  it; its `killall -9 isle` and mine killed each other's games (seven
+  rows to rerun).  Kill the `sh` by pid (`ps aux | grep gallery_chain`),
+  then the isle.
+* **`port_fatal`'s dialog hangs an unattended G4 run.**  The m433 fault
+  sat in its dialog for nine minutes inside the gallery chain.  Every
+  chain that runs unattended watches its logs for `port: fatal` and
+  kills the isle by pid (`m35_wave2.sh`'s `wrun`, `m35_final.sh`'s
+  watcher).
+* **The mbp needs the bundle's `LSRequiresNativeExecution` key gone**
+  (the M32 packaging added it; Rosetta refuses the app with "incorrect
+  executable format"), and LaunchServices caches the refusal by path:
+  rename the bundle (`MarioParty4-m35b.app`) rather than edit it in
+  place.
+* **The mbp is not the G4 for the texture cache and for the six-unit
+  chains.**  Its sampled hash caught m415's and m404's canvases by where
+  its windows fell; m448's felt is green there and black on the Radeon
+  with the same TEV; the cluster shapes spike (M26).  A mbp A/B says
+  whether a lever moved a picture; the G4 says whether the picture is
+  right.
+* **The Dolphin dump index runs ~351 frames behind `gc`** (M26b's picks:
+  `S_c = entry_gc − 351` for every game); a trimmer that keeps frames by
+  `gc` keeps the wrong ones (four games re-captured).  Keep ±40 around
+  `entry_gc − 351 + {64, 404, 1204, 2304}`.

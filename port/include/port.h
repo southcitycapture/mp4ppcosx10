@@ -31,8 +31,8 @@ extern "C" {
 /* ---- settings, from argv ------------------------------------------------- */
 /* M32: the shipped version (the dmg's name, the plist, the --defaults header)
  * and the milestone that built it. */
-#define PORT_VERSION_STRING "0.9.2"
-#define PORT_MILESTONE "M34"
+#define PORT_VERSION_STRING "0.9.3"
+#define PORT_MILESTONE "M35"
 
 typedef struct PortOptions {
     const char* image;      /* --image  disc image or extracted files/ tree   */
@@ -332,6 +332,20 @@ typedef struct PortOptions {
     int oldkonst;           /* --oldkonst  claim a unit's GL constant whole
                              *   (RGB and A together) the way every build
                              *   before M16 did.  The A/B lever (PLAN.md 31.4) */
+    int oldczero;           /* --oldczero  M35: lerp(a, b, 0) keeps b as a live input
+                             *   (m425's sea stage PREV + TEXC drawn as TEXC), as M3..M34 */
+    int clrasclr;           /* --clrasclr  M35: GXColor3u8's three bytes are filed as a
+                             *   colour whatever the descriptor's next attribute is
+                             *   (hsfman.c's background quad, written as U8 positions
+                             *   through it, drew nothing), as M3..M34 did */
+    int nodirty;            /* --nodirty  M35: DCStoreRange/DCFlushRange do not mark
+                             *   the texture cache; a CPU-rewritten texture is seen
+                             *   only by the sampled hash, as before (m415's stamps) */
+    int oldakonst;          /* --oldakonst  M35: an alpha read as a colour (A0-2,
+                             *   the alpha konsts) claims the unit's A half even
+                             *   when the RGB half is free, and lerp(a,0,0)+0 is
+                             *   an ADD with a black constant, as M16..M34 did
+                             *   (the shadow pass's A1^2 maps; PLAN.md 50) */
     int mdposonly;          /* --mdposonly  M30: multi-draw a position-only layout too (m434's pond vanishes) */
     int mdmax;              /* --mdmax N  M30: at most N vertices per glMultiDrawArraysEXT call (0 = no cap) */
     int nospot;             /* --nospot  M30: spot lights without their cone, as before (PLAN.md 45 B) */

@@ -286,6 +286,16 @@ static void usage(const char* argv0) {
             "                    pre-M16 path; the board eyes), for the A/B\n"
             "  --oldkonst        claim a unit's GL constant whole instead of RGB\n"
             "                    and A separately (the pre-M16 path), for the A/B\n"
+            "  --oldczero        M35: lerp(a, b, 0) keeps b as an input (a four-input\n"
+            "                    stage, the d term alone drawn: m425's sea), for the A/B\n"
+            "  --clrasclr        M35: GXColor3u8's bytes filed as a colour whatever the\n"
+            "                    next attribute is (the background quad after a shadow\n"
+            "                    pass drew nothing), for the A/B\n"
+            "  --nodirty         M35: the game's DCStoreRange/DCFlushRange do not mark\n"
+            "                    the texture cache (m415's stamps unseen, as before), for the A/B\n"
+            "  --oldakonst       M35: an alpha read as a colour claims the unit's A\n"
+            "                    half even when RGB is free (the M16..M34 claim: the\n"
+            "                    shadow pass's darkness squared), for the A/B\n"
             "  --tlutlog         every GXLoadTlut and every CI texture bind: the\n"
             "                    palette address, count, format, TLUT name, swap and\n"
             "                    cache slot.  Scoped to --drawlog-at's frame if given\n"
@@ -1034,6 +1044,14 @@ int port_parse_args(int argc, char** argv) {
             port_opt.noregfix = 1;
         } else if (!strcmp(a, "--oldkonst")) {
             port_opt.oldkonst = 1;
+        } else if (!strcmp(a, "--oldczero")) {
+            port_opt.oldczero = 1;
+        } else if (!strcmp(a, "--clrasclr")) {
+            port_opt.clrasclr = 1;
+        } else if (!strcmp(a, "--nodirty")) {
+            port_opt.nodirty = 1;
+        } else if (!strcmp(a, "--oldakonst")) {
+            port_opt.oldakonst = 1;
         } else if (!strcmp(a, "--cmpmask") && i + 1 < argc) {
             port_opt.cmpmask = (unsigned)strtoul(argv[++i], NULL, 0);
         } else if (!strcmp(a, "--ovllog")) {

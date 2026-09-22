@@ -120,8 +120,14 @@ static VpLimits vpl;
 #define VPE_MAT    6
 #define VPE_AMB    7
 #define VPE_LIGHT  8
-#define VPE_NLIGHTS 2  /* M18: was 8; nothing in this game lights with more than
-                        * one (PLAN.md 25), and the room went to the palette */
+#define VPE_NLIGHTS 8  /* M18 cut this to 2 ("nothing in this game lights with
+                        * more than one", PLAN.md 25) for the palette's room; M35
+                        * (PLAN.md 50): the M34 soak's log has fifteen variants
+                        * refused for 3-6 lights -- m416's and m427's lamps, the
+                        * boats' point lights on the cave and the river -- every
+                        * one drawn by the CPU path (q at the vertex, the pre-M30
+                        * fog).  GX has eight; the palette (off by default) keeps
+                        * 18 slots of the 192 native params. */
 /* M21: five params a light -- position, colour, distance attenuation (k),
  * angle attenuation (a), direction (the half-angle vector for a specular
  * light) -- the last two for the specular channel (PLAN.md 36) */

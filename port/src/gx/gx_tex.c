@@ -428,12 +428,46 @@ typedef struct CacheEntry {
      * ran at 100%; the first suspect is what the long process accumulates) */
     unsigned gl_bytes;
     unsigned last_used;   /* the frame that last bound it (the budget's LRU) */
+    /* M35 (PLAN.md 50): the game's own "I wrote these texels" signal.  The
+     * console's GP reads main memory, so a CPU-written texture has to be
+     * DCStoreRange'd / DCFlushRange'd before it is drawn, and the port's
+     * DC* bodies (os_misc.c) hand that range here: every entry whose bytes
+     * it overlaps is marked, and its next bind hashes the *whole* image
+     * rather than the four sampled windows -- which is how Stamp Out!'s
+     * stamps (fifty-texel squares the CPU paints into a 600x600 RGB5A3
+     * canvas, m415Dll/main.c:1A60) were never seen at all. */
+    u8 dirty;
+    u32 enc_size;         /* encoded_size(format, w, h) at the last decode */
 } CacheEntry;
 
 #define CACHE_MAX 2048
 static CacheEntry cache[CACHE_MAX];
 static int cache_used;
 static size_t cache_gl_bytes; /* sum of cache[].gl_bytes: what the driver holds */
+static unsigned stat_dirty_calls, stat_dirty_marks, stat_dirty_clean, stat_dirty_redecode;
+
+/* M35: DCStoreRange / DCFlushRange (os_misc.c) land here with the range the
+ * game just wrote.  Every non-copy entry whose encoded bytes overlap it is
+ * marked dirty; the next bind of a dirty entry hashes its whole image. */
+void port_gx_tex_dirty(const void* addr, unsigned long n) {
+    const u8* a = (const u8*)addr;
+    int i;
+    if (port_opt.nodirty || !a || n == 0) {
+        return;
+    }
+    stat_dirty_calls++;
+    for (i = 0; i < cache_used; i++) {
+        CacheEntry* e = &cache[i];
+        const u8* im = (const u8*)e->image;
+        if (e->efb || !im || !e->enc_size || e->dirty) {
+            continue;
+        }
+        if (im < a + n && a < im + e->enc_size) {
+            e->dirty = 1;
+            stat_dirty_marks++;
+        }
+    }
+}
 /* ---- the VRAM budget (M18, PLAN.md 33.0) -----------------------------------
  *
  * The cache was bounded by *entries* (2048, random replacement when full) and
@@ -664,6 +698,11 @@ void gx_tex_report(void) {
              stat_decodes, stat_decode_s * 1000.0, stat_upload_s * 1000.0, stat_hash_s * 1000.0,
              stat_frames_over20, stat_rekeys, stat_rekey_bytes / 1024,
              port_opt.norekey ? " (--norekey)" : "");
+    if (stat_dirty_calls) {
+        port_log("port> texture dirty ranges (M35): %u DC store/flush calls, %u entries marked, "
+                 "%u hashed clean, %u decoded again%s\n", stat_dirty_calls, stat_dirty_marks,
+                 stat_dirty_clean, stat_dirty_redecode, port_opt.nodirty ? " (--nodirty)" : "");
+    }
     port_log("port> texture hash: %u KB hashed in full, %u KB sampled, %u "
              "revalidations (of %u binds)%s%s\n",
              stat_hash_full / 1024, stat_hash_sampled / 1024, stat_revalidate,
@@ -1252,6 +1291,28 @@ static void tex_bind_body(int unit, GXTexObjPort* o, u8 swap) {
         int need_validate = port_opt.texhash_full || validate_every_bind ||
                             e->validated_epoch != cache_epoch;
         e->last_used = frame;
+        if (e->dirty) {
+            /* M35: the game flushed these bytes since the last bind (see
+             * port_gx_tex_dirty).  The exhaustive hash says whether they
+             * changed; the sampled one (four 256-byte windows of a 720 KB
+             * canvas) cannot. */
+            u32 cf = tex_bind_content_hash(o, tlut, 1 /* exhaustive */);
+            e->dirty = 0;
+            e->validated_epoch = cache_epoch;
+            if (e->content_full && cf == e->content_full) {
+                stat_dirty_clean++;
+                stat_hit++;
+            } else {
+                stat_dirty_redecode++;
+                stat_evict++;
+                e->content_full = cf;
+                e->content = tex_bind_content_hash(o, tlut, 0); /* what the epoch compares */
+                e->enc_size = (u32)encoded_size(o->format, o->width, o->height);
+                tex_bind_decode_and_upload(slot, unit, o, tlut);
+            }
+            tex_bind_finish(unit, o, slot);
+            return;
+        }
         if (!need_validate) {
             stat_hit++;
         } else {
@@ -1291,6 +1352,8 @@ static void tex_bind_body(int unit, GXTexObjPort* o, u8 swap) {
             e->lut = tlut ? tlut->lut : NULL;
             e->validated_epoch = cache_epoch;
             e->last_used = frame;
+            e->enc_size = (u32)encoded_size(o->format, o->width, o->height);
+            e->dirty = 0;
             hash_insert(again);
             frame_rekeys++;
             stat_rekeys++;
@@ -1323,6 +1386,8 @@ static void tex_bind_body(int unit, GXTexObjPort* o, u8 swap) {
         cache[slot].swap = swap;
         cache[slot].content = content;
         cache[slot].content_full = content_full;
+        cache[slot].enc_size = (u32)encoded_size(o->format, o->width, o->height);
+        cache[slot].dirty = 0;
         cache[slot].validated_epoch = cache_epoch;
         cache[slot].last_used = frame;
         hash_insert(slot);

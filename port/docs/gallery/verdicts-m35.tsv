@@ -1,0 +1,27 @@
+m401	match	M35: the black band across the sea at +1200 is the background colour now (the quad after the shadow pass, PLAN.md 50.5); the console has the same (10,60,160) there
+m403	match	M35 control: the lamp's halo still duller than the console's (read, not fixed)
+m404	match	M35: the players' crayon trails on every lane (the CPU-painted canvases, 50.4); the guide line from M34
+m405	minor	M35: the water surface draws (the caster-stage collision had killed its alpha); grey-green where the console is blue: the indirect warp
+m406	match	M35: the sky beyond the jump is the background colour, as m401's band (50.5)
+m407	match	M35: the whomps' shadows on the ground and the card's box on its floor (50.3)
+m412	match	M35: the players' shadows on the ice at the console's darkness (50.3)
+m415	match	M35: every stamp on the paper as it is painted (50.4)
+m417	minor	M35 control: the ripple is the warp; the streaks went in M34
+m418	match	M35: the shadows on the stone floor (50.3)
+m421	match	M35: the shadows under the ball and the balloons at the console's darkness (50.3: (87,62,49) against (90,60,41))
+m422	match	M35: the shadows on the belts (50.3)
+m423	match	M35: the three players' shadows on the pitch (50.3)
+m424	match	M35: the shadows on the turntable (50.3)
+m425	minor	M35: the sea behind the Thwomps on the final build (lerp(a,b,0), 50.6); the Thwomps opaque where the console's are translucent (read, not fixed)
+m426	match	M35: the bombs' shadows on the lanes (50.3)
+m427	match	M35: the lamps' glow on the river (the eight-light program, 50.7): 95/43 -> 96/23 at +400
+m432	match	M35 control: the walls as before (read, not fixed)
+m433	match	M35: the players' shadows on the sand (50.3); the one gallery fault of 18:38 did not come back (50.10)
+m434	match	M35 control: byte-identical to M30; the pond's reflection is the warp
+m435	match	M35 control: the sphere from M34
+m436	match	M35: the throne's shadow at the console's darkness (50.3)
+m440	match	M35: the wall, the floor's shadows and the head's crown (50.3, 50.5): 93/62 -> 96/42 at +400
+m444	match	M35: Toad's and Mario's shadows on the floor (50.3)
+m448	minor	M35: the felt black on the Radeon 9000 and green on the Intel bench with the same TEV chain (read, not fixed)
+m450	match	M35 control: the +400 without the player in view is the play (read, not fixed)
+m453	oracle-failed	M35: the results' black is the console's own background (m461's frame); the yellow is the wipe-in

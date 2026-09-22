@@ -1,6 +1,6 @@
 Mario Party 4 PowerPC Edition
 =============================
-Version 0.9.2
+Version 0.9.3
 
 
 WHAT THIS IS
@@ -151,13 +151,21 @@ The disc image stays wherever you keep it.
 
 WHAT IS NOT QUITE RIGHT YET
 
-Every minigame has been compared against the real game frame by frame;
-two differ in ways a player can see, both the same missing effect (a
-rippled texture the card's fixed pipeline cannot express):
+Every minigame has been compared against the real game frame by frame,
+and the author of this package then went through every frame by hand
+(37 notes: shadows, water, black where the console draws, and single
+games); what is left that a player can see:
 
-    Mario Medley        the pool's light ripple is a flat tint
+    Mario Medley        the pool's light ripple is a flat tint, and the
+                        water is grey-green where the console's is blue
     Makin' Waves        the pool has a flat tint where the console
                         ripples it
+    Cheep Cheep Sweep   the pond is clear where the console's reflects
+                        the sky (the same missing ripple)
+    The Great Deflate   the two inflatable Thwomps are opaque; the
+                        console's are translucent
+    Goomba's Chip Flip  the felt is black on the Radeon 9000 (the same
+                        picture is green on an Intel card)
 
 The character select screen runs at about 23 frames a second on the
 reference machine (the board and most minigames run at the 30 cap).

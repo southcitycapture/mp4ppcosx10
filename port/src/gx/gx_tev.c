@@ -287,9 +287,25 @@ static void emit_channel(int unit, int rgb, Arg a, Arg b, Arg c, Arg d, u8 op, u
         gx_warn("TEV: a +/-0.5 bias is dropped");
     }
 
+    if (c.is_zero && !b.is_zero && !port_opt.oldczero) {
+        /* M35 (PLAN.md 50): lerp(a, b, 0) = a whatever b is -- b drops out and
+         * the stage is a + d.  m425's sea (main.c fn_1_5C20: CPREV, TEXC,
+         * ZERO, TEXC = PREV + TEXC) fell to "a four-input stage with no GL
+         * 1.3 combiner; the d term wins" and drew its texture alone. */
+        b.is_zero = 1;
+        b.is_const = 0;
+        b.src = GL_CONSTANT;
+    }
     if (a.is_zero && b.is_zero && c.is_zero) {
         mode = GL_REPLACE;
         args[n++] = d;
+    } else if (b.is_zero && c.is_zero && d.is_zero && !port_opt.oldakonst) {
+        /* M35 (PLAN.md 50): lerp(a, 0, 0) + 0 = a -- a REPLACE, with no black
+         * constant claiming the unit's RGB half.  The shadow pass's caster
+         * stage (hsfdraw.c FaceDrawShadow: colour A1, alpha A0) is this
+         * shape, and as an ADD(a, black) its black took the RGB half. */
+        mode = GL_REPLACE;
+        args[n++] = a;
     } else if (a.is_zero && d.is_zero) {
         mode = GL_MODULATE;
         args[n++] = b;
@@ -349,7 +365,54 @@ static void emit_channel(int unit, int rgb, Arg a, Arg b, Arg c, Arg d, u8 op, u
         n = 2;
         scale = GX_CS_SCALE_1;
     }
+    /* M35 (PLAN.md 50): in the colour channel, a register's or konst's
+     * *alpha* read as a colour (GX_CC_A0/A1/A2, the alpha konst selects) is a
+     * broadcast of one number, which the unit's constant can carry in its
+     * RGB half just as well as in its A half -- and the A half is what the
+     * stage's alpha channel, emitted after this one, needs for its own
+     * constant.  The shadow pass's caster stage is exactly that pair:
+     * colour A1 (the shadow's darkness) and alpha A0 (the material's), two
+     * different numbers, and since M16 the colour's claim of the A half made
+     * the alpha "collide" and draw with the darkness as its alpha: the caster
+     * blended (SRCALPHA) at A1 over the black pass, and every shadow map in
+     * the game held A1^2 instead of A1.  So: the RGB-operand constants claim
+     * first, then an alpha-broadcast constant takes the RGB half when it is
+     * free and the A half otherwise.  `--oldakonst` is the M16..M34 claim. */
+    if (rgb && !port_opt.oldkonst && !port_opt.oldakonst &&
+        !(n > 0 && args[0].is_zero) && !(n > 1 && args[1].is_zero) && !(n > 2 && args[2].is_zero)) {
+        int pass;
+        for (pass = 0; pass < 2; pass++) {
+            for (i = 0; i < n; i++) {
+                int wants_alpha;
+                if (!args[i].is_const || args[i].is_zero) {
+                    continue;
+                }
+                wants_alpha = args[i].operand == GL_SRC_ALPHA ||
+                              args[i].operand == GL_ONE_MINUS_SRC_ALPHA;
+                if (pass == 0 && wants_alpha) {
+                    continue;
+                }
+                if (pass == 1 && !wants_alpha) {
+                    continue;
+                }
+                if (wants_alpha && !(*konst_set & 1) &&
+                    !((*konst_set & 2) && konst_out[3] == args[i].konst[3])) {
+                    float v = args[i].konst[3];
+                    args[i].konst[0] = args[i].konst[1] = args[i].konst[2] = v;
+                    args[i].operand = args[i].operand == GL_SRC_ALPHA ? GL_SRC_COLOR
+                                                                       : GL_ONE_MINUS_SRC_COLOR;
+                    memcpy(konst_out, args[i].konst, sizeof(float) * 3);
+                    *konst_set |= 1;
+                    args[i].is_const = 2; /* claimed: skip it below */
+                }
+            }
+        }
+    }
     for (i = 0; i < n; i++) {
+        if (args[i].is_const == 2) {
+            args[i].is_const = 1;
+            continue;
+        }
         if (args[i].is_zero) {
             /* Zero as a live argument only survives here in shapes the table
              * above did not fold away; a black constant is the honest value,

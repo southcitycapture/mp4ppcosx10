@@ -17031,3 +17031,469 @@ the bus (§49.8: one pad in the house). The G4 keeps `~/MarioParty4.app`
 scripts `~/m34_chain.sh`, `~/m417ab.sh`, `~/gallery_chain.sh`, and
 `~/m34/`, `~/gallery-m34/` with every run named above.
 
+
+## 50. M35 log: the user's findings *(2026-09-21, littlejelly)*
+
+M35's brief was the user's own review: 37 notes with drawn marks on the
+M31 gallery's frames (`~/review-findings/*.json`, the sheet
+`screenshots/m35-review-sheet.jpg`), grouped by cause and fixed by cause,
+with the console frame of every marked position as the truth. The
+user's summary — "the most common: shadows and light are not the same on
+most games" — turned out to be one cause in the port's TEV emitter, and
+the reading found four more, all five in `port/` behind a flag each, all
+five witnessed on the G4 beside the console. The soak M34 left was clean
+(§50.1). Forty minutes of the afternoon had no lab at all (§50.2). The
+shadows were there and too faint to see: **the shadow pass's caster
+stage drew every shadow map at the darkness squared** (§50.3). Stamp
+Out!'s stamps and Trace Race's crayons were painted by the CPU into
+textures the port's sampled content hash could not see change (§50.4).
+The black band across Manta Rings' sea and every black background in a
+shadow scene were **the full-screen background quad Hu3DShadowExec
+paints after its pass, written through `GXColor3u8` as U8 positions and
+filed by the port as a colour** (§50.5). The Great Deflate's sea was a
+TEV stage whose third input is zero (§50.6). The lamps of Right Oar
+Left? and Long Claw of the Law lit their scenes through the CPU path
+because the vertex program's light block held two (§50.7). The 37 notes,
+each with its verdict, are the table of §50.9; the causes not fixed —
+the indirect warp, the Thwomps' translucency, the pillar spheres and
+caps already fixed in M34 — are §50.8. The gallery, the disk image and
+what the G4 is doing are §50.10–§50.12.
+
+### 50.1 The soak, read
+
+§49.12's leave-behind — `g4 run --soak --com4 --rtc dolphin --freshcard
+--realtime --snap-every 5000 --snap-keep 3 --status --ovllog --stuckwatch
+200 --perf` on the M34 build (`889fd32f…`, the first soak with the
+ZCompLoc pre-pass, the IA8 byte, the `sqrtf` shim and the four pad ports)
+— ran 17:25 to 18:22 G4 time and was ended through `g4 stop` when the
+milestone needed the machine: **59 minutes, 212,460 frames, 3,541 status
+lines** (`docs/soak/m35-soak25-m34-leave.log.gz`, `soak_read.py`).
+
+| | |
+|---|---|
+| speed / presented fps | **100.1%** mean (`machine ok`, `cpu 2`); 28.3 fps overall; the board's `w01dll` 29.3 over turns 1–17 |
+| where it got | board 0, turn 17 of 20 |
+| minigames | 23 plays of 22 modules, **M23's order** (m401 m412 m428 m420 m444 m423 m438 m429 m444 m430 m406 m416 m405 m438 m431 m422 m410 m407 m421 m424 m436 m404 m427); presented 20.5 (m416) to 29.7 |
+| `stack overlap error` / faults / guard hits / mismatches / STUCK | **none / 0 / 0 / 0 / 0** |
+| resyncs | **0** (worst 777 ms behind the schedule) |
+| stalls | 132 `stall:` lines, **all ≤ 433 ms** (frame 95,482, m416's load: 36 textures decoded) |
+| the `sqrtf` shim | nothing on the log: no NaN, no `off-world` primitive, the 22 modules' play as before |
+
+Nothing outranks the milestone.
+
+### 50.2 Forty minutes with no lab
+
+At 17:42 littlejelly's wired NIC dropped its link (`tg3 … Link is down`;
+the PHY advertised 10baseT alone until it came back at 18:22) and with
+it the whole 192.168.0.0/24: the G4 at .200 and the mbp at .101. No
+root here to reset the interface. The G4 kept soaking. The reading went
+on from the code and the console frames, three of the five fixes below
+were built blind in that window (`port/build-ppc.sh` runs here), and
+each was proved on the benches once the link returned. Two notes for the
+next session: `g4 stop` ends the runner's *job* but not a chain script's
+subshell — `sh gallery_chain.sh` kept running through my bisect and the
+two chains' `killall -9 isle` killed each other's games (seven gallery
+rows to rerun, §50.10); kill a chain by the `sh` pid. And `port_fatal`'s
+dialog (M32) hangs an unattended run on the G4 — the M35 chains watch
+their logs for `port: fatal` and kill by pid.
+
+### 50.3 Cause 1+4, the shadows and the light: the caster stage's constant
+
+**What the frames say.** The console's m421 (+400, `c010486`) has a soft
+dark disc under the spiked ball and one under every balloon; the port's
+M26 frame has a faint grey smudge under the ball and nothing under the
+balloons (`screenshots/m35-m421-f14877-shadow-zoom-old-new-console.jpg`).
+m433's sand has none on the port, four on the console; m407's whomps
+throw none; the instruction card's box throws none on every card
+(`m35-m407-card-f14300-old-new-console.jpg`). m436's throne throws one
+(the user: "darkness is different"). M26's diff had called m433's 2%
+"shadows landed" — it was the players' animation and the palms;
+`gallery/m433` M25 against M26 has no shadow in either.
+
+**The reading.** The shadow map is a pass of the casters into a 384×384
+viewport (`Hu3DShadowExec`, hsfman.c:1913), each caster drawn flat:
+`FaceDrawShadow` (hsfdraw.c:1619) sets the stage to **colour `GX_CC_A1`**
+— TEVREG1's alpha, which is `Hu3DShadowData.alpha`, the darkness
+`Hu3DShadowTPLvlSet` chose (0.625 for m421, 0.5 by default, 0.8 for the
+Bowser games) — **and alpha `GX_CA_A0`**, TEVREG0's alpha, the material's
+`255 × (1 − invAlpha)`, blended `SRCALPHA/INVSRCALPHA` over the pass's
+black clear. GL 1.3 gives a texture unit one constant colour, and the
+port's emitter (`emit_channel`, gx_tev.c) claims it in two halves since
+M16: an argument with a colour operand takes RGB, one with an alpha
+operand takes A. `A1` *read as a colour* took the **A half** (a
+`GL_CONSTANT` with `GL_SRC_ALPHA`), the stage's alpha channel then wanted
+the A half for `A0`, and "a stage needs two different constants; the
+first wins" — 10,842 times in one m421 run (`gallery-fix/m421.log`). The
+caster drew with alpha = A1 instead of A0, blended at A1 over black, and
+every shadow map in the game held **A1² where the console holds A1**:
+0.39 for m421's 0.625, 0.25 for the default 0.5, 0.16 for Stamp Out!'s
+0.4, at most 0.25 for the card's fade to 0.5 — smudges. m436's 0.8² =
+0.64 is why the Bowser games kept their shadows. The same collision cost
+the `d = 0` shape a black constant for nothing: `(A1, 0, 0, 0)` went out
+as `ADD(A1, black)`.
+
+**The fix** (`emit_channel`): `lerp(a, 0, 0) + 0` is a `REPLACE(a)` with
+no black constant; and in the colour channel an alpha read as a colour
+(`A0`–`A2`, the alpha konst selects) is a broadcast of one number, which
+the constant's **RGB half** carries as well as its A half — so the
+RGB-operand constants claim first, then an alpha-broadcast takes the RGB
+half when it is free and the A half otherwise, and the alpha channel
+finds its half free. `--oldakonst` is the M16..M34 claim.
+
+**The witness.** The mbp's `--dumpcopy` of m421's shadow pass on the
+fixed build is a 384×384 map whose maximum is **159 = 0.625 × 255**
+(`screenshots/m35-m421-f14877-shadowmap-mbp.png`). On the G4
+(`gallery-m35`, `7d9ea167…`): m421 +400's darkest 12×12 floor block is
+**(87, 62, 49) at (332, 348)** against the console's **(90, 60, 41) at
+the same place** (the M26 frame: (118, 78, 36) at (296, 356) — the smudge);
+the lit floor 254/251/129 on both. 2.2% of the frame moved: the ball's
+shadow and the crescents under the balloons (the balloons at the bottom
+of a bounce, the shadow camera top-down — `(0, 4199, 73)`, `mtxRot` 1°).
+m407 +1200: 11.6% moved, the whomps' shadows on the ground
+(`m35-m407-f15677-old-new-console.jpg`); the card +164: the box's shadow
+on the checkerboard (`m35-m407-card-f14300-old-new-console.jpg`); m436
++1200: 3.4%, the throne's shadow at the console's darkness; m426, m412,
+m418, m422, m424, m444, m433 as §50.10's rows. The three md5 scenes: 800
+and 7000 unchanged, **3000 re-based** (§50.10): the character select's
+hosts' shadows, 1,735 pixels, worst 27 levels, at the console's values.
+
+### 50.4 Cause 5a, Stamp Out! and Trace Race: the textures the CPU paints
+
+**m415, "the coloured stamp isn't working at all"** (+1200, `major`). The
+stamps are not the shadow map's read-back (M23's I8 canvas is the line
+art): `m415Dll/main.c:1A60` (`fn_1_1A60`) **paints each stamp with the
+CPU** — a 50×50 square of RGB5A3 texels, the player's colour with a
+random speckle, written straight into the tiles of a **600×600 RGB5A3
+texture** (720 KB, `lbl_1_bss_338`'s bitmap) and `DCStoreRange`'d. The
+port's texture cache re-validates a bound texture once per frame by a
+*sampled* hash — four 256-byte windows at 0, n/3, 2n/3 and n − 256 of
+anything over a kilobyte (`TEX_HASH_SAMPLE`, M3's profile) — and a
+stamp's few kilobytes in the middle of 720 KB never touch a window: the
+texture was decoded once, blank, and never again. **m404's crayon
+trails** are the same thing one size down: each lane's 960×64 I8 canvas
+(61 KB) drawn into by the CPU and `DCFlushRangeNoSync`'d
+(`m404Dll/main.c:746`).
+
+**The fix.** The console's GP reads main memory, so a CPU-written texture
+*must* be `DCStoreRange`'d or `DCFlushRange`'d before it is drawn — the
+game's own "these bytes changed", and the port's DC bodies were no-ops.
+`os_misc.c`'s four DC store/flush bodies now hand the range to
+`port_gx_tex_dirty` (gx_tex.c): every non-copy cache entry whose encoded
+bytes overlap it is marked, and the next bind of a marked entry hashes
+its **whole** image — decoded again when it changed, a clean hit when it
+did not (the game flushes vertex buffers 20 times a frame; a flush that
+touches no texture costs one walk of the entries). `--nodirty` is the
+old cache. The report line: `texture dirty ranges (M35): N DC
+store/flush calls, N entries marked, N hashed clean, N decoded again`.
+
+**The witness.** On the mbp both arms draw the stamps and the trails
+(`m35-m415-f15677-nodirty-fix-console.jpg`, `m35-m404-f15677-m34-
+dirtyfix-console.jpg`): the Intel bench's sampled hash had been catching
+the canvases by the luck of where the windows fall — the G4's M26 frame
+of m415 and M34 frame of m404 had neither. On the G4: §50.10's rows and
+the `--nodirty` A/B (wave 2).
+
+### 50.5 Cause 3, the black where the console draws: the background quad
+
+**What the frames say.** m401 +1200's black band across the sea is, on
+the console, **(10, 62, 162) — `Hu3DBGColorSet(10, 60, 160)`**, the
+scene's background colour where no geometry is: the gap between the
+water surface and the far reef. m406's "black in the distance" is the
+same gap against `BGColorSet(0x40, 0x40, 0xFF)`. On the port both are
+**(6, 9, 16)**: the EFB's clear.
+
+**The reading.** `Hu3DShadowExec` sets the copy-clear colour to black for
+its pass (hsfman.c:1930: the map's background must be 0), and the frame's
+`GXCopyDisp` clear at the end of the frame therefore clears the EFB
+*black* in every scene with a shadow pass. The console does not show it
+because the pass ends by painting **the whole screen with `BGColor`**:
+an orthographic 0..1 quad, `GX_VA_POS` direct as `GX_U8` XYZ, its four
+positions written through `GXColor3u8(0,0,0) … (0,1,0)` (hsfman.c:2031 —
+the same three bytes on the write-gather pipe, the decomp's choice of
+inline). The port's `GXColor3u8` filed those bytes as a *colour*
+(`put_color`, gx_draw.c) whatever the descriptor's next attribute was,
+and the quad's positions stayed whatever the last vertex left: four
+coincident points, nothing painted, and every shadow scene kept the
+black clear wherever its geometry did not cover — m401's band, m406's
+distance, and every card and results frame whose background is the
+BG colour.
+
+**The fix.** `GXColor3u8` looks at the descriptor's current attribute:
+three bytes on a non-colour attribute are that attribute's three U8 (or
+S8) components, through `put_fixed` with the VAT's shift, as the hardware
+reads them; a colour attribute goes to `put_color` as before. The other
+raw-writer misuses in the game are none (`printfunc.c`, `instDll`,
+`m444`'s pinball write real colours; `m426`/`m439` use `GXPosition3u8`).
+`--clrasclr` is the M3..M34 reading.
+
+**The witness.** The mbp reproduces the G4's M31 frame of m401 +1200 to
+the play: `--clrasclr` has the band, the default has the background
+colour where the console has it (`m35-m401-f15678-clrasclr-fix-
+console.jpg`). m406 and m453 on the G4 in §50.10.
+
+### 50.6 The Great Deflate's sea: lerp(a, b, 0)
+
+m425 +400's red mark, "black background wrong", is the sea: on the port a
+black band from the horizon to the sand where the console has water.
+The backdrop (`grid2`, a 4-vertex quad with a 1024×540 RGB565 photo of
+the sky, `--dumptex`) ends at the horizon; the sea is a hook draw
+(`m425Dll/main.c:5C20`, `fn_1_5C20`: an emboss-bump water with up to
+four maps), and its second stage is **`(CPREV, TEXC, ZERO, TEXC)`** = PREV
++ TEXC, which the port's emitter fell through to "a four-input stage
+with no GL 1.3 combiner; the d term wins" — 86 times a frame on the mbp —
+and drew the texture alone. `lerp(a, b, 0)` is `a` whatever `b` is: the
+emitter drops `b` when `c` is zero and the stage is `ADD(a, d)`.
+`--oldczero` keeps the old shape. The mbp's frame: `--oldczero` the black
+band, the default the sea (`m35-m425-f14877-oldczero-fix-console.jpg`);
+the G4's row in §50.10. The yellow marks — the Thwomps opaque where the
+console's are translucent — are the Thwomp hook's own shader (`thwomp.c`,
+2,500 lines, 44 draws a frame), read only as far as its name: §50.8.
+
+### 50.7 The lights: eight, not two
+
+The M34 soak's log has fifteen `vprog: variant N wants 3–6 lights, the
+block holds 2 -- CPU fallback` lines, all in m416 and m427: M18 had cut
+the vertex program's light block to two ("nothing in this game lights
+with more than one") for the palette's room, and every draw the boats'
+lamps and the saloon's lights reach went down the CPU vertex path —
+`q` divided at the vertex, the pre-M30 fog, the M25 texgen. GX has
+eight; `VPE_NLIGHTS` is 8 (the palette, off by default, keeps 18 of the
+192 native parameters' slots; a program over the card's 128 instructions
+still falls back, and says so under `--vprogstats`). m427 +400 on the
+G4: the river's mean under the boats **(5, 8, 7) → (5, 17, 14)** against
+the console's **(6, 15, 14)** — the lamps' glow on the water, the user's
+"lighting is off by a lot" (`m35-m427-f14877-old-new-console.jpg`); the
+walls unchanged to the level, as they were.
+
+### 50.8 Read, not fixed — and the notes the console settles
+
+* **The indirect warp** (m405's caustic, m417's ripple, m434's ripple;
+  §49.6's shape). Not built: the day's G4 time went to the five causes
+  above and their witnesses; the `GL_ATI_text_fragment_shader` program
+  of §49.6 stands as the spec. m405 +400 on the fixed build lost the flat
+  blue band the M34 frame had across the far lanes (the copy pass's
+  region the background quad had never painted) and keeps a green-grey
+  tint where the console's water is blue; m434's pond is byte-identical
+  to M30's (the refraction copy through a clear surface; the console's
+  darker reflection is the ripple's); m417 +60/+1200 as M34 left them.
+  The two Read Me lines stay.
+* **m425's Thwomps, opaque where the console's are translucent** (the
+  yellow marks): the Thwomp hook (`m425Dll/thwomp.c`, 44 draws a frame
+  through `fn_1_101C4`) draws its own multi-stage shader; read as far as
+  its name. Snapshot: the gallery's `m425` +400 frame, and
+  `--minigame m425 --turns 1 --com4 --rtc dolphin --freshcard --play
+  board-start-com4.play --ffto 14800 --lockstep --dumpframe 14877 --drawlog
+  1500 --drawlog-at 14877` (the mbp's log: `docs/soak/m35-m425-drawlog-
+  f14877.log.gz`).
+* **m448's felt** ("no green there"): the M30 G4 frame's black felt is
+  green on the mbp on every build back to M34 with every M35 lever off —
+  a Radeon-against-Intel difference of the regfix5 fold, and the G4's
+  M35 row (§50.10) is what the user should look at; the table's wooden
+  rim, drawn on the G4's M30 frame, is missing on the mbp in every build
+  (`frame1`: a 32×16 C8 through an 88-entry IA8 TLUT, alpha `TEXA ×
+  KONST`) — the mbp's, not the G4's.
+* **m432's walls, m403's lamp, m450's "missing graphics", m440's
+  arena**: the G4's M35 rows against the console frames (§50.10); m450's
+  +400 on the port has no player in the frame where the console has
+  Mario sitting in the centre — the play (the console's Mario is dazed
+  from the intro; the port's is elsewhere), read on the M35 row.
+* **m435/m436/m437's small sphere top-right and the dart board, m408's
+  box over the island**: the user reviewed the M31 frames; both were
+  §49.3's and §49.5's IA8 byte, fixed in M34 — the M34 and M35 rows show
+  the spheres on the pillars and the tunnel converging to the island.
+  `fixed (M34)` in the table.
+* **m453's results, "black here"**: the results screen's background is
+  black on the console (m461's console results frame `c011987`: black
+  with the RESULTS plate; m453's own console capture hangs, §41b); the
+  yellow polka dots are the wipe-in curtain, and the port's gallery frame
+  is link+40, caught mid-wipe (§41b's note on m455/m460/m461). **By
+  design.**
+* **m433 faults on the G4 in the gallery** (`port: fatal: render thread:
+  unknown record 3553 at 88542088`, +43 into the module, the render
+  thread on; the mbp runs the same frames on the M34 and M35 builds under
+  the render thread without it) — see §50.10 for the M34 build's run on
+  the G4 and the verdict.
+
+### 50.9 The 37 notes, each with its verdict
+
+The user's notes (`docs/review-findings-m35/*.json`: the position, the
+severity, the comment, the frame with the strokes), in the gallery's
+order. *sim before* is the number under the frame the user marked (the
+M31 gallery); *sim after* the same position on the M35 build's frame
+against the same console frame (`m35_findings.py`, which also writes
+`screenshots/m35-finding-<note>.jpg`: the marked frame | the M35 frame |
+the console). The numbers barely move where a shadow lands — a shadow
+is a few hundred pixels — and the rows are read by eye against the
+console; the screenshots named in the last column are the witnesses.
+
+| finding | game | position | severity | the user | sim before | sim after | verdict | why |
+|---|---|---|---|---|---|---|---|---|
+| m401-2 | m401 Manta Rings | entry +1200 | wrong | Looks black over here, draw distance issue | 92%/58% | 94%/52% (m35) | **fixed** | §50.5: the background quad; the band is the BG colour on the G4 (`m35-m401-f15678-old-new-console-g4.jpg`) |
+| m403-1 | m403 Booksquirm | entry +400 | fine | Lamp looks differnet | 95%/40% | 95%/45% (m35) | read-not-fixed | the lamp's glow: 0.1% of the frame moved on M35; the console's halo is brighter; snapshot = the gallery row |
+| m404-5 | m404 Trace Race | entry +1200 | - | The characters are not drawing, they're dragging a crayon but it doesn't work. | 91%/68% | 91%/70% (m35) | **fixed** | §50.4: the crayons on the G4 (`m35-m404-f15677-nodirty-fix-console-g4.jpg`); `--nodirty` lacks the newest strokes (1.1%) |
+| m405-4 | m405 Mario Medley | entry +400 | - | No water, empty pool | 93%/74% | 94%/73% (m35) | read-not-fixed | the surface draws now (§50.8: the collision had killed it by its alpha); the tint is the warp |
+| m405-5 | m405 Mario Medley | entry +1200 | - | Ahh, it looks like the water colour is wrong? it doesn't look right | 87%/88% | 87%/88% (m35) | read-not-fixed | the indirect warp (§49.6) |
+| m406-2 | m406 Avalanche! | entry +1200 | wrong | Okay this game I've watched, when they go off the jump, there's some black in the distance | 75%/75% | 75%/75% (m35) | **fixed** | §50.5: the same quad; the +1200 frame has no sky in it (0.04% moved), the sky over the jump is the BG colour now as m401's band is |
+| m407-0 | m407 Domination | card +164 (14300) | - | Shadows are missing in the pre game, all of them do that | 97%/30% | 98%/38% (m35) | **fixed** | §50.3: the box's shadow on the card's floor (`m35-m407-card-f14300-old-new-console.jpg`) |
+| m407-2 | m407 Domination | entry +1200 | - | SHadows are different | 96%/57% | 96%/49% (m35) | **fixed** | §50.3: the whomps' shadows, 11.6% of the frame (`m35-m407-f15677-old-new-console.jpg`) |
+| m408-5 | m408 Paratrooper Plunge | entry +1200 | - | Box over the area, so you can't see the island at the bottom | 87%/87% | 90%/81% (m34) | **fixed (M34)** | §49.5, the IA8 byte: the M34 and M35 rows |
+| m412-1 | m412 Mr. Blizzard's Brigade | entry +400 | - | Shadows are different | 98%/15% | 98%/17% (m35) | **fixed** | §50.3 (1.6% moved) |
+| m415-2 | m415 Stamp Out! | entry +1200 | major | The coloured stamp isn't working at all | 90%/55% | 89%/57% (m35) | **fixed** | §50.4: every stamp on the G4 (`m35-m415-f15677-nodirty-fix-console-g4.jpg`); `--nodirty` lacks the newest (9.4%) |
+| m417-3 | m417 Makin' Waves | entry +60 | - | Water is not like the console | 88%/79% | 88%/79% (m35) | read-not-fixed | the indirect warp (§49.6) |
+| m417-5 | m417 Makin' Waves | entry +1200 | - | Water is gone, plus some graphic error in the red pen | 91%/66% | 91%/66% (m35) | read-not-fixed | the ripple is the warp; the streaks in the red pen were §49.7's NaN vertices, fixed in M34 (the M34/M35 rows) |
+| m418-1 | m418 Hide and Go BOOM! | entry +400 | - | Shadows are off | 98%/32% | 98%/35% (m35) | **fixed** | §50.3 |
+| m421-1 | m421 Hop or Pop | entry +400 | - | shadows | 97%/49% | 97%/54% (m35) | **fixed** | §50.3: the darkest floor block (87,62,49) against the console's (90,60,41) at the same place |
+| m422-1 | m422 Money Belts | entry +400 | - | shadows | 95%/70% | 95%/70% (m35) | **fixed** | §50.3 |
+| m423-1 | m423 GOOOOOOOAL!! | entry +400 | - | Shadows, and it effecting the colours | 93%/82% | 94%/82% (m35) | **fixed** | §50.3 (1.9% moved: the shadows under the three players) |
+| m424-1 | m424 Blame it on the Crane | entry +400 | - | shadows | 93%/72% | 93%/72% (m35) | **fixed** | §50.3 |
+| m425-1 | m425 The Great Deflate | entry +400 | major | Red: Black background wrong / Yellow: rendered incorrect | 93%/58% | 93%/58% (m35) | **fixed** (red) / read-not-fixed (yellow) | red: §50.6, the sea (the final build's row); yellow: the Thwomp hook's shader (§50.8) |
+| m426-1 | m426 Revers-a-Bomb | entry +400 | - | shadows, plus the light is rendered wrong | 97%/57% | 97%/60% (m35) | **fixed** | §50.3: the bombs' shadows on the lanes (5.2% moved) |
+| m427-1 | m427 Right Oar Left? | entry +400 | major | Lighting is off by. a lot | 95%/43% | 96%/23% (m35) | **fixed** | §50.7: the lamps' glow on the river, (5,8,7) → (5,17,14) against the console's (6,15,14) |
+| m432-1 | m432 Dungeon Duos | entry +400 | minor | G4 looks different on the walls | 97%/38% | 97%/42% (m35) | read-not-fixed | 1.2% moved (the shadows); the walls' lit panels as before; snapshot = the gallery row |
+| m433-1 | m433 Beach Volley Folly | entry +400 | minor | shadows | 95%/77% | - | **fixed** | §50.3: the players' shadows on the sand; and the G4 gallery fault, §50.10 |
+| m434-1 | m434 Cheep Cheep Sweep | entry +400 | major | Water is not rendered | 94%/55% | 94%/55% (m35) | read-not-fixed | the indirect warp (§49.6); byte-identical to M30 |
+| m434-2 | m434 Cheep Cheep Sweep | entry +1200 | - | water is not there | 93%/59% | 93%/59% (m35) | read-not-fixed | the indirect warp |
+| m435-1 | m435 Darts of Doom | card +164 (14300) | - | Small, not right | 97%/32% | 98%/32% (m35) | **fixed (M34)** | §49.3: the pillar sphere |
+| m435-4 | m435 Darts of Doom | entry +400 | - |  | 97%/37% | 98%/35% (m35) | **fixed (M34)** | §49.3 |
+| m435-5 | m435 Darts of Doom | entry +1200 | - |  | 98%/38% | 98%/37% (m35) | **fixed (M34)** | §49.3 |
+| m436-2 | m436 Fruits of Doom | card +264 (14400) | - |  | 97%/43% | 97%/42% (m35) | **fixed (M34)** | §49.3 |
+| m436-5 | m436 Fruits of Doom | entry +1200 | minor | Shadow darkness is differeny | 97%/39% | 98%/36% (m35) | **fixed** | §50.3: the throne's shadow at the console's darkness (3.4% moved) |
+| m437-5 | m437 Balloon of Doom | entry +1200 | - | looks different | 97%/33% | 97%/32% (m34) | **fixed (M34)** | §49.3 |
+| m440-1 | m440 Bowser's Bigger Blast | entry +400 | major | rendering issue | 93%/62% | 96%/42% (m35) | **fixed** | §50.3 + §50.5: the wall, the floor's shadows, the head's crown (21% moved; 93/62 → 96/42) |
+| m440-2 | m440 Bowser's Bigger Blast | entry +1200 | major |  | 94%/58% | 96%/38% (m35) | **fixed** | as above (94/58 → 96/38) |
+| m444-1 | m444 Reversal of Fortune | entry +400 | - | Shadows | 99%/20% | 98%/35% (m35) | **fixed** | §50.3: Toad's and Mario's shadows |
+| m448-1 | m448 Goomba's Chip Flip | entry +400 | - | Rendered wrong, no green there | 93%/61% | 93%/61% (m35) | read-not-fixed | the felt: black on the Radeon, green on the Intel bench, the same TEV chain (§50.8) |
+| m450-1 | m450 The Final Battle! | entry +400 | minor | missing grahics | 97%/34% | 97%/34% (m35) | read-not-fixed | the port's +400 has no player in view where the console's Mario sits dazed in the centre: the play, unresolved (0.4% moved) |
+| m453-7 | m453 Challenge Booksquirm | results | wrong | Black here | - | - | **by design** | the results' background is black on the console (m461's `c011987`); the yellow is the wipe-in, caught mid-wipe at link+40 (§41b) |
+
+**Counts: 37 notes — 26 fixed (6 of them by M34's IA8 byte, which the
+M31 frames the user reviewed predate), 10 read and not fixed, 1 by
+design.** By cause: shadows and light, 17 notes, one cause (§50.3), all
+fixed; water, 7 notes (m405 ×2, m417 ×2, m434 ×2, m427), m427 fixed
+(§50.7), the six the indirect warp; black where the console draws, 4
+notes, three fixed (§50.5: m401, m406; §50.6: m425's red) and m453 by
+design; single games, the rest.
+
+### 50.10 The gallery and the md5s
+
+**The md5s.** `m35_chain.sh` on the G4 (`TD`, the build's defaults, against
+`TDold` = `--oldakonst --clrasclr --nodirty`, the M34 picture on the same
+binary): `TDold` gives M34's three to the byte (0b58c5ee / c58a046d /
+4a9a640c); the default **0b58c5ee / 2b99c60a / 4a9a640c** — 800 and 7000
+unchanged, **3000 re-based** on this justification: ppmdiff of the two
+3000 frames is 1,735 pixels (0.57%), worst channel difference 27, mean
+0.044 levels, every one of them in the band (146, 350)–(475, 372) — the
+character select's hosts' feet — where their shadows are a few levels
+darker, at the console's values (`ref/frames/charselect.png`: the floor
+under Shy Guy 79/63/57 → 75/60/55 against the console's 74/59/55; at
+x 360, 99/82/60 → 95/78/57 against 93/77/56;
+`screenshots/m35-md5-3000-old-new-console.jpg`). The final build
+(`9ac4788f…`, with §50.6 and the version) reads the same three
+(`~/m35/final/index.txt`). `RD` (realtime, 16,000 frames) on the final
+build: title 25.6 presented fps, character select **23.1**, board **28.6** (M33/M34: 23.3 and 29.3 on the soak) — the dirty walk on every flush, the background quad and the eight-light block cost nothing the perf window can see (`docs/soak/m35-final-rt-perfdump.csv.gz`).
+
+**The rows.** Two G4 runs of `gallery_chain.sh`: the 29 games the notes
+name on `7d9ea167…` (`~/gallery-m35`, 18:33–20:07 with the collision of
+§50.2 in the middle: seven games rerun in wave 2) — pulled by
+`gallery_pull_m35.sh`, `compare_m35.py` (`verdicts-m35.tsv`), the rows
+tagged M35 in `compare.html`; and **the whole gallery on the final build**
+(`~/gallery-m35f`, started 20:34, ~3 h; its rows replace the 29 above as tag M35 when pulled — if this section still says so, `sh port/tools/gallery_pull_m35.sh $(seq -f m4%02g 1 63)` with `~/gallery-m35` pointed at `~/gallery-m35f` (or edit the script's path) and `compare_m35.py` finish it). `compare.html` after the M35 rows:
+**56 match / 4 minor / 2 oracle-failed / 1 port-faulted** with the 27 M35 rows (M34: 58 / 2 / 2 / 1): the two new minors are the user's own — m425's Thwomps and m448's felt — on rows the sweep had called a match; `verdicts-m35.tsv` has each row's note. The `sim/>8` numbers of the marked positions are in §50.9's
+table; the games' rows against M34/M31:
+
+| game | +60 | +400 | +1200 | +2300 | card +64 / +164 / +264 | results |
+|---|---|---|---|---|---|---|
+| m401 | **94/74** (94/75) | **95/63** (95/65) | **94/52** (92/58) | **94/57** (94/58) | **99/11** (99/12) / **98/41** (97/43) / **98/27** (97/32) | · |
+| m403 | **99/15** (99/9) | **95/45** (95/40) | 99/0 | · | **99/11** (99/8) / **97/45** (97/36) / **98/29** (97/26) | **96/41** (96/34) |
+| m404 | 95/56 | 93/62 | 91/70 | 82/94 | **99/9** (99/10) / **98/40** (97/43) / **98/28** (97/32) | · |
+| m405 | **95/65** (95/66) | **94/73** (93/74) | 87/88 | 90/91 | **99/11** (99/12) / **97/45** (97/48) / **98/31** (97/36) | · |
+| m406 | 93/20 | **90/53** (90/51) | 75/75 | **90/45** (90/44) | **99/11** (99/8) / **97/42** (97/35) / **98/28** (97/25) | **96/40** (96/32) |
+| m407 | **97/45** (96/52) | **96/45** (97/45) | **96/49** (96/57) | 43/100 | **99/11** (99/8) / **98/38** (97/30) / **98/28** (97/24) | 96/40 |
+| m412 | **99/20** (99/13) | **98/17** (98/15) | **97/25** (97/22) | 64/100 | **99/11** (99/8) / **97/39** (97/33) / **98/26** (98/23) | **96/40** (97/31) |
+| m415 | **96/31** (97/30) | **95/39** (96/39) | **89/57** (90/55) | **86/69** (87/68) | **99/11** (99/8) / **97/42** (97/35) / **98/28** (97/25) | · |
+| m417 | 88/79 | 93/64 | 91/66 | 76/100 | **99/5** (99/7) / **97/42** (97/44) / **98/28** (97/32) | 95/42 |
+| m418 | **98/30** (98/26) | **98/35** (98/32) | **98/33** (98/29) | **98/32** (98/29) | 99/5 / **97/41** (97/35) / **98/25** (97/24) | · |
+| m421 | **97/34** (97/30) | **97/54** (97/49) | **93/59** (93/55) | **95/53** (95/50) | 99/5 / **97/42** (97/35) / **98/28** (97/26) | · |
+| m422 | 96/47 | 95/70 | 95/72 | 96/66 | 99/5 / **97/43** (97/36) / **98/29** (97/27) | · |
+| m423 | 95/68 | **94/82** (93/82) | 91/88 | 90/88 | 99/5 / **97/39** (97/34) / **98/25** (97/24) | 96/41 |
+| m424 | **76/100** (75/100) | 93/72 | 91/75 | 71/100 | 99/5 / **97/42** (97/34) / **98/28** (97/25) | · |
+| m425 | 95/51 | 93/58 | 92/51 | 85/75 | **99/9** (99/7) / **98/38** (97/30) / **98/26** (97/24) | · |
+| m426 | **98/48** (98/28) | **97/60** (97/57) | **92/71** (92/68) | 65/100 | **99/9** (99/7) / **97/46** (97/38) / **98/33** (97/30) | **96/41** (96/35) |
+| m427 | **99/10** (99/21) | **96/23** (95/43) | **95/51** (94/58) | **89/74** (92/43) | **99/9** (99/10) / **97/36** (97/38) / **98/24** (97/29) | · |
+| m432 | **97/31** (98/26) | **97/42** (97/38) | **97/30** (97/25) | **92/58** (92/55) | **99/9** (99/7) / **98/34** (98/28) / **95/31** (94/32) | · |
+| m433 | · | · | · | · | **99/11** (99/8) / **97/45** (97/36) / **93/38** (93/37) | · |
+| m434 | 91/58 | 94/55 | 93/59 | 93/59 | **99/9** (99/10) / **98/38** (97/41) / **98/24** (97/29) | · |
+| m435 | 95/57 | 98/35 | **98/37** (98/38) | 98/31 | 95/48 / 98/32 / 97/42 | · |
+| m436 | 95/56 | 98/35 | **98/36** (98/38) | 97/39 | 97/32 / **98/32** (98/33) / **97/42** (97/43) | · |
+| m440 | **99/17** (94/56) | **96/42** (93/62) | **96/38** (94/58) | **92/57** (90/70) | **99/9** (99/7) / **97/40** (97/32) / **98/27** (97/25) | · |
+| m444 | **98/31** (99/15) | **98/35** (99/20) | **85/80** (85/78) | **90/58** (90/50) | **98/31** (99/16) / **98/34** (99/20) / **98/35** (99/21) | · |
+| m448 | 98/43 | 93/61 | 93/68 | 93/70 | 98/42 / 98/46 / 98/48 | · |
+| m450 | 33/100 | 97/34 | **94/44** (94/43) | 94/65 | 30/100 / 88/84 / 79/95 | · |
+| m453 | · | · | · | · | **99/11** (99/8) / **98/39** (97/32) / **93/40** (92/40) | · |
+
+(bold = moved against the row's previous build, the old number in brackets; `·` = no frame at that position — m433's play frames are the final build's gallery's, §50.10; m453's console hung, §41b.)
+
+**m433's fault.** One gallery run of m433 on the G4 (18:36, the M35 build
+with the render thread, `--snap-every 800`) died at +43 into the module
+with `*** port: fatal: render thread: unknown record 3553 (?) at
+88542088` right after the snapshot write at 14,400
+(`docs/soak/m35-m433-g4-fault.log.gz`), and the fatal's dialog hung the
+chain (§50.2). It did not come back: the M34 build and the M35 build on
+the G4 in wave 2 (`--ffto 14400 --frames 14700`, with and without the
+render thread), three runs in the gallery's own configuration in wave 3
+(two with the render thread, one without, each through the snapshot at
+14,400), and the mbp under the render thread on both builds all ran
+clean, and the final build's full gallery has its m433 row. A race the
+ring's reader lost once, between the snapshot writer and the stream, is
+the reading; the log is the snapshot. Not on the Read Me: a player
+cannot reproduce it.
+
+### 50.11 The disk image: 0.9.3
+
+`port/tools/make_dmg.sh` on the final build (`isle` md5 `9ac4788f…`,
+version 0.9.3 / M35 in `port.h`, the plist's `CFBundleShortVersionString`
+0.9.3, `port/dist/Read Me.txt` with the list below): **`Mario Party 4 PowerPC Edition 0.9.3.dmg`, 3,972,376 bytes, md5 `c805e4ce53ef4c65b0ca13a809f45f19`** (the same 115 files as 0.9.2's image, 9,069,542 bytes unpacked against 9,068,683; the smaller .dmg is UDZO's compression of this binary), built by
+hdiutil on the G4 during the gallery (a copy stays at the G4's `~/Mario
+Party 4 PowerPC Edition 0.9.3.dmg`) and at
+`littlejelly:~/MarioParty4-PowerPC-0.9.3.dmg`. No game data in it.
+
+**The Read Me's list, before and after:**
+
+| line | M34 | M35 |
+|---|---|---|
+| Mario Medley's caustic | on | on: the warp; and the water grey-green where the console's is blue (§50.8) |
+| Makin' Waves' ripple | on | on: the warp |
+| Cheep Cheep Sweep's pond | — | **on**: the same missing ripple (the user's note; §41b had called the row a match) |
+| The Great Deflate's Thwomps | — | **on**: opaque where the console's are translucent (§50.8) |
+| Goomba's Chip Flip's felt | — | **on**: black on the Radeon 9000, green on an Intel card (§50.8) |
+| the character select at about 23 fps | on | on |
+| intro movies skipped; one card | on | on |
+| a second controller works; three and four untested | on | on |
+
+The lines the notes closed are not on it: the shadows (17 notes), the
+black backgrounds, the stamps and the crayons, the lamps, the sea.
+
+### 50.12 What the G4 is doing, and what is left
+
+**The leave-behind**: `~/MarioParty4-chain.app` runs `m35_final.sh` — the
+md5 run, the realtime run, the whole gallery into `~/gallery-m35f`, and
+then `exec`s the soak: `isle --soak --com4 --rtc dolphin --freshcard
+--realtime --snap-every 5000 --snap-keep 3 --status --ovllog --stuckwatch
+200 --perf` on `9ac4788f…` — the first soak with the five M35 changes and
+the eight-light program. M36 reads it first: `stack overlap error`,
+faults, mismatches, the stall list, and `texture dirty ranges` (how many
+entries the game's flushes mark a frame and how many decode again: the
+cost the dirty ranges add, measured nowhere but the soak).
+
+**Left, by name**: the indirect warp (§49.6's program: m405, m417, m434,
+and now the tint of m405's underwater pass); the Thwomps' translucency
+(`thwomp.c`); m448's felt on the Radeon (the six-unit chain with the
+crossbar: an A/B that drops the shadow stage would say whether it is the
+sixth unit); m403's lamp, m432's walls, m450's player (the rows); the
+render-thread record fault of m433, seen once; the character select at
+23 fps. The G4 keeps `~/MarioParty4.app` (`9ac4788f…`, the build in the
+dmg), `~/MarioParty4-m34.app` (0.9.2's, from its dmg), the chain scripts
+`~/m35_chain.sh`, `~/m35_wave2.sh`, `~/m35_wave3.sh`, `~/m35_final.sh`,
+`~/m35_gallery.sh`, and `~/m35/`, `~/gallery-m35/`, `~/gallery-m35f/`
+with every run named above; the mbp keeps `~/MarioParty4-m35c.app`
+(`7b8cc852…`, the czero build before the version bump) and `~/m35/`.

@@ -1733,7 +1733,36 @@ void GXColor4u8(u8 r, u8 g, u8 b, u8 a) {
     }
     put_color(r, g, b, a);
 }
-void GXColor3u8(u8 r, u8 g, u8 b) { GXColor4u8(r, g, b, 255); }
+void GXColor3u8(u8 r, u8 g, u8 b) {
+    int a;
+    if (dl_recording) {
+        dl_u8(r);
+        dl_u8(g);
+        dl_u8(b);
+        return;
+    }
+    a = cur_attr();
+    if (a >= 0 && a != GX_VA_CLR0 && a != GX_VA_CLR1 && !port_opt.clrasclr) {
+        /* M35 (PLAN.md 50): three bytes on the write-gather pipe are three
+         * bytes -- the hardware reads them by the vertex descriptor, not by
+         * the name of the inline that wrote them.  hsfman.c:2031 writes the
+         * full-screen background quad Hu3DShadowExec paints after every
+         * shadow pass (GX_VA_POS direct, GX_U8 XYZ) with GXColor3u8, and
+         * put_color filed the bytes as a colour: the quad's four positions
+         * were whatever the last vertex left, nothing painted, and every
+         * scene with a shadow pass kept the EFB's black clear wherever its
+         * geometry did not cover -- m401's band across the sea, m406's black
+         * distance.  `--clrasclr` is the M3..M34 reading. */
+        s32 v[3];
+        u8 t = gx.vat[vtxfmt][a].type;
+        v[0] = t == GX_S8 ? (s8)r : r;
+        v[1] = t == GX_S8 ? (s8)g : g;
+        v[2] = t == GX_S8 ? (s8)b : b;
+        put_fixed(v, 3);
+        return;
+    }
+    put_color(r, g, b, 255);
+}
 void GXColor1u32(u32 c) {
     GXColor4u8((u8)(c >> 24), (u8)(c >> 16), (u8)(c >> 8), (u8)c);
 }

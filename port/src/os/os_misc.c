@@ -280,10 +280,13 @@ BOOL OSRestoreInterrupts(BOOL level) {
 /* 284 call sites, all no-ops: there is no incoherent DMA engine behind us. */
 
 void DCInvalidateRange(void* addr, u32 n) { (void)addr; (void)n; }
-void DCFlushRange(void* addr, u32 n) { (void)addr; (void)n; }
-void DCStoreRange(void* addr, u32 n) { (void)addr; (void)n; }
-void DCFlushRangeNoSync(void* addr, u32 n) { (void)addr; (void)n; }
-void DCStoreRangeNoSync(void* addr, u32 n) { (void)addr; (void)n; }
+/* M35 (PLAN.md 50): a store/flush is the game telling the GP its bytes
+ * changed; the texture cache wants to know (gx_tex.c port_gx_tex_dirty). */
+void port_gx_tex_dirty(const void* addr, unsigned long n);
+void DCFlushRange(void* addr, u32 n) { port_gx_tex_dirty(addr, n); }
+void DCStoreRange(void* addr, u32 n) { port_gx_tex_dirty(addr, n); }
+void DCFlushRangeNoSync(void* addr, u32 n) { port_gx_tex_dirty(addr, n); }
+void DCStoreRangeNoSync(void* addr, u32 n) { port_gx_tex_dirty(addr, n); }
 void DCZeroRange(void* addr, u32 n) { memset(addr, 0, n); }
 void ICInvalidateRange(void* addr, u32 n) { (void)addr; (void)n; }
 void LCEnable(void) {}
