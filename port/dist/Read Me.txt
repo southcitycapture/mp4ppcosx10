@@ -213,6 +213,11 @@ the three pools wrong through it (the notes say how far it got).
 
 The character select screen runs at about 23 frames a second on the
 reference machine (the board and most minigames run at the 30 cap).
+This version sends the card 7% fewer drawing commands on that screen
+and 1% fewer on the title, by not starting a new batch of triangles
+when the game re-sends a setting it already had; the picture is
+identical to the last version's, frame for frame, and the frame rate
+moves by less than the difference between two runs of the same walk.
 Intro movies are skipped.  The game's memory card is one card in slot A;
 slot B is always empty.  A second controller works (checked with a pad on
 port 1 and the keyboard standing in as player 2); three and four are

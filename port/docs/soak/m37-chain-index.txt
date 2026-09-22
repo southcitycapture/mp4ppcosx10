@@ -1,0 +1,18 @@
+# m37 chain start Tue Sep 22 12:23:39 EDT 2026  isle md5 dfe1d474533e62912955f22a5c4f2a46
+R255 EXIT=0 wall=274s md5 800:0b58c5ee 3000:2b99c60a 7000:4a9a640c args='--soak --realtime --frames 16000 --cmpmask 255'
+R7935 EXIT=0 wall=274s md5 800:0b58c5ee 3000:2b99c60a 7000:4a9a640c args='--soak --realtime --frames 16000 --cmpmask 7935'
+R8191 EXIT=0 wall=273s md5 800:0b58c5ee 3000:2b99c60a 7000:4a9a640c args='--soak --realtime --frames 16000 --cmpmask 8191'
+R255a EXIT=0 wall=273s md5 800:0b58c5ee 3000:2b99c60a 7000:4a9a640c args='--soak --realtime --frames 16000 --cmpmask 255'
+R7935a EXIT=0 wall=273s md5 800:0b58c5ee 3000:2b99c60a 7000:4a9a640c args='--soak --realtime --frames 16000 --cmpmask 7935'
+R8191a EXIT=0 wall=274s md5 800:0b58c5ee 3000:2b99c60a 7000:4a9a640c args='--soak --realtime --frames 16000 --cmpmask 8191'
+R255b EXIT=0 wall=274s md5 800:0b58c5ee 3000:2b99c60a 7000:4a9a640c args='--soak --realtime --frames 16000 --cmpmask 255'
+R7935b EXIT=0 wall=273s md5 800:0b58c5ee 3000:2b99c60a 7000:4a9a640c args='--soak --realtime --frames 16000 --cmpmask 7935'
+R8191b EXIT=0 wall=274s md5 800:0b58c5ee 3000:2b99c60a 7000:4a9a640c args='--soak --realtime --frames 16000 --cmpmask 8191'
+E255 EXIT=0 wall=188s md5 800:0b58c5ee 3000:2b99c60a 7000:4a9a640c args='--turbo --play board-start-com4.play --frames 7100 --submitstats --endlog 800,3000,7000 --gltrace 3000 --cmpmask 255'
+E7935 EXIT=0 wall=189s md5 800:0b58c5ee 3000:2b99c60a 7000:4a9a640c args='--turbo --play board-start-com4.play --frames 7100 --submitstats --endlog 800,3000,7000 --gltrace 3000 --cmpmask 7935'
+E8191 EXIT=0 wall=193s md5 800:0b58c5ee 3000:2b99c60a 7000:4a9a640c args='--turbo --play board-start-com4.play --frames 7100 --submitstats --endlog 800,3000,7000 --gltrace 3000 --cmpmask 8191'
+T7935 EXIT=0 wall=234s md5 800:0b58c5ee 3000:2b99c60a 7000:4a9a640c args='--turbo --play board-start-com4.play --frames 9000 --cmpmask 7935'
+# m37 chain all done Tue Sep 22 13:19:13 EDT 2026
+# m37 chain start Tue Sep 22 13:19:39 EDT 2026  isle md5 dfe1d474533e62912955f22a5c4f2a46
+T EXIT=0 wall=235s md5 800:0b58c5ee 3000:2b99c60a 7000:4a9a640c args='--turbo --play board-start-com4.play --frames 9000'
+# m37 chain all done Tue Sep 22 13:23:39 EDT 2026

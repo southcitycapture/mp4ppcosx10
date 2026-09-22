@@ -18401,7 +18401,7 @@ written extent**: compare the fields, and only the live ones.
 ### 52.4 The five classes, measured: the calls
 
 The same three frames on the same binary, `--cmpmask 255` against
-`--cmpmask 8191` (`docs/soak/m37-E255.log.gz`, `m37-E8191.log.gz`):
+`--cmpmask 8191` (`docs/soak/m37-walk-E255.log.gz`, `m37-walk-E7935.log.gz`, `m37-walk-E8191.log.gz`):
 
 | | title (800) | | character select (3000) | | board (7000) | |
 |---|---:|---:|---:|---:|---:|---:|
@@ -18475,32 +18475,277 @@ did not — the matrices, not the textures, are what separate this
 scene's draws. Both roads out of the character select's 343 calls now
 end at the matrix palette, which this card runs in software (§33.2).
 
+
 ### 52.6 The five classes, measured: the frames a second
 
 `port/tools/m37_chain.sh` as `~/MarioParty4-chain.app` (the M33/M36
 chain's shape), one binary, the **16,000-frame real-time walk three
-times per arm**, medians by `m33_perfstat.py`; the arms are the same
-binary under `--cmpmask 255` (the M36 shape) and `--cmpmask 8191` (all
-five classes). `docs/soak/m37-walk-*.log.gz`, `m37-chain-index.txt`.
+times per arm**. Three arms: `--cmpmask 255` (the M36 shape), `7935`
+(the four cheap classes — everything but the compare-first setters of
+bit 256), `8191` (all five).
 
-**The first round said the lever pointed backwards**, and the columns
-said where:
+**Presented fps is the wrong statistic for this scene, and the walk
+says so.** The character select's cycle sits on the boundary between
+two retraces and three (§48.2): 59% of its cycles take the third, so
+the walk's fps is a mixture of 30 and 20 and moves **1.2 fps between
+repeats of the same arm** (`--cmpmask 255` gave 21.85, 23.08, 22.95).
+`port/tools/m37_perfstat.py` reads the same CSVs for the numbers
+underneath it — the mean work per drawn-frame cycle and the share of
+cycles that took the third retrace, both means over three hundred–odd
+cycles a run rather than a count of 380 frames.
 
-| | charsel consumed | charsel drawn (game / gx / rt + dec) | cycle | **charsel presented** | title | board |
-|---|---:|---:|---:|---:|---:|---:|
-| `--cmpmask 255` ×3 | 4.58 / 4.56 / 4.57 | 34.2 / 34.5 / 34.5 (14.1 / 19.6 / 24.3 + 11.6) | 2.6 | **23.20 / 23.01 / 22.67** | 24.42 / 25.50 / 23.49 | 29.15 / 29.38 / 29.30 |
-| `--cmpmask 8191` ×3 (first build) | 4.79 / 4.88 / 4.82 | 34.4 / 34.6 / 34.4 (14.6 / 19.1 / 24.2 + 11.9) | 2.7 | **22.27 / 22.08 / 21.83** | 25.24 / 25.24 / 24.89 | 29.34 / 28.78 / 28.93 |
+| scene | arm | cycle | third retrace | **work / cycle** | rt | game | presented (3 runs) |
+|---|---|---:|---:|---:|---:|---:|---:|
+| **character select** | `255` | 2.649 | 59.7% | **43.39 ms** | 24.24 | 14.29 | **22.63** (21.85 / 23.08 / 22.95) |
+| | `7935` | 2.643 | 59.5% | **43.22** | 24.40 | 14.31 | **22.67** (22.77 / 23.15 / 22.10) |
+| | **`8191`** | **2.618** | **58.5%** | **42.75** | 24.08 | 14.36 | **22.90** (22.53 / 23.05 / 23.10) |
+| **title** | `255` | 2.385 | 13.1% | 30.24 | 15.64 | 4.28 | 25.21 |
+| | `7935` | 2.363 | 12.6% | 30.16 | 15.44 | 4.45 | 25.44 |
+| | **`8191`** | **2.356** | **12.0%** | **29.81** | 15.44 | 4.34 | **25.54** |
+| **board** | `255` | 2.065 | 4.1% | **31.71** | 15.91 | 14.04 | 29.03 (28.97 / 28.89 / 29.22) |
+| | `7935` | 2.070 | 4.5% | 31.95 | 15.99 | 14.12 | 28.96 |
+| | `8191` | 2.075 | 4.9% | 32.06 | 15.93 | 14.07 | 28.89 (28.52 / 28.92 / 29.22) |
 
-Twenty-five fewer draw calls a drawn frame and **a fifth of a frame a
-second lost**. The `consumed` column is the tell: a consumed frame
-issues no GL at all (§32.1), and it went **4.57 → 4.83 ms**. Something
-in the fixes was being paid by frames that draw nothing.
+**What is measured and what is not.** The **draw calls** are measured:
+368 → 343 on the character select, 235 → 233 on the title, exactly a
+thousand fewer `glDrawArrays` over forty drawn frames and not one other
+GL call moved (§52.2). The **frames a second are not**: every arm's
+three repeats overlap every other arm's, on all three scenes. What sits
+between the two is the work per cycle, which orders the arms the way
+the classes predict and by about what they are worth — the character
+select **43.39 → 42.75 ms, 1.5%**, the title 30.24 → 29.81, and the
+board 31.71 → 32.06 *the other way*, because the board's calls do not
+fall (346 in both arms: its 57 ends are all the matrix's) and it pays
+the compares anyway.
 
-It was, and it is the lesson of the milestone (witness §0aa):
-`GXLoadLightObjImm`'s eight-slot compare and `GXSetNumIndStages`'
-sixteen-stage scan were computed **before** `GX_STATE_TOUCH_IF`, so
-they ran on every call whether or not a batch was pending and whether
-or not the group was on. `Hu3DLightSet` is four million calls on a
-twenty-turn soak. The compare belongs inside the two tests the macro
-makes first; with the three offenders guarded (`gx_batch_pending &&
-(port_opt.cmpmask & GX_CMP_M37)`), the second round is §52.7's.
+**Why 25 calls are only 0.6 ms.** §48.2 divided the character select's
+29 ms of replay by its 367 calls and got ~80 µs a call; 25 × 80 µs is
+2 ms, and the render thread's replay does not move by that (`rt` 24.24
+→ 24.08). The average is dominated by the *vertices*, and the calls
+this milestone removes are the frame's cheapest — four-vertex sprite
+quads from the immediate path. **A per-call cost taken from a frame
+average will over-promise by an order of magnitude on the small draws**
+(witness §0aa), and that, not the batching, is what the 57 of §51.5
+was worth.
+
+**It ships on** (`--cmpmask` defaults to 8191) — strictly fewer calls
+for the same picture, better on the two scenes short of the cap, and
+the board's 1% is inside its own repeat spread. `--cmpmask 255` is the
+M36 shape on the same binary, and 7935 leaves out the one group
+(`GX_CMP_M37`) whose compares cost the most and whose free ends are
+one on the title and none on the character select.
+
+**The cost of getting there was two builds, both instructive.** The
+first computed `GXLoadLightObjImm`'s eight-slot compare and
+`GXSetNumIndStages`' sixteen-stage scan *outside* `GX_STATE_TOUCH_IF`,
+so they ran on every call whether or not a batch was pending —
+`Hu3DLightSet` is four million calls on a soak — and the character
+select's **consumed** frame (which issues no GL at all) went 4.57 →
+4.83 ms: the whole lever spent twice over, presented 23.0 → 22.1. The
+second guarded those and left a subtler one: with `GX_CMP_IMM` on,
+`draw_now` no longer flushed, and on a *consumed* frame an immediate
+primitive is the only thing that can leave `gx_batch_pending` set (a
+display list returns before it decodes, §24.1) — so every compare-first
+setter after it evaluated its compare for a batch that would never be
+drawn, 0.18 ms of a 4.57 ms consumed frame. `draw_now` flushes at once
+when `gl13_draw_off()` now, and the consumed frame is 4.64 against
+4.63.
+
+**All five classes are needed together.** The three `--endlog` arms of
+the same walk say so plainly:
+
+| arm | title | character select | board |
+|---|---|---|---|
+| `--cmpmask 255` | 104 batches, **235** calls, 13 free ends | 249, **368**, 32 free | 228, **346**, 1 free |
+| `--cmpmask 7935` (all but bit 256) | 104, **235**, 13 free | 228, **352**, 11 free | 228, **346**, 1 free |
+| `--cmpmask 8191` | **91**, **233**, **0 free** | **218**, **343**, **1 free** | 228, **346**, 1 free |
+
+Bit 256's own setters end one free batch on the title and none on the
+character select (§52.3's table) — and *without* it the title does not
+move at all and the character select keeps eleven. The classes are not
+additive: a batch the descriptor setters no longer end is simply ended
+by the next texgen or fog write instead, and the last setter standing
+is the one that decides the count. **"Which setter ends the batch" is a
+question with one answer at a time**, which is why the per-setter table
+of §52.3 is a map and not a budget.
+
+### 52.7 The md5s
+
+**Unchanged, on every arm of every walk.** The three references are
+`800 0b58c5ee… / 3000 2b99c60a… / 7000 4a9a640c…` and they come out to
+the byte on:
+
+* the 7,100-frame `--endlog` walk at `--cmpmask` 255, 7935 and 8191;
+* the **16,000-frame real-time walk**, all nine arms (three repeats of
+  each of the three masks);
+* the full **9,000-frame turbo walk** at 7935 and, on the final build
+  with no `--cmpmask` at all, at the shipped default:
+  `T EXIT=0 wall=235s md5 800:0b58c5ee 3000:2b99c60a 7000:4a9a640c`.
+
+They have to: every class in §52.3 removes a *boundary* between draws,
+never a draw, and the draws stay in their order under the state they
+were decoded under. `docs/screenshots/m37-three-frames-unmoved.png` is
+the two arms' three frames side by side with the md5 under each.
+Nothing is re-based in M37.
+
+### 52.8 The warp shader, bounded: both hypotheses tested, both dead
+
+§50.14 left `--tfs` off with two behaviours of the Radeon's
+`GL_ATI_text_fragment_shader` path and no model: m434's EFB copies
+sample **white** at any coordinate while m417's sample right, and a
+**one-texture** draw samples **grey (0.64)** through the shader whatever
+its program while two-texture draws sample right. M37's brief named two
+hypotheses and bounded the item to one G4 run each.
+
+**(a) The copy's target and the NPOT fold — dead, and half of it by
+reading.** `gx_tex.c`'s copy path (the `efb` cache entries) creates an
+ordinary **power-of-two `GL_TEXTURE_2D`**, `GL_RGBA8`, sized once with a
+zero-filled `glTexImage2D` and refilled with `glCopyTexSubImage2D` into
+the bottom-left of the padding, `GL_CLAMP_TO_EDGE` on both axes and
+`GL_LINEAR` both ways, with `su = cw/pw`, `sv = ch/ph` as the fold.
+There is no rectangle target anywhere in the port and no second target
+for the shader's `SampleMap` to disagree with the fixed function about.
+The run settles the other half: **`--tfsdbg 25`** on m434's own warp
+draw (`PassTexCoord r0, t0.stq_dq; MOV r0.rgb, r0`) draws the pond as a
+clean coordinate ramp — green at the left, orange at the right, s
+rising left to right across the surface and t down it, in the folded
+range. **The shader receives the right coordinate on the draw whose
+sample comes back white.**
+
+**(b) The second pass's binding — dead, and the one-texture grey is
+not a pass at all.** `--tfsall 1 --tfsdbg 22` sends every one-texture
+draw through `MOV r0.rgb, color0; MOV r0.a, 1` — a **single-pass**
+program that samples nothing. The frame comes out with the scene's own
+primary colour: white where the surfaces take their colour from a
+texture, and the five characters shaded by their own lighting gradient.
+So on a one-texture draw the program is bound, runs, and its output
+reaches the framebuffer; there is no second pass and nothing is left
+unbound. The 0.64 grey of §50.14 is **`SampleMap`'s return value**, not
+a pass-binding artefact.
+
+**What is left, and it is narrower than it was.** Both unexplained
+behaviours are now localised to one instruction: `SampleMap` returns a
+constant on a draw with one texture unit, and white on m434's EFB
+copies, in programs where `PassTexCoord` delivers the right coordinate
+and `color0` the right colour. Not the coordinate, not the fold, not
+the target, not the program's binding, not the pass structure, not the
+texture's storage or padding or the bind shadow (§50.14's flags). The
+half day is spent; `--tfs` stays **off**, the three pools keep their
+Read Me lines, and the next session starts at `SampleMap` with
+`--tfsall 2` as the working base.
+`docs/screenshots/m37-tfs-two-hypotheses.png` is the two frames.
+
+### 52.9 The two singles, read not fixed
+
+Both are §50.8's "read, not fixed" rows, both on the M37 final build,
+both against the console pair
+(`docs/screenshots/m37-singles-m448-m432.png`).
+
+**m448, Goomba's Chip Flip's felt** (`--drawlog 3000 --drawlog-at 15343
+--gltrace 15343 --tevstats`, `~/m37/tfs/m448dl.log`). The felt is
+**draw 151**: object `grid`, 20 vertices, **six TEV stages, four
+texgens**, `chan0` lit with a white register material — §45.7's
+three-texture material exactly, and the M30 fold *does* match on this
+card (`tev: 6300 unit emissions of the M30 three-texture shape`). The
+`--gltrace` of the draw shows the whole fold across **all six** of the
+Radeon's units:
+
+| unit | texture | combine |
+|---:|---|---|
+| 0 | the 64×64 felt | `GL_REPLACE`, alpha sourced from **`GL_TEXTURE1`** (the crossbar: the third texture bound a unit early) |
+| 1 | the 96×32 CI environment map (148-entry TLUT) | (elided by the shadow — already set) |
+| 2 | the 64×64 RGBA8 decal | `GL_INTERPOLATE(GL_TEXTURE, GL_PREVIOUS, GL_TEXTURE.a)` |
+| 3 | the 1×1 placeholder | `GL_MODULATE(GL_PREVIOUS, GL_PRIMARY_COLOR)` — the light the fold moves one unit later |
+| 4 | the 1×1 placeholder | `GL_REPLACE(GL_PREVIOUS)` |
+| 5 | the 192×192 shadow copy, fold `su 0.75 sv −0.75 tv 0.75` | `GL_MODULATE(GL_PREVIOUS, 1 − GL_TEXTURE)` |
+
+and `glGetError` is **`GL_NO_ERROR`** on the draw. The card advertises
+`GL_ARB_texture_env_crossbar`, `GL_ARB_texture_env_combine` and
+`GL_ATI_texture_env_combine3` and reports six units, so every
+instruction in that table is legal on it and every one is accepted —
+and the same emission on the Intel bench draws the felt green. **Six of
+six units, every combine legal, one driver right and one wrong.** The
+shadow is not the cause: the later two-stage `grid` draws (291, 292)
+multiply by the *same* copy on unit 1 and their grid lines are on the
+picture. **Read, not fixed**; snapshot
+`~/m37/tfs/m448dl/frame-15343.ppm` and the log beside it. The next read
+is a bisect the emission can do by itself: cap the fold's unit count
+(unit 4's pass and unit 5's shadow are the two the chain could give up)
+and find the unit at which the Radeon starts agreeing with the bench.
+
+**m432, Dungeon Duos' walls** (`--drawlog-at 14877`,
+`~/m37/tfs/m432dl2.log`). The wall is `obj440`, 168 vertices, and it is
+**one TEV stage**: `T × RAS` over a 256×256 CI8 through a 236-entry
+TLUT, `chan0` enabled with `lights 01` — one light — and a white
+register material. There is no TEV question here at all: the whole
+difference against the console (the port's stone is a little lighter
+and a little flatter; the two frames are otherwise the same picture)
+is in the **colour channel**, one light and its ambient. **Read, not
+fixed**; snapshot `~/m37/tfs/m432dl2/frame-14877.ppm`. The next read
+needs an instrument change first: `--drawlog` prints `chan0`'s
+*material* colour and not its **ambient**, and on a one-stage lit
+surface the ambient is half the answer.
+
+### 52.10 What M37 shipped, the disk image, and what is left running
+
+**What M37 shipped**, all of it in `port/`:
+
+| | |
+|---|---|
+| `port/src/gx/gx_state.c` | the sixteen setters of `GX_CMP_M37` made compare-first; `GXLoadPosMtxImm` / `GXLoadNrmMtxImm` given `GX_CMP_MSLOT`; the three compares that ran outside the macro's short circuit moved inside it |
+| `port/src/gx/gx_tex.c` | `gx_unit_in_use()` / `gx_tlut_in_use()` and `GX_CMP_TEXU` on `GXLoadTexObj` and `GXLoadTlut` |
+| `port/src/gx/gx_draw.c` | `GX_CMP_IMM` in `draw_now` (and its `gl13_draw_off()` guard), `prim_ctx_differs()` as the net under it, `--endlog`'s per-batch line, `submit_rec_capture_body`'s atlas view, `end_who` at every flush site |
+| `port/src/gx/gx_internal.h` | `GX_CMP_M37` / `GX_CMP_DESC` / `GX_CMP_MSLOT` / `GX_CMP_TEXU` / `GX_CMP_IMM`, and `GX_STATE_TOUCH_DECODE`'s new test |
+| `port/src/platform/main.c`, `include/port.h` | `--endlog`, and `--cmpmask`'s default 255 → **8191** |
+| `tools/m37_ends.py` | the batch ends of a drawn frame by class, with the atlas count |
+| `tools/m37_perfstat.py` | the work per cycle and the third-retrace share, for a difference presented fps cannot see |
+| `tools/m37_chain.sh`, `tools/m37_tfs.sh`, `tools/m37_strip.py` | the three-arm A/B, the warp's two runs and the two singles, the picture strip |
+| `dist/Read Me.txt` | 0.9.6, and one paragraph on the drawing commands |
+
+**The md5s are unchanged** (§52.7): **800 `0b58c5ee…` / 3000
+`2b99c60a…` / 7000 `4a9a640c…`** on the final build (`dfe1d474…`) with
+no flags, and on all fourteen arms of the milestone's walks.
+
+**The disk image.** `port/tools/make_dmg.sh` on the final build:
+**`Mario Party 4 PowerPC Edition 0.9.6.dmg`, 4,253,123 bytes, md5
+`bb9c6513077fe88ef5459c0f91bf147e`**, at
+`littlejelly:~/MarioParty4-PowerPC-0.9.6.dmg` and on the G4 at
+`~/Mario Party 4 PowerPC Edition 0.9.6.dmg`; no game data in it.
+
+**What is left, and what M38 starts with.**
+
+* **The character select is at its floor** for anything that does not
+  carry the matrix: 218 batches against 217 runs of equal state *and*
+  matrix, and the one left is the scene's `GXCopyTex`. Its remaining
+  **42** ends and the board's **56** are all `GXLoadPosMtxImm`'s, and
+  folding them needs the matrix palette (§33.2: ARL in software, 66.7
+  ms a charsel frame against 38.8) or the pre-transform (§37.2:
+  2–4% slower). **Both roads out are measured and both are closed**,
+  and §52.5 closes the third (the atlas). If the character select is
+  to go faster it is not by draw calls.
+* **The one thing the numbers still point at** is the board's `rt`
+  15.9 ms and the character select's 24.2 — the replay itself, per
+  *vertex* rather than per call. Nothing in M37 touched it.
+* **The warp**'s two behaviours are one instruction now (§52.8):
+  `SampleMap`. `--tfsall 2` is still the working base.
+* **m448's felt** wants the fold's unit count bisected (§52.9), and
+  **m432's walls** want `--drawlog` to print `chan0`'s ambient colour
+  before anything else is read there.
+* **`--cmpmask` is eight bits wider than the flag it started as.** The
+  bisect that placed M37's own regression (§52.6) was three arms of one
+  binary; keeping every compare-first group behind its own bit is what
+  made that a morning rather than three builds.
+
+**What is left running.** `~/MarioParty4.app` is `dfe1d474…` (0.9.6,
+M37) and the G4 was started on the same real-time soak M36 left:
+
+```
+isle --soak --com4 --rtc dolphin --freshcard --realtime --snap-every 5000 \
+     --snap-keep 3 --status --ovllog --stuckwatch 200 --perf
+```
+
+The G4 keeps `~/m37/` (the fourteen arm logs, the index, the three
+`--endlog` walks and their frames) and `~/m37/tfs/` (the warp's two
+diagnostics and the two singles, with `m448dl/frame-15343.ppm` and
+`m432dl2/frame-14877.ppm` as their named snapshots); `~/m37_chain.sh`
+is in `~/MarioParty4-chain.app`.

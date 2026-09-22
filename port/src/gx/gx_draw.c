@@ -3955,7 +3955,14 @@ static int batch_apply_now(void) {
  * batch of exactly the same state and matrices (PLAN.md 52). */
 static void draw_now(void) {
     batch_add();
-    if (!(port_opt.cmpmask & GX_CMP_IMM)) {
+    /* ...and on a *consumed* frame it is flushed at once whatever the flag
+     * says.  A display list returns before it decodes when the draw is off
+     * (GXCallDisplayList, PLAN.md 24.1), so an immediate primitive is the
+     * only thing that can leave `gx_batch_pending` set on a frame that
+     * draws nothing -- and a set flag makes every compare-first setter
+     * after it evaluate its compare for a batch that will never be drawn.
+     * That was 0.18 ms of a 4.57 ms consumed character-select frame. */
+    if (!(port_opt.cmpmask & GX_CMP_IMM) || gl13_draw_off()) {
         end_who = "immediate";
         batch_flush();
     }
