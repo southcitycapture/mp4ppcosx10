@@ -11,9 +11,11 @@ chain's per-game logs, a --goto teleport per screen, tools/fps_board.sh's chain
 (w0x/w10/w2x, all its turns pooled), or any other overlay (the title, file
 select, mode select, character select, results, story, options, credits...).
 Per screen: status lines, the MEDIAN and the 10th percentile of presented fps,
-the mean game speed, the render thread's rt and dec medians where the log
-carries them, and PASS when the median meets the bar AND the mean speed is at
-least 99%.  Screens with fewer than --min-lines status lines are listed
+the median game speed (M40: the median, so a scene's one loading line -- a
+resync at the entry of a teleported run -- does not decide it; the soaks
+count resyncs on their own), the render thread's rt and dec medians where the
+log carries them, and PASS when the fps median meets the bar AND the speed is
+at least 99%.  Screens with fewer than --min-lines status lines are listed
 separately as too short to judge.
 
 M40: a log NAME.log with a NAME.csv beside it (--perfdump; tools/fps_board.sh
@@ -24,7 +26,8 @@ its decode share (gdec), the consumed frame's work, the render thread's replay
 stream records (every GL call) -- with the share of vertices the static-
 geometry cache served (vc).  A CSV row belongs to the screen of the first
 status line at or after its frame.  Status lines of a fast-forward (speed
-over 110%, --ffto's turbo stretch) are not the player's and are left out.
+over 110%, or no speed at all: --ffto's turbo stretch) are not the player's
+and are left out, with the CSV rows they cover.
 
 The definition of done, as the user set it: "30fps everything", measured as a
 median of at least 29.5 presented fps at 100% game speed on the dual 1 GHz G4.
@@ -33,6 +36,9 @@ import argparse, bisect, csv, gzip, os, re, statistics as st, sys
 
 ST = re.compile(r'status f(\d+)\s+(\S+)\s+board (\d+) turn (\d+)/(\d+)\s+mg (\d+) \((\S+)\).*?'
                 r'speed (\d+)%\s+([\d.]+) fps presented(?:.*?rt ([\d.]+) ms dec ([\d.]+))?')
+
+
+ANY = re.compile(r'status f(\d+)\s+(\S+)')
 
 
 def pct(xs, p):
@@ -61,15 +67,19 @@ def read(paths, fastcut=110):
     by = {}      # screen -> status tuples
     cost = {}    # screen -> list of csv rows (dicts)
     for path in paths:
-        marks = []   # (frame, screen) of this log's status lines
+        marks = []   # (frame, screen or None) of every status line; None = not the player's
         for line in opn(path):
             m = ST.search(line)
             if not m:
+                a = ANY.search(line)
+                if a:   # a fast-forward's line (turbo: no speed, no presented fps)
+                    marks.append((int(a.group(1)), None))
                 continue
             f, ovl, _, _, _, _, _, speed, fps, rt, dec = m.groups()
-            marks.append((int(f), ovl))
             if int(speed) > fastcut:
+                marks.append((int(f), None))
                 continue
+            marks.append((int(f), ovl))
             by.setdefault(ovl, []).append((int(speed), float(fps),
                                            float(rt) if rt else None, float(dec) if dec else None))
         c = csv_of(path)
@@ -82,7 +92,7 @@ def read(paths, fastcut=110):
             except (KeyError, ValueError):
                 continue
             i = bisect.bisect_left(frames, fr)
-            if i >= len(marks):
+            if i >= len(marks) or marks[i][1] is None:
                 continue
             cost.setdefault(marks[i][1], []).append(r)
     return by, cost
@@ -110,7 +120,7 @@ def table(by, cost, bar, min_lines):
     for k, v in by.items():
         fps = [x[1] for x in v]; spd = [x[0] for x in v]
         rt = [x[2] for x in v if x[2] is not None]; dec = [x[3] for x in v if x[3] is not None]
-        r = dict(screen=k, n=len(v), med=st.median(fps), p10=pct(fps, 0.10), speed=st.mean(spd),
+        r = dict(screen=k, n=len(v), med=st.median(fps), p10=pct(fps, 0.10), speed=st.median(spd),
                  rt=st.median(rt) if rt else None, dec=st.median(dec) if dec else None,
                  c=costs(cost.get(k, [])))
         r['pass'] = r['med'] >= bar and r['speed'] >= 99.0

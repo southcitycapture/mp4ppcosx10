@@ -13,7 +13,46 @@ more texture units with ATI's combiner extensions) — on which the game runs,
 slower than a console on anything under 800 MHz.  **Recommended:** a dual
 1 GHz G4 (or better) with a 64 MB Radeon 9000 or better and Mac OS X 10.5 —
 the machine the port was built on, where it runs at console speed with
-about twenty frames a second on the board.
+30 frames a second on the board (the two promises below: *full game
+speed* is the minimum's, *30 fps everywhere* this machine's class's).
+
+## The two promises *(M40, 2026-09-23)*
+
+The machine check prints a `tier:` line under its verdict (`isle
+--machinecheck`), one of these:
+
+| tier | what it promises | the machines | the evidence |
+|---|---|---|---|
+| **full game speed** (the minimum) | the game runs at the console's speed -- the clock, the music, the CPU players -- on every screen; the picture rate varies by screen | any supported G4 at 800 MHz or more, one CPU or two, a Radeon 9000-class card | the soaks (PLAN.md 54.4: 99.9% over six and a half hours on the reference) |
+| **30 fps everywhere** | every screen a player can reach holds a median of 29.5+ presented frames a second at full game speed -- boot, title, file and mode select, the character select, every board, every minigame, results, story, options, records, credits | **this machine's class and up: a dual 1 GHz G4 with a 64 MB Radeon 9000 or better** (the reference, PowerMac3,5). Faster machines only add headroom | `docs/fps-scoreboard.md`: the scoreboard, one real-time run per screen on the reference (`tools/fps_board.sh` + `tools/fps_board.py`, re-runnable) |
+
+What other machines are expected to do -- **untested**, argued from the
+reference's numbers, never run:
+
+* **A single 1.25-1.42 GHz G4** (Mac mini G4, eMac 2005, iBook/PowerBook
+  G4 1.33-1.67): **full game speed**; not 30 fps everywhere. On one CPU the
+  render thread's replay and the vertex decode run on the game's own core
+  (`--threads 0 --renderthread 1`, applied by the check), so a screen's
+  drawn frame costs the sum of what the reference spreads over two cores:
+  the reference's heaviest minigames spend 20-30 ms replaying and 10 ms
+  decoding per drawn frame besides 15 ms of game, which a 1.42 GHz core
+  (~1.4x the reference's per clock-for-clock work) brings to ~35-40 ms --
+  20 fps there, 30 on the board and the menus. The check says "full game
+  speed ... untested".
+* **A G5** (any): expected to meet both promises -- a 1.6-2.7 GHz 970 does
+  the game thread's work in well under half the reference's time, and the
+  cards shipped with it (Radeon 9600/9800, GeForce FX 5200 and up) list
+  every extension the port needs except where the table below says
+  otherwise. A dual G5 is "30 fps everywhere, expected"; a single G5 is
+  also expected to reach 30 in most scenes, but the check promises only
+  full game speed on one CPU. Untested.
+* **A dual 1.25-1.42 GHz G4** (MDD): the reference's promise with ~25-40%
+  headroom. Untested.
+
+The screens that miss the bar on the reference are listed, worst first,
+with their wall and the next lever, in `docs/fps-scoreboard.md` and
+PLAN.md 55; until the scoreboard shows every screen passing, the second
+promise is the scoreboard's count, not a blanket claim.
 
 ## The verdicts
 

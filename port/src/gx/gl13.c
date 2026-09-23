@@ -628,6 +628,18 @@ int glc_fogcoord_available(void) {
     return glc_FogCoordPointerEXT != NULL;
 }
 
+/* M40 (PLAN.md 55): the array pointers' shadow forgotten -- the vertex
+ * cache's buffer object was bound or unbound, and a pointer value means an
+ * offset in one and an address in the other */
+void glc_arrays_forget(void) {
+    int i;
+    glc.vertex_ptr = glc.color_ptr = glc.normal_ptr = (const void*)-1;
+    glc.fog_ptr = (const void*)-1;
+    for (i = 0; i < GLC_UNITS; i++) {
+        glc.unit[i].coord_ptr = (const void*)-1;
+    }
+}
+
 void glc_fogcoord_array(const void* p, int stride) {
     if (!glc_fogcoord_available()) {
         return;
@@ -772,6 +784,44 @@ void gl13_var_stats(unsigned* waits, unsigned* blocked, unsigned* sets, unsigned
  * ring's `ring_bytes` first and the static-geometry cache's region after it;
  * the fences' chunks cover the ring alone (the cache's region is written only
  * where nothing reads it, and reset behind a finish). */
+/* M40: the vertex cache's buffer object (--vcache ... --vcachevbo): made
+ * here, on the main thread before the render thread owns GL, the size of
+ * the cache's region plus a 64-byte head so no pointer into it is NULL */
+static unsigned gl13_vbo;
+unsigned gl13_vc_vbo(void) { return gl13_vbo; }
+static void vbo_create(size_t bytes) {
+#ifndef PORT_NO_SDL
+    typedef void (*gen_t)(GLsizei, GLuint*);
+    typedef void (*bind_t)(GLenum, GLuint);
+    typedef void (*data_t)(GLenum, long, const void*, GLenum);
+    const char* ext = (const char*)GL(glGetString)(GL_EXTENSIONS);
+    gen_t gen;
+    bind_t bind;
+    data_t data;
+    GLuint id = 0;
+    if (!ext || !strstr(ext, "GL_ARB_vertex_buffer_object")) {
+        port_log("port> vcache: GL_ARB_vertex_buffer_object absent: the region stays in the "
+                 "vertex range\n");
+        return;
+    }
+    gen = (gen_t)SDL_GL_GetProcAddress("glGenBuffersARB");
+    bind = (bind_t)SDL_GL_GetProcAddress("glBindBufferARB");
+    data = (data_t)SDL_GL_GetProcAddress("glBufferDataARB");
+    if (!gen || !bind || !data) {
+        return;
+    }
+    gen(1, &id);
+    bind(0x8892 /* GL_ARRAY_BUFFER_ARB */, id);
+    data(0x8892, (long)(bytes + 64), NULL, 0x88E4 /* GL_STATIC_DRAW_ARB */);
+    bind(0x8892, 0);
+    gl13_vbo = id;
+    port_log("port> vcache: a %lu KB GL_STATIC_DRAW_ARB buffer object (%u) holds the region\n",
+             (unsigned long)(bytes / 1024), (unsigned)id);
+#else
+    (void)bytes;
+#endif
+}
+
 u8* gl13_var_setup(size_t bytes, size_t ring_bytes) {
     void* mem = NULL;
     if (var_ring) {
@@ -787,6 +837,9 @@ u8* gl13_var_setup(size_t bytes, size_t ring_bytes) {
     memset(mem, 0, bytes);
     var_ring = (u8*)mem;
     var_ring_bytes = ring_bytes ? ring_bytes : bytes;
+    if (port_opt.vcache_vbo && bytes > var_ring_bytes && gl_on) {
+        vbo_create(bytes - var_ring_bytes);
+    }
 #ifndef PORT_NO_SDL
     if (gl_on && !port_opt.novar && !port_opt.oldsubmit) {
         const char* ext = (const char*)GL(glGetString)(GL_EXTENSIONS);

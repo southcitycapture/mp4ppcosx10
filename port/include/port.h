@@ -135,6 +135,9 @@ typedef struct PortOptions {
     double vcache_fit;      /* --vcachefit MS: auto (3, the default) keys a
                              *   drawn frame when the render thread's replay +
                              *   the frame's whole decode would pass this (28) */
+    int vcache_vbo;         /* --vcachevbo: the cache's region in a
+                             *   GL_STATIC_DRAW_ARB buffer object (the card's
+                             *   memory) instead of the vertex range (M40)     */
     int cardwait;           /* --cardwait: a card flush waits for the running
                              *   write (M29); default: it leaves its image for
                              *   the writer (M40, PLAN.md 55)                  */
@@ -865,7 +868,7 @@ void rt_auto_frame_end(int drawn, double seconds);
 void rt_auto_frame_begin(void);
 double rt_auto_last_share(void);
 double rt_auto_frame_gdec_ms(void);
-int rt_vcache_inputs(double* replay_ms, double* dec_ms, double* rate_ms); /* M40 */
+int rt_vcache_inputs(double* replay_ms, double* dec_ms, double* rate_ms, double* game_ms); /* M40 */
 void port_vtx_rewrite(const char* who); /* ShapeProc/ClusterProc (patches.txt): the join */
 extern int rt_recording;
 void port_workers_init(void);       /* after the options: reads --threads and hw.ncpu */

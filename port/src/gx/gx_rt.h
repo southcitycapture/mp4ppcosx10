@@ -108,6 +108,8 @@ void rt_glGetIntegerv(GLenum p, GLint* v);
 /* ---- the extensions gl13.c / gx_vprog.c reach through pointers ---- */
 void rt_ext_multi_draw_arrays(GLenum mode, const GLint* first, const GLsizei* count, GLsizei n);
 void rt_ext_flush_var(GLsizei len, const GLvoid* p);
+void rt_ext_bind_buffer(GLuint id);                                 /* M40 */
+void rt_ext_buffer_subdata(long off, long n, const void* p);        /* M40 */
 void rt_ext_set_fence(GLuint f, int chunk); /* leaving chunk `chunk` (-1: none) */
 /* test-then-finish, counted on the replaying side: gl13_var_enter's wait */
 void rt_ext_wait_fence(GLuint f, int chunk);

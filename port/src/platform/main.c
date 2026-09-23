@@ -447,6 +447,7 @@ static void usage(const char* argv0) {
             "                    the frames whose render thread needs it\n"
             "  --vcachefit MS    M40: auto's threshold (28 ms; --novcache off)\n"
             "  --vcachemb N      M40: the cache's region in the vertex range (8)\n"
+            "  --vcachevbo       M40: the cache's region in a buffer object (VRAM)\n"
             "  --cardwait        M40: a card flush waits for the running write (M29)\n"
             "  --synclog         M40: the log written on the calling thread\n"
             "  teleport to the bug (M10):\n"
@@ -961,6 +962,8 @@ int port_parse_args(int argc, char** argv) {
             port_opt.vcache_fit = atof(argv[++i]);
         } else if (!strcmp(a, "--vcachemb") && i + 1 < argc) {
             port_opt.vcache_mb = atoi(argv[++i]);
+        } else if (!strcmp(a, "--vcachevbo")) {
+            port_opt.vcache_vbo = 1;
         } else if (!strcmp(a, "--cardwait")) {
             port_opt.cardwait = 1;
         } else if (!strcmp(a, "--synclog")) {

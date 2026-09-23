@@ -97,6 +97,7 @@ enum {
     OP_BIND_PROG, OP_ENV4, OP_ENVN,
     OP_CALL, OP_PRESENT,
     OP_DECODE, /* M29: a display-list run decoded into the ring (PLAN.md 44) */
+    OP_BIND_BUFFER, OP_BUFFER_SUB, /* M40: the vertex cache's buffer object (PLAN.md 55) */
     OP_N
 };
 
@@ -119,7 +120,7 @@ static const char* const op_name[OP_N] = {
     "FlushVertexArrayRangeAPPLE", "SetFenceAPPLE", "wait fence",
     "BindProgramARB", "ProgramEnvParameter4fvARB", "ProgramEnvParameters4fvEXT",
     "call", "present",
-    "decode",
+    "decode", "BindBufferARB", "BufferSubDataARB",
 };
 
 typedef struct { u32 op, len; } Hdr;
@@ -163,6 +164,8 @@ typedef struct { GLint x, y; GLsizei w, h; GLenum fmt, type; GLvoid* out; } A_re
 typedef struct { GLenum target; GLint level; GLenum fmt, type; GLvoid* out; } A_gettex;
 typedef struct { GLenum* out; } A_geterr;
 typedef struct { GLsizei len; const GLvoid* p; } A_flushvar;
+typedef struct { GLuint id; } A_bindbuf;
+typedef struct { long off, n; const void* p; } A_bufsub;
 typedef struct { GLuint f; int chunk; u32 epoch; } A_fence;
 typedef struct { GLenum target; GLuint idx; GLfloat v[4]; } A_env4;
 typedef struct { GLenum target; GLuint idx; GLsizei n; /* n*4 floats follow */ } A_envn;
@@ -226,6 +229,11 @@ typedef void (*fn_envn_t)(GLenum, GLuint, GLsizei, const GLfloat*);
 typedef void (*fn_fogptr_t)(GLenum, GLsizei, const void*);
 static fn_multidraw_t x_MultiDrawArraysEXT;
 static fn_range_t x_FlushVertexArrayRangeAPPLE;
+typedef void (*fn_bindbuf_t)(GLenum, GLuint);
+typedef void (*fn_bufsub_t)(GLenum, long, long, const void*);
+static fn_bindbuf_t x_BindBufferARB;
+static fn_bufsub_t x_BufferSubDataARB;
+#define RT_ARRAY_BUFFER_ARB 0x8892
 static fn_fence_t x_SetFenceAPPLE, x_FinishFenceAPPLE;
 static fn_fence_test_t x_TestFenceAPPLE;
 static fn_bindprog_t x_BindProgramARB;
@@ -863,6 +871,21 @@ void rt_glGetIntegerv(GLenum p, GLint* v) {
     }
     glGetIntegerv(p, v);
 }
+/* M40: the vertex cache's buffer object -- a bind, and an upload whose bytes
+ * (the cache's own staging copy) stay put until the cache's reset, which
+ * joins the replay first */
+void rt_ext_bind_buffer(GLuint id) {
+    if (!x_BindBufferARB) { return; }
+    if (!rt_recording) { x_BindBufferARB(RT_ARRAY_BUFFER_ARB, id); return; }
+    { REC(OP_BIND_BUFFER, A_bindbuf); a->id = id; }
+    done();
+}
+void rt_ext_buffer_subdata(long off, long n, const void* p) {
+    if (!x_BufferSubDataARB) { return; }
+    if (!rt_recording) { x_BufferSubDataARB(RT_ARRAY_BUFFER_ARB, off, n, p); return; }
+    { REC(OP_BUFFER_SUB, A_bufsub); a->off = off; a->n = n; a->p = p; }
+    done();
+}
 void rt_ext_flush_var(GLsizei len, const GLvoid* p) {
     if (!rt_recording) { x_FlushVertexArrayRangeAPPLE(len, p); return; }
     { REC(OP_FLUSH_VAR, A_flushvar); a->len = len; a->p = p; }
@@ -1084,10 +1107,11 @@ double rt_auto_last_share(void) { return decmode == 3 ? au_share : 0.0; }
  * render thread's last replay, the last frame's whole decode (both threads)
  * and the decode's cost a vertex.  0 when there is no split to read (one
  * CPU, the inline replay, --rtdecode 0..2): the cache is then always on. */
-int rt_vcache_inputs(double* replay_ms, double* dec_ms, double* rate_ms) {
+int rt_vcache_inputs(double* replay_ms, double* dec_ms, double* rate_ms, double* game_ms) {
     if (decmode != 3 || !rt_recording) {
         return 0;
     }
+    *game_ms = au_gd_ms + au_cc_ms + au_prev_gdec_ms; /* the game thread's cycle */
     *replay_ms = st_last_frame_ms;
     *dec_ms = st_last_dec_ms + au_prev_gdec_ms;
     *rate_ms = au_rate_r > 0.0 ? au_rate_r : au_rate_g;
@@ -1460,6 +1484,8 @@ static void replay_one(const Hdr* h) {
         case OP_GET_TEX_IMAGE: { const A_gettex* a = p; glGetTexImage(a->target, a->level, a->fmt, a->type, a->out); cls = RC_OTHER; break; }
         case OP_GET_ERROR: { const A_geterr* a = p; *a->out = glGetError(); cls = RC_OTHER; break; }
         case OP_FLUSH_VAR: { const A_flushvar* a = p; x_FlushVertexArrayRangeAPPLE(a->len, a->p); cls = RC_DRAW; break; }
+        case OP_BIND_BUFFER: { const A_bindbuf* a = p; x_BindBufferARB(RT_ARRAY_BUFFER_ARB, a->id); cls = RC_STATE; break; }
+        case OP_BUFFER_SUB: { const A_bufsub* a = p; x_BufferSubDataARB(RT_ARRAY_BUFFER_ARB, a->off, a->n, a->p); cls = RC_DRAW; break; }
         case OP_SET_FENCE: {
             const A_fence* a = p;
             x_SetFenceAPPLE(a->f);
@@ -1757,6 +1783,10 @@ void rt_start(void* sdl_window, void* sdl_glcontext) {
             x_FinishFenceAPPLE = (fn_fence_t)SDL_GL_GetProcAddress("glFinishFenceAPPLE");
             x_TestFenceAPPLE = (fn_fence_test_t)SDL_GL_GetProcAddress("glTestFenceAPPLE");
         }
+        if (strstr(ext, "GL_ARB_vertex_buffer_object")) {
+            x_BindBufferARB = (fn_bindbuf_t)SDL_GL_GetProcAddress("glBindBufferARB");
+            x_BufferSubDataARB = (fn_bufsub_t)SDL_GL_GetProcAddress("glBufferSubDataARB");
+        }
         if (strstr(ext, "GL_ARB_vertex_program")) {
             x_BindProgramARB = (fn_bindprog_t)SDL_GL_GetProcAddress("glBindProgramARB");
             x_ProgramEnvParameter4fvARB = (fn_env4_t)SDL_GL_GetProcAddress("glProgramEnvParameter4fvARB");
@@ -1939,7 +1969,7 @@ void rt_decode_there(unsigned v) { (void)v; }
 void rt_auto_frame_end(int d, double s) { (void)d; (void)s; }
 void rt_auto_frame_begin(void) {}
 double rt_auto_last_share(void) { return 0.0; }
-int rt_vcache_inputs(double* a, double* b, double* c) { (void)a; (void)b; (void)c; return 0; }
+int rt_vcache_inputs(double* a, double* b, double* c, double* d) { (void)a; (void)b; (void)c; (void)d; return 0; }
 double rt_auto_frame_gdec_ms(void) { return 0.0; }
 void rt_ring_enter(int c) { (void)c; }
 void rt_call(void (*fn)(void*), const void* args, size_t n, int sync) {

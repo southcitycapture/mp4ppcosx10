@@ -141,6 +141,8 @@ static size_t run_pos;         /* byte offset in the ring of the run in hand  */
 static size_t run_cap;
 static size_t vc_cap;          /* the region's bytes (0: no cache)            */
 static size_t vc_cursor;       /* the region's next free byte, from its start */
+static int vc_vbo;             /* --vcachevbo: the region is uploaded to a buffer object */
+#define VC_VBO_HEAD 64         /* the buffer object's offset of the region's byte 0 */
 static int vc_run;             /* the run in hand: 0 ring, 1 a hit, 2 a store */
 static int batch_clean;        /* every run of the pending batch is a hit     */
 static int issue_clean;        /* the batch being issued needs no range flush */
@@ -2194,6 +2196,7 @@ static void draw_log(u32 first, u32 count, u8 dprim) {
  * draw rather than per vertex, so it is a dozen stores against 54 vertices. */
 static void fill_xf_desc(GxXfDesc* d, const u8* s) {
     int t;
+    d->vbo = 0;
     d->pos_mtx = sub_posm;
     d->nrm_mtx = sub_nrmm;
     d->have_nrm = sl.off_nrm >= 0;
@@ -2936,6 +2939,7 @@ static void ring_ensure(void) {
         src_buf = gl13_var_setup(VRING_BYTES + vc_cap, VRING_BYTES);
         src_cap = VRING_BYTES;
         run_cap = src_cap;
+        vc_vbo = vc_cap && port_opt.vcache_vbo && gl13_vc_vbo() != 0;
     }
 }
 /* M27: the ring before the render thread owns GL (gl13_var_setup probes
@@ -3031,7 +3035,7 @@ static void batch_flush(void) {
         out_off_tex = bctx.out_off_tex;
         out_ntex = bctx.out_ntex;
         unsigned calls0 = stat_draws;
-        issue_clean = batch_clean;
+        issue_clean = batch_clean || (vc_vbo && batch_pos >= src_cap);
         batch_clean = 0;
         if (applied) {
             /* the state walk ran at the setter (gx_batch_touch); only the
@@ -3576,7 +3580,18 @@ static int draw_apply(const u8* s, int n, int in_ring) {
          * batch's position becomes an index bias on every segment.  Only
          * for a batch the ring_claim alignment placed (a late flush in
          * batch_add can start a batch anywhere: then the old base). */
-        if (on_gpu && in_ring && !port_opt.nofixbase && src_buf && s >= src_buf &&
+        xfd->vbo = 0;
+        if (on_gpu && in_ring && vc_vbo && s >= src_buf + src_cap) {
+            /* M40: a batch of the cache's region, drawn from its buffer object */
+            size_t rel = (size_t)(s - (src_buf + src_cap));
+            xfd->vbo = 1;
+            if (!port_opt.nofixbase && ((rel % (size_t)sl.stride) == 0)) {
+                bias = (u32)(rel / (size_t)sl.stride);
+                xfd->base = (const u8*)(uintptr_t)VC_VBO_HEAD;
+            } else {
+                xfd->base = (const u8*)(uintptr_t)(VC_VBO_HEAD + rel);
+            }
+        } else if (on_gpu && in_ring && !port_opt.nofixbase && src_buf && s >= src_buf &&
             sl.stride > 0 && ((size_t)(s - src_buf) % (size_t)sl.stride) == 0) {
             bias = (u32)((size_t)(s - src_buf) / (size_t)sl.stride);
             xfd->base = src_buf;
@@ -5557,9 +5572,13 @@ static VcEnt* vc_list_begin(const void* list, u32 nbytes) {
              * cache (the hits' vertices at the decode's rate) over the
              * auto split's dead band.  Elsewhere the keying would be game
              * thread time bought for a thread with room (the board) */
-            double r, d, rate;
-            if (rt_vcache_inputs(&r, &d, &rate)) {
-                vc_frame_on = r + d + (double)vc_last_hits * rate > port_opt.vcache_fit;
+            double r, d, rate, g, full;
+            if (rt_vcache_inputs(&r, &d, &rate, &g)) {
+                /* ... and the render thread is the longer pole: where the
+                 * game thread's own cycle is the wall (Boo's board), keying
+                 * would only lengthen it */
+                full = r + d + (double)vc_last_hits * rate;
+                vc_frame_on = full > port_opt.vcache_fit && full > g;
             } else {
                 vc_frame_on = 1;
             }
@@ -5754,8 +5773,11 @@ static void job_fill(GxDecJob* j, const u8* p, const u8* end, u32 count) {
 static int vc_alloc(size_t bytes, u32* off) {
     size_t st = (size_t)sl.stride;
     size_t at = src_cap + vc_cursor;
-    if (at % st) {
-        at += st - at % st;
+    /* aligned to the stride from the index base: src_buf in the vertex
+     * range, the region's start in the buffer object */
+    size_t rel = vc_vbo ? vc_cursor : at;
+    if (rel % st) {
+        at += st - rel % st;
     }
     if (at + bytes > src_cap + vc_cap) {
         unsigned fr = gl13_frame_number();
@@ -5779,7 +5801,7 @@ static int vc_alloc(size_t bytes, u32* off) {
         vc_reset_frame = fr;
         stat_vc_resets++;
         at = src_cap;
-        if (at % st) {
+        if (!vc_vbo && at % st) {
             at += st - at % st;
         }
     }
@@ -6329,6 +6351,12 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
             /* stored only if the decode produced the run the key promised */
             if ((u32)nverts == vc_cur->nverts) {
                 vc_cur->stored = 1;
+                if (vc_vbo && nverts) {
+                    /* after the decode record: the render thread decodes into
+                     * the staging copy, then uploads it */
+                    rt_ext_buffer_subdata((long)(VC_VBO_HEAD + (vc_cur->off - src_cap)),
+                                          (long)nverts * sl.stride, src_buf + vc_cur->off);
+                }
             } else {
                 vc_cur->valid = 0;
             }

@@ -354,6 +354,8 @@ void glc_get_tex_fold(int unit, float* su, float* sv, float* tv);
  * enter before writing a span, flush before drawing it, left after the draws
  * so the chunks the writer has finished with get their fences. */
 u8* gl13_var_setup(size_t bytes, size_t ring_bytes);
+unsigned gl13_vc_vbo(void);     /* M40: the cache's buffer object, 0 for none */
+void glc_arrays_forget(void);   /* M40 */
 int gl13_var_active(void);
 int gl13_have_multidraw(void);
 void gl13_var_enter(size_t off, size_t len);
@@ -402,6 +404,7 @@ typedef struct GxXfDesc {
     int ntexgen;
     /* the source layout, which becomes the vertex arrays */
     const u8* base;
+    int vbo;                 /* M40: base is an offset in the cache's buffer object */
     int stride, off_nrm, off_clr, off_tex, ntex;
     struct {
         u8 src_kind;         /* 0 texcoord, 1 position, 2 normal             */

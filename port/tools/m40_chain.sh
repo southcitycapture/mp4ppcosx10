@@ -5,11 +5,12 @@
 # g4 run RUNS...`).  Waits M40_SETTLE (90) s first.  One binary
 # (~/MarioParty4.app); ~/m40/NAME.log, NAME.csv, NAME/*.ppm, ~/m40/index.txt.
 #
-#   N / NO / NC      the md5 walk, turbo, --nomovies: cache on / --novcache / count
+#   N / NN / NV / NO / NC   the md5 walk, turbo, --nomovies: auto (the default) / on /
+#                    on in a buffer object / --novcache / count
 #   M                the md5 walk, turbo, movies on (cache on)
 #   W / WO           the md5 walk at real time, --nomovies: on / off
 #   A:GAME:ARM:K     GAME (m431, b4, cs = the character select, title) at real
-#                    time, arm on|off|count, repeat K (the A/B's runs)
+#                    time, arm auto|on|vbo|avbo|off|count, repeat K (the A/B's runs)
 #   SOAK:MIN         a realtime soak of MIN minutes (the pauses' count)
 cd "$HOME"
 [ -f "$HOME/m40.env" ] && . "$HOME/m40.env"
@@ -49,13 +50,23 @@ run() {
 }
 
 arm() {
-    case $1 in on) echo "" ;; off) echo "--novcache" ;; count) echo "--vcache count" ;; esac
+    case $1 in
+        auto)  echo "" ;;                              # the default
+        on)    echo "--vcache on" ;;                   # every frame keyed, the vertex range
+        vbo)   echo "--vcache on --vcachevbo" ;;       # every frame keyed, a buffer object
+        avbo)  echo "--vcachevbo" ;;                   # auto, a buffer object
+        off)   echo "--novcache" ;;
+        count) echo "--vcache count" ;;
+    esac
 }
 
 [ $# -gt 0 ] && M40_RUNS="$*"
 for r in ${M40_RUNS:-N NO}; do
     case $r in
         N)   run N 700 $WALK $TURBO --nomovies ;;
+        NN)  run NN 700 $WALK $TURBO --nomovies --vcache on ;;
+        NV)  run NV 700 $WALK $TURBO --nomovies --vcache on --vcachevbo ;;
+        MV)  run MV 900 $WALK $TURBO --vcache on --vcachevbo ;;
         NO)  run NO 700 $WALK $TURBO --nomovies --novcache ;;
         NC)  run NC 700 $WALK $TURBO --nomovies --vcache count ;;
         M)   run M 900 $WALK $TURBO ;;

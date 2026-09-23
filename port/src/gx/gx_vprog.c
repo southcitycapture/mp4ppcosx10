@@ -1292,6 +1292,18 @@ void gx_vprog_bind(const GxXfDesc* d) {
 
     /* ---- the arrays.  The *source* layout is the vertex format now: no
      * output buffer is written at all, which is the point. */
+    {
+        /* M40: the cache's buffer object bound while its pointers are set
+         * (they keep it), unbound after; the shadow forgotten on a change */
+        static int last_vbo;
+        if (d->vbo != last_vbo) {
+            glc_arrays_forget();
+            last_vbo = d->vbo;
+        }
+        if (d->vbo) {
+            rt_ext_bind_buffer(gl13_vc_vbo());
+        }
+    }
     glc_vertex_array(d->base, d->stride);
     glc_color_array(d->base + d->off_clr, d->stride);
     glc_normal_array(key.have_nrm ? d->base + d->off_nrm : NULL, d->stride);
@@ -1305,6 +1317,9 @@ void gx_vprog_bind(const GxXfDesc* d) {
         } else {
             glc_coord_array(u, NULL, 0);
         }
+    }
+    if (d->vbo) {
+        rt_ext_bind_buffer(0);
     }
 
 #endif
