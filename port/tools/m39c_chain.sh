@@ -17,6 +17,9 @@
 #      SIGINT when the soak is back in modeseldll after the board
 #   D  the extras by --goto: w10dll (the tutorial), w20dll/w21dll (the Extra
 #      Room's two boards), at real time, 3 turns, 25 min each
+#   K  w06's fire blocks: the intro frame's --drawlog and --dumptex
+#   P  exec tools/m39c_perf.sh (copied to ~/m39c_perf.sh): the fps-boards
+#      measurements, the resyncs' named snapshots, then the leave-behind
 #   L  exec the leave-behind soak: --board 1+ (the next board every chain)
 # A fault stops the chain before the next board (no leave-behind), so the
 # G4 is left at the fault's log for its reproduction.  Nothing is killed by
@@ -125,13 +128,29 @@ C)
 D)
     for x in w10dll w20dll w21dll; do
         name=X$x; mkdir -p "$D/$name"; rm -f "$D/$name"/*.ppm
+        # the tutorial is read by a player pressing A through Toad's windows:
+        # the walk's A metronome (every 64 frames to 29,960) does it; the
+        # Extra Room's boards at its minimum 10 turns (PLAN.md 54b.3)
         run $name ${EXTRA_CEIL:-1500} "$D/$name.log" --goto $x:0:0 --com4 --rtc dolphin --freshcard \
-            --noconfig --turns 3 --status --perf --ovllog --stuckwatch 90 \
-            --boarddump 300,1500,3000,6000 --shotdir "$D/$name"
+            --noconfig --turns 10 --status --perf --ovllog --stuckwatch 90 --play board-start-com4.play \
+            --boarddump 300,1500,3000,6000,12000,24000 --shotdir "$D/$name"
         echo "$name EXIT=$RC $(date)" >> "$IDX"
         stop_if_fault "$D/$name.log" $name
         sleep 5
     done
+    ;;
+K)
+    # w06's fire blocks (PLAN.md 54b.5): the intro frame's draws explained and
+    # every texture it decodes written out, the render thread off (the probe's rule)
+    mkdir -p "$D/claw"; rm -f "$D/claw"/*
+    run claw 900 "$D/claw.log" --com4 --rtc dolphin --freshcard --noconfig --nomovies \
+        --play board-start-com4.play --board 6 --ffto 5258 --frames 5364 --norenderthread \
+        --drawlog 4000 --drawlog-at 5358 --dumptex --dumpframe 5358 --shotdir "$D/claw"
+    echo "claw EXIT=$RC $(date)" >> "$IDX"
+    ;;
+P)
+    echo "m39c: perf chain $(date)" >> "$IDX"
+    exec sh "$HOME/m39c_perf.sh"
     ;;
 L)
     echo "m39c: leave-behind start $(date)" >> "$IDX"

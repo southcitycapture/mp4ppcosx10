@@ -44,7 +44,7 @@ def dolphins():
     r = subprocess.run(['pgrep', '-x', 'dolphin-emu'], capture_output=True, text=True)
     return [int(x) for x in r.stdout.split()]
 
-def capture(n, timeout):
+def capture(n, timeout, texdump=False):
     name = f'w0{n}'
     os.makedirs(f'{WORK}/logs', exist_ok=True)
     log = open(f'{WORK}/logs/{name}.capture.log', 'a')
@@ -75,6 +75,10 @@ def capture(n, timeout):
     cmd = ['flatpak', 'run', '--filesystem=home', 'org.DolphinEmu.dolphin-emu', '-u', U, '-b', '-e', ISO, '-v', 'OGL',
            '-C', 'GFX.Settings.FrameDumpsUseFFV1=True', '-C', 'Dolphin.Core.EnableCheats=True',
            '-C', 'Dolphin.Movie.DumpFrames=True', '-C', 'Dolphin.DSP.Backend=No Audio Output']
+    if texdump:   # every texture the board's first 400 frames load, as PNG (Dump/Textures/GMPE01)
+        cmd[cmd.index('Dolphin.Movie.DumpFrames=True')] = 'Dolphin.Movie.DumpFrames=False'
+        cmd += ['-C', 'GFX.Settings.DumpTextures=True', '-C', 'GFX.Settings.DumpBaseTextures=True']
+        shutil.rmtree(f'{U}/Dump/Textures', ignore_errors=True)
     dlog = open(f'{WORK}/logs/{name}.dolphin.log', 'w')
     t0 = time.time()
     proc = subprocess.Popen(cmd, stdout=dlog, stderr=subprocess.STDOUT, env=env, stdin=subprocess.DEVNULL)
@@ -109,6 +113,7 @@ def capture(n, timeout):
                 if cur != target: say(f'WRONG BOARD: {ovl_name(cur)}')
             if entry_gc is not None and turn == 2 and turn2_gc is None and cur == target:
                 turn2_gc = gc
+        if texdump and entry_gc is not None and gc >= entry_gc + 400: reason = 'texdump: entry +400'; break
         if turn2_gc is not None and gc >= turn2_gc + 900: reason = 'turn 2 +900'; break
         if entry_gc is not None and gc >= entry_gc + 24000: reason = 'entry +24000'; break
         if entry_gc is None and gc >= 20000: reason = 'gc 20000 without a board'; break
@@ -126,6 +131,12 @@ def capture(n, timeout):
     try: proc.terminate(); proc.wait(10)
     except Exception: pass
     time.sleep(2); sock.close()
+    if texdump:
+        out = f'{WORK}/{name}-tex'
+        if os.path.exists(out): shutil.rmtree(out)
+        shutil.copytree(f'{U}/Dump/Textures', out)
+        say(f'textures: {len(glob.glob(out + "/**/*.png", recursive=True))} in {out}')
+        return
     avis = sorted(glob.glob(f'{U}/Dump/Frames/*.avi'))
     out = f'{WORK}/{name}'
     if os.path.exists(out): shutil.rmtree(out)
@@ -194,6 +205,7 @@ if __name__ == '__main__':
     ap.add_argument('--win', type=int, default=0)
     a = ap.parse_args()
     if a.cmd == 'capture': capture(a.board, a.timeout)
+    elif a.cmd == 'texdump': capture(a.board, a.timeout, texdump=True)
     elif a.cmd == 'pick': pick(a.board, a.portdir, [int(x) for x in a.frames.split(',')], a.win)
     elif a.cmd == 'setpick':
         # by hand, from a contact sheet of small/, where the content match is fooled

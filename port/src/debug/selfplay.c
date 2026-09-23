@@ -151,6 +151,20 @@ int portGotoOvl(int* evt) {
         BoardPartyConfigSet(0, 0, 0, port_opt.turns ? port_opt.turns : 20, 0, 0, 0, 0);
         _SetFlag(FLAG_ID_MAKE(1, 11)); /* BoardPartyConfigSet clears 1,11 */
     } else if (i == DLL_w20dll || i == DLL_w21dll) {
+        /* The Extra Room offers 10, 20 or 30 turns (mpexDll fn_1_3758:
+         * arg1 * 10 + 10), and the two boards depend on it: their turns
+         * loop inside one MainFunc, so its last-five-turns check
+         * (board/main.c:437) runs once, at the board's start, where 10 - 1
+         * is never under five.  A shorter run makes it true there, and
+         * BoardLast5Exec loads hostMotTbl[7|8] = { -1, 0, 0, ... } -- data
+         * number 0, E3setup.bin's first file, parsed as an HSF motion
+         * (LoadHSF follows its garbage offsets: the M39c w20 fault, PLAN.md
+         * 54b.3).  So the harness holds the menu's minimum. */
+        if (port_opt.turns && port_opt.turns < 10) {
+            port_log("port> --goto %s: --turns %d is under the Extra Room's 10; playing 10\n",
+                     ovl_name[i], port_opt.turns);
+            port_opt.turns = 10;
+        }
         BoardSaveInit(i == DLL_w20dll ? BOARD_ID_EXTRA1 : BOARD_ID_EXTRA2);
         BoardPartyConfigSet(0, 0, 0, port_opt.turns ? port_opt.turns : 20, 0, 0, 0, 0);
     }
@@ -423,7 +437,9 @@ static int board_current;  /* 0-based, the board the lever answers now      */
 
 int portBoardPick(int board) {
     int want;
-    if (!port_opt.board || (int)omcurovl != DLL_mentdll) {
+    /* 6 is mentDll's tutorial (fn_1_88A4: BoardSaveInit(6) with flag 1,11),
+     * which is not the party menu's pick: leave it alone */
+    if (!port_opt.board || (int)omcurovl != DLL_mentdll || board > 5) {
         return board;
     }
     want = (port_opt.board - 1 + (port_opt.boardcycle ? board_picks : 0)) % 6;
