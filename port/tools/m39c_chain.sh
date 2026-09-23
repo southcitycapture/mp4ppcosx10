@@ -6,8 +6,10 @@
 #   A  the lever's witness: the md5 walks M (movies) / N (--nomovies), the
 #      same with --board 1 (MB1 / NB1: must be byte-identical), and NB2
 #      (--board 2: frame 7000 must be Goomba's board)
-#   B  the board survey: boards 1-6 at lockstep with --nomovies, turn 1 and
-#      into turn 2, a frame dumped every 200 from the board's entry
+#   B  the board survey: boards 1-6 at lockstep with --nomovies, the menu's
+#      own 20 turns (as the console's run: a short --turns puts the last-five-
+#      turns event on turn 1), turn 1 and into turn 2, a frame dumped every
+#      250 from the board's entry
 #      (--boarddump); the gallery's port frames are picked from these
 #   C  every other board played: w02-w06 at real time, the player defaults
 #      plus --soak --com4 --rtc dolphin --freshcard --status --perf --board N
@@ -20,11 +22,12 @@
 # G4 is left at the fault's log for its reproduction.  Nothing is killed by
 # name: a run is waited for, or killed by its own pid.
 cd "$HOME"
-sleep "${M39C_SETTLE:-90}"
+sleep "${M39C_SETTLE:-10}"
 APP="$HOME/MarioParty4.app/Contents/MacOS/isle"
 D="$HOME/m39c"; mkdir -p "$D"
 IDX="$D/index.txt"
-echo "# m39c chain start $(date)  isle md5 $(md5 -q "$APP")  phases ${PHASES:-A B C D L}" >> "$IDX"
+PHASES=${PHASES:-B C D L}
+echo "# m39c chain start $(date)  isle md5 $(md5 -q "$APP")  phases $PHASES" >> "$IDX"
 
 faulted() { grep -q -E '^\*\*\* port: |port: fatal' "$1" 2>/dev/null; }
 
@@ -57,7 +60,7 @@ md5s() {
         [ -f $p ] && h=$(md5 -q $p | cut -c1-8) || h=--------; m="$m $f:$h"; done; echo "$m"
 }
 
-for phase in ${PHASES:-A B C D L}; do
+for phase in $PHASES; do
 case $phase in
 A)
     WALK="--com4 --rtc dolphin --freshcard --noconfig --status --ovllog --perf --dumpframe 800,3000,7000 --turbo --play board-start-com4.play --frames 9000"
@@ -81,12 +84,12 @@ B)
     E=$(sed -n 's/.*boarddump: entered board [a-z0-9]* at frame \([0-9]*\).*/\1/p' "$D/NB1.log" | head -1)
     [ -n "$E" ] || E=${BOARD_ENTRY:-6000}
     FF=$((E - 400))
-    OFFS=""; o=0; while [ $o -le ${SURVEY_LEN:-21000} ]; do OFFS="$OFFS${OFFS:+,}$o"; o=$((o + 200)); done
+    OFFS=""; o=0; while [ $o -le ${SURVEY_LEN:-20000} ]; do OFFS="$OFFS${OFFS:+,}$o"; o=$((o + 250)); done
     for n in ${SURVEY_BOARDS:-1 2 3 4 5 6}; do
         name=S$n; mkdir -p "$D/$name"; rm -f "$D/$name"/*.ppm
         run $name 3600 "$D/$name.log" --com4 --rtc dolphin --freshcard --noconfig --nomovies \
-            --play board-start-com4.play --board $n --turns 2 --ffto $FF --lockstep \
-            --frames $((E + ${SURVEY_LEN:-21000} + 200)) --boarddump $OFFS --shotdir "$D/$name" \
+            --play board-start-com4.play --board $n --ffto $FF --lockstep \
+            --frames $((E + ${SURVEY_LEN:-20000} + 200)) --boarddump $OFFS --shotdir "$D/$name" \
             --status --ovllog --stuckwatch 90
         echo "$name EXIT=$RC entry $E dumps $(ls "$D/$name" | wc -l) $(date)" >> "$IDX"
         stop_if_fault "$D/$name.log" $name

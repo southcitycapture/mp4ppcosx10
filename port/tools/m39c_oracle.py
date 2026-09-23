@@ -13,6 +13,7 @@ chosen dump indices at full size.  The AVI is deleted after the picks (the
 67 GB disk lesson); only the picked PNGs are kept.
 
   m39c_oracle.py capture N            # board N (1-6)
+  m39c_oracle.py setpick N PORTDIR F:C,F:C,...   # by hand
   m39c_oracle.py pick N PORTDIR F1,F2,F3,F4 [--win W]
         # match the port's frames PORTDIR/frame-0F.ppm against small/ and
         # extract the best console frame for each at full size
@@ -164,10 +165,16 @@ def pick(n, portdir, frames, win):
         P = Image.open(pth).convert('L').resize((160, 120))
         # the port's board entry is the frame --boarddump 0 dumped; the console's is entry_gc - 351
         lo = (prev + 1) if prev else idx[0]
+        hi = None
+        if win and res:
+            # around where the port's own spacing puts it, from the first pick (the intro, the
+            # frame-exact anchor): the two walks' boards run at the same pace until the play parts
+            f0, c0 = res[0][0], res[0][1]
+            lo = max(lo, c0 + (f - f0) - win); hi = c0 + (f - f0) + win
         best = None
         for i in idx:
             if i < lo: continue
-            if win and prev and i > prev + win: break
+            if hi is not None and i > hi: break
             d = ImageStat.Stat(ImageChops.difference(P, load(i))).mean[0]
             if best is None or d < best[0]: best = (d, i)
         res.append((f, best[1], round(best[0], 2)))
@@ -188,5 +195,18 @@ if __name__ == '__main__':
     a = ap.parse_args()
     if a.cmd == 'capture': capture(a.board, a.timeout)
     elif a.cmd == 'pick': pick(a.board, a.portdir, [int(x) for x in a.frames.split(',')], a.win)
+    elif a.cmd == 'setpick':
+        # by hand, from a contact sheet of small/, where the content match is fooled
+        # (Bowser's lava moves under every frame): PORTDIR F:C,F:C,...
+        name = f'w0{a.board}'; out = f'{WORK}/{name}'
+        old = {r[0]: r for r in json.load(open(f'{out}/picks.json'))} if os.path.exists(f'{out}/picks.json') else {}
+        res = []
+        for fc in a.frames.split(','):
+            f, c = (int(x) for x in fc.split(':'))
+            if c != (old.get(f) or (0, -1))[1]:
+                subprocess.run([FFMPEG, '-v', 'error', '-y', '-i', f'{WORK}/{name}.avi', '-vf', f'select=eq(n\\,{c})',
+                                '-fps_mode', 'passthrough', '-frames:v', '1', f'{out}/c{c:06d}.png'], check=True)
+            res.append((f, c, old[f][2] if f in old and old[f][1] == c else 'hand'))
+        json.dump(res, open(f'{out}/picks.json', 'w'))
     elif a.cmd == 'clean':
         os.unlink(f'{WORK}/w0{a.board}.avi'); shutil.rmtree(f'{WORK}/w0{a.board}/small')

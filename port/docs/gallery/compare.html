@@ -1,5 +1,5 @@
 <!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Mario Party 4 PowerPC port: the port beside the console, every minigame (M26b, M30, M31, M34, M35, M39)</title>
+<title>Mario Party 4 PowerPC port: the port beside the console, every minigame (M26b, M30, M31, M34, M35, M39) and every board (M39c)</title>
 <style>body{font:13px/1.35 -apple-system,Helvetica,Arial,sans-serif;margin:8px;background:#fafafa}
 .g{border-top:2px solid #ccc;padding:8px 0}.h{font-weight:bold;font-size:16px}.m{color:#555;font-size:12px}
 .f{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}.f figure{margin:0;width:240px;background:#fff;border:1px solid #ddd;padding:3px}
@@ -9,6 +9,7 @@
 table{border-collapse:collapse;font-size:12px}td,th{border:1px solid #ccc;padding:2px 5px;text-align:left}
 @media(max-width:700px){.f figure{width:48%}.f img{width:100%;height:auto}}</style>
 <h1>The port beside the console: every minigame, seven positions (M26b, the oracle sweep; M30, M31, M34, M35 and M39 rows regenerated)</h1>
+<p><a href="#boards">The six party boards (M39c boards) are at the end.</a></p>
 <p>Each row: the port's frame (top: the M26 fix build on the G4, or &mdash; on the rows marked <span class="m30">M30</span> / <span class="m30">M31</span> / <span class="m30">M34</span> / <span class="m30">M35</span> / <span class="m30">M39</span> &mdash; that milestone's build, <code>gallery_chain.sh</code>) over the console's (bottom, Dolphin on littlejelly, the same schedule: board-start walk, four COMs, <code>mg_next</code> and <code>mgNext</code> poked, groups by type) at the same <em>event</em>: the instruction card at instDll +64/+164/+264, the module at entry +60/+400/+1200/+2300, and the results screen 40 frames after the module is left. The console frame's number is Dolphin's dump index. Under each pair: <b>sim</b> = 100·(1 − mean |Δ| / 255) over RGB at 320×240, <b>&gt;8</b> = % of pixels whose worst channel differs by more than 8 levels (ppmdiff's count). The two runs do not share their RNG (the board seeds from the clock at board setup, which the two walks reach at different frames), so play frames differ by the play itself; the card and the intro frames are the frame-exact pairs. PLAN.md §41b has the calibration and the verdicts' reasoning; §45 the M30 rows, §46 the M31 rows, §49 the M34 rows, §50 the M35 rows, §54 the M39 rows (the release candidate, --nomovies) (each regenerated row keeps the earlier verdicts and notes below its own as the before picture).</p>
 <p><span class="match">match: 59</span>, <span class="minor">minor: 2</span>, <span class="oracle-failed">oracle-failed: 2</span> &mdash; 63 games</p>
 <div class="g" id="m401"><div class="h">m401 &mdash; Manta Rings <span class="m">(4-player, type 0)</span> <span class="m">§41: ok &rarr; M26b: match &rarr;</span> <span class="match">match</span> <span class="m30">M39 build</span></div>
@@ -2681,3 +2682,152 @@ table{border-collapse:collapse;font-size:12px}td,th{border:1px solid #ccc;paddin
 <figcaption></figcaption></figure>
 </div>
 <div class="n"><b class="match">match</b>: CONFIRMED ok: the 3x3 numbered panels, the four players and the Select/Choose prompt, the panels flipped to portraits, the panels dropped with Peach standing; the card as m462; the console's results captured<br><b>M26b (match)</b>: CONFIRMED ok: the 3x3 numbered panels, the four players and the Select/Choose prompt, the panels flipped to portraits, the panels dropped with Peach standing; the card as m462; the console's results captured<br><b>preview box</b>: still on both (console box diff 0.5)</div></div>
+<!-- m39c boards -->
+<h1 id="boards">The boards (M39c): the six party boards, four moments each</h1>
+<p>Each board: the port (top: <code>--board N --com4 --rtc dolphin --freshcard --nomovies --play board-start-com4.play</code> at lockstep on the G4, a frame every 250 from the board's entry, <code>tools/m39c_chain.sh</code> phase B) over the console (bottom: Dolphin on littlejelly, <code>ref/movies/board-com4-oracle.txt</code> &mdash; the same walk, four COMs, GWSystem.board poked while mentDll runs, <code>tools/m39c_oracle.py</code>) at the same <em>event</em>: the board's title card over the intro flyover (250 frames after the board overlay is entered), the host showing the first Star, the first player's turn, and turn 1's end (the minigame roulette). The console's frame is found by content, in order, in the Dolphin dump of the board. The two walks reach the board 584 frames apart, so the board's RNG differs: the Star's space, the turn order and the minigame are the play; the title card, the host, the board, the HUD and the dialogs are what the numbers compare. sim and &gt;8 as above. PLAN.md &sect;54b.5.</p>
+<p><span class="match">match: 5</span>, <span class="minor">minor: 1</span> &mdash; 6 boards</p>
+<div class="g" id="w01"><div class="h">w01 &mdash; Toad's Midway Madness <span class="m">(board 1, <code>--board 1</code>)</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">the intro flyover (entry +250)</figcaption>
+<img loading="lazy" src="boards/w01-p05358.jpg" alt="w01 port"><figcaption>port f005358</figcaption>
+<img loading="lazy" src="boards/w01-c004450.jpg" alt="w01 console"><figcaption>console c004450</figcaption>
+<figcaption>sim 97% &middot; &gt;8: 62%</figcaption></figure>
+<figure>
+<figcaption class="lab">the host's first Star (a board event)</figcaption>
+<img loading="lazy" src="boards/w01-p07858.jpg" alt="w01 port"><figcaption>port f007858</figcaption>
+<img loading="lazy" src="boards/w01-c006984.jpg" alt="w01 console"><figcaption>console c006984</figcaption>
+<figcaption>sim 95% &middot; &gt;8: 41%</figcaption></figure>
+<figure>
+<figcaption class="lab">turn 1: the first player on the board</figcaption>
+<img loading="lazy" src="boards/w01-p08108.jpg" alt="w01 port"><figcaption>port f008108</figcaption>
+<img loading="lazy" src="boards/w01-c008504.jpg" alt="w01 console"><figcaption>console c008504</figcaption>
+<figcaption>sim 96% &middot; &gt;8: 47%</figcaption></figure>
+<figure>
+<figcaption class="lab">turn 1's end: the minigame roulette</figcaption>
+<img loading="lazy" src="boards/w01-p10108.jpg" alt="w01 port"><figcaption>port f010108</figcaption>
+<img loading="lazy" src="boards/w01-c010384.jpg" alt="w01 console"><figcaption>console c010384</figcaption>
+<figcaption>sim 98% &middot; &gt;8: 24%</figcaption></figure>
+</div>
+<div class="n"><b class="match">match</b>: the title card over the flyover frame for frame (sim 97), Toad's first-Star speech, the START pad and the HUD, the 4-Player roulette; the turn order (Mario 4th on the console, 1st on the port), the Star's space and the minigame are the board's RNG, which the two walks seed 584 frames apart</div></div>
+<div class="g" id="w02"><div class="h">w02 &mdash; Goomba's Greedy Gala <span class="m">(board 2, <code>--board 2</code>)</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">the intro flyover (entry +250)</figcaption>
+<img loading="lazy" src="boards/w02-p05358.jpg" alt="w02 port"><figcaption>port f005358</figcaption>
+<img loading="lazy" src="boards/w02-c004450.jpg" alt="w02 console"><figcaption>console c004450</figcaption>
+<figcaption>sim 98% &middot; &gt;8: 22%</figcaption></figure>
+<figure>
+<figcaption class="lab">the host's first Star (a board event)</figcaption>
+<img loading="lazy" src="boards/w02-p07858.jpg" alt="w02 port"><figcaption>port f007858</figcaption>
+<img loading="lazy" src="boards/w02-c006942.jpg" alt="w02 console"><figcaption>console c006942</figcaption>
+<figcaption>sim 97% &middot; &gt;8: 38%</figcaption></figure>
+<figure>
+<figcaption class="lab">turn 1: the first player on the board</figcaption>
+<img loading="lazy" src="boards/w02-p08108.jpg" alt="w02 port"><figcaption>port f008108</figcaption>
+<img loading="lazy" src="boards/w02-c007199.jpg" alt="w02 console"><figcaption>console c007199</figcaption>
+<figcaption>sim 96% &middot; &gt;8: 43%</figcaption></figure>
+<figure>
+<figcaption class="lab">turn 1's end: the minigame roulette</figcaption>
+<img loading="lazy" src="boards/w02-p12108.jpg" alt="w02 port"><figcaption>port f012108</figcaption>
+<img loading="lazy" src="boards/w02-c013080.jpg" alt="w02 console"><figcaption>console c013080</figcaption>
+<figcaption>sim 99% &middot; &gt;8: 13%</figcaption></figure>
+</div>
+<div class="n"><b class="match">match</b>: the title card (sim 98), the Goomba host's "The games begin with the first Star over here!" over the rainbow, the START pad, the 1 vs 3 roulette (sim 99) frame for frame; turn order and minigame are the play</div></div>
+<div class="g" id="w03"><div class="h">w03 &mdash; Shy Guy's Jungle Jam <span class="m">(board 3, <code>--board 3</code>)</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">the intro flyover (entry +250)</figcaption>
+<img loading="lazy" src="boards/w03-p05358.jpg" alt="w03 port"><figcaption>port f005358</figcaption>
+<img loading="lazy" src="boards/w03-c004250.jpg" alt="w03 console"><figcaption>console c004250</figcaption>
+<figcaption>sim 98% &middot; &gt;8: 26%</figcaption></figure>
+<figure>
+<figcaption class="lab">the host's first Star (a board event)</figcaption>
+<img loading="lazy" src="boards/w03-p07858.jpg" alt="w03 port"><figcaption>port f007858</figcaption>
+<img loading="lazy" src="boards/w03-c006959.jpg" alt="w03 console"><figcaption>console c006959</figcaption>
+<figcaption>sim 75% &middot; &gt;8: 95%</figcaption></figure>
+<figure>
+<figcaption class="lab">turn 1: the first player on the board</figcaption>
+<img loading="lazy" src="boards/w03-p08108.jpg" alt="w03 port"><figcaption>port f008108</figcaption>
+<img loading="lazy" src="boards/w03-c008005.jpg" alt="w03 console"><figcaption>console c008005</figcaption>
+<figcaption>sim 94% &middot; &gt;8: 50%</figcaption></figure>
+<figure>
+<figcaption class="lab">turn 1's end: the minigame roulette</figcaption>
+<img loading="lazy" src="boards/w03-p10358.jpg" alt="w03 port"><figcaption>port f010358</figcaption>
+<img loading="lazy" src="boards/w03-c009251.jpg" alt="w03 console"><figcaption>console c009251</figcaption>
+<figcaption>sim 90% &middot; &gt;8: 69%</figcaption></figure>
+</div>
+<div class="n"><b class="match">match</b>: the title card (sim 98; the console's camera a frame on); the port's host frame catches Shy Guy's window opening (a thin bar) where the console's is open ("Um, here's the Star.") and the Star's space differs (the play); START pad and roulette as the console's (a 2 vs 2 on the port, a 4-Player on the console: the play)</div></div>
+<div class="g" id="w04"><div class="h">w04 &mdash; Boo's Haunted Bash <span class="m">(board 4, <code>--board 4</code>)</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">the intro flyover (entry +250)</figcaption>
+<img loading="lazy" src="boards/w04-p05358.jpg" alt="w04 port"><figcaption>port f005358</figcaption>
+<img loading="lazy" src="boards/w04-c004450.jpg" alt="w04 console"><figcaption>console c004450</figcaption>
+<figcaption>sim 99% &middot; &gt;8: 19%</figcaption></figure>
+<figure>
+<figcaption class="lab">the host's first Star (a board event)</figcaption>
+<img loading="lazy" src="boards/w04-p07858.jpg" alt="w04 port"><figcaption>port f007858</figcaption>
+<img loading="lazy" src="boards/w04-c006880.jpg" alt="w04 console"><figcaption>console c006880</figcaption>
+<figcaption>sim 77% &middot; &gt;8: 83%</figcaption></figure>
+<figure>
+<figcaption class="lab">turn 1: the first player on the board</figcaption>
+<img loading="lazy" src="boards/w04-p08108.jpg" alt="w04 port"><figcaption>port f008108</figcaption>
+<img loading="lazy" src="boards/w04-c007054.jpg" alt="w04 console"><figcaption>console c007054</figcaption>
+<figcaption>sim 93% &middot; &gt;8: 54%</figcaption></figure>
+<figure>
+<figcaption class="lab">turn 1's end: the minigame roulette</figcaption>
+<img loading="lazy" src="boards/w04-p11608.jpg" alt="w04 port"><figcaption>port f011608</figcaption>
+<img loading="lazy" src="boards/w04-c010416.jpg" alt="w04 console"><figcaption>console c010416</figcaption>
+<figcaption>sim 90% &middot; &gt;8: 70%</figcaption></figure>
+</div>
+<div class="n"><b class="match">match</b>: the title card (sim 99), Boo's "The first Star is going to be right over here!", the ghostly START pad, the 1 vs 3 roulette; the Star's space, the first player and the minigame are the play</div></div>
+<div class="g" id="w05"><div class="h">w05 &mdash; Koopa's Seaside Soir&eacute;e <span class="m">(board 5, <code>--board 5</code>)</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">the intro flyover (entry +250)</figcaption>
+<img loading="lazy" src="boards/w05-p05358.jpg" alt="w05 port"><figcaption>port f005358</figcaption>
+<img loading="lazy" src="boards/w05-c004450.jpg" alt="w05 console"><figcaption>console c004450</figcaption>
+<figcaption>sim 98% &middot; &gt;8: 31%</figcaption></figure>
+<figure>
+<figcaption class="lab">the host's first Star (a board event)</figcaption>
+<img loading="lazy" src="boards/w05-p07858.jpg" alt="w05 port"><figcaption>port f007858</figcaption>
+<img loading="lazy" src="boards/w05-c007059.jpg" alt="w05 console"><figcaption>console c007059</figcaption>
+<figcaption>sim 77% &middot; &gt;8: 96%</figcaption></figure>
+<figure>
+<figcaption class="lab">turn 1: the first player on the board</figcaption>
+<img loading="lazy" src="boards/w05-p08108.jpg" alt="w05 port"><figcaption>port f008108</figcaption>
+<img loading="lazy" src="boards/w05-c007186.jpg" alt="w05 console"><figcaption>console c007186</figcaption>
+<figcaption>sim 97% &middot; &gt;8: 40%</figcaption></figure>
+<figure>
+<figcaption class="lab">turn 1's end: the minigame roulette</figcaption>
+<img loading="lazy" src="boards/w05-p12608.jpg" alt="w05 port"><figcaption>port f012608</figcaption>
+<img loading="lazy" src="boards/w05-c011074.jpg" alt="w05 console"><figcaption>console c011074</figcaption>
+<figcaption>sim 92% &middot; &gt;8: 65%</figcaption></figure>
+</div>
+<div class="n"><b class="match">match</b>: the title card (sim 98), Koopa's "Allow me to draw your attention to the first Star!", the START pad, the 4-Player roulette; the Star's space is the play</div></div>
+<div class="g" id="w06"><div class="h">w06 &mdash; Bowser's Gnarly Party <span class="m">(board 6, <code>--board 6</code>)</span></div>
+<div class="f">
+<figure>
+<figcaption class="lab">the intro flyover (entry +250)</figcaption>
+<img loading="lazy" src="boards/w06-p05358.jpg" alt="w06 port"><figcaption>port f005358</figcaption>
+<img loading="lazy" src="boards/w06-c004447.jpg" alt="w06 console"><figcaption>console c004447</figcaption>
+<figcaption>sim 96% &middot; &gt;8: 71%</figcaption></figure>
+<figure>
+<figcaption class="lab">the host's first Star (a board event)</figcaption>
+<img loading="lazy" src="boards/w06-p07858.jpg" alt="w06 port"><figcaption>port f007858</figcaption>
+<img loading="lazy" src="boards/w06-c006900.jpg" alt="w06 console"><figcaption>console c006900</figcaption>
+<figcaption>sim 72% &middot; &gt;8: 97%</figcaption></figure>
+<figure>
+<figcaption class="lab">turn 1: the first player on the board</figcaption>
+<img loading="lazy" src="boards/w06-p08358.jpg" alt="w06 port"><figcaption>port f008358</figcaption>
+<img loading="lazy" src="boards/w06-c007318.jpg" alt="w06 console"><figcaption>console c007318</figcaption>
+<figcaption>sim 95% &middot; &gt;8: 44%</figcaption></figure>
+<figure>
+<figcaption class="lab">turn 1's end: the minigame roulette</figcaption>
+<img loading="lazy" src="boards/w06-p10858.jpg" alt="w06 port"><figcaption>port f010858</figcaption>
+<img loading="lazy" src="boards/w06-c011710.jpg" alt="w06 console"><figcaption>console c011710</figcaption>
+<figcaption>sim 91% &middot; &gt;8: 75%</figcaption></figure>
+</div>
+<div class="n"><b class="minor">minor</b>: the title card, Bowser's "Here's the first Star! Good luck getting there!", the START pad and the 4-Player roulette as the console's; ONE element differs in the frame-exact intro: the two fire blocks (W06 model 5 at the board's top-right and bottom-left corners, motion 0 parked at time 0, layer 1) show a lit orange-red claw on the port and a grey claw on the console</div></div>
+<!-- /m39c boards -->
