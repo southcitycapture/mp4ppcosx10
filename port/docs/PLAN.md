@@ -170,7 +170,7 @@ version (`DLL_MAX`), turned into a `FileListEntry _ovltbl[]` of
 | group | modules | what |
 |---|---|---|
 | boot / setup | `bootDll`, `instDll`, `E3setupDLL`, `msetupDll`, `safDll` | logos, the instruction/attract loop, the E3 demo build's setup, the "save file" boot path |
-| boards | `w01Dll` … `w06Dll` (Toad's Midway Madness → Bowser's Gnarly Party), `w10Dll`, `w20Dll`, `w21Dll` | one module per board plus three extras (`w10` is the Extra-room board, `w20`/`w21` the tutorial/practice boards) |
+| boards | `w01Dll` … `w06Dll` (Toad's Midway Madness → Bowser's Gnarly Party), `w10Dll`, `w20Dll`, `w21Dll` | one module per board plus three extras (`w10` is the tutorial board, `w20`/`w21` the Extra Room's Mega Board Mayhem and Mini-Board Mad Dash; corrected in §54b.1) |
 | minigames | `m300Dll`, `m302`, `m303`, `m330`, `m333`, `m401Dll` … `m463Dll` (with `_minigameDll` as the shared stub) | ~65 modules, one per minigame or minigame family |
 | story | `mstoryDll`, `mstory2Dll`, `mstory3Dll`, `mstory4Dll`, `nisDll` | Story Mode's flow and cut-scenes |
 | menus / front end | `mentDll`, `modeseldll`, `mgmodedll`, `selmenuDll`, `subchrselDll`, `option`, `present`, `messDll`, `mpexDll`, `resultDll`, `staffDll`, `modeltestDll`, `ztardll` | the entrance, mode select, the Minigame mode shell, character select, options, the Present/Extra room, results, credits, a model viewer, the Star Bank |
@@ -19836,3 +19836,357 @@ the scratch image).
   Me's minimum proved rather than read.
 * §53.13's other items stand: the GX truncation's bias, the fold's other
   users, Dolphin's empty audio dump.
+
+## 54b. M39c log: the other boards *(2026-09-23, littlejelly)*
+
+The user asked "have we tried other boards?", and the answer was no. Every
+soak, walk and gallery run since M5 had loaded `w01dll`, Toad's Midway
+Madness: the character select's cursor starts there, the walk's A
+metronome accepts it, and nothing had ever picked another board. The game
+has six party boards and three more board modules. This milestone adds a lever
+that picks the board. It then plays every party board for five turns at
+real time with four CPUs, shows each one beside the console at four
+moments, measures each board's frame rate for M40's scoreboard, and runs
+the three extra boards as far as the harness can take them.
+
+**The short answer.** All five untried party boards ran their five
+turns without a fault, a STUCK or a resync from the port itself, at
+100.1–100.2% speed, and all six match the console's picture, with one
+minor difference on Bowser's board. Two boards are measurably slower
+than Toad's: Boo's Haunted Bash and Koopa's Seaside Soirée. The one fault
+of the session (Mega Board Mayhem) came from the harness: `--turns 3`
+put the game on a path the Extra Room's menu cannot reach. It was found,
+reproduced from a named snapshot, root-caused and fenced off before
+anything else ran. With 10 turns, the Extra Room's two boards played
+through with no fault at 29.9 and 30.0 fps; the tutorial loads and renders
+but is a script a person reads.
+
+### 54b.0 M39's leave-behind soak, read
+
+`isle --soak --com4 --rtc dolphin --freshcard --realtime --snap-every 5000
+--snap-keep 3 --status --ovllog --stuckwatch 200 --perf` on `fcf94d24…`
+(0.9.8). The runner's log holds **702 status lines, 42,120 frames**
+(`docs/soak/m39c-soak31-m39-leave.log.gz`): **100.1%** speed, 27.7 fps
+presented over the run, four turns of `w01dll` into the fifth (28.4–29.2
+a turn), minigames m415, m410, m411, m422, **0 faults / 0 resyncs /
+0 STUCK**, worst late 864 ms (the card image's first flush, 928 ms, at
+frame 1). `g4 stop` at 03:38 G4 time.
+
+### 54b.1 The lever: `--board N[+]`
+
+**Where the game picks a board.** mentDll's party menu keeps the choice
+in a cursor in its own bss (`lbl_1_bss_A8[2]`, `src/REL/mentDll/main.c:1369`).
+The moment it becomes a fact is `BoardSaveInit(lbl_1_bss_A8[2])` (:1926),
+which writes `GWSystem.board` (`board/main.c:284`). From then on the game
+reads only the field: the board's data directory is preloaded from it
+(`fn_1_7218`, :430) and the board's overlay is called from it
+(`omOvlCallEx(spC[GWSystem.board])`, :1977, `spC = {0x59…0x5F}` =
+`w01dll`…`w06dll`, `w10dll`). Once the board is running it sets the field
+again from its own overlay (`board/main.c:137-171`).
+
+**The lever** (`port/src/debug/selfplay.c`, `patches.txt`):
+`--board N` (1–6) parks `GWSystem.board = N-1` at every retrace while
+`omcurovl` is mentDll, the way `--minigame` parks `mg_next`.
+`BoardSaveInit`'s store goes through `portBoardPick()` (one exact-text
+patch in `board/main.c`), which answers the lever's board while mentDll is
+the live overlay and returns the game's own argument otherwise. The
+retrace park alone would have been enough on the console but not on the
+port. The console's preload waits a frame on a DVD/ARAM transfer before
+it reads the field. The port's transfers complete inline, so the preload
+can read the field in the same pass that `BoardSaveInit` wrote it. The
+board would then open with the cursor board's directory preloaded, and
+it would never free it: the board closes only its own directory,
+`board/main.c:723`. `BoardSaveInit(6)` (mentDll's tutorial,
+`fn_1_88A4`) is left alone. `--board N+` moves to the next board at
+every board a `--soak` chains (`board_picks`, in the snapshot registry),
+so the overnight soak can cycle through all six.
+`--boarddump A,B,…` (new) dumps frames counted from the board overlay's
+entry, like `--mgdump`.
+
+**The console's twin**: `ref/movies/board-com4-oracle.txt` = the
+board-start walk, the four `--com4` pokes and `pokeif 801D3CE2 70
+8018FD00 1 N-1`. That is a new `mkgecko.py` directive, a Gecko `28`
+halfword test around one write: `GWSystem.board`'s byte while
+`omcurovl`'s low half is 70 (mentDll). The same session fixed
+`mkgecko.py`'s one-byte writes, which had emitted six hex digits where
+Gecko wants eight (`poke … 1 …` had never been used before). Dolphin
+entered `w02dll` at GC 4524 on the first try.
+
+**The witness.** On the lever's first build (`be6e6345`) and again on the
+final one (`9e3945e2`), with `--turbo` md5 walks
+(`docs/soak/m39c-index.txt`):
+
+| arm | 800 | 3000 | 7000 |
+|---|---|---|---|
+| M (movies) | `d2d40344` | `59008ce4` | `3f98f882` |
+| MB1 = M + `--board 1` | `d2d40344` | `59008ce4` | `3f98f882` |
+| N (`--nomovies`) | `0b58c5ee` | `2b99c60a` | `4a9a640c` |
+| NB1 = N + `--board 1` | `0b58c5ee` | `2b99c60a` | `4a9a640c` |
+| NB2 = N + `--board 2` | `0b58c5ee` | `2b99c60a` | **`bbc5e0cc`**: Goomba's Greedy Gala, "Mario is fourth!" |
+
+The lever on board 1 gives board 1's frames byte for byte, and the
+reference md5s are unchanged.
+
+**PLAN §2's module table was wrong about the extras**, and this section
+corrects it: `w10dll` is the *tutorial* board (`BOARD_ID_TUTORIAL`, 6),
+and `w20dll`/`w21dll` are the Extra Room's two board games,
+`BOARD_ID_EXTRA1` Mega Board Mayhem and `BOARD_ID_EXTRA2` Mini-Board Mad
+Dash (`include/game/board/main.h:9-17`).
+
+### 54b.2 Every board, played
+
+`isle --soak --com4 --rtc dolphin --freshcard --status --perf --board N
+--turns 5 --ovllog --dvdlog` at real time, the player's defaults
+(movies on). The last two flags only add logging: the overlay trace and
+the event files' reads. `tools/m39c_chain.sh` phase C sends SIGINT when
+the soak is back in `modeseldll` after the board, and
+`tools/m39c_read.py` reads each run (`docs/soak/m39c-R*.log.gz`). Board 1's row is
+M39's 6 h 30 soak (five 20-turn boards, the same flags without the two
+logs), for comparison.
+
+| board | turns | faults / STUCK | resyncs | speed | presented fps on the board, median / p10 | `rt` / `dec` ms (median) | minigames dealt | event files read |
+|---|---:|---|---|---:|---:|---:|---|---|
+| w01 Toad's (M39 soak 30) | 5 × 20 | 0 / 15 (designed waits) | 17 (the drive, §54.4) | 100.1% | 29.9 / 25.4 | 16.6 / 5.5 | 131 plays of 41 | — |
+| **w02 Goomba's Greedy Gala** | 5 | **0 / 0** | 1 | 100.1% | **30.0 / 28.8** | 13.2 / 8.0 | m418 m426 m410 m456 m417 | Bowser ×3, Boo ×5, lottery ×7, guest ×5, last five ×1 |
+| **w03 Shy Guy's Jungle Jam** | 5 | **0 / 0** | 0 | 100.2% | **29.9 / 23.9** | 17.6 / 7.2 | m412 m427 m424 m403 m431 | Bowser ×1, Boo ×6, lottery ×5, guest ×5, last five ×1 |
+| **w04 Boo's Haunted Bash** | 5 | **0 / 0** | 2 | 100.1% | **24.8 / 21.1** | 22.9 / 8.4 | m412 m401 m444 m425 m420 m439 m438 m427 | battle ×2, Boo ×8, lottery ×8, guest ×8, last five ×1 |
+| **w05 Koopa's Seaside Soirée** | 5 | **0 / 0** | 2 | 100.1% | **26.0 / 22.1** | 21.8 / 7.7 | m416 m408 m438 m431 m441 m429 m419 | Bowser ×2, battle ×2, Boo ×7, lottery ×9, guest ×7, last five ×1 |
+| **w06 Bowser's Gnarly Party** | 5 | **0 / 0** | 1 | 100.1% | **30.0 / 26.6** | 16.4 / 5.8 | m444 m414 m408 m410 m413 m412 | Bowser ×6, Boo ×7, lottery ×6, guest ×6, last five ×1 |
+
+(18–25 minutes a board; the files are `bkoopa` Bowser's space,
+`byokodori` Boo, `bkujiya` the lottery, `bbattle` a battle space,
+`bguest`, `blast5`. With `--turns 5`, turn 1 is already one of the last
+five, so every board ran the last-five-turns event at its start, as the
+game does for a short party.)
+
+**The resyncs, by cause.** None of them is a port fault. All six are
+M39's §54.4 class, the game thread held by the disk or the file system:
+
+| run | where | what the log says |
+|---|---|---|
+| w02 | 60,251, the board's end into `mstory3dll` | the frame took 1,043 ms, 1,025 of them linking `mstory3Dll.rel` off the drive (a card rename of 1,751 ms ran behind it on the flush thread); the snapshot's replay (54b.4) moves the hold onto the 3.5 MB `mstory3.bin` read and keeps the resync |
+| w04 | 13,440, the first instruction card | the `instDll` link, every disc read `resident`; 1.1 s behind |
+| w04 | 67,726, the board's end | `CARD: … rename 1754` |
+| w05 | 15,948, `m416Dll.rel` linked | one game frame of 1,927 ms, the read `resident` (the bundle's `dlopen` from the drive) |
+| w05 | 44,896, the `instDll` link | 1,666 ms, resident |
+| w06 | 50,040, inside m413 | 1,525 ms with no read, no link, no texture: the log-write pause M39 replayed from `snap-m39-statusline` |
+
+The named snapshots for the two new places (w04's instruction card, w02's
+end) and their real-time replays are in 54b.4.
+
+**Board events the COMs hit** (from the event files, the surveys' frames
+and the gallery): Bowser's space on four boards (w02, w03, w05, w06; on
+the w04 survey it dealt the Bowser minigame m437 Balloon of Doom),
+Boo on every board, the lottery (`bkujiya`) on every board, battle spaces
+(m438, m439) on w04 and w05, and the item shop. Board mechanics seen in
+the survey frames: Goomba's roulette ("Now, start the Roulette!") and a
+Koopa Kid on w02, Boo's host and Bowser on w04, Bowser's host on w06.
+Mechanics that no event file shows (the Koopa bank, the Shy Guy events
+by name) are not claimed.
+
+**Speed.** Boo's (24.8) and Koopa's (26.0) are the two boards below 29.9
+fps median. Their replay is the reason (`rt` 22.9 and 21.8 ms against
+Toad's 16.6), not the game thread. Item 4's per-drawn-frame numbers are
+in `docs/fps-boards.md` and 54b.6.
+
+### 54b.3 The extras, and the one fault
+
+**How each is reached in the real game.** `w10dll` comes from the party
+menu's rules explanation (mentDll `fn_1_88A4`): four COMs (Yoshi, Mario,
+Peach, Wario), flag 1,11, `BoardSaveInit(6)`, `omOvlCallEx(spC[6])`.
+`w20dll`/`w21dll` come from the Extra Room (mpexDll `fn_1_3758`, entries
+0 and 1): `BoardPartyConfigSet(…, turns = 10/20/30)`, `BoardSaveInit(7|8)`.
+The harness reaches all three with `--goto w10dll|w20dll|w21dll:0:0`.
+`portGotoOvl` does what the game's own debug menu does before it calls
+them (`selmenuDll/main.c:701-712`).
+
+| board | reached | what happened |
+|---|---|---|
+| w10 the tutorial | yes | It loads and renders: Toad's "All right! I'll explain the rules to everyone now." over the START pad (`screenshots/m39c-w10-*`). It is a script read by a human. With no input it waits at that window (the first run, 25 min). With the walk's A metronome, the first A answered the opening choice and ended it after 116 frames; the metronome then walked the menus into a normal party on Toad's board (turn 6/10 at the 25-minute ceiling, no fault). Walking the whole script needs its own input script, which is not written. |
+| w20 Mega Board Mayhem | yes | **FAULT with `--turns 3`** (below); with 10 turns: 10 turns in 874 s at 100.0% speed, 29.9 / 25.0 fps, 0 faults, 0 resyncs; no minigame overlays (the turns loop inside the board). At the end the board returns (`omOvlReturnEx`) to the bottom of the overlay history, which under `--goto` is bootDll's title (the real game returns to mpexDll); the title then waits for a press, and `--stuckwatch` calls that STUCK every 90 s (6 lines, the harness's end, not a hang) |
+| w21 Mini-Board Mad Dash | yes | 10 turns in 603 s at 100.0%, 30.0 / 26.9 fps, 0 faults, 0 resyncs; the same return to the title at the end (9 STUCK lines, the same harness end) |
+
+**The fault.** `--goto w20dll:0:0 --turns 3` on `be6e6345`: SIGBUS at
+`0x9aff00c` in `LoadHSF`, called from `Hu3DJointMotion`,
+`BoardModelMotionCreate` and `ExecLast5`. The log's last lines are
+`data.c: Data Number Error(-1)` and then `data num 0`. The G4's `nm`
+names the frames: `LoadHSF+440`, `Hu3DJointMotion+88`,
+`BoardModelMotionCreate+264`, `ExecLast5+496`.
+
+*The root cause is the harness, not the port.* The two Extra Room boards
+play all their turns inside one `MainFunc`. The loop is `do { … }
+while (1)` with `BoardTurnNext` inside it (`board/main.c:514-525`),
+where the party boards leave and re-enter the board after every
+minigame. So `MainFunc`'s last-five-turns check (`:437`,
+`max_turn - turn < 5 && player_curr == 0`) runs once, at the board's
+start. With the Extra Room's 10, 20 or 30 turns it is false there, and
+the extra boards show their last five turns with `BoardLast5GfxInit`
+alone (`:458-463`). `--turns 3` made the check true at turn 1, so the
+game called `BoardLast5Exec`. `ExecLast5` builds the host's motions from
+`hostMotTbl[board]`, and the rows for boards 7 and 8 are
+`{-1, 0, 0, 0, 0, 0, 0, 0}` (`board/last5.c:88-115`). −1 fails cleanly,
+but 0 is data number 0: `E3setup.bin`'s first file, handed to
+`Hu3DJointMotion` as a motion. `LoadHSF` has no magic check
+(`hsfload.c:117`) and follows the file's garbage offsets. The console
+would read the same garbage; the retail menu can never ask for it.
+
+*Reproduction and snapshot.* On the faulting build, `--headless` (see
+the next paragraph): straight through it faults at the same place, SIGSEGV
+at `0xc92400c` (a different wild address, the same frames). The named
+snapshot `~/m39c/snap-m39c-w20-last5/f002000.snap` restores and faults in
+**25 s** (`docs/soak/m39c-w20-last5-*.log.gz`).
+
+*The fence.* `--goto w20dll|w21dll` now holds `--turns` at the Extra
+Room's minimum of 10 and says so. The game is unchanged.
+
+**The lab's own stall (not the port's).** The reproduction's first two
+launches hung before the first frame. They were asleep in
+`SDL_CreateWindow` → `Cocoa_ShowWindow` → `windowDidBecomeKey` →
+`Cocoa_CheckClipboardUpdate` → `CFPasteboardCreate`, and `pbpaste` hung
+the same way. The G4's pasteboard server `pboard` (pid 129, running since
+boot) had no serving thread left, only its main thread in `pause()`.
+`pbs` was stuck in its own `CFPasteboardCreate` behind it. Killing pid 129
+(a per-user on-demand agent: launchd started a fresh one on the next
+lookup) fixed it: `pbpaste` rc 0, and every launch since has been normal.
+A lab-only "window in front but not key" option was built and then
+reverted without shipping: AppKit makes the first window key at launch
+anyway (`_sendFinishLaunchingNotification`).
+
+### 54b.4 The named snapshots
+
+| finding | snapshot (G4) | replay |
+|---|---|---|
+| the w20 last-five fault (54b.3) | `~/m39c/snap-m39c-w20-last5/f002000.snap` (`be6e6345`, kept as `~/MarioParty4-be6e.app`) | faults at the same place in 25 s |
+| w04's 1.1 s at the first instruction card (54b.2) | `~/m39c/perf/snap-m39c-w04-inst/` | at real time from frame 13,300: 0 resyncs, worst 347 ms behind (the texture decode of the card's first frames, 219 ms at 13,368): not reproduced, so R4's 1.1 s was the drive (§54.4's class) |
+| w02's board-end card rename (54b.2) | `~/m39c/perf/snap-m39c-w02-end/` | **reproduced**: 1 resync, 1.57 s at retrace 60,252. `--dvdlog` names it: entering mstory3dll reads `dll/mstory3Dll.rel` (198 KB, 389 ms) and `data/mstory3.bin` (3.5 MB, **1,027 ms**) cold from the drive on the game thread; the card rename was only 346 ms this time. The drive class again, at a fixed place: the results' 3.5 MB archive |
+| w06's fire blocks (54b.5) | `~/m39c/perf/snap-m39c-w06-claw/` | the intro frame again |
+
+### 54b.5 The picture: every board beside the console
+
+The gallery treatment for boards. The port's side
+(`m39c_chain.sh` phase B): `--board N --com4 --rtc dolphin --freshcard
+--nomovies --play board-start-com4.play --ffto 4708 --lockstep
+--boarddump 0,250,…,20000`. The board is entered at frame 5108 on every
+board, the menu's own 20 turns are kept (a short `--turns` puts the
+last-five event on turn 1; the survey's first pass had `--turns 2` and
+was redone), and 81 frames per board run through turn 1 and into turn 2.
+Every board ran with no fault. Turn 1's minigames on the port were m412,
+m422, m428, m418, m401 and m403; on the console m403, m423, m412, m419,
+m409 and m409. The console's side (`tools/m39c_oracle.py capture N`):
+one Dolphin a board, a fresh user dir, `board-com4-oracle.txt`, stopped
+by MemoryWatcher 900 GC after turn 2 begins. The AVI is 0.8–1.1 GB a
+board; every frame from the board's entry is kept at 160×120, the picked
+ones at full size, and the AVIs are deleted afterwards. Dolphin entered
+each board at GC 4524, 584 frames before the port's 5108, so the board's
+RNG differs (turn order, the Star's space, the minigame).
+
+The four moments: **the title card over the intro flyover** (entry +250:
+the frame-exact pair), **the host showing the first Star** (a
+board-specific event every board has), **the first player's turn**, and
+**turn 1's end, the minigame roulette**. The console's frame is found by
+content, in order, near the port's own spacing (`pick --win`), and by
+hand from a contact sheet where Bowser's lava fooled the matcher
+(`setpick`). The rows are at the end of `docs/gallery/compare.html`
+(`tools/compare_m39c.py`, `verdicts-m39c-boards.tsv`, frames in
+`gallery/boards/`):
+
+| board | intro · host · turn 1 · roulette (sim % / >8 %) | verdict |
+|---|---|---|
+| w01 Toad's | 97 / 62 · 95 / 41 · 96 / 47 · 98 / 24 | match |
+| w02 Goomba's | 98 / 22 · 97 / 38 · 96 / 43 · 99 / 13 | match |
+| w03 Shy Guy's | 98 / 26 · 75 / 95 · 94 / 50 · 90 / 69 | match (the host frame catches the window opening; the Star's space is the play) |
+| w04 Boo's | 99 / 19 · 77 / 83 · 93 / 54 · 90 / 70 | match (the Star's space is the play) |
+| w05 Koopa's | 98 / 31 · 77 / 96 · 97 / 40 · 92 / 65 | match (the Star's space is the play) |
+| w06 Bowser's | 96 / 71 · 72 / 97 · 95 / 44 · 91 / 75 | **minor**: the fire blocks' claw |
+
+The host frames' low sims (72–77) are the board's RNG: the host flies the
+camera to a different Star space on each side, so the whole background
+differs; the host, the window and its text are the console's.
+
+**The one difference, by cause: Bowser's fire blocks.** In the
+frame-exact intro, the two blocks at the board's corners (W06 model 5 at
+(2700, 100, −1950) and (−3000, 0, 2550), motion 0 parked at time 0,
+layer 1, `w06Dll/main.c:122-127`; `fire.c` plays them when the fire
+event fires) show a lit orange-red claw on the port and a grey claw on
+the console. Which draw it is was narrowed, not finished: leaving out each 64×128 CMPR
+object of the board's model 18 that `--drawlog` listed at the intro frame
+(`--skipobj 0 3 5 7 10 cube2`) leaves the claw exactly as it is (the claw
+box's mean is identical in all six), so it is none of them.
+`--probeobj '*'` with a box on the lower-right claw names the draws that
+touch it: model 14 `obj192` and `obj194` (2–3 TEV stages, ~440 pixels each)
+and model 20 `obj2`, `obj5` and `obj11`, the last two with **5 TEV stages
+and 5 texgens** (73 and 419 pixels) -- the only 5-stage draws in the box and
+the first suspects (a stage the Radeon's six-unit fold gets wrong, as m448's
+was in M38). `--nohilitetex` does not change it; `--noregfix` changes the
+whole lava, not the claw. Named snapshot:
+`~/m39c/perf/snap-m39c-w06-claw/f005300.snap` (the intro, 58 frames before
+the compared frame). It is one element on one board's intro and does not
+recur elsewhere in the gallery, so it was not chased further this session.
+
+### 54b.6 The frame rate of each board (M40's input)
+
+`docs/fps-boards.md` has the table. The presented fps is from 54b.2's
+realtime runs. The per-drawn-frame costs come from `tools/m39c_perf.sh`:
+per board the survey's walk, fast-forwarded to entry +2700, then at real
+time to +3900 (the host's first Star and the first turns) with
+`--perfdump` (median over the drawn frames in +3000…+3900, the cache
+warm), `--gltrace` (the forty drawn frames up to +3800) and the exit
+report's GX totals over the drawn window.
+
+| board | turns | presented fps median / p10 | speed | verdict | drawn frame: game / decode (render + game) / replay ms | GL calls a drawn frame (draw calls) | vertices a drawn frame |
+|---|---:|---:|---:|---|---:|---:|---:|
+| w01 Toad's Midway Madness | 5 × 20 | 29.9 / 25.4 | 100.1% | PASS | 12.3 / 5.8 + 0.0 / 13.5 | 344 (93) | 12,736 |
+| w02 Goomba's Greedy Gala | 5 | 30.0 / 28.8 | 100.1% | PASS | 12.4 / 9.0 + 0.0 / 16.2 | 369 (89) | 12,890 |
+| w03 Shy Guy's Jungle Jam | 5 | 29.9 / 23.9 | 100.2% | PASS | 14.0 / 6.7 + 0.0 / 16.7 | 300 (80) | 12,747 |
+| **w04 Boo's Haunted Bash** | 5 | **24.8 / 21.1** | 100.1% | short by 4.7 | 15.2 / 8.6 + 3.5 / **23.8** | 290 (80) | 11,623 |
+| **w05 Koopa's Seaside Soirée** | 5 | **26.0 / 22.1** | 100.1% | short by 3.5 | 15.9 / 8.7 + 2.0 / **23.4** | 304 (91) | 13,504 |
+| w06 Bowser's Gnarly Party | 5 | 30.0 / 26.6 | 100.1% | PASS | 14.3 / 7.4 + 0.0 / 16.5 | 231 (54) | 10,984 |
+| w20 Mega Board Mayhem (Extra Room) | 10 | 29.9 / 25.0 | 100.0% | PASS | — | — | — |
+| w21 Mini-Board Mad Dash (Extra Room) | 10 | 30.0 / 26.9 | 100.0% | PASS | — | — | — |
+| w10 the tutorial | — | not measured: a script read by a human (PLAN.md §54b.3) | | | | | |
+
+Two boards miss M40's bar (29.5 median at >= 99% speed), Boo's and
+Koopa's, and both on the render thread's replay (23.8 and 23.4 ms a drawn
+frame against Toad's 13.5) with no more GL calls or vertices than the
+passing boards: the time per call grows (large blended and fogged
+surfaces), and they are the only two boards whose auto plan puts decode on
+the game thread. The two Extra Room boards pass.
+
+### 54b.7 What M39c shipped, and what is left
+
+| | |
+|---|---|
+| `port/src/debug/selfplay.c`, `port/patches.txt` (`board/main.c`), `platform/main.c`, `include/port.h`, `opt_fields.h` | `--board N[+]`, `--boarddump`, `--goto` into w10/w20/w21 set up as the debug menu does, the Extra Room's 10-turn floor |
+| `port/ref/tools/mkgecko.py`, `ref/movies/board-com4-oracle.txt` | `pokeif`; one-byte writes fixed; the console's board walk |
+| `port/tools/m39c_chain.sh`, `m39c_chain2.sh`, `m39c_perf.sh`, `m39c_read.py`, `m39c_fps.py`, `m39c_oracle.py`, `compare_m39c.py` | the chains, the reader, the fps table, the oracle (capture / pick / setpick / texdump, which dumped nothing on the Flatpak build), the gallery's board rows |
+| `port/docs/fps-boards.md` | 54b.6 |
+| `port/docs/gallery/` | six board rows (`boards/`, `verdicts-m39c-boards.tsv`, `compare.html`) |
+| `port/docs/screenshots/m39c-*`, `port/docs/soak/m39c-*` | the board intros, the extras' frames; the runs' logs |
+
+Nothing in the game's path changed for a player: the one exact-text patch
+returns the game's own argument when `--board` is not given, and the md5s
+prove it. Nothing a player runs changed, so no dmg was cut: 0.9.8 (`611b6cd2`) stays the release candidate.
+
+**Left, in order:**
+1. **Boo's and Koopa's boards at 24.8 / 26.0 fps** (54b.6): M40's first two
+   board rows; the replay's per-call cost, then the game-thread decode.
+2. **w06's fire-block claw** (54b.5): lit orange-red on the port, grey on
+   the console; the 5-stage draws of model 20 (`obj5`, `obj11`) first;
+   snapshot `snap-m39c-w06-claw`.
+3. **The board's end reads `mstory3.bin` (3.5 MB) cold on the game thread**
+   (54b.4, `snap-m39c-w02-end`): a 1.6 s resync on every board's end when the
+   drive is slow; a prefetch while the last turn plays would hide it.
+4. **The tutorial (`w10dll`)** needs its own input script to be walked to
+   its end; the harness reaches and renders it.
+5. **The Extra Room's return**: under `--goto` the two extra boards end on
+   the title; reaching them through mpexDll (the menu) would let a soak
+   chain them. `--board` does not cover them (they are not mentDll's pick).
+6. PLAN §2's module table: `w10dll` = the tutorial, `w20dll`/`w21dll` = the
+   Extra Room's boards (54b.1).
+
+**What is left running.** On the G4, since 10:30 (G4 time), on `9e3945e2` (this commit's code):
+`isle --soak --com4 --rtc dolphin --freshcard --realtime --snap-every 5000
+--snap-keep 3 --status --ovllog --stuckwatch 200 --perf --board 1+`, log
+`~/isle-log.txt`. `--board 1+` gives the party menu board 1 first and the
+next board at every board the soak chains (w01 → w02 → … → w06 → w01), so a
+night covers all six; each 20-turn board is about 70 minutes. Witnessed: board 1's 20 turns ended and the soak entered `w02dll` ("`--board: mentdll BoardSaveInit(0) -> 1 (w02dll), board 2 of the run`") at 11:54, 0 faults, one resync (1.6 s at retrace 210,061, the drive class).

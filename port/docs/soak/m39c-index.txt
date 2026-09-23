@@ -1,0 +1,43 @@
+# m39c chain start Wed Sep 23 03:48:53 EDT 2026  isle md5 be6e63457673ab933c9bab34dcb03264  phases A B C D L
+M EXIT=0 md5 800:d2d40344 3000:59008ce4 7000:3f98f882  Wed Sep 23 03:52:49 EDT 2026
+N EXIT=0 md5 800:0b58c5ee 3000:2b99c60a 7000:4a9a640c --nomovies Wed Sep 23 03:56:50 EDT 2026
+MB1 EXIT=0 md5 800:d2d40344 3000:59008ce4 7000:3f98f882 --board 1 Wed Sep 23 04:00:51 EDT 2026
+NB1 EXIT=0 md5 800:0b58c5ee 3000:2b99c60a 7000:4a9a640c --nomovies --board 1 --boarddump 0 Wed Sep 23 04:04:56 EDT 2026
+NB2 EXIT=0 md5 800:0b58c5ee 3000:2b99c60a 7000:bbc5e0cc --nomovies --board 2 --boarddump 0 Wed Sep 23 04:09:06 EDT 2026
+S1 EXIT=0 entry 5108 dumps       87 Wed Sep 23 04:18:18 EDT 2026
+# chain stopped by hand after S1 (survey had --turns 2) Wed Sep 23 04:19:42 EDT 2026
+# m39c chain start Wed Sep 23 04:19:54 EDT 2026  isle md5 be6e63457673ab933c9bab34dcb03264  phases B C D L
+S1 EXIT=0 entry 5108 dumps       81 Wed Sep 23 04:28:51 EDT 2026
+S2 EXIT=0 entry 5108 dumps       81 Wed Sep 23 04:37:44 EDT 2026
+S3 EXIT=0 entry 5108 dumps       81 Wed Sep 23 04:46:24 EDT 2026
+S4 EXIT=0 entry 5108 dumps       81 Wed Sep 23 04:58:47 EDT 2026
+S5 EXIT=0 entry 5108 dumps       81 Wed Sep 23 05:10:21 EDT 2026
+S6 EXIT=0 entry 5108 dumps       81 Wed Sep 23 05:18:31 EDT 2026
+m39c: R2 start Wed Sep 23 05:18:36 EDT 2026
+R2 EXIT=0 board-over after 1111 s Wed Sep 23 05:37:07 EDT 2026
+m39c: R3 start Wed Sep 23 05:37:17 EDT 2026
+R3 EXIT=0 board-over after 1170 s Wed Sep 23 05:56:47 EDT 2026
+m39c: R4 start Wed Sep 23 05:56:57 EDT 2026
+R4 EXIT=0 board-over after 1251 s Wed Sep 23 06:17:48 EDT 2026
+m39c: R5 start Wed Sep 23 06:17:58 EDT 2026
+R5 EXIT=0 board-over after 1492 s Wed Sep 23 06:42:50 EDT 2026
+m39c: R6 start Wed Sep 23 06:43:00 EDT 2026
+R6 EXIT=0 board-over after 1150 s Wed Sep 23 07:02:10 EDT 2026
+Xw10dll EXIT=137 Wed Sep 23 07:27:26 EDT 2026
+Xw20dll EXIT=138 Wed Sep 23 07:28:37 EDT 2026
+m39c: FAULT in Xw20dll -- chain stopped Wed Sep 23 07:28:37 EDT 2026
+DONE (fault)
+# chain2 Wed Sep 23 08:08:32 EDT 2026
+# m39c chain start Wed Sep 23 08:11:41 EDT 2026  isle md5 0d91c0bfd6d319e76d7e500f4b7482bd  phases K A D P
+# chain3 Wed Sep 23 08:25:39 EDT 2026
+# m39c chain start Wed Sep 23 08:27:12 EDT 2026  isle md5 9e3945e2adacb9e87c82804183b2207e  phases K A D P
+claw EXIT=0 Wed Sep 23 08:27:37 EDT 2026
+M EXIT=0 md5 800:d2d40344 3000:59008ce4 7000:3f98f882  Wed Sep 23 08:31:37 EDT 2026
+N EXIT=0 md5 800:0b58c5ee 3000:2b99c60a 7000:4a9a640c --nomovies Wed Sep 23 08:35:47 EDT 2026
+MB1 EXIT=0 md5 800:d2d40344 3000:59008ce4 7000:3f98f882 --board 1 Wed Sep 23 08:39:57 EDT 2026
+NB1 EXIT=0 md5 800:0b58c5ee 3000:2b99c60a 7000:4a9a640c --nomovies --board 1 --boarddump 0 Wed Sep 23 08:44:02 EDT 2026
+NB2 EXIT=0 md5 800:0b58c5ee 3000:2b99c60a 7000:bbc5e0cc --nomovies --board 2 --boarddump 0 Wed Sep 23 08:48:12 EDT 2026
+Xw10dll EXIT=137 Wed Sep 23 09:13:24 EDT 2026
+Xw20dll EXIT=137 Wed Sep 23 09:38:35 EDT 2026
+Xw21dll EXIT=137 Wed Sep 23 10:04:04 EDT 2026
+m39c: perf chain Wed Sep 23 10:04:09 EDT 2026
