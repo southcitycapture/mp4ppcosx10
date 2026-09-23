@@ -19668,7 +19668,55 @@ same deterministic schedule.
 
 ### 54.5 The gallery on the final build
 
-@GALLERY54@
+The whole gallery once on the release candidate (`fcf94d24…`), after the
+soak, in `m39_final.sh`: every one of the 63 minigames with `--nomovies`
+(M37's schedule, §53.9 — the recipes predate the movies), `--ffto 14000
+--lockstep`, the three card frames and the four in-play positions, into
+`~/gallery-m39` on the G4, 00:16–02:59. **63 of 63 `EXIT=0`, 0 faults**,
+7–8 frames each (459 in all). Pulled as the M39 rows
+(`gallery_pull_m39.sh`, 320×240 JPEGs in `docs/gallery/mNNN-m39-*.jpg`)
+and `compare.html` regenerated (`compare_m39.py`).
+
+**Against the last gallery** — M35's second-pass final build
+(`685fdd43…`, 0.9.4, `~/gallery-m35`; `m35_gallery_delta.py --a
+~/gallery-m35 --b ~/gallery-m39`): **432 of 441 positions byte-identical
+to the level**, and the nine that moved are:
+
+| game | positions | pixels moved | `sim/>8` against the console, M35 → M39 | what |
+|---|---|---|---|---|
+| m448 Goomba's Chip Flip | all seven | 28–44% | card 98/46 → **98/21**; +400 93/66 → **97/49**; +2300 92/75 → **96/58** | the felt — M38's fold fix (§53.10): the table green and its star plate drawn, as the console |
+| m413 | card +164 | 0.8% | 96/55 → 96/55 | the card's glow spots at another animation frame — the kind §50.15 read on m405's and m433's ("the sprites' animation frames") |
+| m439 | +2300 | 0.1% | 82/94 → 82/94 | two dust puffs at another animation frame, the same kind |
+
+Mean `sim` over the 428 positions with a console frame 93.96% → 94.00%.
+Five milestones of the port's changes since M35 (the loader, the batch
+enders, the movies, the fold) moved one game's picture, and that one
+towards the console.
+
+**The counts: 59 match / 2 minor / 2 oracle-failed / 0 port-faulted**
+(M35: 57 / 3 / 2 / 1). Two verdicts changed, in `verdicts-m39.tsv`:
+
+* **m448 minor → match** — the felt and the plate, above.
+* **m459 Mushroom Medic, port-faulted → match** — a stale verdict: the
+  M26b sweep's `HEAP_HEAP` at the module's setup (§41 cause E) ended when
+  M31 made `--stackmul 2` the default (§46), and M35's and M39's runs dump
+  all seven positions with no fault; no later row had written a verdict
+  over it. The card is the console's to the pixel; the room, the patients,
+  the floor's reflections and the HUD draw as the console's.
+
+The two minors are **m405 Mario Medley and m417 Makin' Waves — the
+indirect warp** (the ripple, §50.14, §52.8); the two oracle-failed are
+**m442 and m453**, where Dolphin itself hangs at the module's link. m434
+Cheep Cheep Sweep is a match by the sweep's measure with its missing
+reflection noted, and the Read Me keeps it in the list from the user's
+own frame-by-frame pass (§50).
+
+The one-CPU snapshot rode on the same chain after the gallery:
+`m415-onecpu` (the gallery recipe with `--threads 0 --renderthread 1`,
+`--snap-every 800 --snap-keep 3`), `EXIT=0`, its snapshots kept at
+`~/m39/final/m415-onecpu/snaps/f015200.snap`, `f016000`, `f016800` —
+inside Stamp Out! on one CPU (entry 14,477), 54.2's named snapshot. (Its
+underrun count means nothing: the recipe is `--lockstep`.)
 
 ### 54.6 The Read Me, line by line
 
