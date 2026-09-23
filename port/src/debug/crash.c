@@ -30,6 +30,7 @@ static void handler(int sig, siginfo_t* info, void* uap) {
     if (sig == SIGALRM && watchdog_progressed()) {
         return; /* the game is moving; the alarm has re-armed */
     }
+    port_log_sync(); /* M40: the ring out, and this handler's lines written in place */
 #if defined(__APPLE__)
     ucontext_t* uc = (ucontext_t*)uap;
     unsigned long long pc = 0, sp = 0;

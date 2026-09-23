@@ -44,6 +44,10 @@ static float s_rt[PERF_MAX]; /* M27: the render thread's replay of the last pres
 static float s_dec[PERF_MAX]; /* M29: its decode of that frame (--rtdecode) */
 static float s_gdec[PERF_MAX]; /* M33: the game thread's own decode of the frame (--rtdecode auto) */
 static float s_audio[PERF_MAX];
+/* M40 (PLAN.md 55): what the frame handed GL -- the draw calls, the
+ * vertices, the stream's records (every GL call) -- and the vertices the
+ * static-geometry cache served without a decode */
+static unsigned s_calls[PERF_MAX], s_verts[PERF_MAX], s_recs[PERF_MAX], s_vchit[PERF_MAX];
 static float s_wall[PERF_MAX];      /* with the sleep: real elapsed time */
 static unsigned char s_drawn[PERF_MAX];
 static int n_samples;
@@ -242,6 +246,17 @@ void port_perf_frame(int drawn) {
         s_rt[n_samples] = (float)rt_last_frame_ms();
         s_dec[n_samples] = (float)rt_last_dec_ms();
         s_gdec[n_samples] = (float)rt_auto_frame_gdec_ms();
+        {
+            static unsigned long l_calls, l_verts, l_recs, l_vchit;
+            unsigned long c, v, r, h;
+            gx_draw_counters(&c, &v, &h);
+            r = rt_records_written();
+            s_calls[n_samples] = (unsigned)(c - l_calls);
+            s_verts[n_samples] = (unsigned)(v - l_verts);
+            s_recs[n_samples] = (unsigned)(r - l_recs);
+            s_vchit[n_samples] = (unsigned)(h - l_vchit);
+            l_calls = c; l_verts = v; l_recs = r; l_vchit = h;
+        }
         n_samples++;
     }
     t_frame_start = now;
@@ -393,10 +408,12 @@ static void perf_dump(void) {
         port_log("port> --perfdump: cannot write %s\n", port_opt.perfdump);
         return;
     }
-    fprintf(f, "frame,wall_ms,work_ms,game_ms,gx_ms,present_ms,aud_ms,drawn,rt_ms,dec_ms,gdec_ms\n");
+    fprintf(f, "frame,wall_ms,work_ms,game_ms,gx_ms,present_ms,aud_ms,drawn,rt_ms,dec_ms,gdec_ms,"
+               "calls,verts,recs,vchit\n");
     for (i = 0; i < n_samples; i++) {
-        fprintf(f, "%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%d,%.3f,%.3f,%.3f\n", i, s_wall[i], s_frame[i],
-                s_game[i], s_gx[i], s_present[i], s_audio[i], s_drawn[i], s_rt[i], s_dec[i], s_gdec[i]);
+        fprintf(f, "%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%d,%.3f,%.3f,%.3f,%u,%u,%u,%u\n", i, s_wall[i],
+                s_frame[i], s_game[i], s_gx[i], s_present[i], s_audio[i], s_drawn[i], s_rt[i],
+                s_dec[i], s_gdec[i], s_calls[i], s_verts[i], s_recs[i], s_vchit[i]);
     }
     fclose(f);
     port_log("port> --perfdump: %d frames written to %s\n", n_samples, port_opt.perfdump);

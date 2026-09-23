@@ -193,6 +193,13 @@ extern int gx_ready;
 /* incremented by every GXSetArray: the display-list cache memoises its
  * array-contents hashes for the length of one of these, not one frame */
 extern unsigned gx_array_epoch;
+/* M40 (PLAN.md 55): the vertex cache's memo of an array's hash lasts until
+ * the frame ends, a known rewriter runs (the skin body, ShapeProc/
+ * ClusterProc, the game's own EnvelopeProc) -- all bump gx_vc_epoch -- or
+ * GXSetArray names that same array again
+ * (gx_vc_array_set: a buffer refilled between two draws is re-set) */
+extern unsigned gx_vc_epoch;
+void gx_vc_array_set(const void* base);
 
 /* gx_draw.c */
 void gx_draw_reset(void);
@@ -346,7 +353,7 @@ void glc_get_tex_fold(int unit, float* su, float* sv, float* tv);
  * -- and the three calls below are the fence discipline gx_draw.c follows:
  * enter before writing a span, flush before drawing it, left after the draws
  * so the chunks the writer has finished with get their fences. */
-u8* gl13_var_setup(size_t bytes);
+u8* gl13_var_setup(size_t bytes, size_t ring_bytes);
 int gl13_var_active(void);
 int gl13_have_multidraw(void);
 void gl13_var_enter(size_t off, size_t len);

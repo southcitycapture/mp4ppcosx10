@@ -221,6 +221,7 @@ void GXSetArray(GXAttr attr, const void* data, u8 stride) {
         gx.array[attr].base = (const u8*)data;
         gx.array[attr].stride = stride;
         gx_array_epoch++;
+        gx_vc_array_set(data);
         if (attr == GX_VA_POS) {
             gx_skin_array_bound(data); /* M18: a deferred skin owed to this buffer */
         }
@@ -1204,6 +1205,9 @@ void GXDrawDone(void) {}
 void GXSetDrawDone(void) {}
 void GXWaitDrawDone(void) {}
 void GXPixModeSync(void) {}
+/* M40: not a vertex-cache epoch -- hsfdraw.c calls it before every object
+ * it draws (a hardware cache flush, not a statement about memory); the
+ * rewriters bump gx_vc_epoch themselves */
 void GXInvalidateVtxCache(void) {}
 void GXResetWriteGatherPipe(void) {}
 void GXSetDrawSync(u16 token) { (void)token; }

@@ -126,6 +126,21 @@ typedef struct PortOptions {
     int dlcache;            /* --dlcache  replay cached display-list vertices
                              *   instead of decoding every frame.  Built,
                              *   measured and OFF by default: PLAN.md 21.3     */
+    int vcache;             /* M40 (PLAN.md 55): the static-geometry cache --
+                             *   0 off (--novcache), 1 count only (--vcache
+                             *   count: the static share, nothing cached),
+                             *   2 on (the decoded vertices kept in the vertex
+                             *   range, replayed with no decode, no copy)      */
+    int vcache_mb;          /* --vcachemb N: the cache's region (default 8)    */
+    double vcache_fit;      /* --vcachefit MS: auto (3, the default) keys a
+                             *   drawn frame when the render thread's replay +
+                             *   the frame's whole decode would pass this (28) */
+    int cardwait;           /* --cardwait: a card flush waits for the running
+                             *   write (M29); default: it leaves its image for
+                             *   the writer (M40, PLAN.md 55)                  */
+    int synclog;            /* --synclog: port_log writes on the calling thread
+                             *   (pre-M40); default: a writer thread drains a
+                             *   ring (M40, PLAN.md 55)                        */
     /* ---- M9b ---- */
     int noaicb;             /* --noaicb  do not run the game's AI DMA callback,
                              *   i.e. leave the three msm periodic services
@@ -551,6 +566,8 @@ void port_stub_report(void);
 /* ---- diagnostics --------------------------------------------------------- */
 void port_log(const char* fmt, ...);
 void port_logv(const char* fmt, va_list ap);
+void port_log_async_start(void); /* M40: the writer thread (after the options, --synclog) */
+void port_log_sync(void);        /* M40: drain the ring and log in place from now (a fault) */
 void port_fatal(const char* fmt, ...);
 void port_shutdown(int code); /* the one exit path: report, flush, close SDL */
 int port_write_png(const char* path, int w, int h, const unsigned char* rgb_bottom_up); /* M32 */
@@ -829,6 +846,12 @@ unsigned rt_pos(void);
 void rt_decode_join(const char* why);
 void rt_decode_join_pos(unsigned pos, const char* why); /* up to a stamped position */
 double rt_last_dec_ms(void);
+/* M40 (PLAN.md 55): the records the game thread has written (every GL call,
+ * for --perfdump), and a join that leaves the GPU idle -- every record
+ * replayed, then glFinish -- for the vertex cache's reset */
+unsigned long rt_records_written(void);
+void rt_finish_join(const char* why);
+void gx_draw_counters(unsigned long* calls, unsigned long* verts, unsigned long* vchit);
 /* M33 (PLAN.md 48): --rtdecode auto.  rt_decode_want says whether this run is
  * the render thread's (the frame's share, spread by vertices); a run decoded
  * on the game thread is reported with rt_decode_here (timed), one handed over
@@ -842,6 +865,7 @@ void rt_auto_frame_end(int drawn, double seconds);
 void rt_auto_frame_begin(void);
 double rt_auto_last_share(void);
 double rt_auto_frame_gdec_ms(void);
+int rt_vcache_inputs(double* replay_ms, double* dec_ms, double* rate_ms); /* M40 */
 void port_vtx_rewrite(const char* who); /* ShapeProc/ClusterProc (patches.txt): the join */
 extern int rt_recording;
 void port_workers_init(void);       /* after the options: reads --threads and hw.ncpu */

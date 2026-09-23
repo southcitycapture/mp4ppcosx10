@@ -72,3 +72,11 @@
 "dll/m407dll.rel", /* 1 reads, 38 KB */
 "dll/bootDll.rel", /* 1 reads, 30 KB */
 "data/effect.bin", /* 1 reads, 10 KB */
+/* M40 (PLAN.md 55), by hand after the generated list: the files behind the
+ * M39 soak's three cold reads (PLAN.md 54.4) -- Bowser's space and the
+ * board's ending -- which the 20-turn --dvdlog run that generated the list
+ * above never met (no Bowser space in it; it ended at the board's end) */
+"data/bkoopa.bin", /* Bowser's space: 1,697 ms cold at frame 65,362 */
+"data/bkoopasuit.bin", /* Bowser's space, the suit */
+"dll/mstory3Dll.rel", /* the board's ending: 1,083 ms cold */
+"data/mstory3.bin", /* the board's ending: 1,059 ms cold, 3.5 MB */

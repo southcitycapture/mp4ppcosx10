@@ -614,12 +614,14 @@ int port_envelope_proc(HSFDATA* hsf) {
         /* M29 (PLAN.md 44.1 rule 3): the game's own body rewrites the
          * buffers now */
         rt_decode_join("cpuskin EnvelopeProc");
+        gx_vc_epoch++; /* M40: the game's body rewrites the arrays after this */
         return 0;
     }
     h = hsf_register(hsf, frame);
     if (!h || h->cpu) {
         stat_proc_cpu++;
         rt_decode_join("cpuskin EnvelopeProc");
+        gx_vc_epoch++; /* M40: the game's body rewrites the arrays after this */
         return 0;
     }
     h->serial++;
@@ -681,6 +683,7 @@ static void hsf_run_body(SkinHsf* h) {
         h->mtx_dirty = 0;
     }
     SetEnvelopMain(h->hsf);
+    gx_vc_epoch++; /* M40: the arrays were rewritten; the vertex cache re-hashes them */
     h->skin_dirty = 0;
     stat_body_runs++;
 }

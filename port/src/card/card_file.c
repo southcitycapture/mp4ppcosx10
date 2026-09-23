@@ -282,6 +282,18 @@ typedef struct CardJob {
     char err[128];
 } CardJob;
 static CardJob cjob;
+/* M40 (PLAN.md 55): a flush that finds the writer busy no longer waits for
+ * it.  It leaves its image here and the retrace starts the next write the
+ * moment the running one lands; a later flush replaces a waiting image (the
+ * newest wins, the one in between was never going to be the last word).  The
+ * M39 soak's two one-second pauses at a card write (54.4) were a flush
+ * joining a writer the drive was holding for 2.1 s.  A save reaches the disk
+ * at most one running write later than before.  --cardwait: the M29 way. */
+static u8* cpend_img;
+static char cpend_path[1024];
+static int cpend;
+static double cpend_t0;
+static unsigned stat_flush_deferred, stat_flush_replaced;
 static unsigned stat_flush_waits;
 static double stat_flush_wait_s, stat_flush_game_s, stat_flush_behind_s, stat_flush_behind_max;
 
@@ -362,6 +374,46 @@ static void card_job_reap(int wait) {
     cjob.state = 0;
 }
 
+static void card_job_start(const u8* img, const char* path) {
+    if (!cjob.img) {
+        cjob.img = (u8*)malloc(CARD_IMAGE_SIZE);
+        if (!cjob.img) {
+            port_log("port> CARD: no memory for the flush's copy; saves are in memory only\n");
+            return;
+        }
+    }
+    if (img != cjob.img) {
+        memcpy(cjob.img, img, CARD_IMAGE_SIZE);
+    }
+    snprintf(cjob.path, sizeof(cjob.path), "%s", path);
+    cjob.err[0] = '\0';
+    cjob.t0 = port_now_seconds();
+    cjob.frame = gl13_frame_number();
+    cjob.state = 1;
+    if (pthread_create(&cjob.thread, NULL, card_job_main, &cjob) != 0) {
+        cjob.threaded = 0;
+        card_job_main(&cjob);
+        card_job_reap(0);
+    } else {
+        cjob.threaded = 1;
+    }
+}
+
+/* the waiting image, if any, once the writer is idle */
+static void card_pending_start(void) {
+    u8* t;
+    if (!cpend || cjob.state != 0) {
+        return;
+    }
+    /* swap the buffers: the job writes the waiting copy, no memcpy */
+    t = cjob.img;
+    cjob.img = cpend_img;
+    cpend_img = t;
+    cpend = 0;
+    card_job_start(cjob.img, cpend_path);
+    cjob.t0 = cpend_t0; /* behind the game from when the flush was asked for */
+}
+
 static void card_flush(Slot* s) {
     double t0;
     if (!s->present || !s->dirty) {
@@ -380,28 +432,33 @@ static void card_flush(Slot* s) {
         return;
     }
     t0 = port_now_seconds();
-    card_job_reap(1); /* the previous write, if it is still going */
-    if (!cjob.img) {
-        cjob.img = (u8*)malloc(CARD_IMAGE_SIZE);
-        if (!cjob.img) {
-            port_log("port> CARD: no memory for the flush's copy; saves are in memory only\n");
+    card_job_reap(port_opt.cardwait); /* a finished write is reaped; a running one waits
+                                       * only under --cardwait */
+    if (cjob.state == 1) {
+        if (!cpend_img) {
+            cpend_img = (u8*)malloc(CARD_IMAGE_SIZE);
+        }
+        if (cpend_img) {
+            if (cpend) {
+                stat_flush_replaced++;
+            } else {
+                cpend_t0 = t0;
+            }
+            memcpy(cpend_img, s->img, CARD_IMAGE_SIZE);
+            snprintf(cpend_path, sizeof(cpend_path), "%s", s->path);
+            cpend = 1;
+            stat_flush_deferred++;
             s->dirty = 0;
+            stat_flush_game_s += port_now_seconds() - t0;
             return;
         }
+        card_job_reap(1); /* no memory for a second copy: the M29 way */
     }
-    memcpy(cjob.img, s->img, CARD_IMAGE_SIZE);
-    snprintf(cjob.path, sizeof(cjob.path), "%s", s->path);
-    cjob.err[0] = '\0';
-    cjob.t0 = port_now_seconds();
-    cjob.frame = gl13_frame_number();
-    cjob.state = 1;
-    if (pthread_create(&cjob.thread, NULL, card_job_main, &cjob) != 0) {
-        cjob.threaded = 0;
-        card_job_main(&cjob);
-        card_job_reap(0);
-    } else {
-        cjob.threaded = 1;
+    if (cpend) {
+        cpend = 0; /* the writer is idle and this image is newer: it supersedes */
+        stat_flush_replaced++;
     }
+    card_job_start(s->img, s->path);
     s->dirty = 0;
     stat_flush_game_s += port_now_seconds() - t0;
 }
@@ -603,6 +660,7 @@ void port_card_service(void) {
     if (cjob.state == 2 || cjob.state == 3) {
         card_job_reap(0);
     }
+    card_pending_start(); /* M40: the waiting image, now the writer is free */
 }
 
 void port_card_report(void) {
@@ -613,6 +671,8 @@ void port_card_report(void) {
         }
     }
     card_job_reap(1); /* the last write lands before the process ends */
+    card_pending_start();
+    card_job_reap(1);
     if (stat_reads || stat_writes || stat_creates || stat_deletes) {
         port_log("port> CARD: %u reads, %u writes, %u files created, %u deleted, "
                  "%u image flushes, %u of %d blocks free\n",
@@ -623,6 +683,9 @@ void port_card_report(void) {
                  "one (%.0f ms)\n",
                  stat_flush_game_s * 1000.0, stat_flush_behind_s * 1000.0,
                  stat_flush_behind_max * 1000.0, stat_flush_waits, stat_flush_wait_s * 1000.0);
+        port_log("port> CARD: M40: %u flush(es) found the writer busy and left their image for "
+                 "it (%u replaced by a newer one before it started)%s\n",
+                 stat_flush_deferred, stat_flush_replaced, port_opt.cardwait ? " -- --cardwait" : "");
     }
 }
 

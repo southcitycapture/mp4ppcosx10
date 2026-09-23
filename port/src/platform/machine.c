@@ -689,12 +689,49 @@ static void print_inventory(void) {
     }
 }
 
+/* M40 (PLAN.md 55, docs/requirements.md): the two promises.  "Full game
+ * speed" is the minimum's (the console's clock, whatever the picture rate);
+ * "30 fps everywhere" is the reference's class and up -- a dual 1 GHz G4
+ * with a 64 MB Radeon 9000 or better, the machine the scoreboard is measured
+ * on -- and faster machines only add headroom.  One CPU never gets the
+ * second promise: the render thread's replay and the decode then share the
+ * game's core.  Machines this port has never run on are marked untested. */
+#define MACH_SCOREBOARD "docs/fps-scoreboard.md, measured on the reference"
+static const char* tier_text(void) {
+    int g5 = mach.cpusubtype == 100;
+    int card = mach.gl && mach.vram_mb >= MACH_FULL_VRAM_MB && mach.texunits >= 6;
+    if (verdict == V_UNSUPPORTED) {
+        return "none: unsupported";
+    }
+    if (mach.host_build || !mach.native || !mach.gl) {
+        return "not judged (no native PowerPC GL context)";
+    }
+    if (mach.ncpu >= 2 && card && (g5 || mach.mhz >= 1000)) {
+        if (!g5 && mach.mhz < 1100) {
+            return "30 fps everywhere -- the reference class (dual 1 GHz G4, 64 MB Radeon "
+                   "9000 or better); the evidence is " MACH_SCOREBOARD;
+        }
+        return "30 fps everywhere, expected -- faster than the reference (dual 1 GHz G4 + "
+               "Radeon 9000); untested on this machine";
+    }
+    if (mach.ncpu < 2 && (g5 || mach.mhz >= 1250)) {
+        return "full game speed; the picture below 30 fps on the heaviest screens is "
+               "expected (one CPU carries the render thread too); untested";
+    }
+    if (!mach.mhz || mach.mhz >= MACH_FULL_SPEED_MHZ) {
+        return "full game speed (the picture rate varies by screen; 30 fps everywhere "
+               "needs two CPUs and the reference's card)";
+    }
+    return "below full game speed";
+}
+
 static void print_verdict(void) {
     int i;
     port_log("port> machine: verdict %s\n", verdict_word());
     for (i = 0; i < nreasons; i++) {
         port_log("port> machine:   - %s\n", reasons[i]);
     }
+    port_log("port> machine: tier: %s\n", tier_text());
 }
 
 /* The requirements in one paragraph (docs/requirements.md's first section),

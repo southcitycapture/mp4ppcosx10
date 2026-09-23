@@ -31,13 +31,20 @@
 
 #include <mach/mach_time.h>
 
+static mach_timebase_info_data_t tb;
+static unsigned long long base;
+static double tick_s; /* seconds a timebase tick */
+
+static void clk_init(void) {
+    mach_timebase_info(&tb);
+    base = mach_absolute_time();
+    tick_s = (double)tb.numer / (double)tb.denom * 1e-9;
+}
+
 unsigned long long port_now_ns(void) {
-    static mach_timebase_info_data_t tb;
-    static unsigned long long base;
     unsigned long long t;
     if (tb.denom == 0) {
-        mach_timebase_info(&tb);
-        base = mach_absolute_time();
+        clk_init();
     }
     t = mach_absolute_time() - base;
     /* (t * numer) / denom without the overflow: the whole part first, then the
@@ -45,4 +52,15 @@ unsigned long long port_now_ns(void) {
     return (t / tb.denom) * tb.numer + ((t % tb.denom) * tb.numer) / tb.denom;
 }
 
-double port_now_seconds(void) { return (double)port_now_ns() * 1e-9; }
+/* M40 (PLAN.md 55): the same origin, scaled by one multiply.  The integer
+ * path above is two 64-bit divisions -- a __udivdi3 call each on a 32-bit
+ * G4, about half a microsecond a reading -- and the port's instruments read
+ * this clock thousands of times a drawn frame (the decode's split timing, the
+ * vertex cache's keying).  A double holds 2^53 ticks exactly: 8.6 years of a
+ * 33 MHz timebase.  Nothing game-visible reads it: OSGetTick is port_now_ns. */
+double port_now_seconds(void) {
+    if (tb.denom == 0) {
+        clk_init();
+    }
+    return (double)(mach_absolute_time() - base) * tick_s;
+}

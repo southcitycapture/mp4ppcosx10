@@ -768,7 +768,11 @@ void gl13_var_stats(unsigned* waits, unsigned* blocked, unsigned* sets, unsigned
  * ordinary buffer the client-array path copies from, exactly as the static
  * `src_buf` was, so `--novar` and `--oldsubmit` measure the submit shape and
  * the copy separately. */
-u8* gl13_var_setup(size_t bytes) {
+/* M40 (PLAN.md 55): `bytes` is the whole range handed to the driver, the
+ * ring's `ring_bytes` first and the static-geometry cache's region after it;
+ * the fences' chunks cover the ring alone (the cache's region is written only
+ * where nothing reads it, and reset behind a finish). */
+u8* gl13_var_setup(size_t bytes, size_t ring_bytes) {
     void* mem = NULL;
     if (var_ring) {
         return var_ring;
@@ -782,7 +786,7 @@ u8* gl13_var_setup(size_t bytes) {
     }
     memset(mem, 0, bytes);
     var_ring = (u8*)mem;
-    var_ring_bytes = bytes;
+    var_ring_bytes = ring_bytes ? ring_bytes : bytes;
 #ifndef PORT_NO_SDL
     if (gl_on && !port_opt.novar && !port_opt.oldsubmit) {
         const char* ext = (const char*)GL(glGetString)(GL_EXTENSIONS);
@@ -816,9 +820,10 @@ u8* gl13_var_setup(size_t bytes) {
             var_MultiDrawArraysEXT = (multidraw_t)SDL_GL_GetProcAddress("glMultiDrawArraysEXT");
             var_multidraw = var_MultiDrawArraysEXT != NULL;
         }
-        port_log("port> vertex ring: %lu KB in %d chunks, vertex_array_range %s, "
-                 "multi_draw_arrays %s\n",
-                 (unsigned long)(bytes / 1024), VAR_CHUNKS,
+        port_log("port> vertex ring: %lu KB in %d chunks (+%lu KB static-geometry cache), "
+                 "vertex_array_range %s, multi_draw_arrays %s\n",
+                 (unsigned long)(var_ring_bytes / 1024), VAR_CHUNKS,
+                 (unsigned long)((bytes - var_ring_bytes) / 1024),
                  var_on ? "on" : (have ? "off (--novar)" : "absent"),
                  var_multidraw ? "yes" : "no");
     }

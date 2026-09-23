@@ -195,8 +195,17 @@ void port_reset_thread_tick(void) {
  * `H_ResetReady` when it first sees the button down, and only acts when it
  * then sees it up.  So a request is a pulse of a few polls, not a level. */
 static int reset_hold;
+/* M40: the SIGINT handler only sets flags -- port_log takes the log ring's
+ * lock, which the interrupted thread may hold -- and the game thread's next
+ * poll says what happened */
+static volatile int sigint_note;
 
 BOOL OSGetResetButtonState(void) {
+    if (sigint_note) {
+        sigint_note = 0;
+        port_log("port> reset requested: handing it to the game's own reset path "
+                 "(press ctrl-C again, or --watchdog, to leave without it)\n");
+    }
     if (reset_hold > 0) {
         reset_hold--;
         return TRUE;
@@ -219,9 +228,14 @@ void port_request_reset(void) {
 static void on_sigint(int sig) {
     (void)sig;
     if (reset_requested) {
+        port_log_sync(); /* M40: the ring out first (a try-lock: never waits) */
         _exit(130); /* asked twice: the game is not getting there, leave now */
     }
-    port_request_reset();
+    if (!reset_requested) {
+        sigint_note = 1;
+    }
+    reset_requested = 1;
+    reset_hold = 3;
 }
 
 void port_reset_init(void) { signal(SIGINT, on_sigint); }

@@ -855,3 +855,22 @@ src/game/board/mg_setup.c	static s16 mgNext;\n	static s16 mgNext;\nvoid port_mg_
 # while mentDll is the live overlay (selfplay.c portBoardPick), and returns
 # the game's own argument otherwise and whenever --board is not given.
 src/game/board/main.c	void BoardSaveInit(s32 board)\n{\n    s32 i;\n    GWSystem.board = board;	int portBoardPick(int board);\nvoid BoardSaveInit(s32 board)\n{\n    s32 i;\n    GWSystem.board = portBoardPick(board);
+
+# ------------------------------------------------------- game/hsfman.c, hsfdraw.c
+# M40 (PLAN.md 55): the static-geometry cache's array memo.  Inside Hu3DExec's
+# model walk nothing but the engine runs between two draws -- the motion
+# blocks, whose array writers (ShapeProc, ClusterProc, the skin) end the memo
+# themselves -- so a GXSetArray that names an array again there (FaceDraw
+# re-sets them whenever the vertex mode changes, several times an object) is
+# not a sign that its bytes moved.  Module code is: a layer hook or a model's
+# hook function may refill a buffer and set it again between two draws.  So
+# the walk says where it is: port_vc_foreign(0) when the model walk starts,
+# (1) around every hook call and after the walk; outside the walk (sprites,
+# fonts, the wipe, the modules' own draws) a re-set array is re-hashed, as
+# everywhere before this patch.  Game behaviour is unchanged.
+src/game/hsfman.c	static void (*layerHook[8])(s16);\n	static void (*layerHook[8])(s16);\nvoid port_vc_foreign(int on);\n
+src/game/hsfman.c	    HuSprBegin();\n    var_r24 = 0;\n	    HuSprBegin();\n    var_r24 = 0;\n    port_vc_foreign(0);\n
+src/game/hsfman.c	                    temp = layerHook[j];\n                    temp(j);\n	                    temp = layerHook[j];\n                    port_vc_foreign(1);\n                    temp(j);\n                    port_vc_foreign(0);\n
+src/game/hsfman.c	    HuSprDispInit();\n    HuSprExec(0);\n	    port_vc_foreign(1);\n    HuSprDispInit();\n    HuSprExec(0);\n
+src/game/hsfdraw.c	                hookFunc = (void*) drawObj->model->hsf;\n                hookFunc(drawObj->model, drawObj->matrix);\n	                hookFunc = (void*) drawObj->model->hsf;\n                port_vc_foreign(1);\n                hookFunc(drawObj->model, drawObj->matrix);\n                port_vc_foreign(0);\n
+src/game/hsfdraw.c	#include "ext_math.h"\n#include <string.h>\n\nvoid port_envelope_sync(HSFDATA *hsf);\nint port_consumed_frame(void);\n	#include "ext_math.h"\n#include <string.h>\n\nvoid port_envelope_sync(HSFDATA *hsf);\nvoid port_vc_foreign(int on);\nint port_consumed_frame(void);\n

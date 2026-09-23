@@ -439,6 +439,16 @@ static void usage(const char* argv0) {
             "                    when its bytes and the arrays it indexes have\n"
             "                    not moved.  Off: it is faster on the title and\n"
             "                    slower on the character select (PLAN.md 21.3)\n"
+            "  --vcache off|count|on|auto  M40: the static-geometry cache (PLAN.md 55):\n"
+            "                    a display list whose bytes, arrays and plan are\n"
+            "                    unchanged since it was decoded is drawn from its\n"
+            "                    decoded copy, no decode and no copy; count only\n"
+            "                    measures the share; auto (the default) keys only\n"
+            "                    the frames whose render thread needs it\n"
+            "  --vcachefit MS    M40: auto's threshold (28 ms; --novcache off)\n"
+            "  --vcachemb N      M40: the cache's region in the vertex range (8)\n"
+            "  --cardwait        M40: a card flush waits for the running write (M29)\n"
+            "  --synclog         M40: the log written on the calling thread\n"
             "  teleport to the bug (M10):\n"
             "  --oldtev          re-apply the texture environment on every draw\n"
             "  --tevstats        TEV state-cache hits and misses\n"
@@ -689,6 +699,9 @@ int port_parse_args(int argc, char** argv) {
      * The 4-tap was there to buy quality and on this hardware it buys none, so
      * it is the flag now and linear is the default. */
     port_opt.resample4 = 0;
+    port_opt.vcache = 3;    /* M40: the static-geometry cache, auto (PLAN.md 55) */
+    port_opt.vcache_fit = 28.0;
+    port_opt.vcache_mb = 8;
     port_opt.resident = -1; /* M36: the resident set's budget by the installed RAM (machine.c) */
     port_opt.cmpmask = 8191; /* every compare-first group on; see gx_internal.h (M18:
                              * 15 left Z mode, Z comp loc, cull and alpha compare
@@ -937,6 +950,21 @@ int port_parse_args(int argc, char** argv) {
             port_opt.resample4 = 1;
         } else if (!strcmp(a, "--dlcache")) {
             port_opt.dlcache = 1;
+        } else if (!strcmp(a, "--novcache")) {
+            port_opt.vcache = 0;
+        } else if (!strcmp(a, "--vcache") && i + 1 < argc) {
+            const char* v = argv[++i];
+            port_opt.vcache = !strcmp(v, "off") || !strcmp(v, "0") ? 0
+                              : !strcmp(v, "count") || !strcmp(v, "1") ? 1
+                              : !strcmp(v, "auto") || !strcmp(v, "3") ? 3 : 2;
+        } else if (!strcmp(a, "--vcachefit") && i + 1 < argc) {
+            port_opt.vcache_fit = atof(argv[++i]);
+        } else if (!strcmp(a, "--vcachemb") && i + 1 < argc) {
+            port_opt.vcache_mb = atoi(argv[++i]);
+        } else if (!strcmp(a, "--cardwait")) {
+            port_opt.cardwait = 1;
+        } else if (!strcmp(a, "--synclog")) {
+            port_opt.synclog = 1;
         } else if (!strcmp(a, "--olddecode")) {
             port_opt.olddecode = 1;
         } else if (!strcmp(a, "--noaicb")) {
@@ -1375,6 +1403,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     port_log_open(port_opt.log);
+    port_log_async_start(); /* M40 (PLAN.md 55): the log's writes off the game thread */
     if (port_opt.log) {
         port_log("port> log: %s\n", port_opt.log);
     }

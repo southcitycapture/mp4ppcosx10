@@ -200,6 +200,7 @@ static unsigned long au_fr_gverts, au_fr_rverts; /* this frame's split, in verti
 static double au_fr_gdec_s;    /* this frame's decode time on the game thread */
 static double au_gd_ms, au_cc_ms; /* the game thread's drawn frame (less its decode), consumed frame */
 static double au_rate_g, au_rate_r; /* ms a vertex, each side (a running mean) */
+static double au_prev_gdec_ms;     /* M40: the last drawn frame's game-thread decode */
 static double au_last_gd, au_last_cc, au_last_r, au_last_d, au_last_want; /* the last plan's inputs */
 static unsigned long au_frames, au_frames_split, au_gverts, au_rverts;
 static double au_gdec_s, au_share_sum, au_share_max;
@@ -1031,6 +1032,7 @@ void rt_auto_frame_begin(void) {
         AU_EMA(au_rate_r, st_last_dec_ms / (double)au_fr_rverts);
     }
     vtot = au_fr_gverts + au_fr_rverts;
+    au_prev_gdec_ms = au_fr_gdec_s * 1000.0;
     au_fr_gverts = au_fr_rverts = 0;
     au_fr_gdec_s = 0.0;
     au_acc = 0.0;
@@ -1077,6 +1079,20 @@ void rt_auto_frame_begin(void) {
     }
 }
 double rt_auto_last_share(void) { return decmode == 3 ? au_share : 0.0; }
+
+/* M40 (PLAN.md 55): what --vcache auto weighs at a drawn frame's start -- the
+ * render thread's last replay, the last frame's whole decode (both threads)
+ * and the decode's cost a vertex.  0 when there is no split to read (one
+ * CPU, the inline replay, --rtdecode 0..2): the cache is then always on. */
+int rt_vcache_inputs(double* replay_ms, double* dec_ms, double* rate_ms) {
+    if (decmode != 3 || !rt_recording) {
+        return 0;
+    }
+    *replay_ms = st_last_frame_ms;
+    *dec_ms = st_last_dec_ms + au_prev_gdec_ms;
+    *rate_ms = au_rate_r > 0.0 ? au_rate_r : au_rate_g;
+    return *rate_ms > 0.0;
+}
 double rt_auto_frame_gdec_ms(void) { return au_fr_gdec_s * 1000.0; }
 
 /* the game thread hands a run to the render thread; the record is published
@@ -1134,7 +1150,10 @@ void rt_decode_join_pos(unsigned pos, const char* why) {
     join_count(why, now() - t0);
 }
 
-void port_vtx_rewrite(const char* who) { rt_decode_join(who); }
+void port_vtx_rewrite(const char* who) {
+    rt_decode_join(who);
+    gx_vc_epoch++; /* M40: the vertex cache re-hashes what is about to be rewritten */
+}
 
 /* The vertex program compile, on the GL thread (gx_vprog.c's vp_compile):
  * the text in, the id and the driver's verdicts out.  Written here because a
@@ -1888,7 +1907,21 @@ void rt_report(void) {
 
 double rt_last_frame_ms(void) { return st_last_frame_ms; }
 
+unsigned long rt_records_written(void) { return st_records; }
+
+static void finish_fn(void* a) {
+    (void)a;
+    glFinish();
+}
+void rt_finish_join(const char* why) {
+    (void)why;
+    rt_call(finish_fn, NULL, 0, 1);
+}
+
 #else /* PORT_NO_SDL */
+
+unsigned long rt_records_written(void) { return 0; }
+void rt_finish_join(const char* why) { (void)why; }
 
 void rt_start(void* w, void* c) { (void)w; (void)c; }
 void rt_stop(void) {}
@@ -1906,6 +1939,7 @@ void rt_decode_there(unsigned v) { (void)v; }
 void rt_auto_frame_end(int d, double s) { (void)d; (void)s; }
 void rt_auto_frame_begin(void) {}
 double rt_auto_last_share(void) { return 0.0; }
+int rt_vcache_inputs(double* a, double* b, double* c) { (void)a; (void)b; (void)c; return 0; }
 double rt_auto_frame_gdec_ms(void) { return 0.0; }
 void rt_ring_enter(int c) { (void)c; }
 void rt_call(void (*fn)(void*), const void* args, size_t n, int sync) {
@@ -1919,7 +1953,7 @@ unsigned rt_pos(void) { return 0; }
 void rt_decode_join(const char* why) { (void)why; }
 void rt_decode_join_pos(unsigned pos, const char* why) { (void)pos; (void)why; }
 double rt_last_dec_ms(void) { return 0.0; }
-void port_vtx_rewrite(const char* who) { (void)who; }
+void port_vtx_rewrite(const char* who) { (void)who; gx_vc_epoch++; }
 void rt_decode_record(const GxDecJob* j) { (void)j; }
 
 #endif

@@ -134,6 +134,17 @@ static int out_stride, out_off_clr, out_off_tex, out_ntex;
 static int nverts;             /* vertices in the primitive being assembled   */
 static u32 sv_first;           /* the primitive's first vertex, list-relative */
 static size_t run_pos;         /* byte offset in the ring of the run in hand  */
+/* M40 (PLAN.md 55): the static-geometry cache's region sits in the same
+ * vertex range, after the ring: [src_cap, src_cap + vc_cap).  A run is
+ * decoded into the ring or into the region, and the decoders' bound is the
+ * run's own (`run_cap`): the ring's end, or the region's. */
+static size_t run_cap;
+static size_t vc_cap;          /* the region's bytes (0: no cache)            */
+static size_t vc_cursor;       /* the region's next free byte, from its start */
+static int vc_run;             /* the run in hand: 0 ring, 1 a hit, 2 a store */
+static int batch_clean;        /* every run of the pending batch is a hit     */
+static int issue_clean;        /* the batch being issued needs no range flush */
+static unsigned long stat_vc_hit_verts;
 
 /* The writers still assemble into one uncompressed staging vertex: they arrive
  * one attribute at a time and in descriptor order, so there is nothing to pack
@@ -428,8 +439,10 @@ void gx_draw_reset(void) {
 }
 
 static void dlc_report(void);
+static void vc_report(void);
 
 void gx_draw_report(void) {
+    vc_report();
     if (!stat_prims) {
         return;
     }
@@ -1673,7 +1686,7 @@ static void finish_vertices(const u8* s, int n) {
 static void transform_and_store(void) {
     u8* v;
     int k;
-    if (nverts >= MAX_VERTS || run_pos + (size_t)(nverts + 1) * sl.stride > src_cap) {
+    if (nverts >= MAX_VERTS || run_pos + (size_t)(nverts + 1) * sl.stride > run_cap) {
         gx_warn("GXBegin: more than 65536 vertices in one primitive; truncated");
         return;
     }
@@ -2918,8 +2931,11 @@ static void draw_issue(const u8* s, int n, const Seg* segs, int nsegs, int in_ri
 
 static void ring_ensure(void) {
     if (!src_buf) {
-        src_buf = gl13_var_setup(VRING_BYTES);
+        vc_cap = port_opt.vcache >= 2 && port_opt.vcache_mb > 0
+                     ? (size_t)port_opt.vcache_mb << 20 : 0;
+        src_buf = gl13_var_setup(VRING_BYTES + vc_cap, VRING_BYTES);
         src_cap = VRING_BYTES;
+        run_cap = src_cap;
     }
 }
 /* M27: the ring before the render thread owns GL (gl13_var_setup probes
@@ -3015,6 +3031,8 @@ static void batch_flush(void) {
         out_off_tex = bctx.out_off_tex;
         out_ntex = bctx.out_ntex;
         unsigned calls0 = stat_draws;
+        issue_clean = batch_clean;
+        batch_clean = 0;
         if (applied) {
             /* the state walk ran at the setter (gx_batch_touch); only the
              * draw calls are left, and nothing has touched GL since */
@@ -3023,6 +3041,7 @@ static void batch_flush(void) {
         } else {
             draw_submit(src_buf + batch_pos, (int)nv, batch, n, 1);
         }
+        issue_clean = 0;
         if (endlog_armed()) {
             /* the state is still the batch's: a setter touches before it
              * changes anything, and batch_prepare has not written yet */
@@ -3123,7 +3142,7 @@ static size_t ring_claim(size_t need) {
      * stride from the ring's start, so the batch can be addressed as an
      * index from a base that never moves (draw_submit).  A few bytes of
      * padding per batch; nothing inside a batch moves. */
-    if (!batch_n && !port_opt.nofixbase && sl.stride > 0) {
+    if ((!batch_n || batch_pos >= src_cap) && !port_opt.nofixbase && sl.stride > 0) {
         size_t rem = ring_cursor % (size_t)sl.stride;
         if (rem) {
             ring_cursor += (size_t)sl.stride - rem;
@@ -3137,6 +3156,7 @@ static size_t ring_claim(size_t need) {
         stat_wraps++;
     }
     gl13_var_enter(ring_cursor, need);
+    run_cap = src_cap;
     return ring_cursor;
 }
 
@@ -3248,7 +3268,9 @@ static void batch_add(void) {
     u32 count = (u32)nverts; /* before anything below can flush */
     u8 p = prim;
     size_t bytes = (size_t)count * sl.stride;
-    ring_cursor = run_pos + bytes;
+    if (!vc_run) {
+        ring_cursor = run_pos + bytes; /* a cache run leaves the ring alone (M40) */
+    }
     if (!count) {
         return;
     }
@@ -3267,6 +3289,7 @@ static void batch_add(void) {
         batch_pos = run_pos;
         batch_sl = sl;
         batch_verts = 0;
+        batch_clean = vc_run == 1;
         /* M22: the batch's matrices are this primitive's own; a merge decided
          * for a batch that a wrap or a late flush has since ended is off,
          * and the vertices stay in their own model space */
@@ -3278,6 +3301,9 @@ static void batch_add(void) {
     } else if (merge_this) {
         pm_apply(src_buf + run_pos, count);
         merge_this = 0;
+    }
+    if (vc_run != 1) {
+        batch_clean = 0;
     }
     batch[batch_n].first = batch_verts;
     batch[batch_n].count = count;
@@ -3847,9 +3873,10 @@ static void draw_issue(const u8* s, int n, const Seg* segs, int nsegs, int in_ri
         }
     }
     port_perf_sub_enter(PERF_SUB_ISSUE);
-    if (on_gpu && in_ring) {
+    if (on_gpu && in_ring && !issue_clean) {
         /* the CPU cache, out ahead of the DMA (a no-op without VAR); over
-         * the batch's final extent, which a lazy flush grew after the apply */
+         * the batch's final extent, which a lazy flush grew after the apply.
+         * M40: a batch of cache hits alone was flushed when it was stored */
         gl13_var_flush(s, (size_t)n * sl.stride);
     }
     if (port_opt.segrebase && on_gpu) {
@@ -4649,7 +4676,7 @@ static f32 dec_f32_portable(const u8* q) {
             int j;                                                                       \
             u32 pos_ix = 0, nrm_ix = 0;                                                  \
             if (nverts >= MAX_VERTS ||                                                   \
-                run_pos + (size_t)(nverts + 1) * sl.stride > src_cap) {                  \
+                run_pos + (size_t)(nverts + 1) * sl.stride > run_cap) {                  \
                 gx_warn("GXBegin: more than 65536 vertices in one primitive; truncated");\
                 v = sink_vtx; /* decoded and dropped, so the list still steps */         \
             } else {                                                                     \
@@ -4795,7 +4822,7 @@ DECODE_RUN(decode_run_tracked, 1)
             const u8* q;                                                                 \
             u32 ix;                                                                      \
             if (nverts >= MAX_VERTS ||                                                   \
-                run_pos + (size_t)(nverts + 1) * sl.stride > src_cap) {                  \
+                run_pos + (size_t)(nverts + 1) * sl.stride > run_cap) {                  \
                 gx_warn("GXBegin: more than 65536 vertices in one primitive; truncated");\
                 v = sink_vtx;                                                            \
             } else {                                                                     \
@@ -5202,7 +5229,7 @@ static void decode_pending_last(const GxDecJob* j, u32 n, u32 vbytes) {
 static int rtdec_build(GxDecJob* j, const u8* p, const u8* end, u32 count) {
     if (!rt_decode_want(count) || sl.off_skin >= 0 || premerge_on || port_opt.decodestats ||
         nplan > GX_MAX_ATTR || plan_nfill > GX_DEC_FILL_MAX ||
-        run_pos + (size_t)count * sl.stride > src_cap || count >= MAX_VERTS) {
+        run_pos + (size_t)count * sl.stride > run_cap || count >= MAX_VERTS) {
         return 0;
     }
     j->p = p;
@@ -5227,6 +5254,725 @@ static int rtdec_build(GxDecJob* j, const u8* p, const u8* end, u32 count) {
     return 1;
 }
 
+/* ---- M40: the static-geometry cache (PLAN.md 55) ----------------------------
+ *
+ * Every drawn frame decodes every vertex of every display list into the ring
+ * and the card reads it from there, including geometry that is the same
+ * frame after frame: the stages, the backdrops, the props, the platforms.
+ * The cache keeps a primitive's decoded vertices in a region of the same
+ * vertex range, after the ring, and on a later frame draws them from there:
+ * no decode (on either thread), no copy, no range flush.  The draw calls,
+ * their order, the batches and the vertex program's inputs are the ones the
+ * decode would have produced -- the bytes in the region ARE the decode's
+ * output -- so the picture is the same to the byte.
+ *
+ * A decoded run is a function of exactly: the list's bytes (the indices and
+ * any direct data), the plan (build_decode_plan: the arrays' bases and
+ * strides, each step's type, scale, destination and table, the fills from
+ * `pending`, the register colour when it wins, the layout), and the array
+ * elements the indices name.  The key hashes all three, 64 bits a key:
+ *
+ *   * the list's bytes, every call (the game rebuilds some lists: particles);
+ *   * the plan, every primitive;
+ *   * the arrays by *version*: an array (base, stride) has an extent -- the
+ *     union of every index window a stored run read from it -- and a hash of
+ *     that extent, re-taken at most once per GXSetArray epoch (the game
+ *     points GX at an object's arrays and then calls its lists; the M9 cache
+ *     found that the frame is too coarse and the epoch is right, §21.3).  A
+ *     changed hash or a grown extent is a new version, and a run stored at
+ *     another version is a miss.  The known rewriters also end an epoch:
+ *     the skin body, ShapeProc/ClusterProc (port_vtx_rewrite), the frame.
+ *
+ * What is never cached: the skinned layouts (the palette slot, the GPU skin,
+ * pi.skin), the premerge and the palette (they rewrite ring bytes in place),
+ * the display-list cache of M9, --decodestats, and any plan the fast job
+ * cannot carry.  A list whose arrays change under it twice is animated: it
+ * is left to the ring for a while (its list is not even hashed) and tried
+ * again later.
+ *
+ * The region is a bump allocator.  When it is full the pending batch is
+ * drawn, the render thread and the card are drained (rt_finish_join) and the
+ * region starts again, every stored run forgotten (the generation): a scene
+ * change's cost, once.  --vcache count keys and counts exactly the same way
+ * and draws from the ring: the static share, measured without the cache. */
+#define VC_BUCKETS 4096
+#define VC_ARR_BUCKETS 1024
+#define VC_ARR_MAX 8
+typedef struct VcArr {
+    const u8* base;
+    u32 stride, elem;
+    u32 lo, hi;            /* the extent, in elements */
+    u32 h1, h2;            /* its hash at the last check */
+    unsigned ver;          /* bumped by a changed hash or a grown extent */
+    unsigned epoch;        /* gx_array_epoch of the last check */
+    unsigned last_frame;
+    int hashed;
+    struct VcArr* next;
+} VcArr;
+typedef struct VcPrim {
+    u32 plan_h1, plan_h2;
+    int slot;              /* the primitive's place in the list */
+    unsigned last_frame;
+    u32 off;               /* from src_buf; the region is past src_cap */
+    u32 nverts, adv;
+    unsigned gen;
+    int narr, valid, stored;
+    VcArr* arr[VC_ARR_MAX];
+    unsigned ver[VC_ARR_MAX];
+} VcPrim;
+typedef struct VcEnt {
+    const void* list;
+    u32 nbytes;
+    u32 lh1, lh2;
+    unsigned last_frame;
+    unsigned changes, streak;  /* array-changed misses: in all, in a row */
+    unsigned dyn_until;        /* animated: left to the ring until this frame */
+    unsigned lepoch;           /* gx_vc_epoch of the list's last hash */
+    int nprims, cap;
+    VcPrim* prims;
+    struct VcEnt* next;
+} VcEnt;
+unsigned gx_vc_epoch = 1;
+static VcEnt* vc_tbl[VC_BUCKETS];
+static VcArr* vc_arrs[VC_ARR_BUCKETS];
+static unsigned vc_gen = 1;
+static unsigned vc_frame_seen = ~0u;
+static unsigned vc_reset_frame = ~0u;
+static unsigned vc_store_off_until; /* thrashing: no stores until this frame */
+static unsigned long stat_vc_cooldowns;
+static double stat_vc_s_list, stat_vc_s_hit, stat_vc_s_miss;
+static unsigned long vc_nent, vc_narr;
+static unsigned long stat_vc_lists, stat_vc_dyn_lists, stat_vc_prims, stat_vc_hits;
+static unsigned long stat_vc_verts, stat_vc_miss_new, stat_vc_miss_plan, stat_vc_miss_arr,
+    stat_vc_miss_list, stat_vc_inelig, stat_vc_dyn_verts, stat_vc_nostore;
+static unsigned long stat_vc_miss_new_v, stat_vc_miss_plan_v, stat_vc_miss_arr_v,
+    stat_vc_inelig_v, stat_vc_nostore_v, stat_vc_stored_v;
+static double stat_vc_list_bytes, stat_vc_arr_bytes, stat_vc_s;
+static unsigned long stat_vc_resets, stat_vc_region_peak, stat_vc_frames, stat_vc_clears;
+static unsigned long vc_frame_verts, vc_frame_hits; /* for the drawn-frame share */
+static int vc_frame_on = 1;        /* --vcache auto: this drawn frame keys */
+static unsigned long vc_last_hits; /* the last keyed frame's hits, in vertices */
+static unsigned long stat_vc_auto_on, stat_vc_auto_off, stat_vc_list_memo;
+static double stat_vc_share_sum;
+
+static u32 vc_rotl(u32 x, int r) { return (x << r) | (x >> (32 - r)); }
+/* Two independent 32-bit chains over the words, each a bijection of its
+ * state for a fixed word (a one-word change always changes both), unrolled
+ * two words deep so the multiplies overlap. */
+static void vc_hash(const u8* p, size_t n, u32* h1, u32* h2) {
+    u32 a0 = *h1 ^ (u32)n, a1 = 0x811c9dc5u, b0 = *h2, b1 = 0x9e3779b9u ^ (u32)n;
+    while (n >= 8) {
+        u32 w0, w1;
+        memcpy(&w0, p, 4);
+        memcpy(&w1, p + 4, 4);
+        a0 = (a0 ^ w0) * 0x01000193u;
+        a1 = (a1 ^ w1) * 0x01000193u;
+        b0 = (vc_rotl(b0, 5) + w0) * 0x9E3779B1u;
+        b1 = (vc_rotl(b1, 5) + w1) * 0x9E3779B1u;
+        p += 8;
+        n -= 8;
+    }
+    while (n--) {
+        a0 = (a0 ^ *p) * 0x01000193u;
+        b0 = (vc_rotl(b0, 5) + *p) * 0x9E3779B1u;
+        p++;
+    }
+    *h1 = a0 ^ vc_rotl(a1, 11) ^ (a1 >> 7);
+    *h2 = (b0 + vc_rotl(b1, 17)) * 0x85ebca6bu;
+}
+
+/* the bytes one element of the step reads from its array */
+static u32 vc_elem_bytes(u8 op) {
+    static const u8 nread[4] = {2, 3, 1, 2};
+    if (op >= DEC_F32_2_3 && op <= DEC_F32_2_2) return 4u * nread[op - DEC_F32_2_3];
+    if (op >= DEC_S16_2_3 && op <= DEC_U16_2_2) return 2u * nread[(op - DEC_S16_2_3) & 3];
+    if (op >= DEC_S8_2_3 && op <= DEC_U8_2_2) return nread[(op - DEC_S8_2_3) & 3];
+    if (op >= DEC_TS8_2_3 && op <= DEC_TU8_2_2) return nread[(op - DEC_TS8_2_3) & 3];
+    switch (op) {
+        case DEC_CLR_RGBA8: case DEC_CLR_RGBX8: return 4;
+        case DEC_CLR_RGB8: case DEC_CLR_RGBA6: return 3;
+        case DEC_CLR_RGB565: case DEC_CLR_RGBA4: return 2;
+        default: return 0;
+    }
+}
+
+static VcArr* vc_arr_find(const u8* base, u32 stride, u32 elem) {
+    unsigned b = ((unsigned)(uintptr_t)base >> 4) & (VC_ARR_BUCKETS - 1);
+    VcArr* a;
+    for (a = vc_arrs[b]; a; a = a->next) {
+        if (a->base == base && a->stride == stride) {
+            if (elem > a->elem) {
+                a->elem = elem; /* a wider read of the same array: a new extent */
+                a->ver++;
+                a->epoch = 0;
+            }
+            return a;
+        }
+    }
+    a = (VcArr*)calloc(1, sizeof(VcArr));
+    if (!a) {
+        return NULL;
+    }
+    a->base = base;
+    a->stride = stride;
+    a->elem = elem;
+    a->ver = 1;
+    a->next = vc_arrs[b];
+    vc_arrs[b] = a;
+    vc_narr++;
+    return a;
+}
+
+/* the array's version now: its extent re-hashed once per epoch */
+static unsigned vc_arr_check(VcArr* a) {
+    if (a->epoch != gx_vc_epoch || !a->hashed) {
+        u32 h1 = 0x2545F491u, h2 = 0x6C8E9CF5u;
+        size_t len = (size_t)(a->hi - a->lo) * a->stride + a->elem;
+        vc_hash(a->base + (size_t)a->lo * a->stride, len, &h1, &h2);
+        stat_vc_arr_bytes += (double)len;
+        if (!a->hashed || h1 != a->h1 || h2 != a->h2) {
+            if (a->hashed) {
+                a->ver++;
+            }
+            a->h1 = h1;
+            a->h2 = h2;
+            a->hashed = 1;
+        }
+        a->epoch = gx_vc_epoch;
+    }
+    a->last_frame = gl13_frame_number();
+    return a->ver;
+}
+
+/* M40: where the game is -- 0 inside Hu3DExec's model walk (the engine
+ * alone between two draws), 1 in module code (a hook, and everything outside
+ * the walk).  patches.txt brackets the hook calls.  Leaving module code ends
+ * every memo: a hook may have written anything the walk draws next. */
+static int vc_foreign = 1;
+static unsigned long stat_vc_foreign_bumps;
+void port_vc_foreign(int on) {
+    if (vc_foreign && !on) {
+        gx_vc_epoch++;
+        stat_vc_foreign_bumps++;
+    }
+    vc_foreign = on;
+}
+
+/* GXSetArray named `base`: in module code its memo ends (every VcArr of that
+ * base -- a buffer refilled between two draws is set again); inside the
+ * engine's walk a re-set is FaceDraw changing vertex mode, not a write */
+void gx_vc_array_set(const void* base) {
+    VcArr* a;
+    if (!vc_narr || !vc_foreign) {
+        return;
+    }
+    for (a = vc_arrs[((unsigned)(uintptr_t)base >> 4) & (VC_ARR_BUCKETS - 1)]; a; a = a->next) {
+        if (a->base == (const u8*)base) {
+            a->epoch = 0;
+        }
+    }
+}
+
+/* grow the extent to cover [lo, hi]: a new version when it grows */
+static void vc_arr_extend(VcArr* a, u32 lo, u32 hi) {
+    if (!a->hashed) {
+        a->lo = lo;
+        a->hi = hi;
+        return;
+    }
+    if (lo < a->lo || hi > a->hi) {
+        if (lo < a->lo) a->lo = lo;
+        if (hi > a->hi) a->hi = hi;
+        a->ver++;
+        a->hashed = 0;
+    }
+}
+
+static void vc_free_ent(VcEnt* e) {
+    free(e->prims);
+    free(e);
+}
+
+/* entries and arrays nobody has drawn for a while (a scene left behind) */
+static void vc_sweep(unsigned now) {
+    int b;
+    for (b = 0; b < VC_BUCKETS; b++) {
+        VcEnt** pp = &vc_tbl[b];
+        while (*pp) {
+            VcEnt* e = *pp;
+            if (now - e->last_frame > 900u) {
+                *pp = e->next;
+                vc_free_ent(e);
+                vc_nent--;
+            } else {
+                pp = &e->next;
+            }
+        }
+    }
+    if (vc_narr > 16384) {
+        /* the arrays are never freed one by one (a live entry may name
+         * one); past this many, everything goes -- entries and arrays.  The
+         * region's bytes are untouched: the cursor only restarts behind a
+         * finish (vc_alloc) */
+        for (b = 0; b < VC_BUCKETS; b++) {
+            while (vc_tbl[b]) {
+                VcEnt* e = vc_tbl[b];
+                vc_tbl[b] = e->next;
+                vc_free_ent(e);
+            }
+        }
+        vc_nent = 0;
+        for (b = 0; b < VC_ARR_BUCKETS; b++) {
+            while (vc_arrs[b]) {
+                VcArr* a = vc_arrs[b];
+                vc_arrs[b] = a->next;
+                free(a);
+            }
+        }
+        vc_narr = 0;
+        stat_vc_clears++;
+    }
+}
+
+/* The list's entry, its bytes hashed; NULL when the list is left to the
+ * ring (an animated one, or the cache off). */
+static VcEnt* vc_list_begin(const void* list, u32 nbytes) {
+    unsigned b = ((unsigned)(uintptr_t)list >> 5) & (VC_BUCKETS - 1);
+    unsigned fr = gl13_frame_number();
+    VcEnt* e;
+    u32 h1 = 0x12345678u, h2 = 0x87654321u;
+    if (fr != vc_frame_seen) {
+        /* a new drawn frame: every array is re-hashed at its first use */
+        if (vc_frame_seen != ~0u && vc_frame_verts) {
+            stat_vc_share_sum += (double)vc_frame_hits / (double)vc_frame_verts;
+            stat_vc_frames++;
+        }
+        vc_last_hits = vc_frame_on ? vc_frame_hits : 0;
+        vc_frame_verts = vc_frame_hits = 0;
+        vc_frame_seen = fr;
+        gx_vc_epoch++;
+        if (port_opt.vcache == 3) {
+            /* auto: key only where the render thread needs it -- its last
+             * replay plus the whole decode the frame would carry without the
+             * cache (the hits' vertices at the decode's rate) over the
+             * auto split's dead band.  Elsewhere the keying would be game
+             * thread time bought for a thread with room (the board) */
+            double r, d, rate;
+            if (rt_vcache_inputs(&r, &d, &rate)) {
+                vc_frame_on = r + d + (double)vc_last_hits * rate > port_opt.vcache_fit;
+            } else {
+                vc_frame_on = 1;
+            }
+            if (vc_frame_on) {
+                stat_vc_auto_on++;
+            } else {
+                stat_vc_auto_off++;
+            }
+        }
+        if ((fr & 255u) == 0) {
+            vc_sweep(fr);
+        }
+    }
+    if (!vc_frame_on) {
+        return NULL;
+    }
+    stat_vc_lists++;
+    for (e = vc_tbl[b]; e; e = e->next) {
+        if (e->list == list && e->nbytes == nbytes) {
+            break;
+        }
+    }
+    if (e && e->dyn_until && (int)(fr - e->dyn_until) < 0) {
+        e->last_frame = fr;
+        stat_vc_dyn_lists++;
+        return NULL;
+    }
+    if (!e) {
+        e = (VcEnt*)calloc(1, sizeof(VcEnt));
+        if (!e) {
+            return NULL;
+        }
+        e->list = list;
+        e->nbytes = nbytes;
+        e->next = vc_tbl[b];
+        vc_tbl[b] = e;
+        vc_nent++;
+        vc_hash((const u8*)list, nbytes, &h1, &h2);
+        e->lh1 = h1;
+        e->lh2 = h2;
+        e->lepoch = gx_vc_epoch;
+    } else if (!vc_foreign && e->lepoch == gx_vc_epoch) {
+        /* hashed already in this epoch, and only the engine's walk has run
+         * since: the same bytes (the arrays' argument, gx_vc_array_set) */
+        stat_vc_list_memo++;
+        e->last_frame = fr;
+        e->dyn_until = 0;
+        return e;
+    } else {
+        e->lepoch = gx_vc_epoch;
+        vc_hash((const u8*)list, nbytes, &h1, &h2);
+        if (h1 != e->lh1 || h2 != e->lh2) {
+            int i;
+            for (i = 0; i < e->nprims; i++) {
+                e->prims[i].valid = 0;
+            }
+            e->lh1 = h1;
+            e->lh2 = h2;
+            stat_vc_miss_list++;
+        }
+    }
+    stat_vc_list_bytes += (double)nbytes;
+    e->dyn_until = 0;
+    e->last_frame = fr;
+    return e;
+}
+
+/* The i-th primitive of the list under this plan.  The game calls one list
+ * under several plans in a frame -- a model drawn twice with two register
+ * colours, a texcoord fill left by whichever primitive came before -- so a
+ * place in the list has up to VC_VARIANTS runs, one per plan, the least
+ * recently used replaced.  *found says whether the plan was there. */
+#define VC_VARIANTS 8
+static VcPrim* vc_prim_find(VcEnt* e, int i, u32 h1, u32 h2, int* found) {
+    int k, nvar = 0;
+    VcPrim* lru = NULL;
+    unsigned fr = gl13_frame_number();
+    *found = 0;
+    for (k = 0; k < e->nprims; k++) {
+        VcPrim* q = &e->prims[k];
+        if (q->slot != i) {
+            continue;
+        }
+        nvar++;
+        if (q->valid && q->plan_h1 == h1 && q->plan_h2 == h2) {
+            q->last_frame = fr;
+            *found = 1;
+            return q;
+        }
+        if (!lru || !q->valid || (lru->valid && (int)(q->last_frame - lru->last_frame) < 0)) {
+            lru = q;
+        }
+    }
+    if (nvar >= VC_VARIANTS || (lru && !lru->valid)) {
+        memset(lru, 0, sizeof(*lru));
+        lru->slot = i;
+        lru->last_frame = fr;
+        return lru;
+    }
+    if (e->nprims >= e->cap) {
+        int nc = e->cap ? e->cap * 2 : 2;
+        VcPrim* np = (VcPrim*)realloc(e->prims, (size_t)nc * sizeof(VcPrim));
+        if (!np) {
+            return NULL;
+        }
+        memset(np + e->cap, 0, (size_t)(nc - e->cap) * sizeof(VcPrim));
+        e->prims = np;
+        e->cap = nc;
+    }
+    lru = &e->prims[e->nprims++];
+    lru->slot = i;
+    lru->last_frame = fr;
+    return lru;
+}
+
+/* may this primitive's run be cached at all */
+static int vc_eligible(u32 count) {
+    int k, narr = 0;
+    if (!plan_ok || port_opt.olddecode || sl.off_skin >= 0 || pi.skin || premerge_on ||
+        palette_on || port_opt.decodestats || nplan > GX_MAX_ATTR ||
+        plan_nfill > GX_DEC_FILL_MAX || count == 0 || count >= MAX_VERTS || sl.stride <= 0 ||
+        (plan_fast && fast_index_of(plan_fast) < 0)) {
+        return 0;
+    }
+    for (k = 0; k < nplan; k++) {
+        if (plan[k].idx) {
+            if (plan[k].advance != plan[k].idx || !plan[k].base || !vc_elem_bytes(plan[k].op)) {
+                return 0; /* NBT3's three indices; a null array; an unknown read */
+            }
+            narr++;
+        }
+    }
+    return narr <= VC_ARR_MAX;
+}
+
+static void vc_plan_hash(u32 count, u8 op, u32* h1, u32* h2) {
+    u32 a = 0xA5A5A5A5u ^ count, b = 0x3C3C3C3Cu ^ op;
+    int k;
+    for (k = 0; k < nplan; k++) {
+        const DecStep* st = &plan[k];
+        u32 w[6];
+        w[0] = (u32)(uintptr_t)st->base;
+        memcpy(&w[1], &st->scale, 4);
+        w[2] = (u32)(uintptr_t)st->tbl;
+        w[3] = ((u32)st->dstoff << 16) | ((u32)st->stride << 8) | st->idx;
+        w[4] = ((u32)st->advance << 24) | ((u32)st->op << 16) | ((u32)st->to_pending << 8) | st->attr;
+        w[5] = (u32)k;
+        vc_hash((const u8*)w, sizeof(w), &a, &b);
+    }
+    for (k = 0; k < plan_nfill; k++) {
+        u32 w[3];
+        w[0] = plan_fill[k].dstoff;
+        memcpy(&w[1], &plan_fill[k].s, 4);
+        memcpy(&w[2], &plan_fill[k].t, 4);
+        vc_hash((const u8*)w, sizeof(w), &a, &b);
+    }
+    {
+        u32 w[4];
+        w[0] = (u32)plan_clr_const;
+        w[1] = plan_clr.u;
+        w[2] = (u32)nplan | ((u32)plan_nfill << 8) | ((u32)vtxfmt << 16);
+        w[3] = (u32)fast_index_of(plan_fast);
+        vc_hash((const u8*)w, sizeof(w), &a, &b);
+    }
+    vc_hash((const u8*)&sl, sizeof(sl), &a, &b);
+    *h1 = a;
+    *h2 = b;
+}
+
+/* the job for the primitive in hand, as rtdec_build fills it */
+static void job_fill(GxDecJob* j, const u8* p, const u8* end, u32 count) {
+    j->p = p;
+    j->end = end;
+    j->count = count;
+    j->dst = src_buf + run_pos;
+    j->stride = (u32)sl.stride;
+    j->off_nrm = sl.off_nrm;
+    j->off_clr = sl.off_clr;
+    j->off_tex = sl.off_tex;
+    j->clr_const = plan_clr_const;
+    j->clr = plan_clr.u;
+    j->prefetch = !port_opt.nodcbt;
+    j->fast = plan_fast ? fast_index_of(plan_fast) : -1;
+    j->nplan = nplan;
+    memcpy(j->plan, plan, (size_t)nplan * sizeof(DecStep));
+    j->nfill = plan_nfill;
+    memcpy(j->fill, plan_fill, (size_t)plan_nfill * sizeof(plan_fill[0]));
+}
+
+/* the region's room for `bytes`, aligned to the stride from src_buf (the
+ * batch's index base, --fixbase); 0 when there is none this frame */
+static int vc_alloc(size_t bytes, u32* off) {
+    size_t st = (size_t)sl.stride;
+    size_t at = src_cap + vc_cursor;
+    if (at % st) {
+        at += st - at % st;
+    }
+    if (at + bytes > src_cap + vc_cap) {
+        unsigned fr = gl13_frame_number();
+        if (fr == vc_reset_frame || bytes > vc_cap / 2) {
+            return 0; /* this frame's runs alone fill it: the ring for the rest */
+        }
+        if (stat_vc_resets && fr - vc_reset_frame < 120u) {
+            /* a second reset within two seconds: the scene's runs do not fit
+             * (or keep changing); store nothing for ten seconds */
+            vc_store_off_until = fr + 600u;
+            stat_vc_cooldowns++;
+            return 0;
+        }
+        /* full: draw what is pending, let the replay and the card finish
+         * with every run in the region, and start again */
+        end_who = "vcache:reset";
+        batch_flush();
+        rt_finish_join("vcache reset");
+        vc_cursor = 0;
+        vc_gen++;
+        vc_reset_frame = fr;
+        stat_vc_resets++;
+        at = src_cap;
+        if (at % st) {
+            at += st - at % st;
+        }
+    }
+    *off = (u32)at;
+    vc_cursor = at + bytes - src_cap;
+    if (vc_cursor > stat_vc_region_peak) {
+        stat_vc_region_peak = vc_cursor;
+    }
+    return 1;
+}
+
+/* The decision for one primitive, after batch_prepare.  Returns 1 for a hit
+ * (run_pos, the vertex count and the list's advance are the stored ones),
+ * 2 for a store (run_pos is a fresh run in the region; the caller decodes
+ * into it and calls vc_stored), 0 for the ring. */
+static VcPrim* vc_cur;
+static int vc_decide(VcEnt* e, int i, const u8* p, const u8* end, u32 count, u8 op) {
+    VcPrim* vp;
+    u32 h1, h2;
+    int k, found;
+    vc_cur = NULL;
+    stat_vc_prims++;
+    stat_vc_verts += count;
+    vc_frame_verts += count;
+    if (!vc_eligible(count)) {
+        stat_vc_inelig++;
+        stat_vc_inelig_v += count;
+        return 0;
+    }
+    vc_plan_hash(count, op, &h1, &h2);
+    vp = vc_prim_find(e, i, h1, h2, &found);
+    if (!vp) {
+        return 0;
+    }
+    if (found) {
+        int ok = 1;
+        for (k = 0; k < vp->narr; k++) {
+            if (vc_arr_check(vp->arr[k]) != vp->ver[k]) {
+                ok = 0;
+                break;
+            }
+        }
+        if (ok && vp->stored && vp->gen == vc_gen && port_opt.vcache >= 2) {
+            e->streak = 0;
+            stat_vc_hits++;
+            stat_vc_hit_verts += count;
+            vc_frame_hits += count;
+            vc_cur = vp;
+            return 1;
+        }
+        if (ok && port_opt.vcache == 1) {
+            /* count only: the same key, drawn from the ring */
+            e->streak = 0;
+            stat_vc_hits++;
+            stat_vc_hit_verts += count;
+            vc_frame_hits += count;
+            return 0;
+        }
+        if (!ok) {
+            stat_vc_miss_arr++;
+            stat_vc_miss_arr_v += count;
+            e->changes++;
+            if (++e->streak >= 2) {
+                /* animated: the ring for a while, longer each time */
+                unsigned wait = e->changes > 16 ? 600u : 60u;
+                e->dyn_until = gl13_frame_number() + wait;
+                e->streak = 0;
+            }
+        } else {
+            stat_vc_miss_new++; /* a reset forgot it, or a full region never stored it */
+            stat_vc_miss_new_v += count;
+        }
+    } else if (e->nprims > 1 && vp->slot == i && e->last_frame == gl13_frame_number() &&
+               vp != &e->prims[0]) {
+        stat_vc_miss_plan++; /* a new plan for a place the list already had */
+        stat_vc_miss_plan_v += count;
+    } else {
+        stat_vc_miss_new++;
+        stat_vc_miss_new_v += count;
+    }
+    /* the miss: key the run now -- the index windows, the arrays' versions
+     * -- then decode it (into the region when the cache is on) */
+    {
+        u32 lo[GX_MAX_ATTR], hi[GX_MAX_ATTR];
+        u32 vb = 0, n, v, off[GX_MAX_ATTR];
+        size_t left = end > p ? (size_t)(end - p) : 0;
+        for (k = 0; k < nplan; k++) {
+            off[k] = vb;
+            vb += plan[k].advance;
+            lo[k] = 0xFFFFFFFFu;
+            hi[k] = 0;
+        }
+        if (!vb) {
+            vp->valid = 0;
+            return 0;
+        }
+        n = plan_fast ? (u32)(left / vb) : (u32)((left + vb - 1) / vb);
+        if (n > count) n = count;
+        if (!plan_fast && n && (size_t)n * vb > left) {
+            vp->valid = 0; /* the walker's partial last vertex: not worth keying */
+            return 0;
+        }
+        for (v = 0; v < n; v++) {
+            const u8* q = p + (size_t)v * vb;
+            for (k = 0; k < nplan; k++) {
+                u32 ix;
+                if (!plan[k].idx) continue;
+                ix = plan[k].idx == 2 ? (((u32)q[off[k]] << 8) | q[off[k] + 1]) : q[off[k]];
+                if (ix < lo[k]) lo[k] = ix;
+                if (ix > hi[k]) hi[k] = ix;
+            }
+        }
+        vp->narr = 0;
+        for (k = 0; k < nplan; k++) {
+            VcArr* a;
+            if (!plan[k].idx) continue;
+            a = vc_arr_find(plan[k].base, plan[k].stride, vc_elem_bytes(plan[k].op));
+            if (!a) {
+                vp->valid = 0;
+                return 0;
+            }
+            if (n) {
+                vc_arr_extend(a, lo[k], hi[k]);
+            } else {
+                vc_arr_extend(a, 0, 0);
+            }
+            vp->arr[vp->narr++] = a;
+        }
+        for (k = 0; k < vp->narr; k++) {
+            vp->ver[k] = vc_arr_check(vp->arr[k]);
+        }
+        vp->plan_h1 = h1;
+        vp->plan_h2 = h2;
+        vp->nverts = n;
+        vp->adv = n * vb;
+        vp->valid = 1;
+        vp->stored = 0;
+        if (port_opt.vcache >= 2 && vc_cap && !e->dyn_until &&
+            (int)(gl13_frame_number() - vc_store_off_until) >= 0) {
+            u32 o;
+            if (vc_alloc((size_t)count * (size_t)sl.stride, &o)) {
+                vp->off = o;
+                vp->gen = vc_gen;
+                vc_cur = vp;
+                stat_vc_stored_v += count;
+                return 2;
+            }
+            stat_vc_nostore++;
+            stat_vc_nostore_v += count;
+        }
+    }
+    return 0;
+}
+
+static void vc_report(void) {
+    if (!port_opt.vcache || !stat_vc_lists) {
+        return;
+    }
+    port_log("port> vcache (M40, %s): %lu list calls (%lu left to the ring as animated), %lu "
+             "primitives, %lu vertices; %lu hits (%lu vertices, %.1f%%; per drawn frame %.1f%% "
+             "over %lu frames)\n",
+             port_opt.vcache == 3 ? "auto" : port_opt.vcache == 2 ? "on" : "count only", stat_vc_lists, stat_vc_dyn_lists,
+             stat_vc_prims, stat_vc_verts, stat_vc_hits, stat_vc_hit_verts,
+             stat_vc_verts ? 100.0 * (double)stat_vc_hit_verts / (double)stat_vc_verts : 0.0,
+             stat_vc_frames ? 100.0 * stat_vc_share_sum / (double)stat_vc_frames : 0.0,
+             stat_vc_frames);
+    port_log("port> vcache: misses -- new %lu (%lu v), plan changed %lu (%lu v), arrays changed "
+             "%lu (%lu v), list bytes changed %lu lists; ineligible %lu (%lu v, skinned/palette/"
+             "premerge); not stored (region full this frame) %lu (%lu v); stored %lu v\n",
+             stat_vc_miss_new, stat_vc_miss_new_v, stat_vc_miss_plan, stat_vc_miss_plan_v,
+             stat_vc_miss_arr, stat_vc_miss_arr_v, stat_vc_miss_list, stat_vc_inelig,
+             stat_vc_inelig_v, stat_vc_nostore, stat_vc_nostore_v, stat_vc_stored_v);
+    port_log("port> vcache: auto keyed %lu drawn frame(s), left %lu to the decode (fit %.1f ms); "
+             "%lu list hash(es) memoised, %lu memo end(s) leaving module code\n",
+             stat_vc_auto_on, stat_vc_auto_off, port_opt.vcache_fit, stat_vc_list_memo,
+             stat_vc_foreign_bumps);
+    port_log("port> vcache: hashed %.1f MB of lists and %.1f MB of arrays (%.1f KB a list call); "
+             "%.0f ms keying on the game thread (lists %.0f, hits %.0f, misses %.0f); region %lu KB, "
+             "peak %lu KB, %lu reset(s), %lu cooldown(s); %lu entries, %lu arrays live, %lu "
+             "clear(s)\n",
+             stat_vc_list_bytes / 1048576.0, stat_vc_arr_bytes / 1048576.0,
+             (stat_vc_list_bytes + stat_vc_arr_bytes) / 1024.0 / (double)stat_vc_lists,
+             stat_vc_s * 1000.0, stat_vc_s_list * 1000.0, stat_vc_s_hit * 1000.0,
+             stat_vc_s_miss * 1000.0, (unsigned long)(vc_cap / 1024), stat_vc_region_peak / 1024,
+             stat_vc_resets, stat_vc_cooldowns, vc_nent, vc_narr, stat_vc_clears);
+}
+
+void gx_draw_counters(unsigned long* calls, unsigned long* verts, unsigned long* vchit) {
+    *calls = stat_draws;
+    *verts = stat_verts;
+    *vchit = stat_vc_hit_verts;
+}
+
 void GXCallDisplayList(const void* list, u32 nbytes) {
     const u8* p = (const u8*)list;
     const u8* end = p + nbytes;
@@ -5242,6 +5988,8 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
      * changed, 3 = the arrays the list reads were rewritten under it (an
      * animated model, which is the split the M9 log reports) */
     int miss_reason = 0;
+    VcEnt* vce = NULL; /* M40: the static-geometry cache's entry for this list */
+    int vci = 0;
     if (dl_recording) {
         gx_warn("GXCallDisplayList inside a display list is not supported");
         return;
@@ -5261,6 +6009,13 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
     frame = gl13_frame_number();
     caching = port_opt.dlcache && nbytes > 0;
     rt_auto_on = rt_recording && rt_decode_mode() == 3;
+    if (port_opt.vcache && !caching && nbytes > 0) {
+        double t0 = port_now_seconds();
+        vce = vc_list_begin(list, nbytes);
+        t0 = port_now_seconds() - t0;
+        stat_vc_s += t0;
+        stat_vc_s_list += t0;
+    }
     /* A scene change strands every entry it had; sweep on a slow cadence so
      * the table does not grow to hold every model the walk has ever passed. */
     if (caching && frame != dlc_last_sweep_frame && (frame & 255) == 0) {
@@ -5404,7 +6159,24 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
         in_prim = 1;
         begin_attr_order();
         batch_prepare(count);
-        run_pos = ring_claim((size_t)count * (size_t)sl.stride);
+        vc_run = 0;
+        if (vce) {
+            double t0 = port_now_seconds();
+            vc_run = vc_decide(vce, vci++, p, end, count, op);
+            t0 = port_now_seconds() - t0;
+            stat_vc_s += t0;
+            if (vc_run == 1) {
+                stat_vc_s_hit += t0;
+            } else {
+                stat_vc_s_miss += t0;
+            }
+        }
+        if (vc_run) {
+            run_pos = vc_cur->off; /* M40: a hit, or a store into the region */
+            run_cap = src_cap + vc_cap;
+        } else {
+            run_pos = ring_claim((size_t)count * (size_t)sl.stride);
+        }
         pal_scan_p = p;
         pal_scan_count = count;
         pal_place();
@@ -5444,7 +6216,17 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
                 ds_plan_note(count);
             }
             port_perf_sub_enter(PERF_SUB_DECODE);
-            if (!caching && rtdec_build(&rtjob, p, end, count)) {
+            if (vc_run == 1) {
+                /* M40: a hit -- the run is in the region already; only what
+                 * the decode leaves behind for the next primitive (`pending`,
+                 * from the last vertex) and the list's advance */
+                u32 vb;
+                job_fill(&rtjob, p, end, count);
+                vb = job_vertex_bytes(&rtjob);
+                decode_pending_last(&rtjob, vc_cur->nverts, vb);
+                nverts = (int)vc_cur->nverts;
+                p += vc_cur->adv;
+            } else if (!caching && rtdec_build(&rtjob, p, end, count)) {
                 /* M29: the run is the render thread's (PLAN.md 44); here only
                  * the list pointer, the vertex count and `pending` advance */
                 u32 vb = job_vertex_bytes(&rtjob);
@@ -5543,6 +6325,14 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
             }
         }
         in_prim = 0;
+        if (vc_run == 2) {
+            /* stored only if the decode produced the run the key promised */
+            if ((u32)nverts == vc_cur->nverts) {
+                vc_cur->stored = 1;
+            } else {
+                vc_cur->valid = 0;
+            }
+        }
         if (caching) {
             if (dl_nsegs < (int)(sizeof(dl_segs) / sizeof(dl_segs[0]))) {
                 dl_segs[dl_nsegs].op = op;
@@ -5554,6 +6344,8 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
             }
         }
         batch_add();
+        vc_run = 0;
+        run_cap = src_cap;
         total = sv_first + (u32)nverts;
         nverts = 0;
     }
