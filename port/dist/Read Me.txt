@@ -1,6 +1,6 @@
 Mario Party 4 PowerPC Edition
 =============================
-Version 0.9.8
+Version 0.9.9
 
 
 WHAT THIS IS
@@ -234,16 +234,21 @@ cannot do; a fragment-program path for it is in this build behind
 --tfs, and stays off because the Radeon's Leopard driver draws two of
 the three pools wrong through it (the notes say how far it got).
 
-About two or three times an hour the game stops for one to two seconds
-and then catches up, the music with it: a read or a write that waited on
-the disk -- the first Bowser space or board ending of a session, a save
-started while the last one was still being written.  (Six and a half
-hours of four computer players on the reference machine, with the test's
-own logging on, which adds to them: seventeen.)
+Now and then the game can stop for one to two seconds and then catch
+up, the music with it, when the disk is slow to answer.  0.9.9 takes the
+game's own waits out of three of those moments -- a save no longer waits
+for the one before it, the log is written in the background, and Bowser's
+space and the board's ending are read ahead with the rest -- so what is
+left is the disk itself holding the game.  (0.9.8 had about two or three
+an hour on the reference machine; the project's notes, PLAN.md section 55,
+have what 0.9.9 measured.)
 
-The character select screen runs at about 23 frames a second on the
-reference machine (the board and most minigames run at the 30 cap); the
-game's own speed there is the console's, only the picture is slower.
+Not every screen reaches 30 frames a second yet on the reference machine:
+57 of the 82 screens measured do; the character select runs at about 26
+frames a second, Boo's and Koopa's boards at about 25, and 21 of the 63
+minigames between 16 and 29 (Trace Race and Stamp Out! the slowest, at
+about 16).  The game's own speed is the console's everywhere; only the
+picture is slower there.
 
 On a single-processor G4 the heaviest minigames fall behind the
 console's speed -- Stamp Out!, which reads its own picture back to

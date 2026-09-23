@@ -696,7 +696,9 @@ static void print_inventory(void) {
  * on -- and faster machines only add headroom.  One CPU never gets the
  * second promise: the render thread's replay and the decode then share the
  * game's core.  Machines this port has never run on are marked untested. */
-#define MACH_SCOREBOARD "docs/fps-scoreboard.md, measured on the reference"
+/* the scoreboard's count on the reference at the last milestone that ran it;
+ * the promise is "30 fps everywhere", the count is where the port is */
+#define MACH_SCOREBOARD "57 of 82 screens there today (0.9.9, docs/fps-scoreboard.md)"
 static const char* tier_text(void) {
     int g5 = mach.cpusubtype == 100;
     int card = mach.gl && mach.vram_mb >= MACH_FULL_VRAM_MB && mach.texunits >= 6;
@@ -708,11 +710,12 @@ static const char* tier_text(void) {
     }
     if (mach.ncpu >= 2 && card && (g5 || mach.mhz >= 1000)) {
         if (!g5 && mach.mhz < 1100) {
-            return "30 fps everywhere -- the reference class (dual 1 GHz G4, 64 MB Radeon "
-                   "9000 or better); the evidence is " MACH_SCOREBOARD;
+            return "the reference class (dual 1 GHz G4, 64 MB Radeon 9000 or better), "
+                   "whose promise is 30 fps everywhere: " MACH_SCOREBOARD;
         }
-        return "30 fps everywhere, expected -- faster than the reference (dual 1 GHz G4 + "
-               "Radeon 9000); untested on this machine";
+        return "faster than the reference class (dual 1 GHz G4 + Radeon 9000): at least "
+               "the reference's frame rates, " MACH_SCOREBOARD ", with headroom; untested on "
+               "this machine";
     }
     if (mach.ncpu < 2 && (g5 || mach.mhz >= 1250)) {
         return "full game speed; the picture below 30 fps on the heaviest screens is "

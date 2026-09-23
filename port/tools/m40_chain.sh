@@ -11,6 +11,7 @@
 #   W / WO           the md5 walk at real time, --nomovies: on / off
 #   A:GAME:ARM:K     GAME (m431, b4, cs = the character select, title) at real
 #                    time, arm auto|on|vbo|avbo|off|count, repeat K (the A/B's runs)
+#   L:GAME:ARM       GAME in lockstep, the scoreboard's two frames (exactness)
 #   P:GAME           GAME at real time, --novcache --gxsplit (the game thread's slices)
 #   SOAK:MIN         a realtime soak of MIN minutes (the pauses' count)
 cd "$HOME"
@@ -83,6 +84,13 @@ for r in ${M40_RUNS:-N NO}; do
                 m453)  run "A-$g-$a-$k" 420 $RT --minigame $g --turns 1 --ffto 14000 --frames 20000 --mgend 1800 --dvdheap 5888 $x ;;
                 m*)    run "A-$g-$a-$k" 420 $RT --minigame $g --turns 1 --ffto 14000 --frames 20000 --mgend 1800 $x ;;
             esac ;;
+        L:*)
+            # lockstep (deterministic) at a minigame, the gallery's two frames: the
+            # cache's exactness where the real-time chains' frames differ
+            g=$(echo $r | cut -d: -f2); a=$(echo $r | cut -d: -f3)
+            run "L-$g-$a" 600 --com4 --rtc dolphin --freshcard --noconfig --status --ovllog \
+                --play board-start-com4.play --nomovies --minigame $g --turns 1 --ffto 14000 \
+                --lockstep --frames 20000 --mgend 1300 --mgdump 300,1200 $(arm $a) ;;
         P:*)
             # the game thread's drawn frame by region (--gxsplit), the old path
             g=${r#P:}

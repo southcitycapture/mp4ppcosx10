@@ -1,0 +1,4 @@
+# m40 chain start Wed Sep 23 19:13:33 EDT 2026  isle md5 a7d28f61c1cfd6c71166ea55f1c2a364
+N EXIT=0 wall=219s fault=0 md5 800:0b58c5ee 3000:2b99c60a 7000:4a9a640c vc='hits (111375326 vertices, 98.2%; per drawn frame 98.8% over 3599 frames)' args='--com4 --rtc dolphin --freshcard --noconfig --status --ovllog --perf --dumpframe 800,3000,7000 --turbo --play board-start-com4.play --frames 9000 --nomovies'
+M EXIT=0 wall=215s fault=0 md5 800:d2d40344 3000:59008ce4 7000:3f98f882 vc='hits (106784291 vertices, 98.1%; per drawn frame 98.8% over 3498 frames)' args='--com4 --rtc dolphin --freshcard --noconfig --status --ovllog --perf --dumpframe 800,3000,7000 --turbo --play board-start-com4.play --frames 9000'
+DONE
