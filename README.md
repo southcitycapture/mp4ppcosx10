@@ -1,102 +1,96 @@
-Mario Party 4  
-[![Build Status]][actions] [![Progress]][progress site] [![DOL Progress]][progress site] [![RELs Progress]][progress site] [![Discord Badge]][discord]
-=============
+# Mario Party 4, PowerPC Edition
 
-[Build Status]: https://github.com/mariopartyrd/marioparty4/actions/workflows/build.yml/badge.svg
-[actions]: https://github.com/mariopartyrd/marioparty4/actions/workflows/build.yml
-[Progress]: https://decomp.dev/mariopartyrd/marioparty4.svg?mode=shield&measure=code&label=Code&category=all
-[DOL Progress]: https://decomp.dev/mariopartyrd/marioparty4.svg?mode=shield&measure=code&label=DOL&category=dol
-[RELs Progress]: https://decomp.dev/mariopartyrd/marioparty4.svg?mode=shield&measure=code&label=RELs&category=modules
-[progress site]: https://decomp.dev/mariopartyrd/marioparty4
-[Discord Badge]: https://img.shields.io/discord/994839212618690590?color=%237289DA&logo=discord&logoColor=%23FFFFFF
-[discord]: https://discord.gg/T4faGveujK
+A native port of **Mario Party 4** to the **Power Mac G4**, running on
+Mac OS X 10.4 and 10.5 for PowerPC. It is built on the
+[mariopartyrd/marioparty4](https://github.com/mariopartyrd/marioparty4)
+decompilation: this fork is the port, and the decompilation is theirs.
 
-A work-in-progress decompilation of Mario Party 4. While the two USA versions are completely matching, most non-game-engine code is not documented at all. Work on the PAL and JP versions is currently stale, as it involves a lot of repetitive work, which could be done much easier later when there is special tooling for porting splits and symbols between versions.
+It is not an emulator. The game's own C code, recovered by the decompilation
+project, is compiled natively for the G4's PowerPC processor. Not one line of
+the decompilation's `src/`, `include/` or `lib/` is edited. Everything the game
+asked of the GameCube is answered by the port in [`port/`](https://github.com/southcitycapture/mp4ppcosx10/tree/ppc-port/port):
 
-There is **NO** working PC port yet, but it is in the making.
+* the GameCube's GX graphics pipeline, translated into OpenGL 1.3 for the
+  Radeon 9000, with transform and lighting on vertex programs and a render
+  thread on the second processor;
+* the 99 relocatable game modules as native bundles;
+* the disc as a file tree, with a loader that keeps the files a game re-reads
+  in memory;
+* the memory card as a file;
+* MusyX sound mixed on the CPU, and the game's THP movies decoded by a small
+  JPEG decoder of the port's own;
+* controllers 1 to 4 through SDL2 and an Xbox One driver, with the keyboard as
+  a fallback.
 
-This repository does **not** contain any game assets or assembly whatsoever. An existing copy of the game is required.
+Where the game's behaviour has to change for the port, it changes through a
+short list of exact-text substitutions in
+[`port/patches.txt`](https://github.com/southcitycapture/mp4ppcosx10/blob/ppc-port/port/patches.txt),
+applied at build time.
 
-Version Completion:
+**No game data is in this repository.** You need your own copy of the game.
 
-- `GMPE01_00`: Rev 0 (USA) ✅
-- `GMPE01_01`: Rev 1 (USA) ✅
-- `GMPP01_00`: Rev 0 (PAL) ❌
-- `GMPP01_01`: Rev 1 (PAL) ❌
-- `GMPP01_02`: Rev 2 (PAL) ❌
-- `GMPJ01_00`: Rev 0 (JP)  ❌
+## Where it stands
 
-Dependencies
-============
+Release candidate **0.9.8**, measured on a dual 1 GHz Power Mac G4
+(Quicksilver) with a Radeon 9000 under Mac OS X 10.5:
 
-Windows
---------
+| | |
+|---|---|
+| Game speed | 100% of the console everywhere |
+| Board | 29.8 frames per second, at the 30 cap |
+| Minigames | 26 to 30 fps typical; the heaviest about 20 |
+| Character select, title | about 23 and 25 fps |
+| Picture | 59 of 63 minigames match the console frame for frame; all six boards play |
+| Stability | a 6.5-hour unattended soak, five full boards and 131 minigames, no faults |
+| Movies | all twelve play with sound |
 
-On Windows, it's **highly recommended** to use native tooling. WSL or msys2 are **not** required.  
-When running under WSL, [objdiff](#diffing) is unable to get filesystem notifications for automatic rebuilds.
+The target for 1.0 is **30 fps on every screen** on that machine, which then
+becomes the recommended system for 30 fps. The minimum to play at full game
+speed is a G4 with Mac OS X 10.4 or later, 256 MB of memory and a Radeon
+9000-class card. The app checks the machine at launch and says which it is.
 
-- Install [Python](https://www.python.org/downloads/) and add it to `%PATH%`.
-  - Also available from the [Windows Store](https://apps.microsoft.com/store/detail/python-311/9NRWMJP3717K).
-- Download [ninja](https://github.com/ninja-build/ninja/releases) and add it to `%PATH%`.
-  - Quick install via pip: `pip install ninja`
+Known and shipping as-is: the water ripple in three minigames, which Leopard's
+Radeon driver can't draw; brief pauses on slow hard drives.
 
-macOS
-------
-- Install [ninja](https://github.com/ninja-build/ninja/wiki/Pre-built-Ninja-packages):
-  ```
-  brew install ninja
-  ```
-- Install [wine-crossover](https://github.com/Gcenx/homebrew-wine):
-  ```
-  brew install --cask --no-quarantine gcenx/wine/wine-crossover
-  ```
+## Documentation
 
-After OS upgrades, if macOS complains about `Wine Crossover.app` being unverified, you can unquarantine it using:
+* [`port/docs/PLAN.md`](https://github.com/southcitycapture/mp4ppcosx10/blob/ppc-port/port/docs/PLAN.md):
+  the full engineering log, milestone by milestone, with every measurement and
+  every wrong turn. Section 0 is the working method.
+* [`port/docs/release-checklist.md`](https://github.com/southcitycapture/mp4ppcosx10/blob/ppc-port/port/docs/release-checklist.md):
+  what 1.0 needs and the evidence for each line.
+* [`port/docs/requirements.md`](https://github.com/southcitycapture/mp4ppcosx10/blob/ppc-port/port/docs/requirements.md):
+  the machines it runs on.
+* [`port/docs/decomp-struct-notes.md`](https://github.com/southcitycapture/mp4ppcosx10/blob/ppc-port/port/docs/decomp-struct-notes.md):
+  findings about the decompilation itself that belong upstream.
+
+## Building
+
+The G4 binary is cross-compiled from a Mac or Linux host with a Docker
+toolchain (`powerpc-apple-darwin8`, GCC 14, the MacOSX10.4u SDK, a
+Tiger-compatible SDL2), on the `ppc-port` branch:
+
 ```sh
-sudo xattr -rd com.apple.quarantine '/Applications/Wine Crossover.app'
+git checkout ppc-port
+port/build-ppc.sh -j8            # the executable and 99 bundles
+sh port/tools/make_bundle.sh     # MarioParty4.app
+sh port/tools/make_dmg.sh        # the disk image, with no game data in it
 ```
 
-Linux
-------
-- Install [ninja](https://github.com/ninja-build/ninja/wiki/Pre-built-Ninja-packages).
-- For non-x86(_64) platforms: Install wine from your package manager.
-  - For x86(_64), [wibo](https://github.com/decompals/wibo), a minimal 32-bit Windows binary wrapper, will be automatically downloaded and used.
+See [`port/README.md`](https://github.com/southcitycapture/mp4ppcosx10/blob/ppc-port/port/README.md)
+for the flags and the layout.
 
-Building
-========
+## Branches
 
-- Clone the repository:
-  ```
-  git clone https://github.com/mariopartyrd/marioparty4.git
-  ```
+* **`ppc-port`** is the port. Everything the port adds lives under `port/`.
+* **`main`** tracks the upstream decompilation, plus this README. The
+  decompilation's own README, with its build instructions, is
+  [`DECOMP.md`](DECOMP.md) on `main`.
 
-- Initialize and update submodules:
+## Credits
 
-  ```sh
-  git submodule update --init --recursive
-  ```
-
-- Copy your game's disc image to `orig/[GAMEID]`. The supported game IDs are listed above.
-  - Supported formats: ISO (GCM), RVZ, WIA, WBFS, CISO, NFS, GCZ, TGC
-  - After the initial build, the disc image can be deleted to save space.
-
-- Configure:
-  ```
-  python configure.py
-  ```
-
-  To choose a version other than the USA Rev 0 one, add `--version [GAMEID]` to the command. 
-
-- Build:
-  ```
-  ninja
-  ```
-
-Diffing
-=======
-
-Once the initial build succeeds, an `objdiff.json` should exist in the project root. 
-
-Download the latest release from [encounter/objdiff](https://github.com/encounter/objdiff). Under project settings, set `Project directory`. The configuration should be loaded automatically. 
-
-Select an object from the left sidebar to begin diffing. Changes to the project will rebuild automatically: changes to source files, headers, `configure.py`, `splits.txt` or `symbols.txt`.
+The decompilation is the work of the
+[mariopartyrd](https://github.com/mariopartyrd) team. The port is built by
+[southcitycapture](https://github.com/southcitycapture) as part of a series of
+native ports for the Power Mac G4, alongside Snowboard Kids 1 and 2 and LEGO
+Island.
