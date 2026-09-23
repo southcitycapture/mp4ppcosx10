@@ -1,0 +1,11 @@
+# m39 final start Tue Sep 22 17:37:53 EDT 2026  isle md5 fcf94d249e36e04ca5c3566668b7bfde
+M EXIT=0 md5 800:d2d40344 3000:59008ce4 7000:3f98f882  Tue Sep 22 17:41:44 EDT 2026
+N EXIT=0 md5 800:0b58c5ee 3000:2b99c60a 7000:4a9a640c --nomovies Tue Sep 22 17:45:45 EDT 2026
+final: long soak start Tue Sep 22 17:45:50 EDT 2026 for 23400 s
+final: long soak done EXIT=0 Wed Sep 23 00:15:57 EDT 2026
+final: gallery done Wed Sep 23 02:59:53 EDT 2026
+m415-onecpu EXIT=0 Wed Sep 23 03:03:25 EDT 2026
+final: leave-behind start Wed Sep 23 03:03:30 EDT 2026
+snap-m39-bkoopa EXIT=0 Wed Sep 23 03:12:27 EDT 2026
+snap-m39-statusline EXIT=0 Wed Sep 23 03:32:48 EDT 2026
+snaps: leave-behind start Wed Sep 23 03:32:48 EDT 2026

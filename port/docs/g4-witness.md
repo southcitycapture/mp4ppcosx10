@@ -1140,3 +1140,30 @@ is either ready to offer upstream or has a case to remove.
   faulted in `msmSysLoadGroupBase`; the boot hands off after its own
   `HuAudSndGrpSetSet(0)`. The story ending waits for A on every line
   (`--play ending-a.play`); the staff roll's movie comes 4½ minutes in.
+
+## 0ac. Six things M39 paid for *(2026-09-22)*
+
+* **A headless session has no notifications.** Run as `claude -p`, the
+  first M39 session ended by "waiting to be notified" of a G4 chain, and
+  nothing woke it. Wait in the foreground: an `until ssh g4 'grep -q …'`
+  loop in one Bash call (10 minutes at most), repeated.
+* **Leopard's `open` has no `--args`** (10.6 added it; `open -h` on the G4).
+  A Terminal launch with flags on 10.4/10.5 is the executable itself:
+  `"/Applications/Mario Party 4.app/Contents/MacOS/isle" --windowed`.
+* **A soak's `STUCK` lines are not faults.** `--soak` implies
+  `--stuckwatch 90`, and its walk waits at the mode select and the
+  character select between boards: three STUCK lines a board cycle, by
+  design (§46). A watcher that stops on `STUCK` stops at the first board's
+  end; stop on `*** port` / `port: fatal` only.
+* **A pause in a real-time soak can be replayed.** The soak is
+  deterministic under `--rtc dolphin`: `--ffto` (≈300 frames a second
+  here) to just before the frame, `--snap-at` for the state, then real time
+  with `--dvdlog` past it (`m39_snaps.sh`). If the replay does not pause,
+  the pause was the machine's, not the game's.
+* **The first-run walk by keys** costs ~2–3 s per `ssh … key.py` round trip;
+  run the presses as a loop *on* the G4 (`i=0; while …; python ~/key.py 6
+  0.15; sleep 1; …`) and take a shot after. An idle title returns to the
+  opening (the attract loop) within about a minute.
+* **The dmg's volume is the folder.** `hdiutil attach` mounts
+  `Mario Party 4 PowerPC Edition` as the volume's root: `Mario Party
+  4.app`, `Read Me.txt` and `Licences/` are at the top of the mount point.

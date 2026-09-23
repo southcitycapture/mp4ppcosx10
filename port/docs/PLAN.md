@@ -19735,3 +19735,104 @@ underrun count means nothing: the recipe is `--lockstep`.)
 | WHERE YOUR THINGS LIVE | the card, the config, the log | §54.3 step 3 | kept |
 | WHAT IS NOT QUITE RIGHT YET | the three pools; the character select at 23 fps with a paragraph about 0.9.6's batch enders; one card; controllers 3–4 | §54.3 step 8 (Makin' Waves' flat tint), §54.4 (the character select 22.1–23.4) | the pools kept; the character select's paragraph **rewritten as what it is now** (a version's change log does not belong in a list of imperfections); **added**: the one-to-two-second pauses (§54.4) and the single-processor Stamp Out! (§54.2) |
 | LICENCE AND CREDITS | no game data; the decompilation, MusyX, stb_image, SDL2 | the dmg's contents (54.8) | kept |
+
+### 54.7 The v1.0 checklist
+
+`docs/release-checklist.md` — written, not decided. **Done**, each with
+its evidence: speed (99.9% over 6 h 30, the board 28.2–28.9 fps), the
+picture (63 of 63, 59 match / 2 minor / 2 oracle-failed / 0
+port-faulted), determinism (the six md5s), the movies (all twelve files,
+0 underruns in every movie on one CPU or two), stability (0 faults in
+6 h 30, five boards), loading, controllers (1–2 witnessed), the machine
+check, packaging (the first-run walk again), the save. **Known and
+shipping as it is**, each with why: the pools' ripple (the Leopard
+driver's `SampleMap`, §52.8), the character select at ~23 fps (42.75 ms
+of work a drawn cycle, §52.3), controllers 3–4 untested, one card slot,
+Stamp Out! on one CPU, the one-to-two-second pauses (54.4), a level of
+brightness (GX truncates, GL rounds), m403's lamp / m432's walls /
+m450. **Open lines for the decision**: the pauses (ship, or three small
+fixes and another soak), a real single-processor Mac never run, Tiger
+never run, controllers 3–4, other cards, the Read Me's Terminal lines
+never typed by a person, and the name (a 1.0 is `PORT_VERSION_STRING`,
+the Read Me's first lines and a rebuild).
+
+### 54.8 What M39 shipped, and the disk image
+
+| | |
+|---|---|
+| `port/src/thp/thp_port.c`, `thp_jpeg.c`, `thp_jpeg.h`, `platform/vi.c` | the one-CPU slack and guard (54.2; 19bfec36): `--nothpslice`, `--thpguard MS` |
+| `port/src/audio/audio_out_sdl.c`, `debug/selfplay.c` | the output device's underruns on the `--status` line (`ur N`) |
+| `port/include/port.h` | 0.9.8, M39 |
+| `port/tests/thp_test.c` | the sliced decode against the whole one, byte for byte |
+| `port/tools/soak_read.py` | underruns by scene, rss over time, M38-era status lines (no `rt`/`dec`) read |
+| `port/tools/m39_chain.sh`, `m39_final.sh`, `m39_snaps.sh`, `gallery_pull_m39.sh`, `compare_m39.py` | the A/B chain; the final chain (md5s, the cold soak, the gallery, m415 on one CPU, the leave-behind); the named snapshots; the gallery's rows |
+| `port/dist/Read Me.txt` | 0.9.8; the Terminal lines name the executable (no `open --args` on 10.4/10.5); the movies' one-CPU sentence; the pauses and one-CPU Stamp Out! in the list; the character select's paragraph as it is now |
+| `port/docs/release-checklist.md` | 54.7 |
+| `port/docs/gallery/` | the M39 rows (459 frames), `verdicts-m39.tsv` (m448, m459), `compare.html` |
+| `port/docs/screenshots/m39-first-run-*.jpg` | the walk's twelve |
+| `port/docs/soak/m39-*` | the A/B's two rounds, the walk, M38's leave-behind soak, the long soak, the final chain's md5 walks and index, the gallery's index, the snapshot runs, m415 on one CPU |
+
+**The disk image.** `port/tools/make_dmg.sh` on the release candidate
+(`fcf94d24…`, built 16:38 from 19bfec36's sources, the build every run of
+this milestone used): **`Mario Party 4 PowerPC Edition 0.9.8.dmg`,
+4,291,333 bytes, md5 `611b6cd2b8281872465ec0fef17867a4`**, at
+`littlejelly:~/MarioParty4-PowerPC-0.9.8.dmg` and on the G4 at
+`~/Mario Party 4 PowerPC Edition 0.9.8.dmg`. Mounted read-only on the G4
+and listed: `Mario Party 4.app` (its `isle` `fcf94d24…`, 99 module
+bundles, SDL2, the icon, seven `.play` pad scripts), `Read Me.txt` (0.9.8),
+`Licences/` (four); **no game data** — no `.iso`, `.thp`, `.bin` or `.gcm`,
+nothing over 10 MB.
+
+**The md5s** on the release candidate (54.5's chain, `M` / `N`): with the
+movies **800 `d2d40344` / 3000 `59008ce4` / 7000 `3f98f882`**; with
+`--nomovies` **`0b58c5ee` / `2b99c60a` / `4a9a640c`** — the refs.
+
+### 54.9 The named snapshots, and what is left running
+
+Every finding M39 did not fix has a snapshot on the G4, same binary
+(`build id 16747061`), taken on the deterministic schedule by
+`m39_snaps.sh` (`--ffto` to just before, `--snap-at`, then real time with
+`--dvdlog`; logs `docs/soak/m39-snap-m39-*.log.gz`):
+
+| finding | snapshot | the replay |
+|---|---|---|
+| one CPU: Stamp Out!'s underruns (54.2) | `~/m39/final/m415-onecpu/snaps/f015200.snap`, `f016000`, `f016800` (and the gallery's two-CPU `~/gallery-m39/m415/snaps/`) | — |
+| the Bowser space's cold read (54.4) | `~/m39/final/snap-m39-bkoopa/f065300.snap` | `data/bkoopa.bin` at frame 65,362 again: **4.0 ms**, `disk` — the soak's 1,697 ms was the drive at that moment, not the read |
+| the status-line pauses (54.4) | `~/m39/final/snap-m39-statusline/f229700.snap` | through 229,735 and 237,055 at real time with the status line on: **0 resyncs**, worst late 418 ms — the soak's 1.0 s and 1.35 s were the file system holding the write, not the game |
+
+The replays make 54.4's reading stronger: the same frames with the same
+work cost nothing when the disk answers; the pauses are the disk's, and
+what the port could change is only whether the game thread is the one
+kept waiting (the card writer's wait, the log's write).
+
+**What is left running.** `~/MarioParty4.app` is `fcf94d24…` (0.9.8,
+M39), and the G4 runs M38's leave-behind soak on it, exec'd by
+`m39_snaps.sh` at 03:32:48 G4 time:
+
+```
+isle --soak --com4 --rtc dolphin --freshcard --realtime --snap-every 5000 \
+     --snap-keep 3 --status --ovllog --stuckwatch 200 --perf
+```
+
+— its log is the runner's `~/isle-log.txt`, its snapshots the default ring.
+The first-run walk's home is `~/mp4-fresh-home` (M32's kept as
+`~/mp4-fresh-home-m32`); the wrapper `~/MarioParty4-fresh.app` reads
+`~/mp4-fresh.args` now (absent: a player's launch). The player's own
+`~/Library/Application Support/MarioParty4/memcard-slot-a.raw` and
+`~/memcard-backup.raw` were never touched (every lab run is `--freshcard`,
+the scratch image).
+
+### 54.10 What M40 starts with
+
+* **The decision** (`release-checklist.md`): 0.9.8 as 1.0, or a 0.9.9.
+* **The pauses**, if 0.9.9: the card writer coalescing instead of
+  waiting; `port_log`'s file writes on a writer thread; Bowser's space
+  (`bkoopa.bin`, `bkoopasuit.bin`) and the board's ending (`mstory3Dll.rel`,
+  `mstory3.bin`) in the resident list — then the same six-hour cold soak
+  (`m39_final.sh`'s soak alone) and the count of 54.4's table.
+* **One CPU, Stamp Out!** (m415's canvas copy reads at 13.5 fps), from the
+  snapshot, if a single-processor Mac is ever a target.
+* **Tiger** and a **real single-processor G4**, if the user wants the Read
+  Me's minimum proved rather than read.
+* §53.13's other items stand: the GX truncation's bias, the fold's other
+  users, Dolphin's empty audio dump.
