@@ -1,64 +1,96 @@
-# Mario Party 4, PowerPC edition
+# Mario Party 4, PowerPC Edition
 
-A native port of Mario Party 4 to the Power Mac G4 (Mac OS X 10.4 and 10.5,
-PowerPC), built on top of the [mariopartyrd/marioparty4](https://github.com/mariopartyrd/marioparty4)
-decompilation. This fork is the port; the decompilation is theirs.
+A native port of **Mario Party 4** to the **Power Mac G4**, running on
+Mac OS X 10.4 and 10.5 for PowerPC. It is built on the
+[mariopartyrd/marioparty4](https://github.com/mariopartyrd/marioparty4)
+decompilation: this fork is the port, and the decompilation is theirs.
 
-The game's own code is compiled as is. Not one line of the decomp's `src/`,
-`include/` or `lib/` is edited here. Everything the game asked of the GameCube
-is answered in [`port/`](port/): a host loop, the 99 relocatable modules as
-native bundles, the disc as a file tree, the memory card as two files, the
-controller through SDL2, MusyX audio mixed on the CPU, and the GameCube's GX
-graphics pipeline translated into OpenGL 1.3 for the Radeon 9000, with the
-transform and lighting on ARB vertex programs. Where the game's behaviour has
-to change for the port, it is changed through a short list of exact-text
-substitutions in [`port/patches.txt`](port/patches.txt) applied at build time.
+It is not an emulator. The game's own C code, recovered by the decompilation
+project, is compiled natively for the G4's PowerPC processor. Not one line of
+the decompilation's `src/`, `include/` or `lib/` is edited. Everything the game
+asked of the GameCube is answered by the port in [`port/`](https://github.com/southcitycapture/mp4ppcosx10/tree/ppc-port/port):
 
-**No game data is in this repository.** You need your own disc image.
+* the GameCube's GX graphics pipeline, translated into OpenGL 1.3 for the
+  Radeon 9000, with transform and lighting on vertex programs and a render
+  thread on the second processor;
+* the 99 relocatable game modules as native bundles;
+* the disc as a file tree, with a loader that keeps the files a game re-reads
+  in memory;
+* the memory card as a file;
+* MusyX sound mixed on the CPU, and the game's THP movies decoded by a small
+  JPEG decoder of the port's own;
+* controllers 1 to 4 through SDL2 and an Xbox One driver, with the keyboard as
+  a fallback.
+
+Where the game's behaviour has to change for the port, it changes through a
+short list of exact-text substitutions in
+[`port/patches.txt`](https://github.com/southcitycapture/mp4ppcosx10/blob/ppc-port/port/patches.txt),
+applied at build time.
+
+**No game data is in this repository.** You need your own copy of the game.
 
 ## Where it stands
 
-Played on a dual 1 GHz Quicksilver with a Radeon 9000:
+Release candidate **0.9.8**, measured on a dual 1 GHz Power Mac G4
+(Quicksilver) with a Radeon 9000 under Mac OS X 10.5:
 
-* Full twenty-turn boards with computer players, chaining into the next game
-  unattended overnight, at 100% of the console's game speed.
-* The board presents about 18 frames per second at real speed, capped at 30.
-  The renderer is the open work; the game logic runs at full speed.
-* 45 of the 60 minigames have been dealt and played through in the soaks so
-  far. Rendering is compared against Dolphin frame captures and re-based only
-  with a written diff.
-* Deterministic runs, scripted input, fast-forward to any frame, and byte-exact
-  snapshots that restore in a quarter of a second, so any bug can be reproduced
-  in minutes rather than hours of play.
+| | |
+|---|---|
+| Game speed | 100% of the console everywhere |
+| Board | 29.8 frames per second, at the 30 cap |
+| Minigames | 26 to 30 fps typical; the heaviest about 20 |
+| Character select, title | about 23 and 25 fps |
+| Picture | 59 of 63 minigames match the console frame for frame; all six boards play |
+| Stability | a 6.5-hour unattended soak, five full boards and 131 minigames, no faults |
+| Movies | all twelve play with sound |
 
-The full engineering log, milestone by milestone with every measurement and
-every wrong turn, is [`port/docs/PLAN.md`](port/docs/PLAN.md). Section 0 is the
-working method. The findings about the decompilation itself that belong
-upstream are collected in [`port/docs/decomp-struct-notes.md`](port/docs/decomp-struct-notes.md).
+The target for 1.0 is **30 fps on every screen** on that machine, which then
+becomes the recommended system for 30 fps. The minimum to play at full game
+speed is a G4 with Mac OS X 10.4 or later, 256 MB of memory and a Radeon
+9000-class card. The app checks the machine at launch and says which it is.
+
+Known and shipping as-is: the water ripple in three minigames, which Leopard's
+Radeon driver can't draw; brief pauses on slow hard drives.
+
+## Documentation
+
+* [`port/docs/PLAN.md`](https://github.com/southcitycapture/mp4ppcosx10/blob/ppc-port/port/docs/PLAN.md):
+  the full engineering log, milestone by milestone, with every measurement and
+  every wrong turn. Section 0 is the working method.
+* [`port/docs/release-checklist.md`](https://github.com/southcitycapture/mp4ppcosx10/blob/ppc-port/port/docs/release-checklist.md):
+  what 1.0 needs and the evidence for each line.
+* [`port/docs/requirements.md`](https://github.com/southcitycapture/mp4ppcosx10/blob/ppc-port/port/docs/requirements.md):
+  the machines it runs on.
+* [`port/docs/decomp-struct-notes.md`](https://github.com/southcitycapture/mp4ppcosx10/blob/ppc-port/port/docs/decomp-struct-notes.md):
+  findings about the decompilation itself that belong upstream.
 
 ## Building
 
-The G4 binary is cross-compiled from a Mac or Linux host with the Docker
-toolchain the Snowboard Kids ports use (`powerpc-apple-darwin8`, GCC 14, the
-MacOSX10.4u SDK, a Tiger-compatible SDL2):
+The G4 binary is cross-compiled from a Mac or Linux host with a Docker
+toolchain (`powerpc-apple-darwin8`, GCC 14, the MacOSX10.4u SDK, a
+Tiger-compatible SDL2), on the `ppc-port` branch:
 
 ```sh
-port/build-ppc.sh -j8                          # the executable and 99 bundles
-sh port/tools/make_bundle.sh                   # MarioParty4.app
+git checkout ppc-port
+port/build-ppc.sh -j8            # the executable and 99 bundles
+sh port/tools/make_bundle.sh     # MarioParty4.app
+sh port/tools/make_dmg.sh        # the disk image, with no game data in it
 ```
 
-A host build (`make -C port TARGET=host`) exists as a plumbing harness for
-the development machine; it cannot draw the game, for reasons the port README
-explains. See [`port/README.md`](port/README.md) for the flags and the layout.
+See [`port/README.md`](https://github.com/southcitycapture/mp4ppcosx10/blob/ppc-port/port/README.md)
+for the flags and the layout.
 
 ## Branches
 
-* `ppc-port` is the port. Everything lives under `port/`.
-* `main` tracks the upstream decompilation.
+* **`ppc-port`** is the port. Everything the port adds lives under `port/`.
+* **`main`** tracks the upstream decompilation, plus this README. The
+  decompilation's own README, with its build instructions, is
+  [`DECOMP.md`](DECOMP.md) on `main`.
 
 ## Credits
 
-The decompilation is the work of the [mariopartyrd](https://github.com/mariopartyrd)
-team. The port is built in agent sessions run by [southcitycapture](https://github.com/southcitycapture)
-as part of a series of native ports for the Power Mac G4, alongside
-Snowboard Kids 1 and 2 and LEGO Island.
+The decompilation is the work of the
+[mariopartyrd](https://github.com/mariopartyrd) team. The port is built by
+[southcitycapture](https://github.com/southcitycapture) as part of a series of
+native ports for the Power Mac G4, alongside Snowboard Kids 1 and 2 and LEGO
+Island.
