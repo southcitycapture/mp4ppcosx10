@@ -234,6 +234,13 @@ cannot do; a fragment-program path for it is in this build behind
 --tfs, and stays off because the Radeon's Leopard driver draws two of
 the three pools wrong through it (the notes say how far it got).
 
+About two or three times an hour the game stops for one to two seconds
+and then catches up, the music with it: a read or a write that waited on
+the disk -- the first Bowser space or board ending of a session, a save
+started while the last one was still being written.  (Six and a half
+hours of four computer players on the reference machine, with the test's
+own logging on, which adds to them: seventeen.)
+
 The character select screen runs at about 23 frames a second on the
 reference machine (the board and most minigames run at the 30 cap); the
 game's own speed there is the console's, only the picture is slower.

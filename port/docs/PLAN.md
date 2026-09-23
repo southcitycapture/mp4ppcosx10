@@ -19595,3 +19595,95 @@ bundle now (54.6).
 chooser, the first run's folder and card, fullscreen, the opening with
 its sound, the title, the file, the mode select's movies, a party board,
 two minigames, the results and a clean quit with the card written.
+
+### 54.4 The long soak: six and a half hours, cold, as a player
+
+`m39_final.sh` on the G4, after the two md5 walks and **before** the
+gallery (a soak after a gallery is warm, §51.1): `isle --soak --com4 --rtc
+dolphin --freshcard --status --perf` — the player's defaults (real-time
+pacing, the resident set by the RAM, the prefetch, the movies, two CPUs;
+windowed, because the G4's own config has said `fullscreen = 0` since
+M25) and only the soak's own flags, **no snapshots**. 17:45:50 to 00:15:57
+G4 time, ended by SIGINT through the game's own reset path (`OSResetSystem:
+… quitting cleanly`, the card written, the reports printed). Log
+`docs/soak/m39-soak30-rc-6h30.log.gz`; read with `soak_read.py` and a
+stall classifier (54.4's table).
+
+| | |
+|---|---|
+| length | **23,404 s on the wall (6 h 30 min), 1,401,120 retraces, 23,352 status lines** |
+| where it got | **five full 20-turn boards** (Toad's Midway Madness, four CPUs) and into the sixth's fifth turn; 131 minigame plays of 41 modules; each board's ending (`mstory3dll`), the mode select, the character select, round again |
+| faults / guard hits / mismatches | **0 / 0 / 0** — no `*** port` line, `skin: … 0 guard hits`, `musyx_mix: … 0 position mismatches` |
+| speed | **99.9%** (`game 23376.24 s vs wall 23404.08 s`, before the resyncs); every scene's mean past the boot 98.5–100.9% |
+| presented fps, the board | **28.2–28.9** a turn (`w01dll`; `rt` 15.6–18.2 ms, `dec` 5.2–6.3), the results 29.0–29.8, the instructions 27.1–28.9, the board's ending 29.6 |
+| presented fps, menus | the character select **22.1–23.4** (the known one), the mode select 29.7–30.0 |
+| presented fps, minigames | 41 modules, **19.6–29.9**: the lowest m414 19.6, m415 19.7, m431 19.7, m441 20.8, m432 21.3, m404 21.5, m436 22.6, m401 22.9, m444 23.5; 22 of the 41 at 27 or more |
+| the movies | 8 played — the opening once (skipped by the walk's START), `s00` once, `c00` six times (the mode select before each board) — 1,366 frames drawn, 104 dropped, **every one `ran dry 0`**; 24.75–29.97 a second |
+| resyncs | **17, dropping 27.7 s** of game time (2.6 an hour) — the table below |
+| stalls | 649 frames over 100 ms, **298 over 200 ms** (46 an hour; 243 of them 200–500 ms at a scene's load, the texture uploads and model setup of a new screen), 25 over 500 ms, 17 over 1 s |
+| STUCK | 15, **all the soak's own designed waits** — three per board cycle (the mode select after the ending, the character select twice), five cycles, as §46's seven-hour soak |
+| audio | **1,707 underruns, 26.5 s** — **262 an hour**; by scene (the status line's `ur`): the board's ending 235 over five endings, m415 206, the board's turns 5–118 a turn, m430 113, m422 96, m431 77; the movies 0 |
+| loader | `DVD: 8691 reads, 2.22 GB, 4,802 ms in reads, 4 over 100 ms`; the resident set grew to **127 files, 142 MB**: 7,136 reads (2,033 MB) from memory, 1,555 (87 MB, 4.8 s) from the disk; the prefetch 688 files, 176 MB off the game thread, **0 disk reads after a prefetch of the same file** |
+| card | 110 writes, **222 image flushes**, all written; 5.6 s on the game thread in all, **111 flushes waited for the previous one (5.2 s)**; behind the game, 191 flushes under 50 ms and 26 whose rename took **1.68–1.81 s** |
+| rss | **164 → 243 MB in the first half hour, 286 at the end**; rss − the resident set: **131 → 144 MB** from the first hour to the last (per hour, 130–156): **flat**; the growth is the resident set filling (98 → 142 MB), which is its design |
+
+**The seventeen one-second resyncs**, each against what the log shows at
+the same frame:
+
+| cause | count | the frames | what it is |
+|---|---:|---|---|
+| a cold read of a file outside the resident set | 3 (2 events) | 65,363 `data/bkoopa.bin` 559 KB in **1,697 ms**; 252,429–30 `dll/mstory3Dll.rel` 198 KB in 1,083 ms and `data/mstory3.bin` 3.5 MB in 1,059 ms | Bowser's space (the first board's first) and the board's ending: files M36's 20-turn list never counted (no Bowser space in that run; the list's run ended at the board's end). Later boards found them in the set |
+| a card flush waiting for the previous one | 2 | 577,989 and 590,674: the writer's `fopen` of the temp file took **2,202 / 2,110 ms**, and the next flush joined it on the game thread | `card_flush` waits for a running write by design (§44.6: "one job at a time") |
+| the `--status` line's retrace | 10 | 229,735, 237,055, 333,115, 470,995, 656,095, 769,015, 788,935, 883,555, 970,735, 1,121,635 (and 4 of the 8 at 500 ms–1 s) | every one on the retrace whose status line is written — one in sixty by chance, ten of seventeen here — with no read over 100 ms and `game` = the whole stall: the game thread's log write (stdout to the log file) held by the file system |
+| unattributed | 2 | 670,655 (1,833 ms), 1,108,958 (2,348 ms) | `game` = the whole stall, nothing logged near |
+
+**One cause under all four: the G4's drive answers some requests in 1–2
+seconds.** Of the 222 card flushes, 191 finished within 50 ms; of the 31
+that did not, **26 spent 1.68–1.81 s in the rename** (the journal commit
+HFS+ pays for a rename over an existing file — §44.6: "1.7 s on this
+disk"), a fixed price rather than a spread, and the two temp-file opens
+2.1–2.2 s, the cold reads ~1–1.7 s whatever their size (198 KB and 3.5 MB
+both ~1.07 s), while `pmset` says `disksleep 10` and the drive is a
+FireCuda — a hybrid whose own power management can spin its platters
+down while the flash answers. A write from the game thread that needs the
+journal waits for the commit in progress. That is a reading, not a
+measurement of the drive: the log cannot see the platters. What the
+player sees is the same either way: **about 2.6 one-to-two-second pauses
+an hour, the game catching up after each** (the Read Me's LOADING section
+already says a slow disk can hold the game; 54.6 adds the rate).
+
+Of the three port-side causes, two are cheap to remove after the
+release candidate and would each want a soak to prove (neither is done:
+the build under test does not change inside its own release pass): **the
+card writer coalescing** instead of waiting (a flush that finds a write
+running leaves the newest image for the writer to take next), and **the
+log's file writes on a writer thread** (the game thread appends to a
+ring). The cold reads want Bowser's space and the board's ending in the
+resident list (`m36_dvdlog.py` over a run that has both, ~4.2 MB against
+114 MB free in the set).
+
+**Named snapshots** for the two kinds the game thread owns (54.9): the
+Bowser-space read and the first status-line stall, `--snap-at` on the
+same deterministic schedule.
+
+### 54.5 The gallery on the final build
+
+@GALLERY54@
+
+### 54.6 The Read Me, line by line
+
+`port/dist/Read Me.txt` against what 0.9.8 does, section by section:
+
+| section | the claim | checked against | now |
+|---|---|---|---|
+| title | "Version 0.9.7" | `PORT_VERSION_STRING` 0.9.8 | **0.9.8** |
+| WHAT THIS IS | native, 99 modules as bundles, GX → GL 1.3, a board at the console's speed at 30 frames a second | the soak: 99.9%, 28.2–28.9 a turn (the cap is 30) | kept |
+| WHAT IT NEEDS | the check before the window, the minimum and the card table | §54.3 step 1 (`verdict ok`, no dialog), §40 | kept; the table is still the drivers' lists (the checklist's open line 5) |
+| YOU BRING THE DISC IMAGE | asked once with an Open dialog, checked, remembered | §54.3 step 2 | kept |
+| THE SCREEN | a first run fullscreen, letterboxed; **`open -a "Mario Party 4" --args --windowed`** | §54.3 step 3; `open -h` on the G4 | **fixed**: Leopard's and Tiger's `open` have no `--args` (10.6 added it). The line names the executable: `"/Applications/Mario Party 4.app/Contents/MacOS/isle" --windowed` |
+| LOADING | the read-ahead and the resident set, "on a slow or busy disk that read can hold the game for half a second or more" | §54.4's `DVD:` and loader lines, the three cold reads | kept (the numbers are M36's walk, still true); the pauses' rate went to the imperfections |
+| MOVIES | all of them with sound; two CPUs: the opening ~29, the mode select 25–28; **one CPU: "the sound can break up for a moment during those two short mode-select movies"** | §54.2; §54.3's 28.60 / 23.41 | **fixed**: two CPUs 23–28 at the mode select; one CPU "the sound does not break up during any of them" — 0 underruns in every movie in eight one-CPU runs |
+| CONTROLS | the key table; Xbox One pads; **`open -a … --args --kbport 2`**; Cmd-Q through the game's reset; **`open -a … --args --defaults`** | §54.3 steps 6–9 (Return, Z, the arrows, ⌘Q); `open -h` | **fixed**: both `open` lines name the executable; a note that 10.6's `open --args` does the same |
+| WHERE YOUR THINGS LIVE | the card, the config, the log | §54.3 step 3 | kept |
+| WHAT IS NOT QUITE RIGHT YET | the three pools; the character select at 23 fps with a paragraph about 0.9.6's batch enders; one card; controllers 3–4 | §54.3 step 8 (Makin' Waves' flat tint), §54.4 (the character select 22.1–23.4) | the pools kept; the character select's paragraph **rewritten as what it is now** (a version's change log does not belong in a list of imperfections); **added**: the one-to-two-second pauses (§54.4) and the single-processor Stamp Out! (§54.2) |
+| LICENCE AND CREDITS | no game data; the decompilation, MusyX, stb_image, SDL2 | the dmg's contents (54.8) | kept |
