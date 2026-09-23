@@ -11,6 +11,7 @@
 #   W / WO           the md5 walk at real time, --nomovies: on / off
 #   A:GAME:ARM:K     GAME (m431, b4, cs = the character select, title) at real
 #                    time, arm auto|on|vbo|avbo|off|count, repeat K (the A/B's runs)
+#   P:GAME           GAME at real time, --novcache --gxsplit (the game thread's slices)
 #   SOAK:MIN         a realtime soak of MIN minutes (the pauses' count)
 cd "$HOME"
 [ -f "$HOME/m40.env" ] && . "$HOME/m40.env"
@@ -81,6 +82,13 @@ for r in ${M40_RUNS:-N NO}; do
                 b[1-6]) run "A-$g-$a-$k" 600 $RT --board ${g#b} --ffto 7808 --frames 10508 $x ;;
                 m453)  run "A-$g-$a-$k" 420 $RT --minigame $g --turns 1 --ffto 14000 --frames 20000 --mgend 1800 --dvdheap 5888 $x ;;
                 m*)    run "A-$g-$a-$k" 420 $RT --minigame $g --turns 1 --ffto 14000 --frames 20000 --mgend 1800 $x ;;
+            esac ;;
+        P:*)
+            # the game thread's drawn frame by region (--gxsplit), the old path
+            g=${r#P:}
+            case $g in
+                cs) run "P-$g" 600 $RT --frames 5000 --ffto 2700 --novcache --gxsplit ;;
+                *)  run "P-$g" 420 $RT --minigame $g --turns 1 --ffto 14000 --frames 20000 --mgend 1800 --novcache --gxsplit ;;
             esac ;;
         SOAK:*)
             mins=${r#SOAK:}

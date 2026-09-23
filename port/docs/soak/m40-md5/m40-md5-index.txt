@@ -1,0 +1,6 @@
+# m40 chain start Wed Sep 23 15:00:59 EDT 2026  isle md5 ed3147f390558278fcae3d853ee85a3f
+N EXIT=0 wall=215s fault=0 md5 800:0b58c5ee 3000:2b99c60a 7000:4a9a640c vc='hits (105056330 vertices, 98.1%; per drawn frame 98.8% over 3399 frames)' args='--com4 --rtc dolphin --freshcard --noconfig --status --ovllog --perf --dumpframe 800,3000,7000 --turbo --play board-start-com4.play --frames 9000 --nomovies'
+NV EXIT=0 wall=220s fault=0 md5 800:9689c3fa 3000:91397f6b 7000:15de555f vc='hits (215838918 vertices, 98.6%; per drawn frame 99.0% over 8235 frames)' args='--com4 --rtc dolphin --freshcard --noconfig --status --ovllog --perf --dumpframe 800,3000,7000 --turbo --play board-start-com4.play --frames 9000 --nomovies --vcache on --vcachevbo'
+NN EXIT=0 wall=218s fault=0 md5 800:0b58c5ee 3000:2b99c60a 7000:4a9a640c vc='hits (215838918 vertices, 98.6%; per drawn frame 99.0% over 8235 frames)' args='--com4 --rtc dolphin --freshcard --noconfig --status --ovllog --perf --dumpframe 800,3000,7000 --turbo --play board-start-com4.play --frames 9000 --nomovies --vcache on'
+M EXIT=0 wall=214s fault=0 md5 800:d2d40344 3000:59008ce4 7000:3f98f882 vc='hits (103467819 vertices, 98.1%; per drawn frame 98.8% over 3366 frames)' args='--com4 --rtc dolphin --freshcard --noconfig --status --ovllog --perf --dumpframe 800,3000,7000 --turbo --play board-start-com4.play --frames 9000'
+DONE

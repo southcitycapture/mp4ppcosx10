@@ -1299,6 +1299,17 @@ void gx_vprog_bind(const GxXfDesc* d) {
         if (d->vbo != last_vbo) {
             glc_arrays_forget();
             last_vbo = d->vbo;
+            /* Apple's vertex_array_range takes every array pointer for an
+             * address in its range while its client state is on -- a buffer
+             * object's offsets included (the first build drew nothing from
+             * the buffer) -- so it is off while the buffer's batches draw */
+            if (gl13_var_active()) {
+                if (d->vbo) {
+                    glDisableClientState(0x851D /* GL_VERTEX_ARRAY_RANGE_APPLE */);
+                } else {
+                    glEnableClientState(0x851D);
+                }
+            }
         }
         if (d->vbo) {
             rt_ext_bind_buffer(gl13_vc_vbo());
@@ -1319,7 +1330,14 @@ void gx_vprog_bind(const GxXfDesc* d) {
         }
     }
     if (d->vbo) {
+        static int told;
         rt_ext_bind_buffer(0);
+        if (told < 3) {
+            /* M40: the buffer object's first batches, checked (a join) */
+            told++;
+            port_log("port> vcache: buffer-object batch %d: base %p stride %d, glGetError 0x%x\n",
+                     told, (const void*)d->base, d->stride, (unsigned)glGetError());
+        }
     }
 
 #endif

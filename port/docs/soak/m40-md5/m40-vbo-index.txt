@@ -1,0 +1,3 @@
+# m40 chain start Wed Sep 23 15:26:29 EDT 2026  isle md5 903cfdf9106c60b537ec542455cf0d11
+NV EXIT=0 wall=220s fault=0 md5 800:9689c3fa 3000:91397f6b 7000:15de555f vc='hits (215838918 vertices, 98.6%; per drawn frame 99.0% over 8235 frames)' args='--com4 --rtc dolphin --freshcard --noconfig --status --ovllog --perf --dumpframe 800,3000,7000 --turbo --play board-start-com4.play --frames 9000 --nomovies --vcache on --vcachevbo'
+DONE

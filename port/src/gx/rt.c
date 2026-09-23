@@ -1787,6 +1787,10 @@ void rt_start(void* sdl_window, void* sdl_glcontext) {
             x_BindBufferARB = (fn_bindbuf_t)SDL_GL_GetProcAddress("glBindBufferARB");
             x_BufferSubDataARB = (fn_bufsub_t)SDL_GL_GetProcAddress("glBufferSubDataARB");
         }
+        if (port_opt.vcache_vbo) {
+            port_log("port> vcache: buffer object entry points: bind %p, subdata %p\n",
+                     (void*)x_BindBufferARB, (void*)x_BufferSubDataARB);
+        }
         if (strstr(ext, "GL_ARB_vertex_program")) {
             x_BindProgramARB = (fn_bindprog_t)SDL_GL_GetProcAddress("glBindProgramARB");
             x_ProgramEnvParameter4fvARB = (fn_env4_t)SDL_GL_GetProcAddress("glProgramEnvParameter4fvARB");

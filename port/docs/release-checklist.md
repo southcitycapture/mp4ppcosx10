@@ -7,6 +7,57 @@ numbers are the long form. The machine is the reference G4 throughout — a
 dual 1 GHz Power Mac G4 (PowerMac3,5), 1.5 GB, 64 MB Radeon 9000, Mac OS X
 10.5 — unless a line says otherwise.
 
+## The v1.0 line, amended at M40 (2026-09-23): "30 fps overall"
+
+The user's one requirement for 1.0, in their words: **"30fps everything"** --
+every screen a player can reach, menus included: boot and title, file
+select, mode select, character select, every board, every minigame (party,
+story, Bowser, extra room, battle), results and ceremonies, story mode, the
+options and records screens, the credits. **Measured as a median of at least
+29.5 presented frames a second at 100% game speed** on the reference (the
+dual 1 GHz G4, Radeon 9000), screen by screen, by the scoreboard:
+`tools/fps_board.sh` (one real-time `--perf` run per screen on the G4) and
+`tools/fps_board.py` (the table), re-runnable by any milestone. The
+reference is the machine class the second promise is made for
+(`requirements.md`, the two promises: *full game speed* is the minimum's,
+*30 fps everywhere* the reference's and up).
+
+**Where 0.9.8/M39c stood when the line moved** -- the scoreboard's first full
+run, `docs/fps-scoreboard-m40-before.md` (79 runs, 82 screens, the M39c build
+`df75d3a6`): **55 of 82 screens pass.** Every one of them runs at 100% game
+speed; the 27 that miss, miss on the picture rate alone. The gap per screen
+(median fps; the gap to 29.5):
+
+| screen | fps | gap | | screen | fps | gap |
+|---|---:|---:|---|---|---:|---:|
+| m404 Trace Race | 15.9 | 13.6 | | m444 | 24.9 | 4.6 |
+| m415 Stamp Out! | 16.1 | 13.4 | | w05 Koopa's Seaside Soirée | 25.0 | 4.5 |
+| m441 | 21.0 | 8.5 | | w04 Boo's Haunted Bash | 25.0 | 4.5 |
+| m431 | 21.1 | 8.4 | | m418 | 26.0 | 3.5 |
+| m432 Dungeon Duos | 22.0 | 7.5 | | m410 | 26.7 | 2.8 |
+| m414 | 23.2 | 6.3 | | m412 | 26.8 | 2.7 |
+| mentdll, the character select | 23.3 | 6.2 | | m423 | 26.8 | 2.7 |
+| m433 | 23.8 | 5.7 | | m407 | 27.0 | 2.5 |
+| m436 | 24.0 | 5.5 | | m424 | 27.3 | 2.2 |
+| m447 | 24.0 | 5.5 | | m438 | 27.9 | 1.6 |
+| m401 | 24.1 | 5.4 | | m463 | 28.0 | 1.5 |
+| m409 | 24.4 | 5.1 | | m440 | 28.8 | 0.7 |
+| m435 | 24.9 | 4.6 | | w01 Toad's Midway Madness | 29.1 | 0.4 |
+| | | | | m430 | 29.2 | 0.2 |
+
+Passing at the line: the boot and title (30.0), the mode select and the
+file select inside it, the instruction cards, the results, the board's
+ending (mstory3), the story ending (mstory2), the options, the Present Room,
+the Extra Room, the Minigame Mode menu, the credits, four of the six boards
+(w02, w03, w06; w01 at 29.1 on the teleported run, 30.0 over the long
+soaks), and 36 of the 63 minigames. Not reached by the harness: story mode's
+own board setup (`--goto mstorydll` panics in `dvd.c` without the file
+select's loads -- a teleport's limit, the story's boards are the party
+boards).
+
+**Where M40 left it**: PLAN.md 55 and `docs/fps-scoreboard.md` (the table
+regenerated on the final build), and the list below updated.
+
 ## Done
 
 | area | the claim | the evidence |

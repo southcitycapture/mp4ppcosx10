@@ -5325,7 +5325,8 @@ typedef struct VcArr {
     struct VcArr* next;
 } VcArr;
 typedef struct VcPrim {
-    u32 plan_h1, plan_h2;
+    u32 plan_h1, plan_h2;  /* the plan's signature (a fold) and its length in words */
+    u32* key;              /* the plan itself, word for word: a match is a memcmp */
     int slot;              /* the primitive's place in the list */
     unsigned last_frame;
     u32 off;               /* from src_buf; the region is past src_cap */
@@ -5348,6 +5349,8 @@ typedef struct VcEnt {
     struct VcEnt* next;
 } VcEnt;
 unsigned gx_vc_epoch = 1;
+#define VC_KEY_MAX (GX_MAX_ATTR * 5 + GX_DEC_FILL_MAX * 3 + 16)
+static u32 vc_key[VC_KEY_MAX]; /* the plan in hand, as words (vc_plan_hash) */
 static VcEnt* vc_tbl[VC_BUCKETS];
 static VcArr* vc_arrs[VC_ARR_BUCKETS];
 static unsigned vc_gen = 1;
@@ -5504,6 +5507,10 @@ static void vc_arr_extend(VcArr* a, u32 lo, u32 hi) {
 }
 
 static void vc_free_ent(VcEnt* e) {
+    int i;
+    for (i = 0; i < e->nprims; i++) {
+        free(e->prims[i].key);
+    }
     free(e->prims);
     free(e);
 }
@@ -5578,7 +5585,11 @@ static VcEnt* vc_list_begin(const void* list, u32 nbytes) {
                  * game thread's own cycle is the wall (Boo's board), keying
                  * would only lengthen it */
                 full = r + d + (double)vc_last_hits * rate;
-                vc_frame_on = full > port_opt.vcache_fit && full > g;
+                /* with a margin once on (the character select sits where
+                 * the two cycles meet, and an even split flipped every few
+                 * frames: 18% of its frames undecoded by the cache) */
+                vc_frame_on = vc_frame_on ? (full > port_opt.vcache_fit - 2.0 && full > g - 3.0)
+                                          : (full > port_opt.vcache_fit && full > g);
             } else {
                 vc_frame_on = 1;
             }
@@ -5657,13 +5668,24 @@ static VcPrim* vc_prim_find(VcEnt* e, int i, u32 h1, u32 h2, int* found) {
     VcPrim* lru = NULL;
     unsigned fr = gl13_frame_number();
     *found = 0;
+    /* the common case first: the list seen once, its places in order */
+    if (i < e->nprims) {
+        VcPrim* q = &e->prims[i];
+        if (q->slot == i && q->valid && q->plan_h1 == h1 && q->plan_h2 == h2 &&
+            memcmp(q->key, vc_key, (size_t)h2 * 4) == 0) {
+            q->last_frame = fr;
+            *found = 1;
+            return q;
+        }
+    }
     for (k = 0; k < e->nprims; k++) {
         VcPrim* q = &e->prims[k];
         if (q->slot != i) {
             continue;
         }
         nvar++;
-        if (q->valid && q->plan_h1 == h1 && q->plan_h2 == h2) {
+        if (q->valid && q->plan_h1 == h1 && q->plan_h2 == h2 &&
+            memcmp(q->key, vc_key, (size_t)h2 * 4) == 0) {
             q->last_frame = fr;
             *found = 1;
             return q;
@@ -5673,6 +5695,7 @@ static VcPrim* vc_prim_find(VcEnt* e, int i, u32 h1, u32 h2, int* found) {
         }
     }
     if (nvar >= VC_VARIANTS || (lru && !lru->valid)) {
+        free(lru->key);
         memset(lru, 0, sizeof(*lru));
         lru->slot = i;
         lru->last_frame = fr;
@@ -5714,38 +5737,43 @@ static int vc_eligible(u32 count) {
     return narr <= VC_ARR_MAX;
 }
 
+/* The plan as words (every field the decode reads, the layout, the count),
+ * into vc_key; *h1 a cheap fold of them, *h2 their number.  A stored run
+ * matches only if every word is equal -- no hash to collide. */
 static void vc_plan_hash(u32 count, u8 op, u32* h1, u32* h2) {
-    u32 a = 0xA5A5A5A5u ^ count, b = 0x3C3C3C3Cu ^ op;
-    int k;
+    u32* w = vc_key;
+    u32 f = 0;
+    int k, n;
     for (k = 0; k < nplan; k++) {
         const DecStep* st = &plan[k];
-        u32 w[6];
-        w[0] = (u32)(uintptr_t)st->base;
-        memcpy(&w[1], &st->scale, 4);
-        w[2] = (u32)(uintptr_t)st->tbl;
-        w[3] = ((u32)st->dstoff << 16) | ((u32)st->stride << 8) | st->idx;
-        w[4] = ((u32)st->advance << 24) | ((u32)st->op << 16) | ((u32)st->to_pending << 8) | st->attr;
-        w[5] = (u32)k;
-        vc_hash((const u8*)w, sizeof(w), &a, &b);
+        *w++ = (u32)(uintptr_t)st->base;
+        memcpy(w++, &st->scale, 4);
+        *w++ = (u32)(uintptr_t)st->tbl;
+        *w++ = ((u32)st->dstoff << 16) | ((u32)st->stride << 8) | st->idx;
+        *w++ = ((u32)st->advance << 24) | ((u32)st->op << 16) | ((u32)st->to_pending << 8) | st->attr;
     }
     for (k = 0; k < plan_nfill; k++) {
-        u32 w[3];
-        w[0] = plan_fill[k].dstoff;
-        memcpy(&w[1], &plan_fill[k].s, 4);
-        memcpy(&w[2], &plan_fill[k].t, 4);
-        vc_hash((const u8*)w, sizeof(w), &a, &b);
+        *w++ = plan_fill[k].dstoff;
+        memcpy(w++, &plan_fill[k].s, 4);
+        memcpy(w++, &plan_fill[k].t, 4);
     }
-    {
-        u32 w[4];
-        w[0] = (u32)plan_clr_const;
-        w[1] = plan_clr.u;
-        w[2] = (u32)nplan | ((u32)plan_nfill << 8) | ((u32)vtxfmt << 16);
-        w[3] = (u32)fast_index_of(plan_fast);
-        vc_hash((const u8*)w, sizeof(w), &a, &b);
+    *w++ = (u32)plan_clr_const;
+    *w++ = plan_clr_const ? plan_clr.u : 0;
+    *w++ = (u32)nplan | ((u32)plan_nfill << 8) | ((u32)vtxfmt << 16) | ((u32)op << 24);
+    *w++ = (u32)fast_index_of(plan_fast);
+    *w++ = count;
+    *w++ = (u32)sl.stride;
+    *w++ = (u32)sl.off_nrm;
+    *w++ = (u32)sl.off_clr;
+    *w++ = (u32)sl.off_skin;
+    *w++ = (u32)sl.off_tex;
+    *w++ = (u32)sl.ntex;
+    n = (int)(w - vc_key);
+    for (k = 0; k < n; k++) {
+        f = ((f << 5) | (f >> 27)) ^ vc_key[k];
     }
-    vc_hash((const u8*)&sl, sizeof(sl), &a, &b);
-    *h1 = a;
-    *h2 = b;
+    *h1 = f;
+    *h2 = (u32)n;
 }
 
 /* the job for the primitive in hand, as rtdec_build fills it */
@@ -5935,6 +5963,13 @@ static int vc_decide(VcEnt* e, int i, const u8* p, const u8* end, u32 count, u8 
         }
         vp->plan_h1 = h1;
         vp->plan_h2 = h2;
+        free(vp->key);
+        vp->key = (u32*)malloc((size_t)h2 * 4);
+        if (!vp->key) {
+            vp->valid = 0;
+            return 0;
+        }
+        memcpy(vp->key, vc_key, (size_t)h2 * 4);
         vp->nverts = n;
         vp->adv = n * vb;
         vp->valid = 1;
@@ -5979,7 +6014,7 @@ static void vc_report(void) {
              stat_vc_auto_on, stat_vc_auto_off, port_opt.vcache_fit, stat_vc_list_memo,
              stat_vc_foreign_bumps);
     port_log("port> vcache: hashed %.1f MB of lists and %.1f MB of arrays (%.1f KB a list call); "
-             "%.0f ms keying on the game thread (lists %.0f, hits %.0f, misses %.0f); region %lu KB, "
+             "%.0f ms keying on the game thread (sampled 1 in 8: lists %.0f, hits %.0f, misses %.0f); region %lu KB, "
              "peak %lu KB, %lu reset(s), %lu cooldown(s); %lu entries, %lu arrays live, %lu "
              "clear(s)\n",
              stat_vc_list_bytes / 1048576.0, stat_vc_arr_bytes / 1048576.0,
@@ -6032,11 +6067,16 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
     caching = port_opt.dlcache && nbytes > 0;
     rt_auto_on = rt_recording && rt_decode_mode() == 3;
     if (port_opt.vcache && !caching && nbytes > 0) {
-        double t0 = port_now_seconds();
-        vce = vc_list_begin(list, nbytes);
-        t0 = port_now_seconds() - t0;
-        stat_vc_s += t0;
-        stat_vc_s_list += t0;
+        static unsigned vl_tick;
+        if ((++vl_tick & 7u) == 0) {
+            double t0 = port_now_seconds();
+            vce = vc_list_begin(list, nbytes);
+            t0 = (port_now_seconds() - t0) * 8.0;
+            stat_vc_s += t0;
+            stat_vc_s_list += t0;
+        } else {
+            vce = vc_list_begin(list, nbytes);
+        }
     }
     /* A scene change strands every entry it had; sweep on a slow cadence so
      * the table does not grow to hold every model the walk has ever passed. */
@@ -6183,14 +6223,20 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
         batch_prepare(count);
         vc_run = 0;
         if (vce) {
-            double t0 = port_now_seconds();
-            vc_run = vc_decide(vce, vci++, p, end, count, op);
-            t0 = port_now_seconds() - t0;
-            stat_vc_s += t0;
-            if (vc_run == 1) {
-                stat_vc_s_hit += t0;
+            /* timed one call in eight (the timer is a tenth of a hit) */
+            static unsigned vc_tick;
+            if ((++vc_tick & 7u) == 0) {
+                double t0 = port_now_seconds();
+                vc_run = vc_decide(vce, vci++, p, end, count, op);
+                t0 = (port_now_seconds() - t0) * 8.0;
+                stat_vc_s += t0;
+                if (vc_run == 1) {
+                    stat_vc_s_hit += t0;
+                } else {
+                    stat_vc_s_miss += t0;
+                }
             } else {
-                stat_vc_s_miss += t0;
+                vc_run = vc_decide(vce, vci++, p, end, count, op);
             }
         }
         if (vc_run) {

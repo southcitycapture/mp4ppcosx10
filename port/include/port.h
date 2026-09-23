@@ -31,8 +31,8 @@ extern "C" {
 /* ---- settings, from argv ------------------------------------------------- */
 /* M32: the shipped version (the dmg's name, the plist, the --defaults header)
  * and the milestone that built it. */
-#define PORT_VERSION_STRING "0.9.8"
-#define PORT_MILESTONE "M39"
+#define PORT_VERSION_STRING "0.9.9"
+#define PORT_MILESTONE "M40"
 
 typedef struct PortOptions {
     const char* image;      /* --image  disc image or extracted files/ tree   */
