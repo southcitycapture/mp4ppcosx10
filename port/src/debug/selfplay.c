@@ -72,6 +72,8 @@
 #include "game/pad.h"
 #include "game/object.h"
 #include "game/objsub.h"
+#include "game/board/main.h"
+#include "game/flag.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -136,6 +138,22 @@ int portGotoOvl(int* evt) {
         GWPlayerCfg[n].iscom = n ? 1 : 0;
     }
     GWSystem.storyChar = (s8)ch;
+    /* M39c (PLAN.md 54b.1): the three boards outside the party menu's six.
+     * Nothing in the retail menus reaches them through GWSystem.board's
+     * party path: w10 is the tutorial (mentDll sets flag 1,11 and
+     * BoardSaveInit(6)), w20/w21 are the Extra Room's two board games
+     * (mpexDll fn_1_3758: BoardPartyConfigSet + BoardSaveInit(7|8)).  The
+     * game's own debug menu does exactly this before it calls them
+     * (src/REL/selmenuDll/main.c:701-712), so --goto does the same. */
+    if (i == DLL_w10dll) {
+        _SetFlag(FLAG_ID_MAKE(1, 11));
+        BoardSaveInit(BOARD_ID_TUTORIAL);
+        BoardPartyConfigSet(0, 0, 0, port_opt.turns ? port_opt.turns : 20, 0, 0, 0, 0);
+        _SetFlag(FLAG_ID_MAKE(1, 11)); /* BoardPartyConfigSet clears 1,11 */
+    } else if (i == DLL_w20dll || i == DLL_w21dll) {
+        BoardSaveInit(i == DLL_w20dll ? BOARD_ID_EXTRA1 : BOARD_ID_EXTRA2);
+        BoardPartyConfigSet(0, 0, 0, port_opt.turns ? port_opt.turns : 20, 0, 0, 0, 0);
+    }
     port_log("port> --goto: from the boot into %s (overlay %d) at event %d, character %d "
              "first\n",
              ovl_name[i], i, *evt, ch);
@@ -377,6 +395,53 @@ static void park_minigame(void) {
         }
         break;
     }
+}
+
+/* ---- --board (M39c, PLAN.md 54b.1) ------------------------------------------
+ *
+ * The party menu's board choice is a cursor in mentDll's bss
+ * (`lbl_1_bss_A8[2]`, src/REL/mentDll/main.c:1369), and the moment it becomes
+ * a fact is `BoardSaveInit(lbl_1_bss_A8[2])` (:1926), which writes it into
+ * `GWSystem.board`.  From there the game reads only the field: the board's
+ * data directory is preloaded from it (`fn_1_7218`, :430) and the board's
+ * overlay is called from it (`omOvlCallEx(spC[GWSystem.board])`, :1977).
+ *
+ * The console rig parks the field the way `--minigame` parks `mg_next`: a
+ * Gecko write at every retrace while `omcurovl` is mentDll.  On the console
+ * that lands before either read, because the preload waits on a DVD/ARAM
+ * transfer first.  The port's transfers complete inline, so the preload can
+ * read the field in the very pass `BoardSaveInit` wrote it -- before any
+ * retrace -- and a board whose preloaded directory is the cursor's would
+ * leak it (the board closes only its own, board/main.c:723).  So the port
+ * takes the value at the write itself: `BoardSaveInit`'s store goes through
+ * `portBoardPick` (patches.txt), which answers the lever's board while
+ * mentDll is the live overlay and the game's own argument otherwise.  The
+ * retrace park is kept as the console's twin.  With no --board, or
+ * --board 1 on a fresh walk, every value is the one the game wrote itself. */
+static int board_picks;    /* boards picked so far (the --board N+ chain)   */
+static int board_current;  /* 0-based, the board the lever answers now      */
+
+int portBoardPick(int board) {
+    int want;
+    if (!port_opt.board || (int)omcurovl != DLL_mentdll) {
+        return board;
+    }
+    want = (port_opt.board - 1 + (port_opt.boardcycle ? board_picks : 0)) % 6;
+    port_log("port> --board: mentdll BoardSaveInit(%d) -> %d (%s), board %d of the run\n",
+             board, want, screen_name(DLL_w01dll + want), board_picks + 1);
+    board_picks++;
+    board_current = want;
+    return want;
+}
+
+static void park_board(void) {
+    if (!port_opt.board || (int)omcurovl != DLL_mentdll) {
+        return;
+    }
+    if (!board_picks) {
+        board_current = port_opt.board - 1;
+    }
+    GWSystem.board = (u8)board_current;
 }
 
 /* ---- the status line ---------------------------------------------------------
@@ -850,6 +915,42 @@ static void gallery_watch(u32 frame) {
     mgdump_last_ovl = cur;
 }
 
+/* --boarddump (M39c, PLAN.md 54b.5): the board gallery's frames, counted from
+ * the frame the first board overlay is entered, appended to --dumpframe the
+ * way --mgdump appends its own. */
+static char boarddump_spec[512];
+
+static void board_gallery_watch(u32 frame) {
+    static int done;
+    const char* p;
+    size_t n = 0;
+    int cur = (int)omcurovl;
+    if (!port_opt.boarddump || done || cur < DLL_w01dll || cur > DLL_w21dll) {
+        return;
+    }
+    done = 1;
+    if (port_opt.dumpframe && *port_opt.dumpframe) {
+        n = (size_t)snprintf(boarddump_spec, sizeof(boarddump_spec), "%s", port_opt.dumpframe);
+    }
+    p = port_opt.boarddump;
+    while (*p && n < sizeof(boarddump_spec) - 16) {
+        char* e;
+        long off = strtol(p, &e, 10);
+        if (e == p) {
+            break;
+        }
+        p = e;
+        n += (size_t)snprintf(boarddump_spec + n, sizeof(boarddump_spec) - n, "%s%lu",
+                              n ? "," : "", (unsigned long)(frame + (u32)off));
+        while (*p == ',' || *p == ' ') {
+            p++;
+        }
+    }
+    port_opt.dumpframe = boarddump_spec;
+    port_log("port> boarddump: entered board %s at frame %u; dumping %s\n", screen_name(cur),
+             frame, port_opt.dumpframe);
+}
+
 /* ---- entry points ------------------------------------------------------------ */
 
 void port_selfplay_init(void) {
@@ -876,6 +977,13 @@ void port_selfplay_init(void) {
                      forced_mg + 0x191, forced_mg_type,
                      forced_mg_len > 1 ? ", then the rest of the list, one a turn" : "");
         }
+    }
+    if (port_opt.board) {
+        port_log("port> --board %d%s: the party menu's pick is %s%s (mentDll's BoardSaveInit, "
+                 "PLAN.md 54b.1)\n",
+                 port_opt.board, port_opt.boardcycle ? "+" : "",
+                 screen_name(DLL_w01dll + port_opt.board - 1),
+                 port_opt.boardcycle ? ", then the next board at every board chained" : "");
     }
     if (port_opt.com4) {
         port_log("port> --com4: all four players are CPU; instDll will dismiss its "
@@ -957,13 +1065,16 @@ static void title_guard(u32 frame) {
 void port_selfplay_tick(u32 frame) {
     if (!port_opt.com4 && !port_opt.turns && !port_opt.minigame &&
         !port_opt.status && !port_opt.stuckwatch && !port_opt.soak &&
-        !port_opt.mgdump && !port_opt.mgend) {
+        !port_opt.mgdump && !port_opt.mgend && !port_opt.board &&
+        !port_opt.boarddump) {
         return;
     }
     park_players();
     watch_roulette(frame);
     park_minigame();
+    park_board();
     gallery_watch(frame);
+    board_gallery_watch(frame);
     if (port_opt.soak) {
         module_trace(frame);
         title_guard(frame);
@@ -990,6 +1101,8 @@ void port_selfplay_snap_register(void) {
                        sizeof(forced_mg_list));
     port_snap_register("selfplay.forced_mg_len", &forced_mg_len, sizeof(forced_mg_len));
     port_snap_register("selfplay.forced_mg_at", &forced_mg_at, sizeof(forced_mg_at));
+    port_snap_register("selfplay.board_picks", &board_picks, sizeof(board_picks));
+    port_snap_register("selfplay.board_current", &board_current, sizeof(board_current));
     port_snap_register("selfplay.forced_mg_pending", &forced_mg_pending,
                        sizeof(forced_mg_pending));
 }

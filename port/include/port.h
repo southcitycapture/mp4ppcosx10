@@ -506,6 +506,18 @@ typedef struct PortOptions {
                              *   call, patches.txt), four players set up with
                              *   CHAR first -- e.g. mstory2dll:4:0, the story
                              *   ending (PLAN.md 53.8) */
+    int board;              /* --board N[+]  M39c: the party board the menus
+                             *   pick, 1-6 (Toad's .. Bowser's), written into
+                             *   GWSystem.board at mentDll's BoardSaveInit
+                             *   (patches.txt) and parked there while mentDll
+                             *   runs; 0 = the game's own cursor.  "N+" moves
+                             *   on to the next board at every board a --soak
+                             *   chains (PLAN.md 54b.1)                      */
+    int boardcycle;         /* the "+" of --board N+                           */
+    const char* boarddump;  /* --boarddump A,B,..  M39c: dump the frames A,B,..
+                             *   counted from the frame a board overlay
+                             *   (w01..w21) is first entered -- the board
+                             *   gallery's twin of --mgdump                   */
     int foldxbar;           /* --foldxbar  the M30 three-texture fold's units A and
                              *   B read across with the crossbar, as M30-M37 did
                              *   (m448's felt is black on the Radeon that way) */

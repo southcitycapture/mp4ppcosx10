@@ -370,6 +370,12 @@ static void usage(const char* argv0) {
             "                    comma-separated list parks on each in turn, moving\n"
             "                    on when the one in force has been played, and\n"
             "                    releasing the roulette when the list is done\n"
+            "  --board N[+]      M39c: the party board the menus pick, 1-6 (Toad's,\n"
+            "                    Goomba's, Shy Guy's, Boo's, Koopa's, Bowser's);\n"
+            "                    N+ moves to the next board at each board a --soak\n"
+            "                    chains.  The extras: --goto w10dll|w20dll|w21dll\n"
+            "  --boarddump A,..  M39c: dump the frames A,.. counted from the frame the\n"
+            "                    first board overlay (w01..w21) is entered\n"
             "  --com4            all four players are CPU\n"
             "  --mgdump A,B,..   M26: dump the frames A,B,.. counted from the frame the\n"
             "                    minigame module is entered (the gallery's four)\n"
@@ -883,6 +889,17 @@ int port_parse_args(int argc, char** argv) {
             port_opt.freshcard = 1;
         } else if (!strcmp(a, "--minigame") && i + 1 < argc) {
             port_opt.minigame = argv[++i];
+        } else if (!strcmp(a, "--boarddump") && i + 1 < argc) {
+            port_opt.boarddump = argv[++i];
+        } else if (!strcmp(a, "--board") && i + 1 < argc) {
+            const char* v = argv[++i];
+            port_opt.board = atoi(v);
+            port_opt.boardcycle = strchr(v, '+') != NULL;
+            if (port_opt.board < 1 || port_opt.board > 6) {
+                fprintf(stderr, "--board: 1-6 (w01..w06); the extras are --goto "
+                                "w10dll / w20dll / w21dll\n");
+                exit(2);
+            }
         } else if (!strcmp(a, "--com4")) {
             port_opt.com4 = 1;
         } else if (!strcmp(a, "--cast") && i + 1 < argc) {

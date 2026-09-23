@@ -848,3 +848,10 @@ include/dolphin/gx/GXVert.h	void GXTexCoord1x16(u16 index);\nvoid GXTexCoord1x8(
 # unchanged: the read still happens where it always did, with the same bytes.
 src/game/board/mg_setup.c	            mgNext = activeMG[cursorPos].unk_02;\n	            mgNext = activeMG[cursorPos].unk_02;\n            port_mg_dealt(mgNext);\n
 src/game/board/mg_setup.c	static s16 mgNext;\n	static s16 mgNext;\nvoid port_mg_dealt(int mg_index); /* port: the loader's prefetch, PLAN.md 51 */\n
+
+# ------------------------------------------------------------ game/board/main.c
+# M39c (PLAN.md 54b.1): --board N.  BoardSaveInit is where the party menu's
+# board cursor becomes GWSystem.board; the port's lever answers the store
+# while mentDll is the live overlay (selfplay.c portBoardPick), and returns
+# the game's own argument otherwise and whenever --board is not given.
+src/game/board/main.c	void BoardSaveInit(s32 board)\n{\n    s32 i;\n    GWSystem.board = board;	int portBoardPick(int board);\nvoid BoardSaveInit(s32 board)\n{\n    s32 i;\n    GWSystem.board = portBoardPick(board);

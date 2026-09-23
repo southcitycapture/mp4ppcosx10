@@ -1,0 +1,28 @@
+# M39c (PLAN.md 54b.5): the console's twin of `--board N --com4 --play
+# board-start-com4.play` -- the board-start walk, the four --com4 pokes
+# (character i, pad i, group i, iscom 1), and GWSystem.board (8018FCF8 + 8,
+# the byte whose low five bits are the board) poked to N-1 on every frame
+# omcurovl is mentdll (70 in the USA table), exactly where the port's
+# park_board() writes it.  The A metronome stops at 29,960 as the port's does.
+at 10 320 START
+at 380 6 START
+at 430 6 START
+at 480 6 START
+every 64 4 560 A 0 29960
+poke 8018FC10 2 0
+poke 8018FC12 2 0
+poke 8018FC16 2 0
+poke 8018FC18 2 1
+poke 8018FC1A 2 1
+poke 8018FC1C 2 1
+poke 8018FC20 2 1
+poke 8018FC22 2 1
+poke 8018FC24 2 2
+poke 8018FC26 2 2
+poke 8018FC2A 2 2
+poke 8018FC2C 2 1
+poke 8018FC2E 2 3
+poke 8018FC30 2 3
+poke 8018FC34 2 3
+poke 8018FC36 2 1
+pokeif 801D3CE2 70 8018FD00 1 @BOARD

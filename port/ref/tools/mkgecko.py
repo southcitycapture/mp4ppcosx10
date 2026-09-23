@@ -31,6 +31,14 @@ Script syntax -- one directive per line, '#' starts a comment:
                                            #   frames into the period
     mark <frame> <label>                   # emit a comment; also written to .marks
 
+    pokeif <caddr> <cvalue> <addr> <size> <value>
+                                           # M39c: the same write, but only on a
+                                           #   frame the 16-bit halfword at
+                                           #   <caddr> equals <cvalue> -- e.g.
+                                           #   GWSystem.board while omcurovl
+                                           #   (low half, 801D3CE2) is mentdll
+                                           #   (70), the port's --board park
+
     poke <addr> <size> <value> [from] [until]
                                            # write <value> (hex or decimal) of
                                            #   <size> bytes (1/2/4) to absolute
@@ -93,7 +101,7 @@ def block(first, last, writes):
            f'26{off(GLOBAL_COUNTER):06X} {last + 1:08X}']    # if u32 < last+1
     for addr, size, value in writes:
         if size == 1:
-            out.append(f'00{off(addr):06X} 0000{value:02X}')
+            out.append(f'00{off(addr):06X} 000000{value:02X}')
         elif size == 2:
             out.append(f'02{off(addr):06X} 0000{value:04X}')
         else:
@@ -122,7 +130,7 @@ def every_block(period, hold, first, writes, phase=0, until=None):
     out.append(f'28{off(GLOBAL_COUNTER) + 2:06X} {ignore:04X}{phase:04X}')
     for addr, size, value in writes:
         if size == 1:
-            out.append(f'00{off(addr):06X} 0000{value:02X}')
+            out.append(f'00{off(addr):06X} 000000{value:02X}')
         elif size == 2:
             out.append(f'02{off(addr):06X} 0000{value:04X}')
         else:
@@ -148,13 +156,27 @@ def poke_block(addr, size, value, first=None, until=None):
     if until is not None:
         out.append(f'26{off(GLOBAL_COUNTER):06X} {until + 1:08X}')
     if size == 1:
-        out.append(f'00{off(addr):06X} 0000{value:02X}')
+        out.append(f'00{off(addr):06X} 000000{value:02X}')
     elif size == 2:
         out.append(f'02{off(addr):06X} 0000{value:04X}')
     else:
         out.append(f'04{off(addr):06X} {value:08X}')
     if first is not None or until is not None:
         out.append('E0000000 80008000')
+    return out
+
+
+def pokeif_block(caddr, cvalue, addr, size, value):
+    """Gecko `28`: if (u16 at caddr & ~mask) == value, mask 0 -- the whole
+    halfword -- around one write."""
+    out = [f'28{off(caddr):06X} 0000{cvalue:04X}']
+    if size == 1:
+        out.append(f'00{off(addr):06X} 000000{value:02X}')
+    elif size == 2:
+        out.append(f'02{off(addr):06X} 0000{value:04X}')
+    else:
+        out.append(f'04{off(addr):06X} {value:08X}')
+    out.append('E0000000 80008000')
     return out
 
 
@@ -186,6 +208,10 @@ def compile_script(path):
                 if p[0].lower() == 'mark':
                     marks.append((int(p[1]), ' '.join(p[2:])))
                     lines.append(f'* frame {int(p[1])}: {" ".join(p[2:])}')
+                    continue
+                if p[0].lower() == 'pokeif':
+                    lines += pokeif_block(int(p[1], 16), int(p[2], 0), int(p[3], 16),
+                                          int(p[4]), int(p[5], 0))
                     continue
                 if p[0].lower() == 'poke':
                     addr = int(p[1], 16)
