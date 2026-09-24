@@ -1187,7 +1187,7 @@ static void stripe_keep(CacheEntry* e, const GXTexObjPort* o, u8* row_amin) {
  * game thread keeps, and the upload into one of a few buffers the render
  * thread hands back through the upload's done flag (M38's, for the movie's
  * frames); when all of them are still in flight, a malloc as before. */
-#define STRIPE_BUFS 6
+#define STRIPE_BUFS 12
 static struct {
     u8* p;
     size_t cap;
