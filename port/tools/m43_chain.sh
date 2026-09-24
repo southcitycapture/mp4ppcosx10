@@ -153,6 +153,11 @@ for r in ${M43_RUNS:-N}; do
             # at real time; V:GAME:A-B (default 600-1500 from the entry)
             g=$(echo $r | cut -d: -f2); w=$(echo $r | cut -d: -f3 | tr '-' ',')
             run "V-$g" 600 - $BASE --realtime --vcache count --vcarr ${w:-600,1500} $(scene $g) ;;
+        DS:*)
+            # the decode plans (--decodestats, which keeps the cache out of the
+            # way: a measurement run) at real time from the entry
+            g=${r#DS:}
+            run "DS-$g" 600 - $BASE --realtime --decodestats $(scene $g) ;;
         K:*)
             # the performance counters (--pmc SET) on the measurement bundle
             # ~/mp4-pmc.app, in the window M43_PMCWIN from the entry

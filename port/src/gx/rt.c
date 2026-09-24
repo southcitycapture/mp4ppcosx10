@@ -1209,55 +1209,57 @@ void port_vtx_rewrite(const char* who) {
     gx_vc_epoch++; /* M40: the vertex cache re-hashes what is about to be rewritten */
 }
 
-/* M43 (PLAN.md 58.6, src/os/vtx_rewrite.c): for each array base a decode
- * record reads, the stream position just past the last such record.  A slot
- * is taken over only once its record is decoded (dec_pub past it); a pending
- * record that cannot find a slot is remembered in vj_lost, which every
- * rewrite waits for -- nothing pending is ever forgotten. */
-#define VJ_N 2048
-#define VJ_PROBE 8
-static struct { const void* base; u32 pos; } vj[VJ_N];
-static u32 vj_lost;
-static int vj_lost_set;
+/* M43 (PLAN.md 58.6, src/os/vtx_rewrite.c): for each 4 KB page of MEM1, the
+ * stream position just past the last decode record that reads an array whose
+ * base lies in that page (positions only grow, so the last is the largest).
+ * A rewrite of [lo, hi) waits for the largest position among the pages the
+ * range touches that the decode cursor has not passed -- every record whose
+ * array starts inside the range, and perhaps some whose array starts beside
+ * it in the same page (an extra wait, never a missing one).  "Not passed" is
+ * a position in (dec_pub, wr]: an entry older than half the position space
+ * cannot pass for a pending one after the positions wrap. */
+#define VJ_SHIFT 12
+static u32* vj_pos;
+static uintptr_t vj_lo, vj_hi;
 static unsigned long st_vj_ranges, st_vj_waits, st_vj_free, st_vj_lost;
+static int vj_pending(u32 pos) {
+    return (s32)(wr - pos) >= 0 && (s32)(dec_pub - pos) < 0;
+}
 static void vj_note(const void* base, u32 pos) {
-    unsigned h = (unsigned)(((uintptr_t)base >> 4) * 2654435761u) & (VJ_N - 1);
-    int k;
-    for (k = 0; k < VJ_PROBE; k++) {
-        unsigned i = (h + (unsigned)k) & (VJ_N - 1);
-        if (vj[i].base == base || !vj[i].base || (s32)(dec_pub - vj[i].pos) >= 0) {
-            vj[i].base = base;
-            vj[i].pos = pos;
+    uintptr_t a = (uintptr_t)base;
+    if (!vj_pos) {
+        vj_lo = (uintptr_t)port_mem1_lo() & ~(uintptr_t)((1u << VJ_SHIFT) - 1);
+        vj_hi = (uintptr_t)port_mem1_hi();
+        vj_pos = (u32*)calloc(((vj_hi - vj_lo) >> VJ_SHIFT) + 1, sizeof(u32));
+        if (!vj_pos) {
             return;
         }
     }
-    /* every probed slot pending on another array: this one is waited for always */
-    if (!vj_lost_set || (s32)(pos - vj_lost) > 0) {
-        vj_lost = pos;
-        vj_lost_set = 1;
+    if (a < vj_lo || a >= vj_hi) {
+        st_vj_lost++; /* not the game's memory: no rewriter writes it */
+        return;
     }
-    st_vj_lost++;
+    vj_pos[(a - vj_lo) >> VJ_SHIFT] = pos;
 }
 void rt_vtx_rewrite_range(const void* p, unsigned long n, const char* who) {
-    const u8* lo = (const u8*)p;
-    const u8* hi = lo + n;
+    uintptr_t lo = (uintptr_t)p, hi = lo + n, q;
     u32 need = 0;
-    int any = 0, i;
-    if (!rt_recording || decmode == 0) {
+    int any = 0;
+    if (!rt_recording || decmode == 0 || !n) {
         return;
     }
     st_vj_ranges++;
-    if (vj_lost_set && (s32)(dec_pub - vj_lost) < 0) {
-        need = vj_lost;
-        any = 1;
+    if (!vj_pos || lo < vj_lo || hi > vj_hi) {
+        /* outside what the table covers: M29's wait for everything */
+        st_vj_waits++;
+        rt_decode_join(who);
+        return;
     }
-    for (i = 0; i < VJ_N; i++) {
-        const u8* b = (const u8*)vj[i].base;
-        if (b && b >= lo && b < hi && (s32)(dec_pub - vj[i].pos) < 0) {
-            if (!any || (s32)(vj[i].pos - need) > 0) {
-                need = vj[i].pos;
-                any = 1;
-            }
+    for (q = (lo - vj_lo) >> VJ_SHIFT; q <= (hi - 1 - vj_lo) >> VJ_SHIFT; q++) {
+        u32 pos = vj_pos[q];
+        if (pos && vj_pending(pos) && (!any || (s32)(pos - need) > 0)) {
+            need = pos;
+            any = 1;
         }
     }
     if (!any) {
@@ -2028,7 +2030,7 @@ void rt_report(void) {
     if (mode >= 2) {
         if (st_vj_ranges) {
             port_log("  rewrite  %lu buffer range(s) named by ClusterProc/ShapeProc (M43): %lu free at once, "
-                     "%lu waited for their own records; %lu record(s) the table could not hold\n",
+                     "%lu waited for their pages' records; %lu record array(s) outside MEM1\n",
                      st_vj_ranges, st_vj_free, st_vj_waits, st_vj_lost);
         }
         port_log("  fences   the ring's chunks by epoch: the writer waited %lu time(s) for the GPU "
