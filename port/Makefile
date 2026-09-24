@@ -132,6 +132,12 @@ MUSYX_OBJS := $(patsubst $(MUSYX_DIR)/%.c,$(BUILD)/musyx/%.o,$(MUSYX_C))
 PORT_OBJS := $(patsubst %.c,$(BUILD)/port/%.o,$(PORT_C)) $(BUILD)/port/jmp.o \
              $(BUILD)/port/kerent_tramp.o $(MUSYX_OBJS)
 STUBS_OBJ := $(BUILD)/port/sdk_stubs.o $(BUILD)/port/sdk_stubs_untyped.o
+# M43 (PLAN.md 58.2): the translation compiled a second time as the render
+# thread's own instance for --rtgx (src/gx/gx_rti.h, src/gx/gx_rtgx.c)
+RTI_SRCS  := src/gx/gl13_state.c src/gx/gx_tev.c src/gx/gx_tfs.c src/gx/gx_vprog.c
+RTI_OBJS  := $(patsubst src/gx/%.c,$(BUILD)/port/rti/%.o,$(RTI_SRCS))
+RTI_NAMES := $(BUILD)/port/rti/gx_rti_names.h
+PORT_OBJS += $(RTI_OBJS)
 
 # ---- flags -------------------------------------------------------------------
 # TARGET_PC is the decomp's own porting switch.  It matters for three reasons:
@@ -177,11 +183,62 @@ GAME_WARN := -w -Wno-implicit-function-declaration -Wno-return-mismatch \
 DEBUG_G = -gdwarf-2 -gstrict-dwarf -fno-shrink-wrap
 # M34: include/msl_math.h routes the game's sqrtf through MSL's semantics
 # (sqrtf(x <= 0) = x, not NaN: m417's water); the port's own files keep libm.
-GAME_CFLAGS = -std=gnu11 -O2 $(DEBUG_G) -fno-strict-aliasing -fwrapv -fcommon \
+# M43 (PLAN.md 58.3): the compiler, measured.  Every knob defaults to the
+# build every md5 in PLAN.md was taken on; a variant goes into its own tree:
+#   port/build-ppc.sh -j4 BUILD=build-m43-o3hot HOT_OPT=-O3
+# GAME_OPT / PORT_OPT   the optimisation level of the game's / the port's files
+# HOT_OPT               extra flags for HOT_GAME alone (the engine's hot files)
+# PGO=gen               the main binary's game, port and MusyX objects built
+#                       -fprofile-generate (the REL bundles are not: they are
+#                       dlclose'd, and their counters would go with them);
+#                       run with GCOV_PREFIX=DIR, the .gcda files land under
+#                       DIR/work/mp4/port/$(BUILD)
+# PGO=use               the same objects -fprofile-use, reading the .gcda
+#                       files beside each object (tools/m43_pgo.sh puts them
+#                       there); -fprofile-partial-training keeps the code the
+#                       training never ran at -O2's shape, not -Os's
+# LTO=1                 -flto on the same objects (-ffat-lto-objects: the
+#                       exports list is read with nm)
+# PMC_WRAP=1            the --pmc measurement tree (PLAN.md 58.4): the engine's
+#                       walks renamed *_game by patches-pmc.txt and wrapped
+#                       between a counter read in and out (src/debug/pmc_wrap.c)
+PMC_WRAP ?=
+ifeq ($(PMC_WRAP),1)
+  PATCHES_EXTRA := patches-pmc.txt
+  PMC_DEFS := -DPORT_PMC_WRAP
+else
+  PATCHES_EXTRA :=
+  PMC_DEFS :=
+endif
+GAME_OPT ?= -O2
+PORT_OPT ?= -O2
+HOT_OPT  ?=
+HOT_GAME ?= src/game/hsfdraw.c src/game/hsfman.c src/game/hsfmotion.c src/game/hsfanim.c \
+            src/game/hsfex.c src/game/objmain.c src/game/sprman.c src/game/chrman.c \
+            src/game/EnvelopeExec.c src/game/ShapeExec.c src/game/ClusterExec.c \
+            src/game/hsfload.c src/game/process.c src/game/data.c
+PGO ?=
+ifeq ($(PGO),gen)
+  PGO_CFLAGS  := -fprofile-generate -fprofile-update=single
+  PGO_LDFLAGS := -fprofile-generate
+else ifeq ($(PGO),use)
+  PGO_CFLAGS  := -fprofile-use -fprofile-partial-training -fprofile-correction \
+                 -Wno-missing-profile -Wno-coverage-mismatch
+  PGO_LDFLAGS :=
+else
+  PGO_CFLAGS  :=
+  PGO_LDFLAGS :=
+endif
+LTO ?=
+ifeq ($(LTO),1)
+  PGO_CFLAGS  += -flto -ffat-lto-objects
+  PGO_LDFLAGS += -flto $(GAME_OPT)
+endif
+GAME_CFLAGS = -std=gnu11 $(GAME_OPT) $(DEBUG_G) -fno-strict-aliasing -fwrapv -fcommon \
               $(GAME_UBSAFE) $(TUNE) \
               $(GAME_WARN) $(GAME_DEFS) $(GAME_INC) $(TARGET_CFLAGS) \
               -include include/msl_math.h
-PORT_CFLAGS = -std=gnu11 -O2 $(DEBUG_G) -fno-strict-aliasing -fcommon \
+PORT_CFLAGS = -std=gnu11 $(PORT_OPT) $(DEBUG_G) $(PMC_DEFS) -fno-strict-aliasing -fcommon \
               -Wall -Wno-unused-parameter -Wno-unknown-pragmas $(TUNE) \
               $(GAME_DEFS) $(GAME_INC) $(SDL_CFLAGS) $(TARGET_CFLAGS)
 LDFLAGS   = $(TARGET_LDFLAGS) -lm $(SDL_LIBS) \
@@ -200,9 +257,10 @@ all: $(EXE) rels
 
 # One mirror for the whole tree; a stamp because it writes hundreds of files.
 MIRROR_STAMP := $(BUILD)/mirror.stamp
-$(MIRROR_STAMP): tools/mirror_src.py patches.txt $(wildcard include/override/*/*/*.h)
+$(MIRROR_STAMP): tools/mirror_src.py patches.txt $(PATCHES_EXTRA) $(wildcard include/override/*/*/*.h)
 	@mkdir -p $(BUILD)
-	$(PYTHON) tools/mirror_src.py --out $(GEN) --target $(MIRROR_TARGET) --quiet
+	$(PYTHON) tools/mirror_src.py --out $(GEN) --target $(MIRROR_TARGET) --quiet \
+	    $(if $(PATCHES_EXTRA),--extra $(PATCHES_EXTRA))
 	$(PYTHON) tools/widen_ptr_casts.py --gen $(GEN) --cc "$(CC)" \
 	    --cflags "$(GAME_DEFS) $(GAME_INC) $(TARGET_CFLAGS) -std=gnu11 -fcommon"
 	@touch $@
@@ -225,9 +283,10 @@ $(GEN_C): $(MIRROR_STAMP)
 # that used to be there and the run went headless.  A struct that two
 # translation units disagree about is the worst kind of stale build, because
 # every symptom points somewhere else.
+$(patsubst %.c,$(BUILD)/game/%.o,$(HOT_GAME)): GAME_CFLAGS += $(HOT_OPT)
 $(BUILD)/game/%.o: $(GEN)/%.c
 	@mkdir -p $(dir $@)
-	$(CC) $(GAME_CFLAGS) -MMD -MP -c -o $@ $<
+	$(CC) $(GAME_CFLAGS) $(PGO_CFLAGS) -MMD -MP -c -o $@ $<
 
 # the Xbox One driver includes the 10.4 SDK USB headers through a patched copy
 # (compat/): GCC 14 rejects the 10.4u SDK's own IOKit/usb/USB.h, whose three
@@ -247,7 +306,7 @@ PAD_XONE_CFLAGS :=
 endif
 $(BUILD)/port/src/pad/pad_xone.o: src/pad/pad_xone.c $(MIRROR_STAMP)
 	@mkdir -p $(dir $@)
-	$(CC) $(PORT_CFLAGS) $(PAD_XONE_CFLAGS) -MMD -MP -c -o $@ $<
+	$(CC) $(PORT_CFLAGS) $(PAD_XONE_CFLAGS) $(PGO_CFLAGS) -MMD -MP -c -o $@ $<
 
 # The vertex path's phase 2 (src/gx/gx_draw.c finish_vertices) has an AltiVec
 # batch behind `#ifdef __ALTIVEC__`.  Only this one object is compiled with
@@ -275,7 +334,7 @@ GX_OPT ?=
 $(BUILD)/port/src/gx/%.o: PORT_CFLAGS += $(GX_OPT)
 $(BUILD)/port/src/gx/gx_draw.o: src/gx/gx_draw.c $(MIRROR_STAMP)
 	@mkdir -p $(dir $@)
-	$(CC) $(PORT_CFLAGS) $(GX_DRAW_CFLAGS) -MMD -MP -c -o $@ $<
+	$(CC) $(PORT_CFLAGS) $(GX_DRAW_CFLAGS) $(PGO_CFLAGS) -MMD -MP -c -o $@ $<
 
 # M17: the matrix library's AltiVec bodies (PSMTXROMultVecArray), behind
 # --noaltivec at run time.  -maltivec here only lets the intrinsics compile;
@@ -289,21 +348,28 @@ PSMTX_CFLAGS :=
 endif
 $(BUILD)/port/src/os/psmtx_c.o: src/os/psmtx_c.c $(MIRROR_STAMP)
 	@mkdir -p $(dir $@)
-	$(CC) $(PORT_CFLAGS) $(PSMTX_CFLAGS) -MMD -MP -c -o $@ $<
+	$(CC) $(PORT_CFLAGS) $(PSMTX_CFLAGS) $(PGO_CFLAGS) -MMD -MP -c -o $@ $<
+
+$(RTI_NAMES): $(patsubst src/gx/%.c,$(BUILD)/port/src/gx/%.o,$(RTI_SRCS)) tools/gen_rti_names.py
+	@mkdir -p $(dir $@)
+	$(NM) -g $(patsubst src/gx/%.c,$(BUILD)/port/src/gx/%.o,$(RTI_SRCS)) | $(PYTHON) tools/gen_rti_names.py > $@
+$(BUILD)/port/rti/%.o: src/gx/%.c $(RTI_NAMES) src/gx/gx_rti.h $(MIRROR_STAMP)
+	@mkdir -p $(dir $@)
+	$(CC) $(PORT_CFLAGS) $(GX_OPT) $(PGO_CFLAGS) -I$(BUILD)/port/rti -include src/gx/gx_rti.h -MMD -MP -c -o $@ $<
 
 $(BUILD)/port/%.o: %.c $(MIRROR_STAMP)
 	@mkdir -p $(dir $@)
-	$(CC) $(PORT_CFLAGS) -MMD -MP -c -o $@ $<
+	$(CC) $(PORT_CFLAGS) $(PGO_CFLAGS) -MMD -MP -c -o $@ $<
 
 # MusyX, straight out of extern/ -- no mirror, no patches, so no $(MIRROR_STAMP)
 # dependency and no $(GEN)/include on the path.  `-w` for the same reason the
 # game's own sources get it: this is upstream code compiled as it is written,
 # and the port's -Wall is a statement about the port's own files.
-MUSYX_CFLAGS = -std=gnu11 -O2 $(DEBUG_G) -fno-strict-aliasing -fwrapv -fcommon -w $(TUNE) \
+MUSYX_CFLAGS = -std=gnu11 $(PORT_OPT) $(DEBUG_G) -fno-strict-aliasing -fwrapv -fcommon -w $(TUNE) \
                $(GAME_DEFS) -I$(ROOT)/extern/musyx/include -Iinclude $(TARGET_CFLAGS)
 $(BUILD)/musyx/%.o: $(MUSYX_DIR)/%.c
 	@mkdir -p $(dir $@)
-	$(CC) $(MUSYX_CFLAGS) -MMD -MP -c -o $@ $<
+	$(CC) $(MUSYX_CFLAGS) $(PGO_CFLAGS) -MMD -MP -c -o $@ $<
 # M19 (PLAN.md 34.4): hardware.c's hwSaveSample is `#if MUSY_TARGET ==
 # MUSY_TARGET_DOLPHIN` -- an empty body here -- so no sample was ever copied
 # out of main memory into the sample heap, and every voice read the scratch
@@ -375,7 +441,7 @@ stubs: $(STUBS_C)
 # but the link's own symbol table is both exact and free.  Without this the
 # executable exports nothing and every bundle fails to link.
 $(BUILD)/exports.txt: $(GAME_OBJS) $(PORT_OBJS) $(STUBS_OBJ)
-	@$(NM) -g $^ | awk 'NF==3 && $$2 != "U" {print $$3}' | sort -u > $@
+	@$(NM) -g $^ | awk 'NF==3 && $$2 != "U" {print $$3}' | grep -v '\.c\.[0-9a-f]*$$\|__gnu_lto' | sort -u > $@
 	@echo "link: $$(wc -l < $@) symbols exported to the REL bundles"
 
 # -map: the link map is what tells a snapshot which writable globals belong to
@@ -384,7 +450,7 @@ $(BUILD)/exports.txt: $(GAME_OBJS) $(PORT_OBJS) $(STUBS_OBJ)
 # a generated object, because a table compiled into the binary would move the
 # addresses it describes.
 $(EXE): $(GAME_OBJS) $(PORT_OBJS) $(STUBS_OBJ) $(BUILD)/exports.txt
-	$(CC) -o $@ $(GAME_OBJS) $(PORT_OBJS) $(STUBS_OBJ) $(LDFLAGS) \
+	$(CC) -o $@ $(GAME_OBJS) $(PORT_OBJS) $(STUBS_OBJ) $(LDFLAGS) $(PGO_LDFLAGS) \
 	    -Wl,-map,$(EXE).map
 	@$(PYTHON) tools/gen_snapmap.py --map $(EXE).map --exe $@ --out $(EXE).snapmap
 	@echo "built $@ ($$(wc -c < $@) bytes)"

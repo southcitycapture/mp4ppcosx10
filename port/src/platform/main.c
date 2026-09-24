@@ -52,6 +52,7 @@ void port_sincos_report(void);
 void port_fast_sincos_report(void);
 void port_mtx_memo_report(void);
 void port_motion_exec_report(void);
+void port_vtx_rewrite_report(void); /* M43: src/os/vtx_rewrite.c */
 void port_wb_report(void);
 void port_matwalk_report(void);
 void port_curve_memo_report(void);
@@ -336,6 +337,15 @@ static void usage(const char* argv0) {
             "  --nomtxmemo       M42: mtxRot/mtxRotCat run the game's bodies every call\n"
             "  --norotl          M42: the rotation builders' misses run the game's bodies\n"
             "                    (MTXRotRad + MTXConcat), not the sparse left product\n"
+            "  --oldvtxjoin      M43: the morph rewriters wait for the whole decode stream (M29)\n"
+            "  --rtgx 0|1|auto   M43: the GX state translation on the render thread (the\n"
+            "                    game thread records GX state; PLAN.md 58.2); auto per frame\n"
+            "  --rtgxfit MS      M43: --rtgx auto only while the game thread's cycle is over MS\n"
+            "  --vcarr A,B       M43: the vertex cache's served/missed vertices per display\n"
+            "                    list, frames A..B from the minigame's entry, at exit\n"
+            "  --pmcwin A,B      M43: --pmc counts frames A..B from the minigame's entry\n"
+            "  --pmc N           M43: the G4's performance counters on the game thread,\n"
+            "                    event set N (1..3), split by region, reported at exit\n"
             "  --nowb            M42: the vertex cache re-hashes every array each drawn\n"
             "                    frame (no write barrier on the pages it has read)\n"
             "  --nomotionexec    M42: Hu3DMotionExec is the game's own compiled body\n"
@@ -732,6 +742,8 @@ int port_parse_args(int argc, char** argv) {
     port_opt.resample4 = 0;
     port_opt.vcache = 3;    /* M40: the static-geometry cache, auto (PLAN.md 55) */
     port_opt.vcache_fit = 28.0;
+    port_opt.rtgx = 0;       /* M43: the render thread's translation, off until the A/B */
+    port_opt.rtgx_fit = 29.0;
     port_opt.vcache_mb = 8;
     port_opt.resident = -1; /* M36: the resident set's budget by the installed RAM (machine.c) */
     port_opt.cmpmask = 8191; /* every compare-first group on; see gx_internal.h (M18:
@@ -1248,6 +1260,25 @@ int port_parse_args(int argc, char** argv) {
             port_opt.nomtxmemo = 1;
         } else if (!strcmp(a, "--norotl")) {
             port_opt.norotl = 1;
+        } else if (!strcmp(a, "--oldvtxjoin")) {
+            port_opt.oldvtxjoin = 1;
+        } else if (!strcmp(a, "--rtgx") && i + 1 < argc) {
+            const char* v = argv[++i];
+            port_opt.rtgx = !strcmp(v, "auto") || !strcmp(v, "2") ? 2
+                            : !strcmp(v, "3") ? 3 /* the hand-over test: alternate frames */
+                            : atoi(v) ? 1 : 0;
+        } else if (!strcmp(a, "--rtgxfit") && i + 1 < argc) {
+            port_opt.rtgx_fit = atof(argv[++i]);
+        } else if (!strcmp(a, "--vcarr") && i + 1 < argc) {
+            if (sscanf(argv[++i], "%d,%d", &port_opt.vcarr_from, &port_opt.vcarr_to) != 2) {
+                port_opt.vcarr_from = port_opt.vcarr_to = 0;
+            }
+        } else if (!strcmp(a, "--pmcwin") && i + 1 < argc) {
+            if (sscanf(argv[++i], "%d,%d", &port_opt.pmcwin_from, &port_opt.pmcwin_to) != 2) {
+                port_opt.pmcwin_from = port_opt.pmcwin_to = 0;
+            }
+        } else if (!strcmp(a, "--pmc") && i + 1 < argc) {
+            port_opt.pmc = atoi(argv[++i]);
         } else if (!strcmp(a, "--nowb")) {
             port_opt.nowb = 1;
         } else if (!strcmp(a, "--nomotionexec")) {
@@ -1388,6 +1419,7 @@ void port_shutdown(int code) {
     gx_tev_report();
     gx_tfs_report(); /* M35 */
     port_perf_report();
+    port_pmc_report(); /* M43: on the game thread, whose counters they are */
     port_framemode_report();
     port_audio_report();
     port_clock_report();
@@ -1403,6 +1435,7 @@ void port_shutdown(int code) {
     port_fast_sincos_report();
     port_mtx_memo_report();
     port_motion_exec_report();
+    port_vtx_rewrite_report(); /* M43 */
     port_wb_report();
     port_matwalk_report();
     port_curve_memo_report();
@@ -1413,8 +1446,11 @@ void port_shutdown(int code) {
     exit(code);
 }
 
+void port_vtx_rewrite_report(void); /* src/os/vtx_rewrite.c */
+
 static void run_game(void) {
     port_clock_mark();
+    port_pmc_init(); /* M43: the counters are this thread's */
     port_log("port> entering the game's own main()\n\n");
     mp4_game_main();
     port_log("\nport> the game's main() returned\n");

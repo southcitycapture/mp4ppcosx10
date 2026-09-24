@@ -404,6 +404,21 @@ typedef struct PortOptions {
                              *   body (MTXRotRad + MTXConcat), not the sparse left product */
     int nowb;               /* --nowb  M42: the vertex cache re-hashes every array at
                              *   every epoch (no write barrier on MEM1 pages) */
+    int oldvtxjoin;         /* --oldvtxjoin  M43: ClusterProc/ShapeProc wait for the whole
+                             *   decode stream (M29), not only the records that read the
+                             *   buffers they rewrite (src/os/vtx_rewrite.c) */
+    int rtgx;               /* --rtgx 0|1|auto  M43: the translation on the render thread
+                             *   (src/gx/gx_rtgx.c; PLAN.md 58.2): 0 the game thread's, 1 every
+                             *   drawn frame, 2 = auto by both threads' last cycles */
+    double rtgx_fit;        /* --rtgxfit MS  M43: auto hands over only while the game
+                             *   thread's cycle is over this (29 ms) */
+    int vcarr_from, vcarr_to; /* --vcarr A,B  M43: the vertex cache's reasons per display
+                             *   list, frames A..B from the minigame's entry (PLAN.md 58.5) */
+    int pmcwin_from, pmcwin_to; /* --pmcwin A,B  M43: --pmc counts frames A..B from the
+                             *   minigame's entry (or retrace frames A..B without one) */
+    int pmc;                /* --pmc N  M43: the G4's performance counters on the game
+                             *   thread, event set N (1..3), split by region
+                             *   (src/debug/pmc.c; PLAN.md 58.4) */
     int nomotionexec;       /* --nomotionexec  M42: Hu3DMotionExec is the game's body
                              *   (not the port's compile of the same statements) */
     int nodirtyfilter;      /* --nodirtyfilter  M41: every DC store/flush scans the whole
@@ -651,6 +666,17 @@ void port_perf_audio_begin(void);
 void port_perf_audio_end(void);
 void port_perf_frame(int drawn);
 void port_perf_report(void);
+/* --pmc (M43), src/debug/pmc.c: the counters split by region, exclusive */
+enum {
+    PMC_R_REST = 0, PMC_R_PRC, PMC_R_3DEXEC, PMC_R_SHADOW, PMC_R_MOTION, PMC_R_DRAW,
+    PMC_R_DRAWPOST, PMC_R_OBJMTX, PMC_R_GX, PMC_R_AUDIO, PMC_R_PRESENT, PMC_R_N
+};
+extern int pmc_on;
+void port_pmc_init(void);
+void port_pmc_enter(int region);
+void port_pmc_leave(void);
+void port_pmc_frame(int drawn);
+void port_pmc_report(void);
 void port_perf_window(double* fps, double* aud_ms, double* speed_pct,
                       double* presented_fps); /* --status's rolling second */
 

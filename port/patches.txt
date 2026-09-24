@@ -820,10 +820,13 @@ src/game/hsfmotion.c	float GetCurve(HSFTRACK *arg0, float arg1) {\n    float *va
 # place inside the frame ask the port first, which waits for any decode
 # record still reading it (a hooked child drawn before its own motion
 # block).  A no-op without the render thread.
-src/game/ShapeExec.c	#include "game/EnvelopeExec.h"\n	#include "game/EnvelopeExec.h"\n\nvoid port_vtx_rewrite(const char *who);\n
-src/game/ShapeExec.c	void ShapeProc(HSFDATA *arg0) {\n    HSFOBJECT *var_r31;\n    s32 i;\n\n    var_r31 = arg0->object;	void ShapeProc(HSFDATA *arg0) {\n    HSFOBJECT *var_r31;\n    s32 i;\n\n    port_vtx_rewrite("ShapeProc");\n    var_r31 = arg0->object;
-src/game/ClusterExec.c	#include "game/sprite.h"\n	#include "game/sprite.h"\n\nvoid port_vtx_rewrite(const char *who);\n
-src/game/ClusterExec.c	    HSFOBJECT *temp_r31;\n\n    for (i = 0; i < 4; i++) {\n        temp_r24 = arg0->motIdCluster[i];	    HSFOBJECT *temp_r31;\n\n    port_vtx_rewrite("ClusterProc");\n    for (i = 0; i < 4; i++) {\n        temp_r24 = arg0->motIdCluster[i];
+# M43 (PLAN.md 58.6): the hooks pass what they rewrite (the model, the HSF),
+# so the port waits only for the decode records that read those buffers
+# (src/os/vtx_rewrite.c); --oldvtxjoin is M29's wait for the whole stream.
+src/game/ShapeExec.c	#include "game/EnvelopeExec.h"\n	#include "game/EnvelopeExec.h"\n\nvoid port_vtx_rewrite_shape(HSFDATA *hsf);\n
+src/game/ShapeExec.c	void ShapeProc(HSFDATA *arg0) {\n    HSFOBJECT *var_r31;\n    s32 i;\n\n    var_r31 = arg0->object;	void ShapeProc(HSFDATA *arg0) {\n    HSFOBJECT *var_r31;\n    s32 i;\n\n    port_vtx_rewrite_shape(arg0);\n    var_r31 = arg0->object;
+src/game/ClusterExec.c	#include "game/sprite.h"\n	#include "game/sprite.h"\n\nvoid port_vtx_rewrite_cluster(HU3DMODEL *model);\n
+src/game/ClusterExec.c	    HSFOBJECT *temp_r31;\n\n    for (i = 0; i < 4; i++) {\n        temp_r24 = arg0->motIdCluster[i];	    HSFOBJECT *temp_r31;\n\n    port_vtx_rewrite_cluster(arg0);\n    for (i = 0; i < 4; i++) {\n        temp_r24 = arg0->motIdCluster[i];
 
 # --------------------------------------------------------------- game/hsfload.c
 # M30 (PLAN.md 45, cause C): `rgba[100]` is filled per material of every HSF

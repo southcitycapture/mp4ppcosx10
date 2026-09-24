@@ -324,6 +324,31 @@ int gl13_check(const char* fn);   /* --glcheck; returns 0, for the GL() macro */
  * `glc_invalidate` forgets the lot, and must be called after anything that
  * changes GL behind the cache's back. */
 void glc_invalidate(void);
+void glc_forget_white(void); /* M43: gl13_shutdown (gl13_state.c) */
+/* M43 (PLAN.md 58.2): --rtgx, src/gx/gx_rtgx.c */
+struct GxXfDesc;
+enum { RTGX_F_INVALIDATE = 1, RTGX_F_ACTIVE, RTGX_F_CLIENT_ACTIVE, RTGX_F_BIND, RTGX_F_NOTE_BIND,
+       RTGX_F_ENABLE2D, RTGX_F_TEXMTX, RTGX_F_TEXMTX_FOLD, RTGX_F_VP_DISABLE, RTGX_F_VP_FORGET };
+extern int rtgx_owner_rt;
+void rtgx_fwd(int op, int a, int b, float x, float y, float z);
+void rtgx_unexpected(const char* who);
+int gx_rtgx_batch(void);
+void gx_rtgx_release(void);
+int gx_rtgx_frame_on(void);
+void gx_rtgx_frame_begin(void);
+void gx_rtgx_record(const struct GxXfDesc* xfd, int on_gpu, int csum, const u8* ob, int out_stride,
+                    int out_off_clr, int out_off_tex, int out_ntex);
+int gx_rtgx_zp_maybe(void);
+void gx_rtgx_zp_begin(void);
+void gx_rtgx_zp_end(void);
+void gx_rtgx_rt_time(double s);
+void gx_rtgx_rt_present(void);
+void gx_rtgx_game_time(double s);
+void gx_rtgx_report(void);
+void gx_tev_bind_textures(void);
+void gx_vprog_forget_vbo(void);
+void gx_vprog_forget_bound(void);
+const GXTexObjPort* gx_bound_tex_of(const GXState* st, unsigned id);
 void gl13_downsample_read(unsigned name, float su, float sv, int x, int y, int w, int h,
                           unsigned char* out_rgba); /* M23 */
 void glc_stats(unsigned* emitted, unsigned* elided);

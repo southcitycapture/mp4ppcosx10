@@ -872,6 +872,8 @@ static void module_trace(u32 frame) {
  * Both are logged with the entry and exit frames, which is what the
  * gallery's index reads. */
 static u32 mgdump_entry;   /* the frame the minigame module was entered, 0 = not yet */
+u32 port_mg_entry(void); /* M43: for --vcarr's window */
+u32 port_mg_entry(void) { return mgdump_entry; }
 static int mgdump_last_ovl = -2;
 static char mgdump_spec[256];
 

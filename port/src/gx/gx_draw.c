@@ -444,6 +444,7 @@ static void dlc_report(void);
 static void vc_report(void);
 
 void gx_draw_report(void) {
+    gx_rtgx_report(); /* M43 */
     vc_report();
     if (!stat_prims) {
         return;
@@ -1982,11 +1983,15 @@ static GLenum gl_prim(u8 p) {
     }
 }
 
+void gx_vcarr_imm(u32 n); /* M43: --vcarr's immediate-mode count */
 void GXBegin(GXPrimitive type, GXVtxFmt fmt, u16 n) {
     if (dl_recording) {
         dl_u8((u8)((u8)type | (u8)fmt));
         dl_u16(n);
         return;
+    }
+    if (port_opt.vcarr_to && !gl13_draw_off()) {
+        gx_vcarr_imm(n);
     }
     prim = (u8)type;
     vtxfmt = (u8)fmt;
@@ -3566,6 +3571,10 @@ static int app_skip, app_probe; /* M33: --skipobj / --probeobj, named at the app
 static int draw_apply(const u8* s, int n, int in_ring) {
     GxXfDesc* xfd = &app_xfd;
     int on_gpu = 0;
+    /* M43 (--rtgx, gx_rtgx.c): this batch's translation is the render
+     * thread's -- the shadow handed over (or taken back) first */
+    int rtgx = (rtgx_owner_rt || gx_rtgx_frame_on()) ? gx_rtgx_batch() : 0;
+    double tg0 = 0.0;
     if (!port_opt.nounitmemo) {
         gx_unit_memo(1); /* M41: closed below, before the return */
     }
@@ -3608,7 +3617,9 @@ static int draw_apply(const u8* s, int n, int in_ring) {
         }
     }
     if (!on_gpu) {
-        gx_vprog_disable();
+        if (!rtgx) {
+            gx_vprog_disable(); /* M43: the render thread's apply disables it for its own */
+        }
         if (in_ring) {
             /* M29: the vertices may still be the render thread's to decode */
             rt_decode_join("cpu path");
@@ -3647,6 +3658,29 @@ static int draw_apply(const u8* s, int n, int in_ring) {
             snprintf(seen[nseen++], 32, "%s", nm ? nm : "(null)");
             port_log("port> probeobj: frame %u model %d name \"%s\" (%d verts)\n", fr, mdl, nm ? nm : "(null)", n);
         }
+    }
+    if (rtgx) {
+        /* M43: the binds here (the texture cache reads the game's memory);
+         * the transform, the raster state, the units, the colour sum, the
+         * program's parameters and the arrays on the render thread, from the
+         * record (gx_rtgx.c) */
+        gx_tev_bind_textures();
+        if (on_gpu) {
+            gx_rtgx_record(xfd, 1, !port_opt.cpuxf && xfd->hilite == 1, NULL, 0, 0, 0, 0);
+        } else {
+            const u8* ob = (const u8*)rt_stash(out_buf, (size_t)n * (size_t)out_stride);
+            gx_rtgx_record(xfd, 0, 0, ob, out_stride, out_off_clr, out_off_tex, out_ntex);
+        }
+        port_perf_sub_leave();
+        app_on_gpu = on_gpu;
+        app_bias = bias;
+        if (!port_opt.nounitmemo) {
+            gx_unit_memo(0);
+        }
+        return on_gpu;
+    }
+    if (port_opt.rtgx == 2) {
+        tg0 = port_now_seconds(); /* M43: the auto's estimate of what would move */
     }
     gl13_apply_transform();
     gl13_apply_raster_state();
@@ -3690,6 +3724,9 @@ static int draw_apply(const u8* s, int n, int in_ring) {
         }
     }
     port_perf_sub_leave();
+    if (tg0 > 0.0) {
+        gx_rtgx_game_time(port_now_seconds() - tg0);
+    }
     app_on_gpu = on_gpu;
     app_bias = bias;
     if (!port_opt.nounitmemo) {
@@ -3950,7 +3987,14 @@ static void draw_issue(const u8* s, int n, const Seg* segs, int nsegs, int in_ri
             biased[i] = segs[i];
             biased[i].first += bias;
         }
-        if (gl13_zprepass_wanted()) {
+        if (rtgx_owner_rt) {
+            /* M43: the render thread's shadow decides (gx_rtgx.c) */
+            if (gx_rtgx_zp_maybe()) {
+                gx_rtgx_zp_begin();
+                issue_segments(biased, nsegs);
+                gx_rtgx_zp_end();
+            }
+        } else if (gl13_zprepass_wanted()) {
             gl13_zprepass_begin();
             issue_segments(biased, nsegs);
             gl13_zprepass_end();
@@ -3958,7 +4002,13 @@ static void draw_issue(const u8* s, int n, const Seg* segs, int nsegs, int in_ri
         }
         issue_segments(biased, nsegs);
     } else {
-        if (gl13_zprepass_wanted()) {
+        if (rtgx_owner_rt) {
+            if (gx_rtgx_zp_maybe()) {
+                gx_rtgx_zp_begin();
+                issue_segments(segs, nsegs);
+                gx_rtgx_zp_end();
+            }
+        } else if (gl13_zprepass_wanted()) {
             gl13_zprepass_begin();
             issue_segments(segs, nsegs);
             gl13_zprepass_end();
@@ -5604,6 +5654,9 @@ static void vc_sweep(unsigned now) {
 
 /* The list's entry, its bytes hashed; NULL when the list is left to the
  * ring (an animated one, or the cache off). */
+/* M43 (--vcarr A,B, PLAN.md 58.5): why each primitive was or was not served */
+enum { VR_HIT, VR_INELIG, VR_NEW, VR_PLAN, VR_ARR, VR_NOSTORE, VR_STORED, VR_OFF, VR_DYN, VR_IMM, VR_N };
+static int vc_list_off_why = VR_OFF; /* M43: vc_list_begin's NULL: auto off, or animated */
 static VcEnt* vc_list_begin(const void* list, u32 nbytes) {
     unsigned b = ((unsigned)(uintptr_t)list >> 5) & (VC_BUCKETS - 1);
     unsigned fr = gl13_frame_number();
@@ -5649,6 +5702,7 @@ static VcEnt* vc_list_begin(const void* list, u32 nbytes) {
             vc_sweep(fr);
         }
     }
+    vc_list_off_why = VR_OFF;
     if (!vc_frame_on) {
         return NULL;
     }
@@ -5659,6 +5713,7 @@ static VcEnt* vc_list_begin(const void* list, u32 nbytes) {
         }
     }
     if (e && e->dyn_until && (int)(fr - e->dyn_until) < 0) {
+        vc_list_off_why = VR_DYN;
         e->last_frame = fr;
         stat_vc_dyn_lists++;
         return NULL;
@@ -5906,6 +5961,17 @@ static int vc_alloc(size_t bytes, u32* off) {
  * 2 for a store (run_pos is a fresh run in the region; the caller decodes
  * into it and calls vc_stored), 0 for the ring. */
 static VcPrim* vc_cur;
+/* M43 (--vcarr A,B, PLAN.md 58.5): why each primitive was or was not served,
+ * per list, in a window of frames from the minigame's entry */
+static int vc_reason;
+static VcArr* vc_reason_arr;
+static int vcarr_in_window(void);
+static void vcarr_note(const void* list, u32 nbytes, u32 count, int why, VcArr* arr);
+void gx_vcarr_imm(u32 n) {
+    if (vcarr_in_window()) {
+        vcarr_note(NULL, 0, n, VR_IMM, NULL);
+    }
+}
 static int vc_decide(VcEnt* e, int i, const u8* p, const u8* end, u32 count, u8 op) {
     VcPrim* vp;
     u32 h1, h2;
@@ -5914,7 +5980,10 @@ static int vc_decide(VcEnt* e, int i, const u8* p, const u8* end, u32 count, u8 
     stat_vc_prims++;
     stat_vc_verts += count;
     vc_frame_verts += count;
+    vc_reason = VR_NEW;
+    vc_reason_arr = NULL;
     if (!vc_eligible(count)) {
+        vc_reason = VR_INELIG;
         stat_vc_inelig++;
         stat_vc_inelig_v += count;
         return 0;
@@ -5929,6 +5998,7 @@ static int vc_decide(VcEnt* e, int i, const u8* p, const u8* end, u32 count, u8 
         for (k = 0; k < vp->narr; k++) {
             if (vc_arr_check(vp->arr[k]) != vp->ver[k]) {
                 ok = 0;
+                vc_reason_arr = vp->arr[k];
                 break;
             }
         }
@@ -5938,6 +6008,7 @@ static int vc_decide(VcEnt* e, int i, const u8* p, const u8* end, u32 count, u8 
             stat_vc_hit_verts += count;
             vc_frame_hits += count;
             vc_cur = vp;
+            vc_reason = VR_HIT;
             return 1;
         }
         if (ok && port_opt.vcache == 1) {
@@ -5946,9 +6017,11 @@ static int vc_decide(VcEnt* e, int i, const u8* p, const u8* end, u32 count, u8 
             stat_vc_hits++;
             stat_vc_hit_verts += count;
             vc_frame_hits += count;
+            vc_reason = VR_HIT;
             return 0;
         }
         if (!ok) {
+            vc_reason = VR_ARR;
             stat_vc_miss_arr++;
             stat_vc_miss_arr_v += count;
             e->changes++;
@@ -5964,6 +6037,7 @@ static int vc_decide(VcEnt* e, int i, const u8* p, const u8* end, u32 count, u8 
         }
     } else if (e->nprims > 1 && vp->slot == i && e->last_frame == gl13_frame_number() &&
                vp != &e->prims[0]) {
+        vc_reason = VR_PLAN;
         stat_vc_miss_plan++; /* a new plan for a place the list already had */
         stat_vc_miss_plan_v += count;
     } else {
@@ -6042,8 +6116,12 @@ static int vc_decide(VcEnt* e, int i, const u8* p, const u8* end, u32 count, u8 
                 vp->gen = vc_gen;
                 vc_cur = vp;
                 stat_vc_stored_v += count;
+                if (vc_reason == VR_NEW) {
+                    vc_reason = VR_STORED;
+                }
                 return 2;
             }
+            vc_reason = VR_NOSTORE;
             stat_vc_nostore++;
             stat_vc_nostore_v += count;
         }
@@ -6051,7 +6129,132 @@ static int vc_decide(VcEnt* e, int i, const u8* p, const u8* end, u32 count, u8 
     return 0;
 }
 
+/* M43: --vcarr's table, one row per display list seen in the window */
+u32 port_mg_entry(void);
+u32 VIGetRetraceCount(void);
+typedef struct VcArrRow {
+    const void* list;
+    u32 nbytes;
+    char name[24];
+    unsigned long v[VR_N];
+    unsigned long calls;
+    const u8* arr_base;   /* the last array whose change missed it */
+    u32 arr_stride, arr_bytes, arr_changes;
+} VcArrRow;
+#define VCARR_ROWS 2048
+static VcArrRow* vcarr_tab;
+static unsigned long vcarr_frames_seen, vcarr_last_frame;
+static int vcarr_in_window(void) {
+    u32 e = port_mg_entry(), f;
+    if (!e) {
+        return 0;
+    }
+    f = VIGetRetraceCount() - e;
+    return (int)f >= port_opt.vcarr_from && (int)f < port_opt.vcarr_to;
+}
+static void vcarr_note(const void* list, u32 nbytes, u32 count, int why, VcArr* arr) {
+    unsigned h, k;
+    VcArrRow* r = NULL;
+    if (!list) {
+        list = (const void*)1; /* the immediate-mode primitives, one row */
+    }
+    if (!vcarr_tab) {
+        vcarr_tab = (VcArrRow*)calloc(VCARR_ROWS, sizeof(VcArrRow));
+        if (!vcarr_tab) {
+            return;
+        }
+    }
+    if (gl13_frame_number() != vcarr_last_frame) {
+        vcarr_last_frame = gl13_frame_number();
+        vcarr_frames_seen++;
+    }
+    h = (((unsigned)(uintptr_t)list >> 5) ^ nbytes) & (VCARR_ROWS - 1);
+    for (k = 0; k < VCARR_ROWS; k++) {
+        VcArrRow* c = &vcarr_tab[(h + k) & (VCARR_ROWS - 1)];
+        if (c->list == list && c->nbytes == nbytes) {
+            r = c;
+            break;
+        }
+        if (!c->list) {
+            int mdl = -1;
+            const char* nm = port_drawobj_name(gx_last_posmtx_arg, &mdl);
+            c->list = list;
+            c->nbytes = nbytes;
+            snprintf(c->name, sizeof(c->name), "%d:%s", mdl, nm ? nm : "?");
+            r = c;
+            break;
+        }
+    }
+    if (!r) {
+        return;
+    }
+    if (why < 0 || why >= VR_N) {
+        why = VR_NEW;
+    }
+    r->v[why] += count;
+    r->calls++;
+    if (why == VR_ARR && arr) {
+        r->arr_base = arr->base;
+        r->arr_stride = arr->stride;
+        r->arr_bytes = (arr->hi - arr->lo) * arr->stride + arr->elem;
+        r->arr_changes++;
+    }
+}
+static int vcarr_cmp(const void* a, const void* b) {
+    const VcArrRow* x = (const VcArrRow*)a;
+    const VcArrRow* y = (const VcArrRow*)b;
+    unsigned long sx = 0, sy = 0;
+    int i;
+    for (i = 1; i < VR_N; i++) {
+        sx += x->v[i];
+        sy += y->v[i];
+    }
+    return sx < sy ? 1 : sx > sy ? -1 : 0;
+}
+static void vcarr_report(void) {
+    static const char* const nm[VR_N] = { "hit", "inelig", "new", "plan", "arrays", "nostore",
+                                          "stored", "auto-off", "animated", "immediate" };
+    unsigned long tot[VR_N];
+    int i, k, shown = 0;
+    if (!vcarr_tab) {
+        return;
+    }
+    memset(tot, 0, sizeof(tot));
+    for (k = 0; k < VCARR_ROWS; k++) {
+        for (i = 0; i < VR_N; i++) {
+            tot[i] += vcarr_tab[k].v[i];
+        }
+    }
+    qsort(vcarr_tab, VCARR_ROWS, sizeof(VcArrRow), vcarr_cmp);
+    port_log("port> vcarr: frames %d..%d from the minigame's entry, %lu drawn frames; vertices "
+             "per drawn frame by reason:", port_opt.vcarr_from, port_opt.vcarr_to, vcarr_frames_seen);
+    for (i = 0; i < VR_N; i++) {
+        port_log(" %s %.0f", nm[i], vcarr_frames_seen ? (double)tot[i] / vcarr_frames_seen : 0.0);
+    }
+    port_log("\n");
+    for (k = 0; k < VCARR_ROWS && shown < 30; k++) {
+        const VcArrRow* r = &vcarr_tab[k];
+        if (!r->list) {
+            continue;
+        }
+        shown++;
+        port_log("port> vcarr:  list %p %5u B  %-22s calls/fr %5.1f  v/fr:", r->list, (unsigned)r->nbytes,
+                 r->name, vcarr_frames_seen ? (double)r->calls / vcarr_frames_seen : 0.0);
+        for (i = 0; i < VR_N; i++) {
+            if (r->v[i]) {
+                port_log(" %s %.0f", nm[i], (double)r->v[i] / (vcarr_frames_seen ? vcarr_frames_seen : 1));
+            }
+        }
+        if (r->arr_changes) {
+            port_log("  | changed array %p stride %u, %u B (%lu misses)", (const void*)r->arr_base,
+                     (unsigned)r->arr_stride, (unsigned)r->arr_bytes, (unsigned long)r->arr_changes);
+        }
+        port_log("\n");
+    }
+}
+
 static void vc_report(void) {
+    vcarr_report();
     if (!port_opt.vcache || !stat_vc_lists) {
         return;
     }
@@ -6298,6 +6501,9 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
             } else {
                 vc_run = vc_decide(vce, vci++, p, end, count, op);
             }
+        }
+        if (port_opt.vcarr_to && vcarr_in_window()) {
+            vcarr_note(list, nbytes, count, vce ? vc_reason : vc_list_off_why, vc_reason_arr);
         }
         if (vc_run) {
             run_pos = vc_cur->off; /* M40: a hit, or a store into the region */

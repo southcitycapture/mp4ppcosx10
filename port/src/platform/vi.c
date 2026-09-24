@@ -14,6 +14,7 @@
  * by side.  --frames N is M1's version of that.
  */
 #include "port.h"
+void gx_rtgx_frame_begin(void); /* M43: src/gx/gx_rtgx.c */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -252,6 +253,7 @@ void VIWaitForRetrace(void) {
         }
         if (port_framemode_next_drawn()) {
             rt_auto_frame_begin(); /* M33: the share for the frame about to be built */
+            gx_rtgx_frame_begin(); /* M43: and whose translation it is */
         }
         last_exit_at = now_seconds();
     }

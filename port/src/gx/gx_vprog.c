@@ -97,7 +97,14 @@ static vp_bindprog_t   vp_BindProgramARB;
 static vp_progstr_t    vp_ProgramStringARB;
 static vp_envp4fv_t    vp_ProgramEnvParameter4fvARB;
 static vp_getprogiv_t  vp_GetProgramivARB;
-static vp_envp4fvn_t   vp_ProgramEnvParameters4fvEXT; /* GL_EXT_gpu_program_parameters */
+/* M43: a fact about the context, shared by both instances of this file
+ * (gx_rti.h): the render thread's instance must choose the same upload */
+#ifndef GX_RTI
+vp_envp4fvn_t gx_vp_env_bulk; /* GL_EXT_gpu_program_parameters */
+#else
+extern vp_envp4fvn_t gx_vp_env_bulk;
+#endif
+#define vp_ProgramEnvParameters4fvEXT gx_vp_env_bulk
 #endif
 
 /* the card's answers, filled by the probe */
@@ -113,7 +120,12 @@ typedef struct VpLimits {
     int pal_ok;           /* ARL + relative env addressing loaded native (M18) */
     int pal_slots;        /* palette slots the parameter block holds          */
 } VpLimits;
-static VpLimits vpl;
+#ifndef GX_RTI
+VpLimits gx_vp_limits; /* M43: shared with the render thread's instance (gx_rti.h) */
+#else
+extern VpLimits gx_vp_limits;
+#endif
+#define vpl gx_vp_limits
 
 /* the parameter block's layout; the block itself is described below */
 #define VPE_POSMTX 0
@@ -903,7 +915,16 @@ typedef struct VpVariant {
     int packed;           /* M41: the packed lights (vp_gen_packed_lights)     */
     unsigned loc_gen;     /* M41: the local parameters' shadow, valid for this */
     float loc[12][4];     /*      vp_loc_gen                                   */
+    unsigned loc_gen_rt;  /* M43: the same, the render thread's instance's own */
+    float loc_rt[12][4];  /*      (--rtgx; the two instances never share one) */
 } VpVariant;
+#ifdef GX_RTI
+#define VP_LOC(v) ((v)->loc_rt)
+#define VP_LOC_GEN(v) ((v)->loc_gen_rt)
+#else
+#define VP_LOC(v) ((v)->loc)
+#define VP_LOC_GEN(v) ((v)->loc_gen)
+#endif
 
 #ifndef PORT_NO_SDL
 static VpVariant* vp_tab[VP_BUCKETS];
@@ -911,6 +932,9 @@ static int vp_nvariants;
 static unsigned vp_loc_gen = 1; /* M41: bumped by gx_vprog_invalidate          */
 static unsigned stat_packed_variants;
 static unsigned vp_bound;     /* the program currently bound, 0 = none        */
+static int vp_last_vbo;       /* the arrays' last source: 1 the cache's buffer object
+                               * (VAR's client state off), 0 the ring, -1 unknown
+                               * (M43: after the render thread had the shadow) */
 static int vp_enabled;        /* GL_VERTEX_PROGRAM_ARB is on                  */
 static unsigned long stat_alit_cpu; /* M35: draws whose alpha channel's control differs from the colour's */
 static unsigned stat_gpu_draws, stat_gpu_verts;
@@ -1022,6 +1046,11 @@ static VpVariant* vp_lookup(const VpKey* k) {
         rt_compile_vprog(&c);
         errpos = c.errpos;
         id = (GLuint)c.id;
+#ifndef GX_RTI
+        if (rtgx_owner_rt && (errpos != -1 || !c.under_native)) {
+            rtgx_fwd(RTGX_F_VP_FORGET, 0, 0, 0, 0, 0); /* a refusal bound 0 there */
+        }
+#endif
         if (errpos != -1) {
             port_log("port> vprog: variant %d REJECTED at char %d: %s\n", vp_nvariants,
                      (int)errpos, c.msg[0] ? c.msg : "(no message)");
@@ -1042,6 +1071,11 @@ static VpVariant* vp_lookup(const VpKey* k) {
     v->id = id;
     v->ok = 1;
     vp_bound = id;
+#ifndef GX_RTI
+    if (rtgx_owner_rt) {
+        rtgx_fwd(RTGX_F_VP_FORGET, 0, 0, 0, 0, 0); /* the compile bound it there */
+    }
+#endif
     if (port_opt.vproglog) {
         port_log("port> vprog: variant %d, %d instructions (%d native):\n%s",
                  vp_nvariants, v->instr, v->native, b.s);
@@ -1069,7 +1103,27 @@ void gx_vprog_invalidate(void) {
 #endif
 }
 
+/* M43: the other instance had the shadow: the arrays' source is unknown too */
+void gx_vprog_forget_vbo(void) {
+#ifndef PORT_NO_SDL
+    vp_last_vbo = -1;
+#endif
+}
+/* M43: a compile bound (or unbound) a program on the render thread; this
+ * instance's idea of the binding is gone */
+void gx_vprog_forget_bound(void) {
+#ifndef PORT_NO_SDL
+    vp_bound = 0;
+#endif
+}
+
 void gx_vprog_disable(void) {
+#ifndef GX_RTI
+    if (rtgx_owner_rt) {
+        rtgx_fwd(RTGX_F_VP_DISABLE, 0, 0, 0, 0, 0);
+        return;
+    }
+#endif
 #ifndef PORT_NO_SDL
     if (vp_enabled != 0) {
         vp_enabled = 0;
@@ -1190,6 +1244,30 @@ static VpKey pending_key;
 static VpVariant* pending_var;
 static int pending_nl;
 static int pending_lightidx[8];
+
+/* M43 (--rtgx): the decision's result, carried in the record to the render
+ * thread's instance, whose gx_vprog_bind reads it */
+typedef struct VpPending {
+    VpKey key;
+    VpVariant* var;
+    int nl;
+    int lightidx[8];
+} VpPending;
+size_t gx_vprog_pending_size(void) { return sizeof(VpPending); }
+void gx_vprog_pending_get(void* out) {
+    VpPending* p = (VpPending*)out;
+    p->key = pending_key;
+    p->var = pending_var;
+    p->nl = pending_nl;
+    memcpy(p->lightidx, pending_lightidx, sizeof(p->lightidx));
+}
+void gx_vprog_pending_set(const void* in) {
+    const VpPending* p = (const VpPending*)in;
+    pending_key = p->key;
+    pending_var = p->var;
+    pending_nl = p->nl;
+    memcpy(pending_lightidx, p->lightidx, sizeof(pending_lightidx));
+}
 
 int gx_vprog_draw(const GxXfDesc* d, int nverts) {
 #ifdef PORT_NO_SDL
@@ -1380,19 +1458,19 @@ void gx_vprog_bind(const GxXfDesc* d) {
                         const GXLight* l = &gx.light[pending_lightidx[g * 4 + j]];
                         q[j] = c < 3 ? l->k[c] : l->a[c - 3];
                     }
-                    if (v->loc_gen == vp_loc_gen && memcmp(v->loc[idx], q, sizeof(q)) == 0) {
+                    if (VP_LOC_GEN(v) == vp_loc_gen && memcmp(VP_LOC(v)[idx], q, sizeof(q)) == 0) {
                         stat_env_elided++;
                         continue;
                     }
-                    memcpy(v->loc[idx], q, sizeof(q));
+                    memcpy(VP_LOC(v)[idx], q, sizeof(q));
                     stat_env_set++;
                     rt_ext_local_param4fv(VP_VERTEX_PROGRAM_ARB, (GLuint)idx, q);
                 }
             }
-            if (v->loc_gen != vp_loc_gen) {
+            if (VP_LOC_GEN(v) != vp_loc_gen) {
                 /* a group not rewritten above keeps stale values; there is none
                  * (every group of nl is written), so the shadow is whole now */
-                v->loc_gen = vp_loc_gen;
+                VP_LOC_GEN(v) = vp_loc_gen;
             }
         }
         if (key.hilite) {
@@ -1433,10 +1511,9 @@ void gx_vprog_bind(const GxXfDesc* d) {
     {
         /* M40: the cache's buffer object bound while its pointers are set
          * (they keep it), unbound after; the shadow forgotten on a change */
-        static int last_vbo;
-        if (d->vbo != last_vbo) {
+        if (d->vbo != vp_last_vbo) {
             glc_arrays_forget();
-            last_vbo = d->vbo;
+            vp_last_vbo = d->vbo;
             /* Apple's vertex_array_range takes every array pointer for an
              * address in its range while its client state is on -- a buffer
              * object's offsets included (the first build drew nothing from

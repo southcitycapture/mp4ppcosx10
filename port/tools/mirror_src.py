@@ -180,9 +180,13 @@ def main():
     ap.add_argument("--out", required=True, help="mirror root, e.g. build-host/gen")
     ap.add_argument("--target", default="", help="host | ppc")
     ap.add_argument("--quiet", action="store_true")
+    ap.add_argument("--extra", default="", help="M43: a second patch file, applied after "
+                    "patches.txt (a measurement tree's, e.g. patches-pmc.txt)")
     args = ap.parse_args()
 
     patches = load_patches(os.path.join(PORT, "patches.txt"))
+    if args.extra:
+        patches += load_patches(os.path.join(PORT, args.extra))
     used = set()
     log = []
 

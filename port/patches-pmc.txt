@@ -1,0 +1,10 @@
+# M43 (PLAN.md 58.4): the --pmc measurement tree only (port/Makefile PMC_WRAP=1).
+# The engine walks renamed *_game so that src/debug/pmc_wrap.c can read the
+# G4 performance counters in and out of each.  Never in a shipped build: a
+# rename moves inlining, and this tree is for counting, not for the md5s.
+src/game/hsfman.c	void Hu3DExec(void) {	void Hu3DExec_game(void) {
+src/game/hsfman.c	void Hu3DShadowExec(void) {	void Hu3DShadowExec_game(void) {
+src/game/hsfdraw.c	void Hu3DDraw(HU3DMODEL *modelP, Mtx mtx, HuVecF *scale) {	void Hu3DDraw_game(HU3DMODEL *modelP, Mtx mtx, HuVecF *scale) {
+src/game/hsfdraw.c	void Hu3DDrawPost(void) {	void Hu3DDrawPost_game(void) {
+src/game/hsfdraw.c	void Hu3DModelObjMtxGet(HU3DMODELID modelId, char *objName, Mtx mtx) {	void Hu3DModelObjMtxGet_game(HU3DMODELID modelId, char *objName, Mtx mtx) {
+src/game/process.c	void HuPrcCall(s32 tick)\n{	void HuPrcCall_game(s32 tick)\n{

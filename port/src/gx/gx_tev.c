@@ -1740,6 +1740,69 @@ static void regfix_decide(int stages) {
     regfix_k = rk;
 }
 
+#ifndef GX_RTI
+/* The unit's texture bind, out of gx_tev_apply's loop (M43) */
+static void tev_unit_bind(int i, const GXTevStage* s, GXTexObjPort* bound) {
+    /* The tile-map case is composed on the CPU and bound as one
+     * ordinary texture (gx_tex.c); everything else indirect is
+     * still the direct stage alone. */
+    if (gx.num_ind && gx.ind_tile[i].on) {
+        const GXIndTile* t = &gx.ind_tile[i];
+        GXTexObjPort* map = gx_bound_tex(gx.ind[t->ind].map);
+        if (!map || !gx_tex_bind_tiled(i, bound, map, t)) {
+            gx_warn("indirect texturing: the fixed-function path "
+                    "draws the direct stage only (PLAN.md 3.4 case 3)");
+            gx_tex_bind_swapped(i, bound, SWAP_PACK(gx.swap_tbl[s->tex_swap & 3]));
+        }
+    } else {
+        if (gx.num_ind && !s->direct) {
+            gx_warn("indirect texturing: the fixed-function path "
+                    "draws the direct stage only (PLAN.md 3.4 case 3)");
+        }
+        gx_tex_bind_swapped(i, bound,
+                            (regfix_shape == 2 && regfix_k >= 0 && i == regfix_k + 1)
+                                ? SWAP_RED_TO_ALPHA /* M22: the mask's value in alpha */
+                                : SWAP_PACK(gx.swap_tbl[s->tex_swap & 3]));
+    }
+}
+
+/* M43 (PLAN.md 58.2, --rtgx): gx_tev_apply's texture binds alone, on the game
+ * thread -- the texture cache reads the game's memory (the content hash, the
+ * decode, the upload) -- while the render thread's instance of this file
+ * emits the rest of the unit loop from the replica.  The same units, the same
+ * objects, the same swaps as the loop; the binds reach the render thread's
+ * shadow through the stream (gl13_state.c GLC_FWD). */
+void gx_tev_bind_textures(void) {
+    int stages = gx.num_tev ? gx.num_tev : 1;
+    int i;
+    if (stages > gl13_max_tex_units) {
+        stages = gl13_max_tex_units;
+    }
+    regfix_decide(stages);
+    for (i = 0; i < gl13_max_tex_units && i < stages; i++) {
+        const GXTevStage* s = &gx.tev[i];
+        GXTexObjPort* bound = gx_bound_tex(s->map);
+        int have_tex = bound != NULL && s->coord < GX_TEXCOORDS;
+        if (!gl13_live()) {
+            break;
+        }
+        if (regfix_shape == 5 && regfix_k >= 0) {
+            if (i == regfix_k + 2) {
+                s = &gx.tev[i + 1];
+                bound = gx_bound_tex(s->map);
+                have_tex = bound != NULL && s->coord < GX_TEXCOORDS;
+            } else if (i == regfix_k + 3 || i == regfix_k + 4) {
+                bound = NULL;
+                have_tex = 0;
+            }
+        }
+        if (have_tex) {
+            tev_unit_bind(i, s, bound);
+        }
+    }
+}
+#endif
+
 void gx_tev_apply(void) {
     int stages = gx.num_tev ? gx.num_tev : 1;
     int i;
@@ -1830,27 +1893,11 @@ void gx_tev_apply(void) {
             }
             if (have_tex) {
                 glc_unit_enable_tex2d(i, 1);
-                /* The tile-map case is composed on the CPU and bound as one
-                 * ordinary texture (gx_tex.c); everything else indirect is
-                 * still the direct stage alone. */
-                if (gx.num_ind && gx.ind_tile[i].on) {
-                    const GXIndTile* t = &gx.ind_tile[i];
-                    GXTexObjPort* map = gx_bound_tex(gx.ind[t->ind].map);
-                    if (!map || !gx_tex_bind_tiled(i, bound, map, t)) {
-                        gx_warn("indirect texturing: the fixed-function path "
-                                "draws the direct stage only (PLAN.md 3.4 case 3)");
-                        gx_tex_bind_swapped(i, bound, SWAP_PACK(gx.swap_tbl[s->tex_swap & 3]));
-                    }
-                } else {
-                    if (gx.num_ind && !s->direct) {
-                        gx_warn("indirect texturing: the fixed-function path "
-                                "draws the direct stage only (PLAN.md 3.4 case 3)");
-                    }
-                    gx_tex_bind_swapped(i, bound,
-                                        (regfix_shape == 2 && regfix_k >= 0 && i == regfix_k + 1)
-                                            ? SWAP_RED_TO_ALPHA /* M22: the mask's value in alpha */
-                                            : SWAP_PACK(gx.swap_tbl[s->tex_swap & 3]));
-                }
+#ifndef GX_RTI
+                /* M43: under --rtgx the game thread binds (gx_tev_bind_textures)
+                 * and the render thread's instance emits the rest */
+                tev_unit_bind(i, s, bound);
+#endif
             } else {
                 /* A stage with no texture still has to run its combiner, and
                  * a disabled unit in GL passes the previous colour through

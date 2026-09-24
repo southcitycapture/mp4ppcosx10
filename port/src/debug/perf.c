@@ -88,8 +88,12 @@ void port_perf_sub_leave(void) {
 }
 
 static unsigned long drawn_frames_seen;
+static int gx_pmc_depth; /* M43: --pmc's GX region, entered at the outermost begin */
 
 void port_perf_gx_begin(void) {
+    if (pmc_on && gx_pmc_depth++ == 0) {
+        port_pmc_enter(PMC_R_GX);
+    }
     if (!port_opt.perf) {
         return;
     }
@@ -99,6 +103,9 @@ void port_perf_gx_begin(void) {
 }
 
 void port_perf_gx_end(void) {
+    if (pmc_on && gx_pmc_depth > 0 && --gx_pmc_depth == 0) {
+        port_pmc_leave();
+    }
     if (!port_opt.perf) {
         return;
     }
@@ -111,12 +118,14 @@ void port_perf_gx_end(void) {
 }
 
 void port_perf_present_begin(void) {
+    port_pmc_enter(PMC_R_PRESENT);
     if (port_opt.perf) {
         present_open = port_now_seconds();
     }
 }
 
 void port_perf_present_end(void) {
+    port_pmc_leave();
     if (port_opt.perf) {
         t_present += port_now_seconds() - present_open;
     }
@@ -129,12 +138,14 @@ void port_perf_present_end(void) {
  * port/src/audio/audio_out_sdl.c -- which is exactly why it has to be counted
  * here and subtracted from `game` rather than left invisible. */
 void port_perf_audio_begin(void) {
+    port_pmc_enter(PMC_R_AUDIO);
     if (port_opt.perf || port_opt.status) {
         audio_open = port_now_seconds();
     }
 }
 
 void port_perf_audio_end(void) {
+    port_pmc_leave();
     if (port_opt.perf || port_opt.status) {
         double d = port_now_seconds() - audio_open;
         t_audio += d;
@@ -174,6 +185,7 @@ void port_perf_slept(double seconds) {
 void port_perf_frame(int drawn) {
     double now, wall, game;
     win_frames++;
+    port_pmc_frame(drawn);
     if (!port_opt.perf) {
         unsigned td_n, td_src, td_rgba, td_rekey;
         double td_dec, td_up, td_hash;

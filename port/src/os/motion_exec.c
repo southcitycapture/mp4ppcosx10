@@ -85,6 +85,10 @@ static inline float* trx_ptr(HSFOBJECT* arg0, u16 arg1) {
     }
 }
 
+#ifdef PORT_PMC_WRAP
+/* M43: the measurement build's --pmc region wraps this (src/debug/pmc_wrap.c) */
+#define Hu3DMotionExec Hu3DMotionExec_port
+#endif
 void Hu3DMotionExec(s16 arg0, s16 arg1, float arg2, s32 arg3) {
     HU3DMOTION* sp18;
     HSFDATA* sp14;
