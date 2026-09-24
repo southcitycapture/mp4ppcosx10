@@ -698,7 +698,7 @@ static void print_inventory(void) {
  * game's core.  Machines this port has never run on are marked untested. */
 /* the scoreboard's count on the reference at the last milestone that ran it;
  * the promise is "30 fps everywhere", the count is where the port is */
-#define MACH_SCOREBOARD "57 of 82 screens there today (0.9.9, docs/fps-scoreboard.md)"
+#define MACH_SCOREBOARD "59 of 82 screens there today (0.9.10, docs/fps-scoreboard.md)"
 static const char* tier_text(void) {
     int g5 = mach.cpusubtype == 100;
     int card = mach.gl && mach.vram_mb >= MACH_FULL_VRAM_MB && mach.texunits >= 6;

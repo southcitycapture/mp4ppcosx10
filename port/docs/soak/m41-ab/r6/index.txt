@@ -1,0 +1,5 @@
+# m41 chain start Thu Sep 24 04:00:07 EDT 2026  isle md5 edeabedd3d364a511909b1107b5f626d
+L-m427-base EXIT=0 wall=102s fault=0 isle=edeabedd md5 14777:7775fe51 15677:54f6806b args='--com4 --rtc dolphin --freshcard --noconfig --status --ovllog --play board-start-com4.play --nomovies --minigame m427 --turns 1 --ffto 14000 --lockstep --frames 20000 --mgend 1300 --mgdump 300,1200'
+L-m427---nopacklights EXIT=0 wall=101s fault=0 isle=edeabedd md5 14777:7775fe51 15677:2126b863 args='--com4 --rtc dolphin --freshcard --noconfig --status --ovllog --play board-start-com4.play --nomovies --minigame m427 --turns 1 --ffto 14000 --lockstep --frames 20000 --mgend 1300 --mgdump 300,1200 --nopacklights'
+L-m416-base EXIT=0 wall=101s fault=0 isle=edeabedd md5 14777:64ff8811 15677:13949617 args='--com4 --rtc dolphin --freshcard --noconfig --status --ovllog --play board-start-com4.play --nomovies --minigame m416 --turns 1 --ffto 14000 --lockstep --frames 20000 --mgend 1300 --mgdump 300,1200'
+DONE

@@ -16,7 +16,9 @@
 #   N / M / NA:ARM / MA:ARM   the md5 walks (turbo; N --nomovies, M movies); NA/MA with ARM
 #   SOAK:MIN         a realtime soak of MIN minutes
 # GAME: mNNN, cs (the character select), bN (board N), title.
-# ARM: base (the defaults) or a quoted-free flag list with ',' for ' ' (e.g. --nortgx).
+# ARM: base (the defaults), old (the M41_APP_OLD binary, default the 0.9.9
+# bundle ~/MarioParty4-m40.app, with its defaults) or a flag list with ','
+# for ' ' (e.g. --nostripes).
 cd "$HOME"
 [ -f "$HOME/m41.env" ] && . "$HOME/m41.env"
 sleep "${M41_SETTLE:-90}"
@@ -50,11 +52,15 @@ sampler() {
 
 run() {
     name=$1; ceiling=$2; smode=$3; shift 3
+    RAPP="$APP"
+    case $name in
+        *-old-*) RAPP="${M41_APP_OLD:-$HOME/MarioParty4-m40.app/Contents/MacOS/isle}" ;;
+    esac
     mkdir -p "$D/$name"
     rm -f "$D/$name"/*.ppm "$D/$name.sample.txt"
     echo "chain: $name start $(date)"
     t0=$(date +%s)
-    "$APP" --shotdir "$D/$name" --perfdump "$D/$name.csv" "$@" > "$D/$name.log" 2>&1 &
+    "$RAPP" --shotdir "$D/$name" --perfdump "$D/$name.csv" "$@" > "$D/$name.log" 2>&1 &
     pid=$!
     [ "$smode" != "-" ] && sampler "$name" $pid "$smode"
     while kill -0 $pid 2>/dev/null; do
@@ -70,13 +76,13 @@ run() {
         [ -f "$f" ] && m="$m $(basename "$f" .ppm | sed 's/frame-0*//'):$(md5 -q "$f" | cut -c1-8)"
     done
     fault=$(grep -c '^\*\*\* port' "$D/$name.log")
-    echo "$name EXIT=$e wall=$(( $(date +%s) - t0 ))s fault=$fault md5$m args='$*'" >> "$IDX"
+    echo "$name EXIT=$e wall=$(( $(date +%s) - t0 ))s fault=$fault isle=$(md5 -q "$RAPP" | cut -c1-8) md5$m args='$*'" >> "$IDX"
     sleep 5
 }
 
 arm() {
     case $1 in
-        base|"") echo "" ;;
+        base|old|"") echo "" ;;
         *) echo "$1" | tr ',' ' ' ;;
     esac
 }

@@ -66,6 +66,24 @@ per drawn frame -- M41's lever); m404 Trace Race is its render thread's
 replay alone (37 ms); m415 Stamp Out! its canvas's copy reads. A 1.0 under
 this line waits for them, or for the user to move the line.
 
+**Where M41 left it** (0.9.10, `docs/fps-scoreboard.md`; M40's kept as
+`docs/fps-scoreboard-m40-after.md`; PLAN.md 56): **59 of 82 screens pass.**
+Crossed the bar: m447 Archaeologuess 23.9 → 30.0 (its six-lamp rooms lit on
+the card), m412 28.9 → 29.9, m423 29.1 → 29.9, m430 29.0 → 29.9. The two
+odd walls are gone as walls: m404 Trace Race 16.2 → 27.8 and m415 Stamp Out!
+16.7 → 29.4 on the chain (27.9 and 29.9 in the three-run A/B; their painted
+canvases are re-decoded only where they changed). Two screens M40 passed are
+under the bar on this chain's single runs -- m429 27.1 and m407 29.3 -- and
+are not claimed; a three-run A/B has both at the bar on 0.9.10 and on 0.9.9
+alike (m429 30.0 / 30.0, m407 29.9 / 29.7: run-to-run variance, PLAN.md
+56.6). **The line is not met.** The 23 still short, in three classes (PLAN.md
+56.7): twelve carry more work on the two cores together than a 30 fps cycle
+allows (m431 23.5, m441 23.2, m401, m436, m414, m409, m435, w04, the
+character select 26.8, m433, m444, m418) -- the total must fall; five are
+game-bound with room on the render thread (m432, m424, w05, m410, m404);
+six are at the bar on their tails (m429, m463, m407, m415, w01, m438). All
+82 at 100% game speed.
+
 ## Done
 
 | area | the claim | the evidence |
@@ -86,7 +104,7 @@ this line waits for them, or for the user to move the line.
 | item | what a player sees | why it ships |
 |---|---|---|
 | the pools' ripple (m405 Mario Medley, m417 Makin' Waves, m434 Cheep Cheep Sweep) | a flat tint where the console ripples the water; m405's water grey-green | the ripple is GX's indirect warp, which the Radeon 9000's fixed-function pipeline cannot do. A fragment-shader path (`--tfs`, `GL_ATI_text_fragment_shader`) is built and off: on the Leopard ATI driver its `SampleMap` returns a constant on one-texture draws and white on m434's copies while the coordinates and colours reach the program right (§50.14, §52.8 — the driver finding). Nothing on the port's side is left to try without a different driver |
-| the character select at ~26 fps (0.9.9; ~23 in 0.9.8) | one of 25 screens below the 30 cap (the v1.0 line above) | M40 (PLAN.md 55.9): its game thread's cycle is 34.8 ms (a drawn frame 31.1 + a consumed 3.7) against 33.3, the render thread's 31.2; the eight breathing characters are two thirds of its 75,600 vertices a frame and cannot be cached (skinned every frame). M33's split, M37's batch enders and M40's cache took it 20 → 23 → 26. The game's speed there is the console's; only the picture rate is lower |
+| the character select at ~27 fps (0.9.10; 26 in 0.9.9, ~23 in 0.9.8) | one of 23 screens below the 30 cap (the v1.0 line above) | M41 (PLAN.md 56.7): its game thread's cycle is 34.4 ms (a drawn frame 30.4 + a consumed 4.0) against 33.3, the render thread's 31.4 -- 65.8 ms on the two cores against a 66.7 budget, so no split of the work reaches 30; the eight breathing characters are two thirds of its 75,600 vertices a frame and cannot be cached (skinned every frame). M33's split, M37's batch enders, M40's cache and M41's concat and loops took it 20 → 23 → 26 → 27. The game's speed there is the console's; only the picture rate is lower |
 | controllers 3 and 4 | untested | wired the same way as 2 (§49.8: every Xbox One pad claimed, every SDL joystick opened, ports in order); there is one pad in the house |
 | one memory card | slot A only; slot B is always empty | the game needs one card; a second would be a second image file and nobody has asked |
 | one-CPU Macs and the movies | on one processor, Stamp Out! (m415) falls to about 13 frames a second and 94% of the console's speed, with one-second catch-ups and the sound breaking up (285 underruns in its minigame) | Stamp Out! reads its own picture back to paint with (§20's canvas copy reads), and on one CPU the game thread also replays the render thread's work. The same minigame on two CPUs: 20 fps, 100.6%, 0 underruns. It is **not** the movies: §54.2's A/B found 0 underruns in every movie on one CPU; the extra underruns M38 blamed on them were this minigame, which the movies' schedule deals where `--nomovies` deals m412. The reference machine has two CPUs; the Read Me says what one gets |

@@ -1,0 +1,4 @@
+# m41 chain start Thu Sep 24 04:08:56 EDT 2026  isle md5 09a0c85ee2b6b1d4d9a3d91b341a4e1f
+N EXIT=0 wall=220s fault=0 isle=09a0c85e md5 800:0b58c5ee 3000:2b99c60a 7000:4a9a640c args='--com4 --rtc dolphin --freshcard --noconfig --status --ovllog --perf --dumpframe 800,3000,7000 --turbo --play board-start-com4.play --frames 9000 --nomovies'
+M EXIT=0 wall=218s fault=0 isle=09a0c85e md5 800:d2d40344 3000:59008ce4 7000:3f98f882 args='--com4 --rtc dolphin --freshcard --noconfig --status --ovllog --perf --dumpframe 800,3000,7000 --turbo --play board-start-com4.play --frames 9000'
+DONE
