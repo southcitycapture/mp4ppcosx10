@@ -116,6 +116,7 @@ void rt_ext_wait_fence(GLuint f, int chunk);
 void rt_ext_fogcoord_pointer(GLenum type, GLsizei stride, const GLvoid* p);
 void rt_ext_bind_program(GLenum target, GLuint id);
 void rt_ext_env_param4fv(GLenum target, GLuint idx, const GLfloat* v);
+void rt_ext_local_param4fv(GLenum target, GLuint idx, const GLfloat* v);
 void rt_ext_env_params4fv(GLenum target, GLuint idx, GLsizei n, const GLfloat* v);
 
 /* A payload: `n` bytes copied into the stream, the copy's address returned;

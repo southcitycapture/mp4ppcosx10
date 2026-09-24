@@ -317,6 +317,13 @@ static void usage(const char* argv0) {
             "  --clrasclr        M35: GXColor3u8's bytes filed as a colour whatever the\n"
             "                    next attribute is (the background quad after a shadow\n"
             "                    pass drew nothing), for the A/B\n"
+            "  --norotmemo       M41: C_MTXRotRad (every object walk's mtxRot) calls\n"
+            "                    libm's sinf/cosf directly, not through the memo, as before\n"
+            "  --nopacklights    M41: a lit vertex-program variant over the card's\n"
+            "                    instruction limit is drawn on the CPU path, as before\n"
+            "                    (no program with the lights packed four to a register)\n"
+            "  --nodirtyfilter   M41: every DCStoreRange/DCFlushRange scans the whole\n"
+            "                    texture cache (no page filter first), for the A/B\n"
             "  --nodirty         M35: the game's DCStoreRange/DCFlushRange do not mark\n"
             "                    the texture cache (m415's stamps unseen, as before), for the A/B\n"
             "  --oldakonst       M35: an alpha read as a colour claims the unit's A\n"
@@ -1205,6 +1212,12 @@ int port_parse_args(int argc, char** argv) {
             port_opt.nolitalpha = 1;
         } else if (!strcmp(a, "--clrasclr")) {
             port_opt.clrasclr = 1;
+        } else if (!strcmp(a, "--norotmemo")) {
+            port_opt.norotmemo = 1;
+        } else if (!strcmp(a, "--nopacklights")) {
+            port_opt.nopacklights = 1;
+        } else if (!strcmp(a, "--nodirtyfilter")) {
+            port_opt.nodirtyfilter = 1;
         } else if (!strcmp(a, "--nodirty")) {
             port_opt.nodirty = 1;
         } else if (!strcmp(a, "--oldakonst")) {

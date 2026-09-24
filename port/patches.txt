@@ -765,8 +765,14 @@ src/game/hsfdraw.c	                i = objPtr - hsf->object;\n                MT
 # M18 item 2 (PLAN.md 33.4): PSMTXRotRad's sinf/cosf pair goes through a memo
 # keyed on the angle's bits (port/src/os/psmtx_c.c port_sincosf) -- the same
 # libm values for the same input, so exact; --nosincos bypasses it.
-src/dolphin/mtx/mtx.c	extern f32 tanf(f32);\n	extern f32 tanf(f32);\nvoid port_sincosf(f32 rad, f32 *s, f32 *c);\n
+src/dolphin/mtx/mtx.c	extern f32 tanf(f32);\n	extern f32 tanf(f32);\nvoid port_sincosf(f32 rad, f32 *s, f32 *c);\nvoid port_rotrad_sincosf(f32 rad, f32 *s, f32 *c);\n
 src/dolphin/mtx/mtx.c	    sinA = sinf(rad);\n    cosA = cosf(rad);\n\n    PSMTXRotTrig(m, axis, sinA, cosA);	    port_sincosf(rad, &sinA, &cosA);\n\n    PSMTXRotTrig(m, axis, sinA, cosA);
+# M41 (PLAN.md 56): the body the port actually compiles is C_MTXRotRad (the
+# GEKKO PSMTXRotRad above is not built; MTXRotRad is C_MTXRotRad under
+# MTX_USE_C), and it called libm directly: hsfman.c's mtxRot / mtxRotCat and
+# every module's object walk -- 12.9% of Butterfly Blitz's (m441) consumed frame in
+# libm's sinf/cosf.  The same memo, the same libm values: exact.
+src/dolphin/mtx/mtx.c	    sinA = sinf(rad);\n    cosA = cosf(rad);\n    C_MTXRotTrig(m, axis, sinA, cosA);	    port_rotrad_sincosf(rad, &sinA, &cosA);\n    C_MTXRotTrig(m, axis, sinA, cosA);
 
 # ------------------------------------------------------------------ game/hsfdraw.c
 # M28 experiment (a) (PLAN.md 43): on a consumed frame (frame mode: nothing

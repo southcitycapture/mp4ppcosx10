@@ -449,6 +449,51 @@ static unsigned stat_dirty_calls, stat_dirty_marks, stat_dirty_clean, stat_dirty
 /* M35: DCStoreRange / DCFlushRange (os_misc.c) land here with the range the
  * game just wrote.  Every non-copy entry whose encoded bytes overlap it is
  * marked dirty; the next bind of a dirty entry hashes its whole image. */
+/* M41 (PLAN.md 56): the scan below walked every cache entry on every call --
+ * 200,000 calls a minigame, most of them the skin's and the particles' vertex
+ * arrays, which overlap no texture -- 1-3% of the game thread.  A filter of
+ * the 4 KB pages any entry's encoded bytes may occupy (one bit per page,
+ * hashed into 65,536 bits: a collision only sends a call to the scan) is set
+ * wherever an entry takes an image and is never cleared, so a range that
+ * touches no set bit cannot overlap an entry that the scan would mark: the
+ * scan is skipped only where it would have marked nothing.  --nodirtyfilter
+ * is the scan every call. */
+#define DIRTY_FILTER_BITS 65536u
+static u32 dirty_filter[DIRTY_FILTER_BITS / 32];
+static unsigned stat_dirty_filtered;
+static inline u32 dirty_page_bit(uintptr_t page) {
+    return (u32)(page ^ (page >> 16)) & (DIRTY_FILTER_BITS - 1);
+}
+static void dirty_watch(const void* image, u32 n) {
+    uintptr_t p, p0, p1;
+    if (!image || !n) {
+        return;
+    }
+    p0 = (uintptr_t)image >> 12;
+    p1 = ((uintptr_t)image + n - 1) >> 12;
+    if (p1 - p0 >= DIRTY_FILTER_BITS) {
+        memset(dirty_filter, 0xff, sizeof(dirty_filter));
+        return;
+    }
+    for (p = p0; p <= p1; p++) {
+        u32 b = dirty_page_bit(p);
+        dirty_filter[b >> 5] |= 1u << (b & 31);
+    }
+}
+static int dirty_may_touch(const u8* a, unsigned long n) {
+    uintptr_t p, p0 = (uintptr_t)a >> 12, p1 = ((uintptr_t)a + n - 1) >> 12;
+    if (p1 < p0 || p1 - p0 >= DIRTY_FILTER_BITS) {
+        return 1;
+    }
+    for (p = p0; p <= p1; p++) {
+        u32 b = dirty_page_bit(p);
+        if (dirty_filter[b >> 5] & (1u << (b & 31))) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 void port_gx_tex_dirty(const void* addr, unsigned long n) {
     const u8* a = (const u8*)addr;
     int i;
@@ -456,6 +501,10 @@ void port_gx_tex_dirty(const void* addr, unsigned long n) {
         return;
     }
     stat_dirty_calls++;
+    if (!port_opt.nodirtyfilter && !dirty_may_touch(a, n)) {
+        stat_dirty_filtered++;
+        return;
+    }
     for (i = 0; i < cache_used; i++) {
         CacheEntry* e = &cache[i];
         const u8* im = (const u8*)e->image;
@@ -700,8 +749,10 @@ void gx_tex_report(void) {
              port_opt.norekey ? " (--norekey)" : "");
     if (stat_dirty_calls) {
         port_log("port> texture dirty ranges (M35): %u DC store/flush calls, %u entries marked, "
-                 "%u hashed clean, %u decoded again%s\n", stat_dirty_calls, stat_dirty_marks,
-                 stat_dirty_clean, stat_dirty_redecode, port_opt.nodirty ? " (--nodirty)" : "");
+                 "%u hashed clean, %u decoded again%s; %u calls touched no texture page (M41)%s\n",
+                 stat_dirty_calls, stat_dirty_marks, stat_dirty_clean, stat_dirty_redecode,
+                 port_opt.nodirty ? " (--nodirty)" : "", stat_dirty_filtered,
+                 port_opt.nodirtyfilter ? " (--nodirtyfilter)" : "");
     }
     port_log("port> texture hash: %u KB hashed in full, %u KB sampled, %u "
              "revalidations (of %u binds)%s%s\n",
@@ -1364,6 +1415,7 @@ static void tex_bind_body(int unit, GXTexObjPort* o, u8 swap) {
                 e->enc_size = (u32)encoded_size(o->format, o->width, o->height);
                 tex_bind_decode_and_upload(slot, unit, o, tlut);
             }
+            dirty_watch(e->image, e->enc_size);
             tex_bind_finish(unit, o, slot);
             return;
         }
@@ -1408,6 +1460,7 @@ static void tex_bind_body(int unit, GXTexObjPort* o, u8 swap) {
             e->last_used = frame;
             e->enc_size = (u32)encoded_size(o->format, o->width, o->height);
             e->dirty = 0;
+            dirty_watch(e->image, e->enc_size);
             hash_insert(again);
             frame_rekeys++;
             stat_rekeys++;
@@ -1442,6 +1495,7 @@ static void tex_bind_body(int unit, GXTexObjPort* o, u8 swap) {
         cache[slot].content_full = content_full;
         cache[slot].enc_size = (u32)encoded_size(o->format, o->width, o->height);
         cache[slot].dirty = 0;
+        dirty_watch(cache[slot].image, cache[slot].enc_size);
         cache[slot].validated_epoch = cache_epoch;
         cache[slot].last_used = frame;
         hash_insert(slot);

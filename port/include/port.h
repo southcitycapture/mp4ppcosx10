@@ -383,6 +383,13 @@ typedef struct PortOptions {
                              *   colour whatever the descriptor's next attribute is
                              *   (hsfman.c's background quad, written as U8 positions
                              *   through it, drew nothing), as M3..M34 did */
+    int norotmemo;          /* --norotmemo  M41: C_MTXRotRad calls libm's sinf/cosf
+                             *   directly (not through the sin/cos memo), as before */
+    int nopacklights;       /* --nopacklights  M41: a lit variant over the card's
+                             *   instruction limit goes to the CPU path, as before
+                             *   (no packed-lights program) */
+    int nodirtyfilter;      /* --nodirtyfilter  M41: every DC store/flush scans the whole
+                             *   texture cache (no page filter first), for the A/B */
     int nodirty;            /* --nodirty  M35: DCStoreRange/DCFlushRange do not mark
                              *   the texture cache; a CPU-rewritten texture is seen
                              *   only by the sampled hash, as before (m415's stamps) */

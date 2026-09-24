@@ -98,6 +98,7 @@ enum {
     OP_CALL, OP_PRESENT,
     OP_DECODE, /* M29: a display-list run decoded into the ring (PLAN.md 44) */
     OP_BIND_BUFFER, OP_BUFFER_SUB, /* M40: the vertex cache's buffer object (PLAN.md 55) */
+    OP_LOCAL4, /* M41: a program's local parameter (the packed lights, PLAN.md 56) */
     OP_N
 };
 
@@ -121,6 +122,7 @@ static const char* const op_name[OP_N] = {
     "BindProgramARB", "ProgramEnvParameter4fvARB", "ProgramEnvParameters4fvEXT",
     "call", "present",
     "decode", "BindBufferARB", "BufferSubDataARB",
+    "ProgramLocalParameter4fvARB",
 };
 
 typedef struct { u32 op, len; } Hdr;
@@ -238,6 +240,7 @@ static fn_fence_t x_SetFenceAPPLE, x_FinishFenceAPPLE;
 static fn_fence_test_t x_TestFenceAPPLE;
 static fn_bindprog_t x_BindProgramARB;
 static fn_env4_t x_ProgramEnvParameter4fvARB;
+static fn_env4_t x_ProgramLocalParameter4fvARB; /* M41 */
 static fn_envn_t x_ProgramEnvParameters4fvEXT;
 static fn_fogptr_t x_FogCoordPointerEXT;
 
@@ -940,6 +943,12 @@ void rt_ext_env_param4fv(GLenum target, GLuint idx, const GLfloat* v) {
     { REC(OP_ENV4, A_env4); a->target = target; a->idx = idx; memcpy(a->v, v, sizeof(a->v)); }
     done();
 }
+/* M41 (PLAN.md 56): the packed-lights variant's transposed attenuation block */
+void rt_ext_local_param4fv(GLenum target, GLuint idx, const GLfloat* v) {
+    if (!rt_recording) { x_ProgramLocalParameter4fvARB(target, idx, v); return; }
+    { REC(OP_LOCAL4, A_env4); a->target = target; a->idx = idx; memcpy(a->v, v, sizeof(a->v)); }
+    done();
+}
 void rt_ext_env_params4fv(GLenum target, GLuint idx, GLsizei n, const GLfloat* v) {
     if (!rt_recording) { x_ProgramEnvParameters4fvEXT(target, idx, n, v); return; }
     {
@@ -1511,6 +1520,7 @@ static void replay_one(const Hdr* h) {
         }
         case OP_BIND_PROG: { const A_eu* a = p; x_BindProgramARB(a->a, a->b); cls = RC_DRAW; break; }
         case OP_ENV4: { const A_env4* a = p; x_ProgramEnvParameter4fvARB(a->target, a->idx, a->v); cls = RC_DRAW; break; }
+        case OP_LOCAL4: { const A_env4* a = p; x_ProgramLocalParameter4fvARB(a->target, a->idx, a->v); cls = RC_DRAW; break; }
         case OP_ENVN: { const A_envn* a = p; x_ProgramEnvParameters4fvEXT(a->target, a->idx, a->n, (const GLfloat*)(a + 1)); cls = RC_DRAW; break; }
         case OP_CALL: { const A_call* a = p; a->fn((void*)(a + 1)); cls = RC_OTHER; break; }
         case OP_PRESENT: {
@@ -1794,6 +1804,7 @@ void rt_start(void* sdl_window, void* sdl_glcontext) {
         if (strstr(ext, "GL_ARB_vertex_program")) {
             x_BindProgramARB = (fn_bindprog_t)SDL_GL_GetProcAddress("glBindProgramARB");
             x_ProgramEnvParameter4fvARB = (fn_env4_t)SDL_GL_GetProcAddress("glProgramEnvParameter4fvARB");
+            x_ProgramLocalParameter4fvARB = (fn_env4_t)SDL_GL_GetProcAddress("glProgramLocalParameter4fvARB");
         }
         if (strstr(ext, "GL_EXT_gpu_program_parameters")) {
             x_ProgramEnvParameters4fvEXT = (fn_envn_t)SDL_GL_GetProcAddress("glProgramEnvParameters4fvEXT");

@@ -37,7 +37,9 @@
  * the angle's bits answers most calls from a table and the rest from libm --
  * the very same values either way, which is what makes it exact.
  * `--nosincos` is the A/B; the hit rate is in the shutdown report. */
-#define SINCOS_SLOTS 1024
+/* M41 (PLAN.md 56): 4096 slots (was 1024) once C_MTXRotRad -- every object
+ * walk's mtxRot -- came through here too */
+#define SINCOS_SLOTS 4096
 static struct {
     u32 bits;
     f32 s, c;
@@ -49,7 +51,7 @@ void port_sincosf(f32 rad, f32* s, f32* c) {
     union { f32 f; u32 u; } k;
     unsigned i;
     k.f = rad;
-    i = ((k.u >> 3) ^ (k.u >> 13) ^ (k.u >> 23)) & (SINCOS_SLOTS - 1);
+    i = ((k.u >> 3) ^ (k.u >> 15) ^ (k.u >> 25)) & (SINCOS_SLOTS - 1);
     if (!port_opt.nosincos && sincos_memo[i].valid && sincos_memo[i].bits == k.u) {
         *s = sincos_memo[i].s;
         *c = sincos_memo[i].c;
@@ -63,6 +65,17 @@ void port_sincosf(f32 rad, f32* s, f32* c) {
     sincos_memo[i].c = *c;
     sincos_memo[i].valid = 1;
     sincos_misses++;
+}
+
+/* M41 (PLAN.md 56): C_MTXRotRad's pair (patches.txt), through the memo;
+ * --norotmemo is libm at every call there, as before M41 */
+void port_rotrad_sincosf(f32 rad, f32* s, f32* c) {
+    if (port_opt.norotmemo) {
+        *s = sinf(rad);
+        *c = cosf(rad);
+        return;
+    }
+    port_sincosf(rad, s, c);
 }
 
 void port_sincos_report(void) {
