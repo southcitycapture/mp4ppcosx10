@@ -545,6 +545,49 @@ static void test_sparse_concat(void) {
     }
 }
 
+/* ---- 6a. M42: the sparse left product, m = R(axis, rad) . m, against
+ * C_MTXRotRad + C_MTXConcat(R, m, m), bit for bit (PLAN.md 57.3) */
+void port_mtx_rotl(char axis, f32 rad, Mtx m);
+static void test_rotl(void) {
+    int trial, ndiff = 0;
+    static const char axes[6] = {'x', 'y', 'z', 'X', 'Y', 'Z'};
+    printf("sparse left rotation == C_MTXRotRad + C_MTXConcat, bit for bit:\n");
+    port_opt.nofastconcat = 0;
+    for (trial = 0; trial < 1200000; trial++) {
+        Mtx m, want, got, r;
+        int i, j;
+        char ax = axes[trial % 6];
+        f32 rad;
+        for (i = 0; i < 3; i++) {
+            for (j = 0; j < 4; j++) {
+                m[i][j] = frand_z();
+            }
+        }
+        switch (trial % 9) {
+        case 0: rad = 0.0f; break;
+        case 1: rad = -0.0f; break;
+        case 2: rad = 3.14159265f; break;
+        case 3: rad = -1.5707963f; break;
+        case 4: rad = frand() * 1e-20f; break;
+        default: rad = frand() * 7.0f; break;
+        }
+        C_MTXRotRad(r, ax, rad);
+        C_MTXConcat(r, m, want);
+        PSMTXCopy(m, got);
+        port_mtx_rotl(ax, rad, got);
+        if (bits_differ(want, got)) {
+            ndiff++;
+            if (ndiff <= 4) {
+                printf("  axis %c rad %.9g differs\n", ax, rad);
+            }
+        }
+    }
+    printf("  %d of 1,200,000 left products differ\n", ndiff);
+    if (ndiff) {
+        fail("sparse left rotation", "differs from C_MTXRotRad + C_MTXConcat");
+    }
+}
+
 /* ---- 6b. M41: the port's register-blocked C_MTXConcat against the SDK's
  * body (C_MTXConcat_sdk), bit for bit, out of place and in both aliasing
  * forms (ab == a, ab == b), over matrices with signed zeros, tiny and huge
@@ -814,6 +857,7 @@ int main(int argc, char** argv) {
     test_romult_altivec();
     test_vec();
     test_sparse_concat();
+    test_rotl();
     test_blocked_concat();
     test_hoisted_vec();
     bench_concat();

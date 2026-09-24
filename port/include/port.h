@@ -31,8 +31,8 @@ extern "C" {
 /* ---- settings, from argv ------------------------------------------------- */
 /* M32: the shipped version (the dmg's name, the plist, the --defaults header)
  * and the milestone that built it. */
-#define PORT_VERSION_STRING "0.9.10"
-#define PORT_MILESTONE "M41"
+#define PORT_VERSION_STRING "0.9.11"
+#define PORT_MILESTONE "M42"
 
 typedef struct PortOptions {
     const char* image;      /* --image  disc image or extracted files/ tree   */
@@ -400,6 +400,8 @@ typedef struct PortOptions {
                              *   sinf/cosf (no libm-identical fast path first) */
     int nomtxmemo;          /* --nomtxmemo  M42: mtxRot/mtxRotCat run the game's bodies
                              *   at every call (no memo on the angles' bits) */
+    int norotl;             /* --norotl  M42: mtxRot/mtxRotCat's miss path is the game's
+                             *   body (MTXRotRad + MTXConcat), not the sparse left product */
     int nowb;               /* --nowb  M42: the vertex cache re-hashes every array at
                              *   every epoch (no write barrier on MEM1 pages) */
     int nomotionexec;       /* --nomotionexec  M42: Hu3DMotionExec is the game's body

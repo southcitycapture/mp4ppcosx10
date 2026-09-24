@@ -334,6 +334,8 @@ static void usage(const char* argv0) {
             "  --nofastsin       M42: the sin/cos memo's misses call libm (no fast path\n"
             "                    that returns libm's own floats without it)\n"
             "  --nomtxmemo       M42: mtxRot/mtxRotCat run the game's bodies every call\n"
+            "  --norotl          M42: the rotation builders' misses run the game's bodies\n"
+            "                    (MTXRotRad + MTXConcat), not the sparse left product\n"
             "  --nowb            M42: the vertex cache re-hashes every array each drawn\n"
             "                    frame (no write barrier on the pages it has read)\n"
             "  --nomotionexec    M42: Hu3DMotionExec is the game's own compiled body\n"
@@ -1244,6 +1246,8 @@ int port_parse_args(int argc, char** argv) {
             port_opt.nofastsin = 1;
         } else if (!strcmp(a, "--nomtxmemo")) {
             port_opt.nomtxmemo = 1;
+        } else if (!strcmp(a, "--norotl")) {
+            port_opt.norotl = 1;
         } else if (!strcmp(a, "--nowb")) {
             port_opt.nowb = 1;
         } else if (!strcmp(a, "--nomotionexec")) {

@@ -728,7 +728,11 @@ static size_t ring_claim(size_t need);
  * levers that need one matrix per batch may be on. */
 static int palette_settled;
 int gx_palette_on(void) {
-    if (!palette_settled) {
+    /* M42: settled at the first primitive DRAWN -- a teleport's first
+     * primitives come inside its fast-forward with drawing off, and a
+     * decision taken there (gl13_live() false) left --palette,
+     * --premerge-max and --lazyflush silently off for the whole run */
+    if (!palette_settled && gl13_live()) {
         palette_settled = 1;
         palette_on = 0;
         if (port_opt.palette && !port_opt.nopalette && !port_opt.cpuxf &&

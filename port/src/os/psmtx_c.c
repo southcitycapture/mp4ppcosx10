@@ -218,6 +218,76 @@ void port_mtx_concat_rot(const Mtx a, char axis, f32 rad, Mtx ab) {
     }
 }
 
+/* M42 (PLAN.md 57.3): m = R(axis, rad) . m, in place -- the other side of the
+ * product from port_mtx_concat_rot: what mtxRot and mtxRotCat (hsfdraw.c) do
+ * with MTXRotRad(temp) and MTXConcat(temp, m, m), without the rotation's
+ * twelve stores and the concat's twenty-four loads.  The same rules as above
+ * with R on the left: its literal 1s and 0s are sign bits, its sines and
+ * cosines real fmas with C_MTXConcat's operands in C_MTXConcat's order, and
+ * the translation column's `a3 +` is R's +0, which turns a zero result into
+ * +0.  port/tests/mtx_test.c holds it to C_MTXRotRad + C_MTXConcat, bit for
+ * bit. */
+static inline f32 plus_zero(f32 r) { return r != 0.0f ? r : 0.0f; } /* +0 + r */
+
+void port_mtx_rotl(char axis, f32 rad, Mtx m) {
+    f32 s, c, ms;
+    f32 b00 = m[0][0], b01 = m[0][1], b02 = m[0][2], b03 = m[0][3];
+    f32 b10 = m[1][0], b11 = m[1][1], b12 = m[1][2], b13 = m[1][3];
+    f32 b20 = m[2][0], b21 = m[2][1], b22 = m[2][2], b23 = m[2][3];
+    port_rotrad_sincosf(rad, &s, &c); /* C_MTXRotRad's pair (patches.txt) */
+    ms = -s;
+    switch (axis) {
+    case 'x': case 'X': /* [1 0 0; 0 c -s; 0 s c] */
+        m[0][0] = keep(b00, sgn(b10) & sgn(b20));
+        m[0][1] = keep(b01, sgn(b11) & sgn(b21));
+        m[0][2] = keep(b02, sgn(b12) & sgn(b22));
+        m[0][3] = plus_zero(keep(b03, sgn(b13) & sgn(b23)));
+        m[1][0] = FMA(ms, b20, add_zero(c * b10, b00));
+        m[1][1] = FMA(ms, b21, add_zero(c * b11, b01));
+        m[1][2] = FMA(ms, b22, add_zero(c * b12, b02));
+        m[1][3] = plus_zero(FMA(ms, b23, add_zero(c * b13, b03)));
+        m[2][0] = FMA(c, b20, add_zero(s * b10, b00));
+        m[2][1] = FMA(c, b21, add_zero(s * b11, b01));
+        m[2][2] = FMA(c, b22, add_zero(s * b12, b02));
+        m[2][3] = plus_zero(FMA(c, b23, add_zero(s * b13, b03)));
+        break;
+    case 'y': case 'Y': /* [c 0 s; 0 1 0; -s 0 c] */
+        m[0][0] = FMA(s, b20, FMA(c, b00, zero_of(sgn(b10))));
+        m[0][1] = FMA(s, b21, FMA(c, b01, zero_of(sgn(b11))));
+        m[0][2] = FMA(s, b22, FMA(c, b02, zero_of(sgn(b12))));
+        m[0][3] = plus_zero(FMA(s, b23, FMA(c, b03, zero_of(sgn(b13)))));
+        m[1][0] = keep(b10, sgn(b00) & sgn(b20));
+        m[1][1] = keep(b11, sgn(b01) & sgn(b21));
+        m[1][2] = keep(b12, sgn(b02) & sgn(b22));
+        m[1][3] = plus_zero(keep(b13, sgn(b03) & sgn(b23)));
+        m[2][0] = FMA(c, b20, FMA(ms, b00, zero_of(sgn(b10))));
+        m[2][1] = FMA(c, b21, FMA(ms, b01, zero_of(sgn(b11))));
+        m[2][2] = FMA(c, b22, FMA(ms, b02, zero_of(sgn(b12))));
+        m[2][3] = plus_zero(FMA(c, b23, FMA(ms, b03, zero_of(sgn(b13)))));
+        break;
+    case 'z': case 'Z': /* [c -s 0; s c 0; 0 0 1] */
+        m[0][0] = add_zero(FMA(c, b00, ms * b10), b20);
+        m[0][1] = add_zero(FMA(c, b01, ms * b11), b21);
+        m[0][2] = add_zero(FMA(c, b02, ms * b12), b22);
+        m[0][3] = plus_zero(add_zero(FMA(c, b03, ms * b13), b23));
+        m[1][0] = add_zero(FMA(s, b00, c * b10), b20);
+        m[1][1] = add_zero(FMA(s, b01, c * b11), b21);
+        m[1][2] = add_zero(FMA(s, b02, c * b12), b22);
+        m[1][3] = plus_zero(add_zero(FMA(s, b03, c * b13), b23));
+        m[2][0] = keep(b20, sgn(b00) & sgn(b10));
+        m[2][1] = keep(b21, sgn(b01) & sgn(b11));
+        m[2][2] = keep(b22, sgn(b02) & sgn(b12));
+        m[2][3] = plus_zero(keep(b23, sgn(b03) & sgn(b13)));
+        break;
+    default: {
+        Mtx r;
+        C_MTXRotRad(r, axis, rad);
+        C_MTXConcat(r, m, m);
+        break;
+    }
+    }
+}
+
 void port_sparse_report(void) {
     if (sparse_calls || sparse_general) {
         port_log("port> sparse concats (bone walk): %lu sparse, %lu general%s\n", sparse_calls,

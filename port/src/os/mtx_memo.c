@@ -25,6 +25,43 @@
 
 void mtxRot_game(Mtx mtx, float x, float y, float z);
 void mtxRotCat_game(Mtx mtx, float x, float y, float z);
+void port_mtx_rotl(char axis, f32 rad, Mtx m); /* psmtx_c.c */
+
+/* M42: the bodies again, each MTXRotRad + MTXConcat(R, m, m) as one sparse
+ * left product (port_mtx_rotl, bit-exact with the pair); --norotl: the
+ * game's bodies on a miss */
+static void rot_body(Mtx mtx, float x, float y, float z) {
+    if (port_opt.norotl) {
+        mtxRot_game(mtx, x, y, z);
+        return;
+    }
+    if (x != 0.0f) {
+        MTXRotRad(mtx, 'X', MTXDegToRad(x));
+    } else {
+        MTXIdentity(mtx);
+    }
+    if (y != 0.0f) {
+        port_mtx_rotl('Y', MTXDegToRad(y), mtx);
+    }
+    if (z != 0.0f) {
+        port_mtx_rotl('Z', MTXDegToRad(z), mtx);
+    }
+}
+static void rotcat_body(Mtx mtx, float x, float y, float z) {
+    if (port_opt.norotl) {
+        mtxRotCat_game(mtx, x, y, z);
+        return;
+    }
+    if (x != 0.0f) {
+        port_mtx_rotl('X', MTXDegToRad(x), mtx);
+    }
+    if (y != 0.0f) {
+        port_mtx_rotl('Y', MTXDegToRad(y), mtx);
+    }
+    if (z != 0.0f) {
+        port_mtx_rotl('Z', MTXDegToRad(z), mtx);
+    }
+}
 
 #define ROT_SLOTS 2048
 #define CAT_SLOTS 2048
@@ -53,8 +90,12 @@ static inline u32 mix(u32 h, u32 v) {
 void mtxRot(Mtx mtx, float x, float y, float z) {
     u32 k[3], h;
     RotSlot* s;
-    if (port_opt.nomtxmemo || (x == 0.0f && y == 0.0f && z == 0.0f)) {
+    if (x == 0.0f && y == 0.0f && z == 0.0f) {
         mtxRot_game(mtx, x, y, z); /* all zero: the identity, cheaper than a lookup */
+        return;
+    }
+    if (port_opt.nomtxmemo) {
+        rot_body(mtx, x, y, z);
         return;
     }
     memcpy(&k[0], &x, 4);
@@ -67,7 +108,7 @@ void mtxRot(Mtx mtx, float x, float y, float z) {
         rot_hit++;
         return;
     }
-    mtxRot_game(mtx, x, y, z);
+    rot_body(mtx, x, y, z);
     s->k[0] = k[0];
     s->k[1] = k[1];
     s->k[2] = k[2];
@@ -80,8 +121,11 @@ void mtxRotCat(Mtx mtx, float x, float y, float z) {
     u32 k[15], h;
     CatSlot* s;
     int i;
-    if (port_opt.nomtxmemo || (x == 0.0f && y == 0.0f && z == 0.0f)) {
-        mtxRotCat_game(mtx, x, y, z); /* all zero: the game's body does nothing */
+    if (x == 0.0f && y == 0.0f && z == 0.0f) {
+        return; /* all zero: the game's body does nothing */
+    }
+    if (port_opt.nomtxmemo) {
+        rotcat_body(mtx, x, y, z);
         return;
     }
     memcpy(k, mtx, 48);
@@ -98,7 +142,7 @@ void mtxRotCat(Mtx mtx, float x, float y, float z) {
         cat_hit++;
         return;
     }
-    mtxRotCat_game(mtx, x, y, z);
+    rotcat_body(mtx, x, y, z);
     memcpy(s->k, k, sizeof(k));
     memcpy(s->m, mtx, sizeof(s->m));
     s->valid = 1;

@@ -431,7 +431,8 @@ reltest: all
 MTXTEST := $(BUILD)/mtx_test
 $(MTXTEST): tests/mtx_test.c $(BUILD)/game/src/dolphin/mtx/mtx.o \
         $(BUILD)/game/src/dolphin/mtx/mtxvec.o $(BUILD)/game/src/dolphin/mtx/vec.o \
-        $(BUILD)/game/src/dolphin/mtx/quat.o $(BUILD)/port/src/os/psmtx_c.o
+        $(BUILD)/game/src/dolphin/mtx/quat.o $(BUILD)/port/src/os/psmtx_c.o \
+        $(BUILD)/port/src/os/fast_sincos.o
 	@mkdir -p $(dir $@)
 	$(CC) $(PORT_CFLAGS) -o $@ $^ -lm
 
