@@ -99,7 +99,11 @@ this line waits for them, or for the user to move the line.
 Each line is something the evidence does not settle, for the user to weigh;
 none is a known fault.
 
-1. **The pauses (above).** Ship 0.9.8 with them, or take the three small
+1. **The pauses -- taken into 0.9.9 (M40)**: the three fixes below are in,
+   and a two-hour soak on 0.9.9 had **0 resyncs** against 0.9.8's 2.6 an
+   hour (PLAN.md 55.7; the drive still takes ~1.7 s on card renames, now
+   behind the game). Six hours, as the line below asked, is what the
+   leave-behind soak will have when it is read. The original line: ship 0.9.8 with them, or take the three small
    fixes (card writer coalescing, the log on a thread, Bowser's space and
    the board's ending in the resident list) into a 0.9.9 and soak it again
    (six hours; the snapshots `snap-m39-bkoopa` and `snap-m39-statusline`,

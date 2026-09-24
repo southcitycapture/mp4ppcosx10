@@ -20190,3 +20190,519 @@ prove it. Nothing a player runs changed, so no dmg was cut: 0.9.8 (`611b6cd2`) s
 `~/isle-log.txt`. `--board 1+` gives the party menu board 1 first and the
 next board at every board the soak chains (w01 → w02 → … → w06 → w01), so a
 night covers all six; each 20-turn board is about 70 minutes. Witnessed: board 1's 20 turns ended and the soak entered `w02dll` ("`--board: mentdll BoardSaveInit(0) -> 1 (w02dll), board 2 of the run`") at 11:54, 0 faults, one resync (1.6 s at retrace 210,061, the drive class).
+## 55. M40 log: 30 fps overall *(2026-09-23, littlejelly)*
+
+The user's one requirement for 1.0: **"30fps everything"** -- every screen a
+player can reach, menus included, a median of 29.5 presented frames a
+second at 100% game speed on the dual 1 GHz G4 with the Radeon 9000. The
+milestone makes the requirement measurable (a scoreboard of every screen,
+re-runnable), moves the v1.0 line to it, builds the lever the brief named
+-- static geometry kept on the card, decoded once -- measures it, puts the
+three drive-pause fixes of §54 into the same build and soaks them, and names
+the wall of every screen still short.
+
+**The short answer.** The scoreboard exists (`tools/fps_board.sh` + `fps_board.py`, 79 real-time runs over every screen a player reaches, two hours on the G4) and says **55 of 82 screens met 30 fps before M40 and 57 of 82 do after it**, all 82 at 100% game speed. The static-geometry cache is built, exact (every md5 walk; 125 of the two chains' 130 minigame frames identical, the other five -- screen copies timed by real-time pacing -- identical in lockstep with it on and off) and shipped as `--vcache auto`: about a third of a heavy scene's vertices are static -- the skinned characters are the rest -- and where the render thread was a pole it gives +2 to +3 fps (the character select 23.3 → 25.9, m431 21.1 → 23.9, m432 22.0 → 24.6, m444 24.9 → 27.8; m407 and m440 over the bar). The buffer-object variant draws nothing on this driver next to the vertex range and could not be measured. **Twenty-three of the twenty-five screens still short are the game thread's drawn frame** -- ~11 ms of the engine's draw preparation and ~12 ms of the port's GX front end beyond the decode -- which is M41's lever; m404's wall is its replay (37 ms) and m415's its copy reads. The three drive-pause fixes shipped in the same build, and a two-hour soak on it had **0 resyncs** against 0.9.8's 2.6 an hour (the drive still stalls 1.7 s on card renames; nothing on the game thread waits for them now). 0.9.9's dmg is cut.
+
+### 55.1 The soak, read
+
+M39c's leave-behind (§54b.7) -- `isle --soak --com4 --rtc dolphin
+--freshcard --realtime --snap-every 5000 --snap-keep 3 --status --ovllog
+--stuckwatch 200 --perf --board 1+` on `9e3945e2`'s build -- ran from 10:30
+to 11:56 G4 time and was stopped for this milestone (`g4 stop`, the game's
+own reset path, `EXITCODE=0`): **1 h 25 min, 306,960 retraces, 5,116 status
+lines** (`docs/soak/m40-soak31-m39c-leave.log.gz`, `soak_read.py`,
+`fps_board.py`).
+
+| | |
+|---|---|
+| where it got | board 1 (w01, Toad's) all 20 turns, its ending (mstory3), the mode select, the character select, and board 2 (w02, Goomba's, `--board 1+`'s next) into its first turn -- 21 minigame plays of 21 modules |
+| speed | **100.0%** (`game 5121.55 s vs wall 5123.30 s`) |
+| faults / guard hits / mismatches | **0 / 0 / 0** |
+| resyncs | **1**, 1.65 s at retrace 210,061: the stall line at 210,056 is `game 1314 ms` on a consumed frame with no read over 100 ms beside it, and the card's rename 1,762 ms (frame 204,764) is the only slow disk event near -- the drive class of §54.4 |
+| STUCK | 3, the soak's own designed waits (the mode select after the ending, the character select twice) |
+| audio | 117 underruns (82 an hour): m444 55, the first turn of the board 20 |
+| card | 22 writes, 46 flushes, 23 of them waited for the previous one (218 ms), one rename 1.77 s behind the game |
+| rss | 164 → 266 MB, flat from the first hour (the resident set filling to 118 MB) |
+| presented fps by screen | 16 of 29 screens pass the new bar on this soak alone; the worst m415 18.7, m441 19.9, m431 20.1, the character select 23.7 |
+
+The board's frame rate on this soak -- w01 30.0 median, w02 29.2 -- is
+§54b's; nothing new.
+
+### 55.2 The scoreboard
+
+**The chain.** `tools/fps_board.sh` runs on the G4 as the console runner's
+job (settings from `~/fps-board.env`: the bundle, the output directory,
+extra flags). One real-time run per screen, each with `--perf --perfdump
+NAME.csv --status --ovllog` and the player's defaults otherwise:
+
+| run | what | how |
+|---|---|---|
+| `front` | boot, title, file select, mode select, the character select, the board's first turn | the md5 walk (`board-start-com4.play --nomovies`) at real time to frame 9,000, dumping 800/3000/7000 |
+| `title` | the title left alone | boot, no input, 3,600 frames |
+| `b1`..`b6` | the six party boards | `--board N`, fast-forwarded to the board's entry + 2,700, then 2,700 frames at real time |
+| `m401`..`m463` | all 63 minigames | the gallery's teleport (`--minigame`, `--ffto 14000`) at real time from the instruction card to entry + 1,800 (`--mgend`), dumping entry + 300 and + 1,200 |
+| `goto-*` | the options (records inside), the Present Room, the Extra Room, the Minigame Mode menu, story mode, the credits, the mini-game character select, the story's cut-scene module, `ztardll`; the story ending | `--goto OVL:0:0`, 2,400 frames (the ending: `mstory2dll:4:0 --play ending-a.play`, 3,600) |
+
+About 2 h on the G4. Each run ends by its own `--frames`/`--mgend` or, past a
+ceiling, by its pid; `index.txt` gets a line per run (exit, faults, the
+dumped frames' md5s).
+
+**The reader.** `tools/fps_board.py` (the Mac session's reader, 9c62700d)
+extended: a log's `.csv` beside it adds the drawn frame's costs per screen
+-- the game thread's work and its decode share, the consumed frame, the
+render thread's replay and decode, and (new `--perfdump` columns) the draw
+calls, the vertices, the stream's records (every GL call) and the cache's
+share of the vertices. The fast-forward's status lines and CSV rows are
+left out, and the speed is the median of the screen's lines (a teleported
+run's one loading line at the entry is not the screen's speed; the soaks
+count resyncs themselves).
+
+**Before** -- `docs/fps-scoreboard-m40-before.md`, the chain on the M39c
+build (`df75d3a6`, built from `ea2f8259` in a worktree and installed beside
+the new one as `~/MarioParty4-m39c.app`), 12:54-14:59 G4 time, 79 runs, 0
+faults: **55 of 82 screens pass**, every one at 100% game speed; the 27 that
+miss are in the checklist's amendment (55.8) and below. One run did not
+reach its screen: `--goto mstorydll` panics in `dvd.c` (an 1.4 MB
+allocation) -- story mode's board setup expects what the file select loads
+into ARAM, which a teleport from the boot never did; the story's boards are
+the party boards, measured.
+
+### 55.3 The cache: the design
+
+`--vcache` (gx_draw.c, "the static-geometry cache"). A primitive's decoded
+vertices are kept in a **region of the same vertex range as the ring**
+(8 MB after the ring's 8 MB, `--vcachemb`), and a later frame that draws the
+same primitive from the same bytes draws them from there: no decode on
+either thread, no copy, no `glFlushVertexArrayRangeAPPLE`. The draw calls,
+their order, the batches and the vertex program's inputs are the decode's
+own — the bytes in the region *are* the decode's output — so the picture is
+the same to the byte (55.4's md5s, and 55.6's 126 minigame frames).
+
+**The key.** A decoded run is a function of exactly three things, and the
+key hashes all three (two independent 32-bit chains, 64 bits a key; the
+loop is four `mullw` per 8 bytes):
+
+* the **list's bytes** — every call, because the game rebuilds some lists
+  (the particles' `dlBuf`), memoised within an epoch inside the engine's
+  model walk (below);
+* the **plan** (`build_decode_plan`): every step's array base and stride,
+  type, scale, table, destination, the fills taken from `pending`, the
+  register colour when it wins, the layout, the vertex format;
+* the **array elements the indices name**, by *version*: an array (base,
+  stride) has an extent — the union of the index windows every stored run
+  read from it — and a hash of that extent, re-taken at most once per
+  **epoch**. A changed hash, or an extent that grew, is a new version; a run
+  stored at another version misses.
+
+**The epoch** is what makes the arrays' check affordable, and its rules are
+the cache's exactness argument. The memo of an array's hash ends when:
+the drawn frame starts; a known rewriter runs — the skin body
+(`hsf_run_body`), `ShapeProc`/`ClusterProc` (`port_vtx_rewrite`, M29's
+patches), the game's own `EnvelopeProc` under `--cpuskin`; the game leaves
+module code (a layer hook or a model's hook function returns: new
+exact-text patches bracket the three call sites in `hsfman.c`/`hsfdraw.c`
+with `port_vc_foreign`); or — in module code only — `GXSetArray` names the
+array again (a buffer refilled between two draws is set again). Inside the
+engine's model walk a re-set is `FaceDraw` changing vertex mode, several
+times an object, and the first build that treated it as a write re-hashed
+every object's arrays per material: 4 GB of hashing on a 9,000-frame walk.
+`GXInvalidateVtxCache` is *not* an epoch: `hsfdraw.c` calls it before every
+object it draws.
+
+**What is never cached**: the skinned layouts (the palette's per-vertex
+slot, the GPU skin, `pi.skin`), the premerge and the palette (they rewrite
+ring bytes in place), M9's `--dlcache`, `--decodestats`, NBT3 normals
+(three indices a vertex), a plan the fast job cannot carry. **Animated
+lists** — a run whose arrays changed under it twice in a row (the breathing
+characters, the morphs, the water) — are left to the ring for 60 drawn
+frames (600 after 16 changes), their lists not even hashed, then tried again.
+
+**Variants.** The game calls one list under several plans in a frame (a
+model drawn twice with two register colours; a texcoord fill left by
+whichever primitive came before), and the first build keyed one run per
+place in the list: 1.95 M "plan changed" misses and 589 region resets on
+the 9,000-frame walk. A place now holds up to eight runs, one per plan, the
+least recently used replaced; the resets fell to 10.
+
+**The region** is a bump allocator, each run aligned to its stride from the
+index base (so `--fixbase`'s bias covers it). Full: the pending batch is
+drawn, the render thread and the card drained (`rt_finish_join`: a sync
+`RT_CALL` of `glFinish`), and the region starts again with every run
+forgotten (a generation). Two resets within two seconds switch storing off
+for ten.
+
+**The batches** are unchanged: a hit's run is added like a decoded one, and
+consecutive hits of one object, stored in draw order, are contiguous in the
+region and join one batch as they did in the ring. A batch of hits alone is
+issued without the range flush (it was flushed when it was stored).
+
+**The threads.** The keying is the game thread's (it must decide before the
+draw's pointers are recorded); a store's decode goes wherever the auto split
+sends it (the job's destination is the region). So the cache moves work: it
+takes the decode off the render thread (and off the game thread's auto
+share) and adds the keying to the game thread. **`--vcache auto`, the
+default**, keys a drawn frame only where that trade is a win: when the
+render thread's last replay plus the frame's whole decode (the last frame's
+decode on both threads plus the hits' vertices at the decode's measured
+rate) is over 28 ms (`--vcachefit`) *and* over the game thread's own cycle
+(its drawn frame + a consumed one). On one CPU, or without the split, it
+always keys (every decode is the game thread's then). `--vcache on` keys
+every frame, `count` keys and counts without caching (the static share),
+`--novcache` is the old path.
+
+**VRAM.** The region in the vertex range is AGP memory the card reads by
+DMA (the ring's own `SHARED` storage hint): it takes nothing from the card.
+`--vcachevbo` puts the region in a `GL_STATIC_DRAW_ARB` buffer object
+instead — 8 MB of the Radeon's 64 — uploaded run by run
+(`glBufferSubDataARB` of the staging copy, a record after the decode) and
+bound while a batch's pointers are set. The split with the texture cache:
+the machine check's budget is 40 MB of textures on a 64 MB card (the
+framebuffers ~4 MB windowed, ~9 MB at 1024×768 fullscreen); the buffer
+object's 8 MB fits beside them with ~7-12 MB spare, and on a 32 MB card
+(`--texbudget 24`) the vertex-range region is the only one offered.
+
+**Found on the way: the clock.** `port_now_seconds` was two 64-bit
+divisions (`__udivdi3` on a 32-bit G4, ~0.5 µs a reading); the keying's
+timers alone cost milliseconds a frame, and the M33 decode split has read it
+twice a display-list run since M33. It is one multiply by a precomputed
+scale now; `port_now_ns` (what `OSGetTick`, game-visible, reads) is
+untouched.
+
+### 55.4 The static share, measured first
+
+The key logic above, run with `--vcache count` (keyed and counted, drawn
+from the ring), then with the cache on; the share is the vertices a drawn
+frame hands GL whose run was stored on an earlier frame with the same list
+bytes, plan and array versions -- i.e. unchanged since the frame before.
+
+**The md5 walk** (9,000 frames, turbo, `--nomovies`): of the vertices the
+cache may key -- everything but the lists left to the ring as animated --
+**98.7%** are static (216.1 M of 218.9 M, `NC`); the misses are first
+sights (0.4 M), a new plan for a place (1.0 M) and arrays that changed (1.5
+M). But the animated lists are a third of the list calls (2.42 M of 7.67 M):
+the skinned characters, whose arrays the skin rewrites every frame, never
+key.
+
+**Per drawn frame, of all the vertices GL is handed**, on the worst scenes
+(the A/B's `on` arm, 55.5, three runs each; `vc` in the scoreboard):
+
+| scene | vertices a drawn frame | static (served by the cache) | the rest |
+|---|---:|---:|---|
+| m404 Trace Race | 61,829 | **36%** | the four skinned characters, the ink trails (module-built, rewritten) |
+| m431 | 82,968 | **39%** | the characters |
+| m441 | 67,416 | **30%** | the characters, the moving floor |
+| the character select | 75,757 | **36%** | the eight breathing characters |
+| the board (the walk's w01) | 51,204 | **62%** | the four characters, the Toad, the effects |
+
+A third of a heavy scene's geometry is static. That is less than the brief
+hoped ("stages, backdrops, props") because in Mario Party 4 the characters
+are most of the vertices: four (eight on the character select) skinned
+models of 5-9 k vertices each, re-skinned every frame on the CPU and
+decoded from the rewritten arrays, and nothing of theirs can be cached
+without caching the skinning (the GPU palette was measured dead on this
+driver, §33.2: ARL is software).
+
+### 55.5 The A/B
+
+`tools/m40_chain.sh` `A:GAME:ARM:K`, the three worst scenes of the before
+scoreboard that are not Stamp Out! (whose wall is its own copy reads, 55.7)
+and the character select, each at real time over the same teleport as the
+scoreboard, three runs per arm, interleaved (run k of every arm before run
+k+1); `tools/m40_ab.py` reads them (`docs/soak/m40-ab/ab1`, `ab2`). Medians
+of the scene's own status lines per run; the costs are the drawn frame's
+medians over the three runs.
+
+**Round 1** (the first auto, the plan's key hashed; `ab1`, 15:30-16:27 G4 time on `903cfdf9`; 36 runs):
+
+| scene | arm | presented fps, each run | mean | game work / gdec | consumed | rt | dec | vertices | vc |
+|---|---|---|---:|---:|---:|---:|---:|---:|---:|
+| mentdll | off | 23.9 / 24.0 / 23.4 | **23.8** | 33.5 / 6.3 | 4.3 | 23.9 | 10.9 | 75745 | 0% |
+| mentdll | auto | 25.7 / 25.9 / 25.9 | **25.8** | 31.2 / 0.0 | 4.5 | 21.7 | 9.4 | 75759 | 30% |
+| mentdll | on | 26.1 / 26.1 / 26.0 | **26.0** | 31.2 / 0.0 | 3.7 | 21.7 | 9.4 | 75760 | 36% |
+| m404 | off | 16.1 / 16.1 / 16.1 | **16.1** | 44.7 / 3.0 | 3.7 | 37.7 | 8.8 | 61829 | 0% |
+| m404 | auto | 16.6 / 16.3 / 16.6 | **16.5** | 44.0 / 0.0 | 3.8 | 36.2 | 7.9 | 61829 | 20% |
+| m404 | on | 16.6 / 16.2 / 16.6 | **16.5** | 44.2 / 0.0 | 3.4 | 36.2 | 7.4 | 61829 | 36% |
+| m431 | off | 22.1 / 22.1 / 21.6 | **21.9** | 34.5 / 6.0 | 8.5 | 27.0 | 9.9 | 82906 | 0% |
+| m431 | auto | 24.1 / 24.1 / 24.1 | **24.1** | 31.9 / 0.0 | 8.5 | 24.2 | 9.1 | 82968 | 38% |
+| m431 | on | 24.0 / 23.8 / 24.1 | **24.0** | 32.2 / 0.0 | 8.5 | 24.1 | 9.1 | 83033 | 39% |
+| m441 | off | 22.1 / 21.4 / 21.9 | **21.8** | 31.3 / 0.0 | 10.7 | 23.0 | 11.6 | 67416 | 0% |
+| m441 | auto | 21.1 / 21.3 / 21.2 | **21.2** | 31.6 / 0.0 | 10.6 | 21.6 | 11.3 | 67437 | 7% |
+| m441 | on | 21.9 / 21.9 / 22.2 | **22.1** | 32.1 / 0.0 | 10.3 | 20.3 | 8.2 | 67416 | 30% |
+
+**Round 2** (the plan's key as words compared whole, the variants' first-place fast path, the timers sampled one in eight; `0d407852`, 12 runs):
+
+| scene | arm | presented fps, each run | mean | game work / gdec | consumed | rt | dec | vertices | vc |
+|---|---|---|---:|---:|---:|---:|---:|---:|---:|
+| mentdll | auto | 25.2 / 25.4 / 25.4 | **25.3** | 31.5 / 0.0 | 4.3 | 22.0 | 9.4 | 75753 | 30% |
+| mentdll | on | 26.1 / 25.8 / 25.8 | **25.9** | 31.5 / 0.0 | 3.6 | 21.8 | 9.4 | 75757 | 36% |
+| m431 | auto | 24.0 / 23.8 / 23.6 | **23.8** | 32.2 / 0.0 | 8.7 | 24.5 | 9.2 | 83037 | 38% |
+| m431 | on | 24.0 / 23.9 / 23.9 | **23.9** | 32.2 / 0.0 | 8.5 | 24.4 | 9.1 | 82968 | 39% |
+
+The second round's rework did not move the frame rates (the keying's cost is the hashing's memory traffic, not the per-primitive bookkeeping).
+
+* **The render thread's decode moves as the share says**, and the game
+  thread's decode share (`gdec`, the auto split's) goes to zero: with a
+  third of the decode gone the render thread no longer needs the game
+  thread's help. `rt` falls 2-3 ms too -- the range flushes of the cached
+  batches are gone (the stream's records a frame: 3,523 → 3,223 on the
+  character select).
+* **The game thread pays the keying**: 3-6 ms a drawn frame on these scenes
+  (the list hashes, the arrays' re-hash once a frame and after every hook,
+  the plan's key a primitive), against the 5-6 ms of decode it no longer
+  does. Its drawn frame falls ~2 ms net.
+* **+2.0 fps on the character select and m431, +0.4 on m404, flat on m441**
+  -- the gain is where the render thread was the longer pole; m404's replay
+  (36-38 ms) is over two retraces by itself, and m441's game thread (31 +
+  10.7 consumed) is.
+* **auto against on**: equal within a run's spread on m431 and m404; on
+  m441 and the character select `on` was ahead by 0.6-0.9 because auto's
+  test flipped on frames where the two cycles are equal (18% of the
+  character select's frames unkeyed). The shipped auto has a margin once on
+  (55.3). Auto stays the default for the scenes the A/B did not cover: where
+  the game thread is the wall -- the boards (the walk's board: 30.0 → 29.0
+  with `on` in the first build, `docs/soak/m40-md5/walk-W.log.gz`) -- it
+  keys nothing and costs nothing.
+
+**The buffer object (`--vcachevbo`) could not be measured.** Built (the
+region uploaded to an 8 MB `GL_STATIC_DRAW_ARB` object run by run, the
+arrays pointed into it while it is bound), it draws **nothing** from the
+object on the Leopard ATI driver: the walk's three frames lose every
+cached object (`docs/screenshots/m40-vbo-draws-nothing.png`: the title's
+characters and the board gone), and a check after the first batches
+reads `GL_INVALID_OPERATION` -- with the vertex range's client state
+switched off around them too. The driver does not take a buffer object's
+arrays in a context that has a vertex array range; the only way to measure
+it is to move the ring itself to a streaming buffer object and retire the
+range, which is the whole of M16's submit path, not a flag. Left off,
+labelled experimental in `--help`, for M41 to decide.
+
+### 55.6 The md5s
+
+Byte for byte on every arm of every walk, the refs of §53.9:
+
+| run | build | arm | 800 / 3000 / 7000 |
+|---|---|---|---|
+| N (turbo, `--nomovies`) | 96055da8 (the first cache) | on | `0b58c5ee` / `2b99c60a` / `4a9a640c` |
+| NC | 96055da8 | count | the same |
+| NO | 96055da8 | `--novcache` | the same |
+| W / WO (real time) | 72ccb178 | on / off | the same |
+| N / NN | ed3147f3 | auto / on | the same |
+| M (turbo, movies) | ed3147f3 | auto | `d2d40344` / `59008ce4` / `3f98f882` |
+| N | 0d407852 (the key as words) | auto | `0b58c5ee` / `2b99c60a` / `4a9a640c` |
+| the scoreboard's `front` | 34e5fa4a (final) | auto | `0b58c5ee` / `2b99c60a` / `4a9a640c` |
+| NV | ed3147f3, cd278505, 903cfdf9 | `--vcachevbo` | `9689c3fa` / `91397f6b` / `15de555f` -- **wrong**, 55.5 |
+
+And wider than three frames: the scoreboard dumps every minigame at entry
++300 and +1,200, so the before (M39c, no cache) and after (0.9.9, auto)
+chains compare 126 frames of 63 games: 125 of 130 byte-identical, the five others explained in 55.9 and identical in lockstep with the cache on and off.
+
+### 55.7 The three drive-pause fixes, and the soak
+
+In the same build (§54.4's list, §54.10's order):
+
+* **The card writer no longer makes a flush wait** (`card_file.c`). A flush
+  that finds the writer busy copies the image into a second buffer and
+  returns; the retrace (`port_card_service`) starts the next write the
+  moment the running one lands, a newer flush replacing a waiting image
+  (the card image is whole: the newest supersedes). A save reaches the disk
+  at most one running write later than before. `--cardwait` is M29's way.
+* **The log is written on a writer thread** (`os_report.c`). A line is
+  formatted where it is logged and appended to a 1 MB ring; the writer does
+  the `fwrite`/`fflush` the game thread used to wait on. A full ring blocks
+  the logger (a megabyte behind: never on a soak). A fault, a fatal error,
+  `exit` and a second ctrl-C drain the ring and log in place
+  (`port_log_sync`; the crash handler's lines reach the disk before
+  `_exit`). The SIGINT handler no longer logs (the ring's lock might be the
+  interrupted thread's): it sets flags and the game thread's next reset
+  poll says it. `--synclog` is the old path.
+* **Bowser's space and the board's ending are in the resident set**:
+  `data/bkoopa.bin`, `data/bkoopasuit.bin`, `dll/mstory3Dll.rel`,
+  `data/mstory3.bin` appended by hand after the generated list (4.4 MB; the
+  set had 138 MB free at the 256 MB budget).
+
+**The soak** -- the final build (`a7d28f61`), §54.4's command with the
+player's defaults (`isle --soak --com4 --rtc dolphin --freshcard --status
+--perf`, windowed, no snapshots), started at 19:21 G4 time after the md5
+walks, read at the two-hour mark (21:24) without stopping it: it is also the
+leave-behind (55.11). `docs/soak/m40-soak32-final-2h.log.gz`.
+
+| | M39 soak (§54.4, 0.9.8) | M40 soak (0.9.9) |
+|---|---:|---:|
+| length | 6 h 30 min | **2 h 3 min**, 442,200 retraces, 7,370 status lines |
+| where it got | five boards | board 1's 20 turns, its ending, the mode and character selects, board 2 (w01 again) to turn 14; the minigames of 34 turns, 28 modules |
+| speed | 99.9% | **100.1%** |
+| faults | 0 | **0** |
+| **resyncs (the one-to-two-second pauses)** | **17, 2.6 an hour** | **0** |
+| frames over 500 ms | 25 | **0** (the worst 499 ms, a scene's load: texture uploads) |
+| cold reads over 100 ms | 4 (Bowser's space 1.7 s, the ending 1.1 s ×2) | **0** (the ending's two files came from the set at turn 20; no Bowser space fell in the two hours) |
+| card writes held by the drive | 26 renames at 1.68-1.81 s, 2 flushes that waited 2.1-2.2 s on the game thread | 22 renames at 1.65-1.79 s -- **all behind the game**; no flush waited |
+| status-line pauses | 10 | 0 |
+| underruns | 262 an hour | 19.5 an hour (38: the boot's 10, the first turn's 22, the character select's 6) |
+| rss | 164 → 286 MB | 176 → 278 MB, flat after the first hour |
+
+The drive is the same drive: it still takes ~1.7 s for 22 of 28 card
+renames, as §54.4 found. What changed is who waits for it: nobody on the
+game thread. Two hours with no Bowser space is not proof of that file's
+fix; the resident set's log line (`loader: resident set ... from the list`)
+counts it held, and §54.9's replay of that frame already showed the read
+cost nothing when it is served from memory.
+
+### 55.8 The checklist, amended
+
+`docs/release-checklist.md` has the new v1.0 line at its head: "30 fps
+overall" as the user defined it, the scoreboard as its measure, the
+before-numbers (55 of 82) with the gap per screen, and where M40 left it
+(below). The machine check and `requirements.md` state the two promises
+(55.10).
+
+### 55.9 The scoreboard after, and each remaining wall
+
+`docs/fps-scoreboard.md` -- the chain on the final build (0.9.9, `isle`
+`34e5fa4a`; the shipped `a7d28f61` differs from it in the machine check's
+tier string alone), 16:52-18:56 G4 time, 79 runs, 0 faults, the `front`
+run's three frames the references: **57 of 82 screens pass** (from 55):
+m407 (27.0 → 29.8) and m440 (28.8 → 29.6) cross the bar, none falls
+below it. The worst ten, before and after:
+
+| | before (M39c) | fps / p10 | | after (0.9.9) | fps / p10 | static share |
+|---|---|---:|---|---|---:|---:|
+| 1 | m404dll | 15.9 / 14.6 | | m404dll | 16.2 / 14.8 | 26% |
+| 2 | m415dll | 16.1 / 10.7 | | m415dll | 16.7 / 12.3 | 6% |
+| 3 | m441dll | 21.0 / 19.5 | | m441dll | 21.4 / 19.0 | 11% |
+| 4 | m431dll | 21.1 / 19.3 | | m414dll | 23.8 / 19.1 | 1% |
+| 5 | m432dll | 22.0 / 18.7 | | m431dll | 23.9 / 21.2 | 38% |
+| 6 | m414dll | 23.2 / 16.7 | | m447dll | 23.9 / 22.7 | 0% |
+| 7 | mentdll | 23.3 / 21.7 | | m401dll | 24.1 / 17.9 | 17% |
+| 8 | m433dll | 23.8 / 19.3 | | m433dll | 24.1 / 20.8 | 43% |
+| 9 | m436dll | 24.0 / 21.8 | | m432dll | 24.6 / 21.8 | 68% |
+| 10 | m447dll | 24.0 / 22.7 | | w05dll | 25.0 / 20.8 | 33% |
+
+The movers are the cache's: the character select +2.6, m431 +2.8, m432
++2.6, m444 +2.9, m407 +2.8, m423 +2.3, m412 +2.1, m418 +1.9 -- the scenes
+with a static share and a render thread that was a pole. The rest moved
+inside a run's spread (±0.5).
+
+**Exactness, 63 games wide.** Of the 130 frames both chains dumped, 125 are
+byte-identical; the five that are not (m415 ×2, m416 ×2, m423 ×1) are
+real-time frames of games that copy the screen: a consumed frame's copy
+reads the last *presented* picture (§32.1), which pacing decides. The
+proof is lockstep: each of the three games with the cache forced on and
+with `--novcache`, the same two frames -- **identical in all six pairs**
+(m415 `bddd931c`/`4357d070`, m416 `64ff8811`/`13949617`, m423
+`7fe371aa`/`ccb999c2`; `docs/soak/m40-exact/index.txt`).
+
+**The walls** (medians of the drawn frame; the game thread's cycle is its
+drawn frame plus a consumed one, the render thread's its replay plus its
+decode; 33.3 ms is two retraces):
+
+| screen | fps | game thread cycle ms | render thread ms | the wall | vertices | GL calls | vc |
+|---|---:|---:|---:|---|---:|---:|---:|
+| m404dll | 16.2 | 48.5 | 44.7 | render thread: the replay alone (36.9 ms) | 61829 | 3350 | 26% |
+| m415dll | 16.7 | 24.7 | 19.3 | the canvas copy reads (glReadPixels joins; both threads under 33 ms) | 45282 | 2937 | 6% |
+| m441dll | 21.4 | 42.3 | 31.9 | game thread (42.3 = drawn 31.7 + consumed 10.6) | 67416 | 7209 | 11% |
+| m414dll | 23.8 | 36.3 | 28.0 | game thread (36.3 = drawn 28.8 + consumed 7.5) | 49198 | 5725 | 1% |
+| m431dll | 23.9 | 40.8 | 33.5 | game thread (40.8 = drawn 32.1 + consumed 8.7) | 82843 | 5210 | 38% |
+| m447dll | 23.9 | 41.5 | 15.4 | game thread (41.5 = drawn 35.5 + consumed 6.0) | 31846 | 1435 | 0% |
+| m401dll | 24.1 | 35.9 | 27.6 | game thread (35.9 = drawn 27.2 + consumed 8.7) | 62535 | 4132 | 17% |
+| m433dll | 24.1 | 40.9 | 25.6 | game thread (40.9 = drawn 30.7 + consumed 10.2) | 64826 | 5933 | 43% |
+| m432dll | 24.6 | 36.7 | 20.7 | game thread (36.7 = drawn 31.4 + consumed 5.3) | 113532 | 3370 | 68% |
+| w05dll | 25.0 | 37.5 | 22.9 | game thread (37.5 = drawn 27.5 + consumed 10.0) | 57382 | 4159 | 33% |
+| w04dll | 25.1 | 39.0 | 24.3 | game thread (39.0 = drawn 28.8 + consumed 10.2) | 62328 | 4174 | 44% |
+| m409dll | 25.2 | 36.7 | 27.4 | game thread (36.7 = drawn 29.9 + consumed 6.8) | 71859 | 5155 | 48% |
+| m436dll | 25.2 | 33.1 | 31.3 | game thread (33.1 = drawn 30.3 + consumed 2.8) | 102982 | 1918 | 14% |
+| mentdll | 25.9 | 34.8 | 31.2 | game thread (34.8 = drawn 31.1 + consumed 3.7) | 75607 | 3283 | 30% |
+| m435dll | 26.2 | 32.3 | 30.9 | game thread (32.3 = drawn 29.7 + consumed 2.6) | 101356 | 1923 | 13% |
+| m410dll | 27.1 | 33.2 | 27.4 | game thread (33.2 = drawn 28.3 + consumed 4.9) | 63943 | 4108 | 12% |
+| m438dll | 27.4 | 30.4 | 26.1 | game thread (30.4 = drawn 24.9 + consumed 5.5) | 48070 | 6595 | 1% |
+| m444dll | 27.8 | 34.5 | 29.8 | game thread (34.5 = drawn 28.1 + consumed 6.4) | 82961 | 3215 | 38% |
+| m418dll | 27.9 | 37.2 | 30.5 | game thread (37.2 = drawn 28.9 + consumed 8.3) | 90776 | 2802 | 20% |
+| m463dll | 27.9 | 21.8 | 21.4 | game thread (21.8 = drawn 17.5 + consumed 4.3) | 48618 | 2662 | 5% |
+| m424dll | 28.1 | 36.3 | 16.4 | game thread (36.3 = drawn 27.1 + consumed 9.2) | 78860 | 4308 | 65% |
+| m412dll | 28.9 | 31.8 | 26.5 | game thread (31.8 = drawn 27.0 + consumed 4.8) | 73168 | 3813 | 39% |
+| w01dll | 28.9 | 28.3 | 19.9 | game thread (28.3 = drawn 22.2 + consumed 6.1) | 34611 | 4198 | 3% |
+| m430dll | 29.0 | 31.7 | 23.4 | game thread (31.7 = drawn 25.3 + consumed 6.4) | 46018 | 5295 | 1% |
+| m423dll | 29.1 | 31.4 | 27.5 | game thread (31.4 = drawn 26.2 + consumed 5.2) | 85519 | 3820 | 26% |
+
+**Twenty-three of the twenty-five are the game thread.** The profile of
+the two named in 55.3 (`P-m431`, `P-cs`, `--novcache`, the CSV's split):
+m431's drawn frame is **34.7 ms = the game 16.0 + gx 17.8** (of which the
+decode 5.6) **+ 0.8**, against a consumed frame of 5.5 (the game 5.1); the
+character select's 33.4 = 13.4 + 19.1 (decode 5.8) + 0.9 against 4.5. So a
+drawn frame costs the game thread ~11 ms of the engine's own draw
+preparation (the object and material walks, the matrices, `FaceDraw`'s
+state -- work a consumed frame skips, §43.3) and ~12-13 ms of the port's GX
+front end beyond the decode (the state walk, the TEV and texture binds, the
+records: 3,300-7,200 GL calls a frame). The cache took the decode's 5-6 ms
+out of that and put 3-6 ms of keying in; on a game-thread-bound scene it is
+a wash, which is why auto leaves those scenes alone.
+
+**The next levers, for M41**, in the order the numbers put them:
+
+1. **The game thread's drawn frame** -- 23 screens. Two halves of ~12 ms
+   each: (a) the GX front end's per-draw work (the state walk and records:
+   `gx_tev_apply`, the texture binds, the batch's state capture; the last
+   `--gxsplit` table is M21's, §36.3), profiled with
+   `sample` on a drawn m431 frame before anything is written; (b) the
+   engine's drawn-frame preparation in `Hu3DExec` (16 ms drawn against 5
+   consumed on m431) -- the matrix concatenations and the material walk the
+   consumed frame already skips, which M28 left on the drawn frame.
+2. **m404 Trace Race's replay** -- 36.9 ms of render thread on its own,
+   3,350 GL calls for 61,829 vertices: the trace lines' draws.
+3. **m415 Stamp Out!'s copy reads** -- both threads under 33 ms (24.7 /
+   19.3) and 16.7 fps: the canvas's `glReadPixels` joins stall the
+   pipeline; a CPU-side canvas or a read a frame late.
+4. **The cache's keying** (3-6 ms a drawn frame where it runs): the arrays'
+   re-hash after every hook (10 a frame) and the list hashes are most of it;
+   a write-protected-page scheme would remove the hashing but was judged
+   too risky here (reads into protected pages by the loader's `read`).
+5. **The buffer object**: only with the ring moved off the vertex range
+   (55.5).
+
+### 55.10 What M40 shipped
+
+| | |
+|---|---|
+| `port/src/gx/gx_draw.c` | the static-geometry cache (`--vcache off|count|on|auto`, auto the default; `--vcachemb`, `--vcachefit`, `--vcachevbo` experimental); the run's own bound (`run_cap`); a batch of hits issued without the range flush; `gx_draw_counters` |
+| `port/src/gx/gl13.c`, `gx_vprog.c`, `gx_internal.h`, `rt.c`, `gx_rt.h` | the range's region after the ring; the buffer object (made, bound, uploaded; off); `rt_finish_join`, `rt_records_written`, `rt_vcache_inputs`; the array memo's epochs (`gx_vc_epoch`, `gx_vc_array_set`) |
+| `port/src/gx/gx_state.c`, `gx_skin.c` | the epochs at `GXSetArray` and at the skin's bodies |
+| `port/patches.txt` | `port_vc_foreign` around the layer hooks and the hook functions, and around `Hu3DExec`'s model walk (hsfman.c, hsfdraw.c) |
+| `port/src/platform/clock.c` | `port_now_seconds` by one multiply (was two 64-bit divisions) |
+| `port/src/card/card_file.c`, `os/os_report.c`, `os/sreset_poll.c`, `debug/crash.c`, `dvd/resident_list.h` | 55.7's three fixes; `--cardwait`, `--synclog` |
+| `port/src/platform/machine.c`, `docs/requirements.md` | the `tier:` line and the two promises |
+| `port/src/debug/perf.c` | `--perfdump`'s `calls,verts,recs,vchit` |
+| `port/include/port.h`, `platform/main.c`, `opt_fields.h` | the options; 0.9.9, M40 |
+| `port/tools/fps_board.sh`, `fps_board.py`, `m40_chain.sh`, `m40_ab.py` | the scoreboard's chain and reader; the milestone's chain and the A/B's reader |
+| `port/docs/fps-scoreboard.md`, `fps-scoreboard-m40-before.md`, `release-checklist.md` | the two scoreboards, the checklist |
+| `port/dist/Read Me.txt` | 0.9.9; the pauses' paragraph; the frame rates as the scoreboard has them |
+| `port/docs/soak/m40-*`, `docs/screenshots/m40-vbo-draws-nothing.png` | the logs (the CSVs trimmed to their real-time rows) |
+
+**The disk image**: `Mario Party 4 PowerPC Edition 0.9.9.dmg`, 4,290,003
+bytes, md5 `589feb42a2edc048d29a510ccfebaa7d`, at `littlejelly:~/MarioParty4-PowerPC-0.9.9.dmg` and on
+the G4; mounted and listed: `Mario Party 4.app` (`isle` `a7d28f61`, 99
+module bundles), `Read Me.txt` (0.9.9), `Licences/` (four); no game data.
+
+**The md5s** on the final build (`a7d28f61`, `docs/soak/m40-final/index.txt`):
+with `--nomovies` **800 `0b58c5ee` / 3000 `2b99c60a` / 7000 `4a9a640c`**, with
+the movies **`d2d40344` / `59008ce4` / `3f98f882`** -- the references,
+unchanged since §53.9.
+
+### 55.11 What is left running, and what M41 starts with
+
+On the G4, since 19:21 G4 time, on 0.9.9 (`isle` `a7d28f61`, exec'd by
+`tools/m40_chain.sh`'s `M40_LEAVE` after the final md5 walks; runner slot
+`~/isle.app` → `MarioParty4-chain.app`):
+
+```
+isle --soak --com4 --rtc dolphin --freshcard --status --perf
+```
+
+log `~/isle-log.txt` (its first two hours are 55.7's soak). The player's
+card and `~/memcard-backup.raw` untouched (every run `--freshcard`). The
+M39c build stays installed beside it as `~/MarioParty4-m39c.app` (the
+scoreboard's before); the chain settings files are `~/fps-board.env` and
+`~/m40.env`.
+
+M41: 55.9's levers, the game thread's drawn frame first. The named
+snapshots of M39 (§54.9) stand; nothing M40 found needs a new one -- every
+finding here reproduces from its teleport (`tools/m40_chain.sh A:GAME:ARM:K`,
+`P:GAME`, `L:GAME:ARM`).
