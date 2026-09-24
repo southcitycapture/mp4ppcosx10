@@ -661,6 +661,7 @@ void port_snap_tick(void) {
 
 int port_snap_restore_pending(void) { return port_opt.restore != NULL; }
 
+void port_wb_disarm_all(void); /* M42: gx_wb.c */
 static int rd(FILE* f, void* p, size_t n) { return fread(p, 1, n, f) == n; }
 
 void port_snap_restore(void) {
@@ -793,6 +794,7 @@ void port_snap_restore(void) {
         }
     }
 
+    port_wb_disarm_all(); /* M42: fread cannot write a write-barrier page */
     if (!rd(f, port_mem1_lo(), PORT_MEM1_SIZE) ||
         !rd(f, port_aram(), PORT_ARAM_SIZE) ||
         !rd(f, (void*)(uintptr_t)h.stack_lo, h.stack_size)) {

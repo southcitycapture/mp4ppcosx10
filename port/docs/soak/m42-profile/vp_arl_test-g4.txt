@@ -1,0 +1,34 @@
+ATI Radeon 9000 OpenGL Engine / 1.3 ATI-1.5.28; B=32 objects x V=30 vertices, 300 frames
+  program 1: under native limits YES, 15 native instructions
+  program 2: under native limits YES, 9 native instructions
+round 0  split (a draw an object, 3 env params before it)       0.943 ms a frame (submit 0.345), 982.1 ns a vertex
+round 0  arl (one draw, pal[A0.x])                              0.491 ms a frame (submit 0.103), 512.0 ns a vertex
+round 0  flat (one draw, one matrix)                            0.450 ms a frame (submit 0.091), 468.7 ns a vertex
+round 1  split (a draw an object, 3 env params before it)       0.924 ms a frame (submit 0.330), 962.4 ns a vertex
+round 1  arl (one draw, pal[A0.x])                              0.487 ms a frame (submit 0.099), 507.6 ns a vertex
+round 1  flat (one draw, one matrix)                            0.470 ms a frame (submit 0.106), 489.8 ns a vertex
+ATI Radeon 9000 OpenGL Engine / 1.3 ATI-1.5.28; B=32 objects x V=200 vertices, 100 frames
+  program 1: under native limits YES, 15 native instructions
+  program 2: under native limits YES, 9 native instructions
+round 0  split (a draw an object, 3 env params before it)       1.558 ms a frame (submit 1.381), 243.5 ns a vertex
+round 0  arl (one draw, pal[A0.x])                              1.712 ms a frame (submit 0.861), 267.4 ns a vertex
+round 0  flat (one draw, one matrix)                            1.788 ms a frame (submit 0.882), 279.3 ns a vertex
+round 1  split (a draw an object, 3 env params before it)       1.373 ms a frame (submit 1.199), 214.5 ns a vertex
+round 1  arl (one draw, pal[A0.x])                              1.724 ms a frame (submit 0.872), 269.4 ns a vertex
+round 1  flat (one draw, one matrix)                            1.796 ms a frame (submit 0.886), 280.6 ns a vertex
+ATI Radeon 9000 OpenGL Engine / 1.3 ATI-1.5.28; B=8 objects x V=1400 vertices, 100 frames
+  program 1: under native limits YES, 15 native instructions
+  program 2: under native limits YES, 9 native instructions
+round 0  split (a draw an object, 3 env params before it)       2.121 ms a frame (submit 1.953), 189.4 ns a vertex
+round 0  arl (one draw, pal[A0.x])                              2.097 ms a frame (submit 1.748), 187.2 ns a vertex
+round 0  flat (one draw, one matrix)                            1.935 ms a frame (submit 1.646), 172.7 ns a vertex
+round 1  split (a draw an object, 3 env params before it)       1.964 ms a frame (submit 1.798), 175.4 ns a vertex
+round 1  arl (one draw, pal[A0.x])                              2.022 ms a frame (submit 1.642), 180.6 ns a vertex
+round 1  flat (one draw, one matrix)                            1.918 ms a frame (submit 1.631), 171.3 ns a vertex
+
+# the palette's size, 32 objects x 30 vertices, 200 frames (round 1 of each):
+P=96   arl 0.485 ms  flat 0.469  split 0.937   program: under native limits YES (15 native instructions)
+P=144  arl 0.506 ms  flat 0.453  split 0.932   YES
+P=180  arl 0.521 ms  flat 0.461  split 0.921   YES
+P=190  arl 0.805 ms  flat 0.450  split 0.938   NO (0 native instructions: the driver runs it on the CPU)
+P=240  arl 0.813 ms  flat 0.465  split 0.920   NO

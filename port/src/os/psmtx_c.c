@@ -47,6 +47,8 @@ static struct {
 } sincos_memo[SINCOS_SLOTS];
 static unsigned long sincos_hits, sincos_misses;
 
+void port_sincosf_libm(f32 x, f32* s, f32* c); /* fast_sincos.c */
+
 void port_sincosf(f32 rad, f32* s, f32* c) {
     union { f32 f; u32 u; } k;
     unsigned i;
@@ -58,8 +60,7 @@ void port_sincosf(f32 rad, f32* s, f32* c) {
         sincos_hits++;
         return;
     }
-    *s = sinf(rad);
-    *c = cosf(rad);
+    port_sincosf_libm(rad, s, c); /* M42: libm's floats, without libm where provably the same */
     sincos_memo[i].bits = k.u;
     sincos_memo[i].s = *s;
     sincos_memo[i].c = *c;

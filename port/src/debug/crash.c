@@ -25,10 +25,16 @@
 #endif
 
 static int watchdog_progressed(void);
+int port_wb_fault(const void* addr);
 
 static void handler(int sig, siginfo_t* info, void* uap) {
     if (sig == SIGALRM && watchdog_progressed()) {
         return; /* the game is moving; the alarm has re-armed */
+    }
+    /* M42 (PLAN.md 57.5): the vertex cache's write barrier -- a store to a
+     * page it protected; the page is writable again and the store retries */
+    if ((sig == SIGBUS || sig == SIGSEGV) && info && port_wb_fault(info->si_addr)) {
+        return;
     }
     port_log_sync(); /* M40: the ring out, and this handler's lines written in place */
 #if defined(__APPLE__)
@@ -183,8 +189,21 @@ void port_crash_handler_install(void) {
     if (getenv("PORT_NO_CRASH_HANDLER")) {
         return;
     }
+    /* M42: the handler on its own stack.  The write barrier's faults are
+     * part of normal play now, and the game's processes run on coroutine
+     * stacks of a few KB in MEM1 (process.c): a signal frame pushed there
+     * could run past the end of one into the heap. */
+    {
+        static stack_t ss;
+        ss.ss_size = 256 * 1024;
+        ss.ss_sp = malloc(ss.ss_size);
+        ss.ss_flags = 0;
+        if (ss.ss_sp) {
+            sigaltstack(&ss, NULL);
+        }
+    }
     sa.sa_sigaction = handler;
-    sa.sa_flags = SA_SIGINFO;
+    sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
     sigemptyset(&sa.sa_mask);
     sigaction(SIGSEGV, &sa, NULL);
     sigaction(SIGBUS, &sa, NULL);

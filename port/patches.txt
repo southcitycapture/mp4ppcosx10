@@ -886,3 +886,16 @@ src/game/hsfman.c	                    temp = layerHook[j];\n                    
 src/game/hsfman.c	    HuSprDispInit();\n    HuSprExec(0);\n	    port_vc_foreign(1);\n    HuSprDispInit();\n    HuSprExec(0);\n
 src/game/hsfdraw.c	                hookFunc = (void*) drawObj->model->hsf;\n                hookFunc(drawObj->model, drawObj->matrix);\n	                hookFunc = (void*) drawObj->model->hsf;\n                port_vc_foreign(1);\n                hookFunc(drawObj->model, drawObj->matrix);\n                port_vc_foreign(0);\n
 src/game/hsfdraw.c	#include "ext_math.h"\n#include <string.h>\n\nvoid port_envelope_sync(HSFDATA *hsf);\nint port_consumed_frame(void);\n	#include "ext_math.h"\n#include <string.h>\n\nvoid port_envelope_sync(HSFDATA *hsf);\nvoid port_vc_foreign(int on);\nint port_consumed_frame(void);\n
+
+# ---------------------------------------------------------- game/hsfdraw.c (M42)
+# M42 (PLAN.md 57.3): the rotation builders memoised on their inputs' bits
+# (port/src/os/mtx_memo.c defines mtxRot / mtxRotCat and calls these bodies on
+# a miss).  Pure functions of the angles (and, for mtxRotCat, the input
+# matrix); a hit returns the bits the body computed on the same inputs.
+src/game/hsfdraw.c	void mtxRotCat(Mtx mtx, float x, float y, float z) {	void mtxRotCat_game(Mtx mtx, float x, float y, float z) {
+src/game/hsfdraw.c	void mtxRot(Mtx mtx, float x, float y, float z) {	void mtxRot_game(Mtx mtx, float x, float y, float z) {
+# M42 (PLAN.md 57.3): Hu3DMotionExec compiled as port code (port/src/os/
+# motion_exec.c: the same statements, int counters, the struct copies as word
+# moves, GetObjTRXPtr inline); the game's body kept as _game for
+# --nomotionexec.
+src/game/hsfmotion.c	void Hu3DMotionExec(s16 arg0, s16 arg1, float arg2, s32 arg3) {	void Hu3DMotionExec_game(s16 arg0, s16 arg1, float arg2, s32 arg3) {

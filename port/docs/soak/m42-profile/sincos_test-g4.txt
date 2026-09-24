@@ -1,0 +1,6 @@
+sincos_test: 268435458 floats (stride 1) of 2^-10 <= |x| <= 64: 0 differ, 116 refused by the guard (libm), 143.4 s
+sincos_test: a pair, libm 636 ns, fast 304 ns
+
+real	2m25.278s
+user	4m25.827s
+sys	0m0.306s

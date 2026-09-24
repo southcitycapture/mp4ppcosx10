@@ -49,6 +49,10 @@ void port_watchdog_arm(int seconds);
 void gx_tex_set_validate_every_bind(int v);
 void gx_tex_set_budget_mb(int mb);
 void port_sincos_report(void);
+void port_fast_sincos_report(void);
+void port_mtx_memo_report(void);
+void port_motion_exec_report(void);
+void port_wb_report(void);
 void port_matwalk_report(void);
 void port_curve_memo_report(void);
 void port_sparse_report(void);
@@ -327,6 +331,12 @@ static void usage(const char* argv0) {
             "                    at every call inside a draw (not once a draw), as before\n"
             "  --norotmemo       M41: C_MTXRotRad (every object walk's mtxRot) calls\n"
             "                    libm's sinf/cosf directly, not through the memo, as before\n"
+            "  --nofastsin       M42: the sin/cos memo's misses call libm (no fast path\n"
+            "                    that returns libm's own floats without it)\n"
+            "  --nomtxmemo       M42: mtxRot/mtxRotCat run the game's bodies every call\n"
+            "  --nowb            M42: the vertex cache re-hashes every array each drawn\n"
+            "                    frame (no write barrier on the pages it has read)\n"
+            "  --nomotionexec    M42: Hu3DMotionExec is the game's own compiled body\n"
             "  --nopacklights    M41: a lit vertex-program variant over the card's\n"
             "                    instruction limit is drawn on the CPU path, as before\n"
             "                    (no program with the lights packed four to a register)\n"
@@ -1230,6 +1240,14 @@ int port_parse_args(int argc, char** argv) {
             port_opt.nounitmemo = 1;
         } else if (!strcmp(a, "--norotmemo")) {
             port_opt.norotmemo = 1;
+        } else if (!strcmp(a, "--nofastsin")) {
+            port_opt.nofastsin = 1;
+        } else if (!strcmp(a, "--nomtxmemo")) {
+            port_opt.nomtxmemo = 1;
+        } else if (!strcmp(a, "--nowb")) {
+            port_opt.nowb = 1;
+        } else if (!strcmp(a, "--nomotionexec")) {
+            port_opt.nomotionexec = 1;
         } else if (!strcmp(a, "--nopacklights")) {
             port_opt.nopacklights = 1;
         } else if (!strcmp(a, "--nodirtyfilter")) {
@@ -1378,6 +1396,10 @@ void port_shutdown(int code) {
     port_snap_report();
     port_workers_report();
     port_sincos_report();
+    port_fast_sincos_report();
+    port_mtx_memo_report();
+    port_motion_exec_report();
+    port_wb_report();
     port_matwalk_report();
     port_curve_memo_report();
     port_sparse_report();

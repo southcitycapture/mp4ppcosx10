@@ -247,6 +247,8 @@ BOOL DVDClose(DVDFileInfo* fi) {
     return TRUE;
 }
 
+void port_wb_disarm(const void* ptr, size_t n); /* M42: gx_wb.c */
+
 static s32 do_read(DVDFileInfo* fi, void* addr, s32 length, s32 offset) {
     int n = (int)fi->cb.command;
     size_t got;
@@ -263,6 +265,10 @@ static s32 do_read(DVDFileInfo* fi, void* addr, s32 length, s32 offset) {
                (size_t)(length - (s32)(entries[n].length - offset)));
         length = (s32)(entries[n].length - offset);
     }
+    /* M42 (PLAN.md 57.5): the kernel cannot write a page the vertex cache's
+     * write barrier protected (fread would fail with EFAULT), and a copy
+     * would fault on every page: the destination is unprotected first */
+    port_wb_disarm(addr, (size_t)length);
     /* M36 (PLAN.md 51): the resident set answers first.  Same bytes, no
      * disk; the completion below lands at the same instant either way. */
     if (port_dvd_cache_serve(n, (u32)offset, addr, (u32)length)) {

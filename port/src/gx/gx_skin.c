@@ -203,6 +203,7 @@ static int range_has(const u8* lo, const u8* hi, const void* p) {
 void port_musyx_mix_mem_freed(const void* data, unsigned long size);
 unsigned port_frame_frees; /* M24: HuMemMemoryFree calls this frame (perf.c's stall line) */
 void port_curve_memo_freed(const void* data, unsigned long size);
+void port_wb_freed(const void* ptr, size_t n);
 void port_mem_freed(const void* data, unsigned long size) {
     const u8* lo = (const u8*)data;
     const u8* hi = lo + size;
@@ -210,6 +211,7 @@ void port_mem_freed(const void* data, unsigned long size) {
     port_frame_frees++;
     port_musyx_mix_mem_freed(data, size); /* M19 item 2: a voice still reading it? */
     port_curve_memo_freed(data, size);    /* M28 (b): a memoised track in it? */
+    port_wb_freed(data, size);            /* M42: the write barrier forgets the block */
     for (i = 0; i < nhsfs; i++) {
         SkinHsf* h = &hsfs[i];
         int hit;

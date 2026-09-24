@@ -396,6 +396,14 @@ typedef struct PortOptions {
     int nopacklights;       /* --nopacklights  M41: a lit variant over the card's
                              *   instruction limit goes to the CPU path, as before
                              *   (no packed-lights program) */
+    int nofastsin;          /* --nofastsin  M42: the sin/cos memo's misses call libm's
+                             *   sinf/cosf (no libm-identical fast path first) */
+    int nomtxmemo;          /* --nomtxmemo  M42: mtxRot/mtxRotCat run the game's bodies
+                             *   at every call (no memo on the angles' bits) */
+    int nowb;               /* --nowb  M42: the vertex cache re-hashes every array at
+                             *   every epoch (no write barrier on MEM1 pages) */
+    int nomotionexec;       /* --nomotionexec  M42: Hu3DMotionExec is the game's body
+                             *   (not the port's compile of the same statements) */
     int nodirtyfilter;      /* --nodirtyfilter  M41: every DC store/flush scans the whole
                              *   texture cache (no page filter first), for the A/B */
     int nodirty;            /* --nodirty  M35: DCStoreRange/DCFlushRange do not mark

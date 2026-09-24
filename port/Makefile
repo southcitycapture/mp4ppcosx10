@@ -441,6 +441,18 @@ $(BUILD)/thp_test: tests/thp_test.c src/thp/thp_jpeg.c src/thp/thp_jpeg.h
 	@mkdir -p $(BUILD)
 	$(CC) -std=gnu11 -O2 -Wall $(TUNE) $(TARGET_CFLAGS) -o $@ tests/thp_test.c src/thp/thp_jpeg.c $(TARGET_LDFLAGS)
 
+# M42: the fast sin/cos against libm over its whole domain (PLAN.md 57.3)
+sincostest: $(BUILD)/sincos_test
+$(BUILD)/sincos_test: tests/sincos_test.c $(BUILD)/port/src/os/fast_sincos.o
+	@mkdir -p $(BUILD)
+	$(CC) $(filter-out $(DEBUG_G),$(PORT_CFLAGS)) -o $@ $^ $(TARGET_LDFLAGS) -lpthread -lm
+
+# M42: does the driver run a vertex program's ARL on the card (PLAN.md 57.4)
+vparltest: $(BUILD)/vp_arl_test
+$(BUILD)/vp_arl_test: tests/vp_arl_test.c
+	@mkdir -p $(BUILD)
+	$(CC) -std=gnu11 -O2 -Wall $(TUNE) $(TARGET_CFLAGS) -o $@ tests/vp_arl_test.c $(TARGET_LDFLAGS) -framework OpenGL
+
 mtxtest: $(MTXTEST)
 	$(MTXTEST)
 

@@ -5328,6 +5328,8 @@ typedef struct VcArr {
     unsigned epoch;        /* gx_array_epoch of the last check */
     unsigned last_frame;
     int hashed;
+    u32 wb_ser;            /* M42: the write barrier's serial at the last full hash */
+    u32 e1, e2;            /* M42: the hash of its partial end pages then */
     struct VcArr* next;
 } VcArr;
 typedef struct VcPrim {
@@ -5350,11 +5352,15 @@ typedef struct VcEnt {
     unsigned changes, streak;  /* array-changed misses: in all, in a row */
     unsigned dyn_until;        /* animated: left to the ring until this frame */
     unsigned lepoch;           /* gx_vc_epoch of the list's last hash */
+    u32 wb_ser, le1, le2;      /* M42: the write barrier's serial, the ends' hash */
     int nprims, cap;
     VcPrim* prims;
     struct VcEnt* next;
 } VcEnt;
 unsigned gx_vc_epoch = 1;
+u32 port_wb_arm(const void* ptr, size_t n);                 /* M42: gx_wb.c */
+int port_wb_clean(const void* ptr, size_t n, u32 ser);
+void port_wb_ends(const void* ptr, size_t n, const u8** h, size_t* hn, const u8** t, size_t* tn);
 #define VC_KEY_MAX (GX_MAX_ATTR * 5 + GX_DEC_FILL_MAX * 3 + 16)
 static u32 vc_key[VC_KEY_MAX]; /* the plan in hand, as words (vc_plan_hash) */
 static VcEnt* vc_tbl[VC_BUCKETS];
@@ -5448,12 +5454,42 @@ static VcArr* vc_arr_find(const u8* base, u32 stride, u32 elem) {
 }
 
 /* the array's version now: its extent re-hashed once per epoch */
+/* M42: the hash of the partial pages at the two ends of an array's bytes
+ * (the write barrier watches the whole pages between them) */
+static void vc_ends_hash(const u8* p, size_t len, u32* e1, u32* e2) {
+    const u8 *h, *t;
+    size_t hn, tn;
+    port_wb_ends(p, len, &h, &hn, &t, &tn);
+    *e1 = 0x1B873593u;
+    *e2 = 0xCC9E2D51u;
+    vc_hash(h, hn, e1, e2);
+    vc_hash(t, tn, e1, e2);
+    stat_vc_arr_bytes += (double)(hn + tn);
+}
+
 static unsigned vc_arr_check(VcArr* a) {
     if (a->epoch != gx_vc_epoch || !a->hashed) {
-        u32 h1 = 0x2545F491u, h2 = 0x6C8E9CF5u;
+        u32 h1 = 0x2545F491u, h2 = 0x6C8E9CF5u, e1, e2;
         size_t len = (size_t)(a->hi - a->lo) * a->stride + a->elem;
-        vc_hash(a->base + (size_t)a->lo * a->stride, len, &h1, &h2);
+        const u8* p = a->base + (size_t)a->lo * a->stride;
+        /* M42: no interior page written since the last full hash, and the
+         * ends the same -- the bytes are the same; nothing else to read */
+        if (a->hashed && a->wb_ser && port_wb_clean(p, len, a->wb_ser)) {
+            vc_ends_hash(p, len, &e1, &e2);
+            if (e1 == a->e1 && e2 == a->e2) {
+                a->epoch = gx_vc_epoch;
+                a->last_frame = gl13_frame_number();
+                return a->ver;
+            }
+        }
+        /* the interior protected first, then read: a write after this
+         * faults, one before it is in the hash */
+        a->wb_ser = port_opt.nowb ? 0 : port_wb_arm(p, len);
+        vc_hash(p, len, &h1, &h2);
         stat_vc_arr_bytes += (double)len;
+        if (a->wb_ser) {
+            vc_ends_hash(p, len, &a->e1, &a->e2);
+        }
         if (!a->hashed || h1 != a->h1 || h2 != a->h2) {
             if (a->hashed) {
                 a->ver++;
@@ -5645,8 +5681,22 @@ static VcEnt* vc_list_begin(const void* list, u32 nbytes) {
         e->dyn_until = 0;
         return e;
     } else {
+        u32 e1, e2;
         e->lepoch = gx_vc_epoch;
+        /* M42: the write barrier, as for the arrays (vc_arr_check) */
+        if (e->wb_ser && port_wb_clean(list, nbytes, e->wb_ser)) {
+            vc_ends_hash((const u8*)list, nbytes, &e1, &e2);
+            if (e1 == e->le1 && e2 == e->le2) {
+                e->last_frame = fr;
+                e->dyn_until = 0;
+                return e;
+            }
+        }
+        e->wb_ser = port_opt.nowb ? 0 : port_wb_arm(list, nbytes);
         vc_hash((const u8*)list, nbytes, &h1, &h2);
+        if (e->wb_ser) {
+            vc_ends_hash((const u8*)list, nbytes, &e->le1, &e->le2);
+        }
         if (h1 != e->lh1 || h2 != e->lh2) {
             int i;
             for (i = 0; i < e->nprims; i++) {

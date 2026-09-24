@@ -29,6 +29,15 @@ status line at or after its frame.  Status lines of a fast-forward (speed
 over 110%, or no speed at all: --ffto's turbo stretch) are not the player's
 and are left out, with the CSV rows they cover.
 
+M42: the three-run mode.  tools/fps_board.sh runs a screen whose first run
+lands near the bar twice more, as NAME~2.log and NAME~3.log.  A family of
+runs (NAME, NAME~2, NAME~3) is judged by the MEDIAN OF ITS RUNS' MEDIANS of
+its own screen (mNNN -> mNNNdll, bN -> w0Ndll, goto-X -> X): the table's
+median column is that, the runs column lists each run's median, and the
+lines, p10 and costs pool the family's runs.  From the repeats only the
+family's own screen is read (the boot, the walk and the instructions screens
+they pass through are counted once, from NAME).
+
 The definition of done, as the user set it: "30fps everything", measured as a
 median of at least 29.5 presented fps at 100% game speed on the dual 1 GHz G4.
 """
@@ -98,6 +107,62 @@ def read(paths, fastcut=110):
     return by, cost
 
 
+REP = re.compile(r'^(.*)~(\d+)$')
+
+
+def stem_of(path):
+    b = os.path.basename(path)
+    for suf in ('.gz', '.log'):
+        if b.endswith(suf):
+            b = b[:-len(suf)]
+    return b
+
+
+def family_screen(stem):
+    m = re.match(r'^m(\d{3})$', stem)
+    if m:
+        return 'm%sdll' % m.group(1)
+    m = re.match(r'^b(\d)$', stem)
+    if m:
+        return 'w0%sdll' % m.group(1)
+    if stem.startswith('goto-'):
+        return stem[5:]
+    return None
+
+
+def read_families(paths, fastcut=110):
+    """-> (by, cost, runs): the pooled lines as read() gives them, with the
+    repeats' lines of their own screen only, and per screen judged by a family
+    the list of its runs' medians (first run first)."""
+    base = [p for p in paths if not REP.match(stem_of(p))]
+    reps = [p for p in paths if REP.match(stem_of(p))]
+    by, cost = read(base, fastcut)
+    fams = {}
+    for p in paths:
+        st_ = stem_of(p)
+        m = REP.match(st_)
+        fam, k = (m.group(1), int(m.group(2))) if m else (st_, 1)
+        fams.setdefault(fam, []).append((k, p))
+    runs = {}
+    for fam, members in fams.items():
+        scr = family_screen(fam)
+        if scr is None or len(members) < 2:
+            continue
+        meds = []
+        for k, p in sorted(members):
+            b1, c1 = read([p], fastcut)
+            v = b1.get(scr, [])
+            if not v:
+                continue
+            meds.append(st.median(x[1] for x in v))
+            if k >= 2:
+                by.setdefault(scr, []).extend(v)
+                cost.setdefault(scr, []).extend(c1.get(scr, []))
+        if len(meds) >= 2:
+            runs[scr] = meds
+    return by, cost, runs
+
+
 def costs(rows):
     if not rows:
         return None
@@ -115,12 +180,14 @@ def costs(rows):
     return out
 
 
-def table(by, cost, bar, min_lines):
+def table(by, cost, bar, min_lines, runs=None):
     rows = []; short = []
+    runs = runs or {}
     for k, v in by.items():
         fps = [x[1] for x in v]; spd = [x[0] for x in v]
         rt = [x[2] for x in v if x[2] is not None]; dec = [x[3] for x in v if x[3] is not None]
-        r = dict(screen=k, n=len(v), med=st.median(fps), p10=pct(fps, 0.10), speed=st.median(spd),
+        med = st.median(runs[k]) if k in runs else st.median(fps)
+        r = dict(screen=k, n=len(v), med=med, runs=runs.get(k), p10=pct(fps, 0.10), speed=st.median(spd),
                  rt=st.median(rt) if rt else None, dec=st.median(dec) if dec else None,
                  c=costs(cost.get(k, [])))
         r['pass'] = r['med'] >= bar and r['speed'] >= 99.0
@@ -142,32 +209,38 @@ def main():
     ap.add_argument('--title', default='30 fps scoreboard')
     ap.add_argument('--fastcut', type=int, default=110)
     a = ap.parse_args()
-    by, cost = read(a.logs, a.fastcut)
-    rows, short = table(by, cost, a.bar, a.min_lines)
+    by, cost, runs = read_families(a.logs, a.fastcut)
+    rows, short = table(by, cost, a.bar, a.min_lines, runs)
     npass = sum(r['pass'] for r in rows)
     withc = any(r['c'] for r in rows)
     out = ['# %s\n' % a.title]
     out.append('Bar: median presented fps >= %.1f at >= 99%% game speed. Logs: %d (%s).\n' % (
         a.bar, len(a.logs), ', '.join(sorted(set(os.path.dirname(x) or '.' for x in a.logs)))))
     out.append('**%d of %d screens pass.**\n' % (npass, len(rows)))
+    if runs:
+        out.append('Three-run mode (M42): %d screens landed within 2 fps of the bar on their first run and were '
+                   'run three times; their **median fps is the median of the three runs\' medians** (the runs '
+                   'column), their lines, p10 and costs pool the three runs. Every other screen is one run.\n'
+                   % len(runs))
     if withc:
         out.append('Per drawn frame (medians): the game thread\'s work and its decode share (gdec); the '
                    'consumed frame\'s work; the render thread\'s replay (rt) and decode (dec); draw calls, '
                    'vertices and GL calls (stream records) handed to GL; vc = vertices the static-geometry '
                    'cache served.\n')
-        out.append('| screen | lines | median fps | p10 fps | speed | game work / gdec ms | consumed ms | '
+        out.append('| screen | lines | median fps | runs | p10 fps | speed | game work / gdec ms | consumed ms | '
                    'rt ms | dec ms | draws | vertices | GL calls | vc | verdict |')
-        out.append('|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|')
+        out.append('|---|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|')
     else:
-        out.append('| screen | lines | median fps | p10 fps | speed | rt ms | dec ms | verdict |')
-        out.append('|---|---:|---:|---:|---:|---:|---:|---|')
+        out.append('| screen | lines | median fps | runs | p10 fps | speed | rt ms | dec ms | verdict |')
+        out.append('|---|---:|---:|---|---:|---:|---:|---:|---|')
     for r in rows:
         verdict = ('PASS' if r['pass'] else 'short by %.1f fps' % max(0.0, a.bar - r['med'])
                    if r['speed'] >= 99.0 else 'SPEED %.1f%%' % r['speed'])
         c = r['c']
+        rn = ' / '.join('%.1f' % x for x in r['runs']) if r['runs'] else '1 run'
         if withc:
-            out.append('| %s | %d | %.1f | %.1f | %.1f%% | %s | %s | %s | %s | %s | %s | %s | %s | %s |' % (
-                r['screen'], r['n'], r['med'], r['p10'], r['speed'],
+            out.append('| %s | %d | %.1f | %s | %.1f | %.1f%% | %s | %s | %s | %s | %s | %s | %s | %s | %s |' % (
+                r['screen'], r['n'], r['med'], rn, r['p10'], r['speed'],
                 ('%s / %s' % (fmt(c['work']), fmt(c['gdec']))) if c else '-',
                 fmt(c['cons']) if c else '-',
                 fmt(c['rt'] if c else r['rt']), fmt(c['dec'] if c else r['dec']),
@@ -175,8 +248,8 @@ def main():
                 fmt(c.get('recs'), 0) if c else '-',
                 ('%.0f%%' % c['vc']) if c and c.get('vc') is not None else '-', verdict))
         else:
-            out.append('| %s | %d | %.1f | %.1f | %.1f%% | %s | %s | %s |' % (
-                r['screen'], r['n'], r['med'], r['p10'], r['speed'], fmt(r['rt']), fmt(r['dec']), verdict))
+            out.append('| %s | %d | %.1f | %s | %.1f | %.1f%% | %s | %s | %s |' % (
+                r['screen'], r['n'], r['med'], rn, r['p10'], r['speed'], fmt(r['rt']), fmt(r['dec']), verdict))
     if short:
         out.append('\nToo few status lines to judge (< %d): %s' % (a.min_lines, ', '.join(
             '%s (%d)' % (r['screen'], r['n']) for r in sorted(short, key=lambda r: r['screen']))))
