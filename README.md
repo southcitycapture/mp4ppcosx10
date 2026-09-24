@@ -31,17 +31,17 @@ applied at build time.
 
 ## Where it stands
 
-Build **0.9.10**, measured on a dual 1 GHz Power Mac G4 (Quicksilver) with a
+Build **0.9.11**, measured on a dual 1 GHz Power Mac G4 (Quicksilver) with a
 Radeon 9000 under Mac OS X 10.5:
 
 | | |
 |---|---|
 | Game speed | 100% of the console on every screen |
-| 30 fps scoreboard | **59 of 82** reachable screens at a median of 29.5 fps or better |
-| Boards | three of six at 30, Toad's at 29 to 30, Boo's and Koopa's at 27 to 28 |
-| Minigames | most at 30; the heaviest (m441, m431) about 23 |
+| 30 fps scoreboard | **64 of 82** reachable screens at a median of 29.5 fps or better |
+| Boards | three of six at 30, Toad's and Koopa's at 29, Boo's at 28 |
+| Minigames | most at 30; the heaviest (m441, m431) about 24 to 25 |
 | Picture | 59 of 63 minigames match the console frame for frame; all six boards play |
-| Stability | multi-hour unattended soaks on 0.9.8 to 0.9.10 with no faults and, since 0.9.9, no drive pauses |
+| Stability | multi-hour unattended soaks on 0.9.8 to 0.9.11 with no faults and, since 0.9.9, no drive pauses |
 | Movies | all twelve play with sound |
 
 The target for 1.0 is **30 fps on every screen** on that machine, measured by
