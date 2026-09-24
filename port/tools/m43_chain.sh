@@ -119,6 +119,8 @@ for r in ${M43_RUNS:-N}; do
         MA:*) a=${r#MA:}; run "M-$a" 900 - $WALK $TURBO $(arm $a) ;;
         S:*)  g=${r#S:}; run "S-$g" 600 $(smode $g) $BASE --realtime $(scene $g) ;;
         D:*)  g=${r#D:}; run "D-$g" 900 $(smode $g) $BASE --turbo $(scene $g) ;;
+        SA:*) g=$(echo $r | cut -d: -f2); a=$(echo $r | cut -d: -f3)
+              run "SA-$g-$a" 600 $(smode $g) $BASE --realtime $(scene $g) $(arm $a) ;;
         C:*)  g=${r#C:}; run "C-$g" 900 $(smode $g) $BASE --turbo --nodraw $(scene $g) --mgend 3000 ;;
         G:*)  g=${r#G:}; run "G-$g" 600 - $BASE --realtime --gxsplit $(scene $g) ;;
         A:*)

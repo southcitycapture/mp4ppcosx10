@@ -149,6 +149,8 @@ static double tg_frame_s, tg_ms;        /* game thread (frames it owned)        
 static volatile double tr_last_ms;      /* render thread, published at present   */
 static double tr_ms;
 static int au_streak;
+static double au_on_ms, au_off_ms;   /* each mode's longer cycle, averaged */
+static int au_choice, au_probe_left, au_since_probe, au_have_last, au_last_on;
 
 static int rtgx_mode(void) {
     if (mode_resolved < 0) {
@@ -503,31 +505,43 @@ void gx_rtgx_frame_begin(void) {
         } else if (m == 3) {
             want = !frame_on; /* the hand-over test: every other drawn frame */
         } else if (rt_vcache_inputs(&r, &d, &rate, &g)) {
-            /* auto: g is the game thread's cycle (drawn + consumed), r + d the
-             * render thread's; the translation moves t from one to the other.
-             * On while the game thread stays the longer pole with t moved;
-             * off once the render thread is the pole by more than t. */
-            double R = r + d;
-            double t_on = tr_ms > 0.0 ? tr_ms : tg_ms;
-            double t_off = tg_ms > 0.0 ? tg_ms : tr_ms;
-            int cond;
-            if (!frame_on) {
-                cond = g > port_opt.rtgx_fit && g > R + t_on + 1.0;
-            } else {
-                cond = !(R > g + t_off + 1.0) && g + t_off > port_opt.rtgx_fit - 3.0;
-            }
-            /* two frames in a row before a change */
-            if (cond != frame_on) {
-                if (++au_streak >= 2) {
-                    want = cond;
-                    au_streak = 0;
+            /* auto, measured: the longer of the two cycles (the game thread's
+             * drawn + consumed frame, the render thread's replay + decode) is
+             * what the presented rate pays, and each mode's is averaged over
+             * the drawn frames it ran.  The other mode is tried for a few
+             * frames every so often, so its average follows the scene; the
+             * render thread's translation costs it more than the game thread
+             * saves (PLAN.md 58.2), so it is on only where it measures better
+             * by a margin, and never while the game thread has room. */
+            double cyc = g > r + d ? g : r + d;
+            if (au_have_last) {
+                if (au_last_on) {
+                    au_on_ms = au_on_ms > 0.0 ? 0.8 * au_on_ms + 0.2 * cyc : cyc;
                 } else {
-                    want = frame_on;
+                    au_off_ms = au_off_ms > 0.0 ? 0.8 * au_off_ms + 0.2 * cyc : cyc;
                 }
-            } else {
-                au_streak = 0;
-                want = frame_on;
             }
+            if (au_probe_left > 0) {
+                au_probe_left--;
+                want = !au_choice;
+            } else {
+                if (g < port_opt.rtgx_fit) {
+                    au_choice = 0; /* the game thread has room: nothing to hand over */
+                } else if (au_on_ms > 0.0 && au_off_ms > 0.0) {
+                    au_choice = au_choice ? !(au_on_ms > au_off_ms - 0.5)
+                                          : au_on_ms < au_off_ms - 1.0;
+                } else if (au_on_ms <= 0.0) {
+                    au_probe_left = 6; /* never measured on: try it */
+                }
+                if (++au_since_probe >= 150 && g >= port_opt.rtgx_fit) {
+                    au_since_probe = 0;
+                    au_probe_left = 6;
+                }
+                want = au_probe_left > 0 ? !au_choice : au_choice;
+            }
+            au_have_last = 1;
+            au_last_on = want;
+            (void)au_streak;
         }
     }
     frame_on = want;
@@ -559,5 +573,6 @@ void gx_rtgx_report(void) {
                  st_unexpected);
     }
     rti_glc_stats(&e, &l);
-    port_log("port> rtgx: the render thread's shadow emitted %u GL state calls, elided %u\n", e, l);
+    port_log("port> rtgx: the render thread's shadow emitted %u GL state calls, elided %u; auto's "
+             "last averages: the longer cycle %.1f ms on, %.1f ms off\n", e, l, au_on_ms, au_off_ms);
 }

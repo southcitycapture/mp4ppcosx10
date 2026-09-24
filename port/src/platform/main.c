@@ -337,6 +337,7 @@ static void usage(const char* argv0) {
             "  --nomtxmemo       M42: mtxRot/mtxRotCat run the game's bodies every call\n"
             "  --norotl          M42: the rotation builders' misses run the game's bodies\n"
             "                    (MTXRotRad + MTXConcat), not the sparse left product\n"
+            "  --nostripepool    M43: the texture stripes allocate their buffers per update\n"
             "  --wbpart          M43: the write barrier arms an array's partial end pages too\n"
             "  --oldvtxjoin      M43: the morph rewriters wait for the whole decode stream (M29)\n"
             "  --rtgx 0|1|auto   M43: the GX state translation on the render thread (the\n"
@@ -1261,6 +1262,8 @@ int port_parse_args(int argc, char** argv) {
             port_opt.nomtxmemo = 1;
         } else if (!strcmp(a, "--norotl")) {
             port_opt.norotl = 1;
+        } else if (!strcmp(a, "--nostripepool")) {
+            port_opt.nostripepool = 1;
         } else if (!strcmp(a, "--wbpart")) {
             port_opt.wbpart = 1;
         } else if (!strcmp(a, "--oldvtxjoin")) {

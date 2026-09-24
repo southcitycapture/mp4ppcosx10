@@ -129,6 +129,10 @@ static void cmpr_block(const u8* src, u8* out, int stride) {
 }
 
 /* Decode one GX texture into a freshly allocated RGBA8 buffer. */
+/* M43 (PLAN.md 58.7): decode()'s destination, when a caller supplies one
+ * (zeroed here as calloc's would be: the same bytes) -- the stripe path's
+ * reused scratch, instead of a fresh multi-page allocation per update */
+static u8* decode_into;
 static u8* decode(const GXTexObjPort* o, const GXTlutObjPort* tlut, int* out_w,
                   int* out_h) {
     int w = o->width, h = o->height;
@@ -139,7 +143,12 @@ static u8* decode(const GXTexObjPort* o, const GXTlutObjPort* tlut, int* out_w,
     if (w <= 0 || h <= 0 || !src) {
         return NULL;
     }
-    dst = (u8*)calloc((size_t)w * h, 4);
+    if (decode_into) {
+        dst = decode_into;
+        memset(dst, 0, (size_t)w * h * 4);
+    } else {
+        dst = (u8*)calloc((size_t)w * h, 4);
+    }
     if (!dst) {
         return NULL;
     }
@@ -454,6 +463,7 @@ static int cache_used;
 static size_t cache_gl_bytes; /* sum of cache[].gl_bytes: what the driver holds */
 static unsigned stat_dirty_calls, stat_dirty_marks, stat_dirty_clean, stat_dirty_redecode;
 static unsigned long stat_stripe_updates, stat_stripe_rows, stat_stripe_rows_all, stat_stripe_clean; /* M41 */
+static unsigned long stat_stripe_pooled, stat_stripe_unpooled; /* M43 */
 
 /* M35: DCStoreRange / DCFlushRange (os_misc.c) land here with the range the
  * game just wrote.  Every non-copy entry whose encoded bytes overlap it is
@@ -764,6 +774,11 @@ void gx_tex_report(void) {
                  stat_stripe_rows, stat_stripe_rows_all, stat_stripe_clean,
                  port_opt.nostripes ? " (--nostripes)" : "");
     }
+    if (stat_stripe_pooled || stat_stripe_unpooled) {
+        port_log("port> texture stripes (M43): %lu uploads from the reused buffers, %lu allocated "
+                 "(all in flight)\n", stat_stripe_pooled, stat_stripe_unpooled);
+    }
+
     if (stat_dirty_calls) {
         port_log("port> texture dirty ranges (M35): %u DC store/flush calls, %u entries marked, "
                  "%u hashed clean, %u decoded again%s; %u calls touched no texture page (M41)%s\n",
@@ -1163,6 +1178,64 @@ static void stripe_keep(CacheEntry* e, const GXTexObjPort* o, u8* row_amin) {
     }
 }
 
+/* M43 (PLAN.md 58.7): the stripe path's buffers, reused.  A rewritten
+ * texture (m404's canvas: 1.5 updates a drawn frame) decoded its changed
+ * rows into a fresh calloc, padded them into a fresh malloc and freed the
+ * first -- on this system every one of them over the large-allocation size,
+ * so an mmap, its pages' zero-fill faults and a munmap each time (2.6% of
+ * m404's game thread).  Now the decode goes into one scratch buffer the
+ * game thread keeps, and the upload into one of a few buffers the render
+ * thread hands back through the upload's done flag (M38's, for the movie's
+ * frames); when all of them are still in flight, a malloc as before. */
+#define STRIPE_BUFS 6
+static struct {
+    u8* p;
+    size_t cap;
+    volatile int done;
+    int busy;
+} stripe_up[STRIPE_BUFS];
+static u8* stripe_scratch;
+static size_t stripe_scratch_cap;
+static u8* stripe_scratch_get(size_t n) {
+    if (n > stripe_scratch_cap) {
+        free(stripe_scratch);
+        stripe_scratch_cap = (n + 65535) & ~(size_t)65535;
+        stripe_scratch = (u8*)malloc(stripe_scratch_cap);
+        if (!stripe_scratch) {
+            stripe_scratch_cap = 0;
+        }
+    }
+    return stripe_scratch;
+}
+/* an upload buffer of n bytes: *flag is what the upload sets when done
+ * (NULL: an ordinary malloc the render thread frees) */
+static u8* stripe_up_get(size_t n, volatile int** flag) {
+    int i;
+    for (i = 0; i < STRIPE_BUFS; i++) {
+        if (stripe_up[i].busy && !stripe_up[i].done) {
+            continue;
+        }
+        if (stripe_up[i].cap < n) {
+            free(stripe_up[i].p);
+            stripe_up[i].cap = (n + 65535) & ~(size_t)65535;
+            stripe_up[i].p = (u8*)malloc(stripe_up[i].cap);
+            if (!stripe_up[i].p) {
+                stripe_up[i].cap = 0;
+                stripe_up[i].busy = 0;
+                continue;
+            }
+        }
+        stripe_up[i].busy = 1;
+        stripe_up[i].done = 0;
+        *flag = &stripe_up[i].done;
+        stat_stripe_pooled++;
+        return stripe_up[i].p;
+    }
+    *flag = NULL;
+    stat_stripe_unpooled++;
+    return (u8*)malloc(n);
+}
+
 /* 1: the changed rows were decoded and uploaded; 2: no row changed; 0: take
  * the whole path */
 static int tex_stripe_update(int slot, int unit, const GXTexObjPort* o) {
@@ -1196,6 +1269,8 @@ static int tex_stripe_update(int slot, int unit, const GXTexObjPort* o) {
         GXTexObjPort so;
         u8* rgba;
         u8* up;
+        volatile int* up_flag = NULL; /* M43: the pooled upload buffer's done flag */
+        int up_pooled = 0;
         if (memcmp(img + (size_t)r * rowbytes, e->enc_copy + (size_t)r * rowbytes, rowbytes) == 0) {
             r0 = r + 1;
             continue;
@@ -1212,9 +1287,31 @@ static int tex_stripe_update(int slot, int unit, const GXTexObjPort* o) {
         so = *o;
         so.image = img + (size_t)r * rowbytes;
         so.height = (u16)(y1 - y0);
+        uh = (y1 == h) ? ph - y0 : y1 - y0;
+        if (!port_opt.nostripepool) {
+            /* M43: the decode into the scratch, or straight into the upload
+             * buffer when no padding follows */
+            size_t dn = (size_t)w * (size_t)(y1 - y0) * 4;
+            if (pw == w && uh == y1 - y0) {
+                decode_into = stripe_up_get(dn, &up_flag);
+                up_pooled = 1;
+            } else {
+                decode_into = stripe_scratch_get(dn);
+                up_pooled = 0;
+            }
+            if (!decode_into) {
+                up_flag = NULL;
+                up_pooled = 0;
+            }
+        }
         rgba = decode(&so, NULL, &sw, &sh);
+        decode_into = NULL;
         if (!rgba || sw != w || sh != y1 - y0) {
-            free(rgba);
+            if (rgba && rgba != stripe_scratch && !up_flag) {
+                free(rgba);
+            } else if (up_flag) {
+                *up_flag = 1; /* the pooled buffer, back unused */
+            }
             return 0; /* cannot happen for these formats; the whole path then */
         }
         swizzle_rgba(rgba, sw, sh, e->swap);
@@ -1237,13 +1334,16 @@ static int tex_stripe_update(int slot, int unit, const GXTexObjPort* o) {
         memcpy(e->enc_copy + (size_t)r * rowbytes, img + (size_t)r * rowbytes,
                (size_t)(r1 - r + 1) * rowbytes);
         /* the upload: padded as pad_to_pot pads the whole image */
-        uh = (y1 == h) ? ph - y0 : y1 - y0;
         if (pw == w && uh == sh) {
-            up = rgba;
+            up = rgba; /* pooled (up_flag) when decoded into a pool buffer */
         } else {
-            up = (u8*)malloc((size_t)pw * uh * 4);
+            volatile int* pad_flag = NULL;
+            up = port_opt.nostripepool ? (u8*)malloc((size_t)pw * uh * 4)
+                                       : stripe_up_get((size_t)pw * uh * 4, &pad_flag);
             if (!up) {
-                free(rgba);
+                if (rgba != stripe_scratch) {
+                    free(rgba);
+                }
                 return 0;
             }
             for (y = 0; y < uh; y++) {
@@ -1255,12 +1355,16 @@ static int tex_stripe_update(int slot, int unit, const GXTexObjPort* o) {
                     memcpy(drow + (size_t)x * 4, srow + (size_t)(w - 1) * 4, 4);
                 }
             }
-            free(rgba);
+            if (rgba != stripe_scratch) {
+                free(rgba);
+            }
+            up_flag = pad_flag;
         }
         glc_active_texture(unit);
         GL(glBindTexture)(GL_TEXTURE_2D, e->gl_name);
         glc_note_bind(unit, e->gl_name);
-        rt_texsubimage2d_owned(GL_TEXTURE_2D, 0, 0, y0, pw, uh, GL_RGBA, GL_UNSIGNED_BYTE, up, NULL);
+        rt_texsubimage2d_owned(GL_TEXTURE_2D, 0, 0, y0, pw, uh, GL_RGBA, GL_UNSIGNED_BYTE, up, up_flag);
+        up_flag = NULL;
         stat_stripe_rows += (unsigned long)(r1 - r + 1);
         any = 1;
     }

@@ -404,6 +404,8 @@ typedef struct PortOptions {
                              *   body (MTXRotRad + MTXConcat), not the sparse left product */
     int nowb;               /* --nowb  M42: the vertex cache re-hashes every array at
                              *   every epoch (no write barrier on MEM1 pages) */
+    int nostripepool;       /* --nostripepool  M43: the texture stripes' decode and upload
+                             *   buffers allocated and freed each update, as before */
     int wbpart;             /* --wbpart  M43: the write barrier arms the partial pages at an
                              *   array's (a list's) ends too (src/gx/gx_wb.c; PLAN.md 58.5) */
     int oldvtxjoin;         /* --oldvtxjoin  M43: ClusterProc/ShapeProc wait for the whole
