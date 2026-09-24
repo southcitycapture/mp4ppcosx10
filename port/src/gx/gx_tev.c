@@ -1644,6 +1644,14 @@ void gx_tev_cache_invalidate(void) { tev_cache_live = 0; }
  * rides one unit early and the two units after it read none (-1).  Both
  * vertex paths bind by this, so the sampled coordinate follows the texture. */
 static void regfix_decide(int stages);
+/* M41 (PLAN.md 56): the shape once a draw (gx_tfs.c gx_tfs_memo's window) */
+static int regfix_memo_on, regfix_memo_stages = -1;
+void gx_tfs_memo(int on);
+void gx_unit_memo(int on) {
+    regfix_memo_on = on;
+    regfix_memo_stages = -1;
+    gx_tfs_memo(on);
+}
 int gx_tev_unit_stage(int u) {
     regfix_decide(gx.num_tev ? gx.num_tev : 1);
     if (regfix_shape == -1) {
@@ -1680,6 +1688,12 @@ int gx_tev_unit_source(int u, u8* coord, u8* map) {
 static void regfix_decide(int stages) {
     int rk = -1; /* the first stage of a matched register triple, or -1 */
     int j;
+    if (regfix_memo_on) {
+        if (regfix_memo_stages == stages) {
+            return; /* decided for this draw with the same count */
+        }
+        regfix_memo_stages = stages;
+    }
     regfix_shape = 0;
     {
         /* M35: a draw the fragment shader takes (or would take: the layout,

@@ -224,17 +224,38 @@ static void layout_decide(TfsLayout* L) {
     L->on = 1;
 }
 
+/* M41 (PLAN.md 56): inside one draw's state walk (gx_draw.c draw_apply ->
+ * gx_unit_memo) the layout is a function of GX state no setter can change,
+ * and it was decided afresh for every unit by every caller -- the vertex
+ * program's key, the register-fix shape, the z pre-pass, the CPU path's
+ * arrays: a dozen memsets and scans a draw.  Decided once a draw instead. */
+static int tfs_memo_on, tfs_memo_valid;
+static TfsLayout tfs_memo_L;
+void gx_tfs_memo(int on) {
+    tfs_memo_on = on;
+    tfs_memo_valid = 0;
+}
+
 int gx_tfs_layout(int u, u8* coord, u8* map) {
-    TfsLayout L;
-    layout_decide(&L);
-    if (!L.on) {
+    TfsLayout Lown;
+    const TfsLayout* L = &Lown;
+    if (tfs_memo_on) {
+        if (!tfs_memo_valid) {
+            layout_decide(&tfs_memo_L);
+            tfs_memo_valid = 1;
+        }
+        L = &tfs_memo_L;
+    } else {
+        layout_decide(&Lown);
+    }
+    if (!L->on) {
         return -1;
     }
-    if (u < 0 || u >= L.nunits || !L.unit_kind[u]) {
+    if (u < 0 || u >= L->nunits || !L->unit_kind[u]) {
         return 0;
     }
-    *coord = L.unit_coord[u];
-    *map = L.unit_map[u];
+    *coord = L->unit_coord[u];
+    *map = L->unit_map[u];
     return 1;
 }
 

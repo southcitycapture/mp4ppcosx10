@@ -438,6 +438,14 @@ typedef struct CacheEntry {
      * canvas, m415Dll/main.c:1A60) were never seen at all. */
     u8 dirty;
     u32 enc_size;         /* encoded_size(format, w, h) at the last decode */
+    /* M41 (PLAN.md 56): a texture the game rewrote and flushed whole more
+     * than once (Trace Race's four trail canvases, every frame) keeps a copy
+     * of the bytes it was last decoded from and each tile row's alpha
+     * minimum; the next flush re-decodes only the tile rows whose bytes
+     * changed and uploads them as a sub-image (tex_stripe_update) */
+    u8* enc_copy;
+    u8* row_amin;
+    u32 enc_copy_n;
 } CacheEntry;
 
 #define CACHE_MAX 2048
@@ -445,6 +453,7 @@ static CacheEntry cache[CACHE_MAX];
 static int cache_used;
 static size_t cache_gl_bytes; /* sum of cache[].gl_bytes: what the driver holds */
 static unsigned stat_dirty_calls, stat_dirty_marks, stat_dirty_clean, stat_dirty_redecode;
+static unsigned long stat_stripe_updates, stat_stripe_rows, stat_stripe_rows_all, stat_stripe_clean; /* M41 */
 
 /* M35: DCStoreRange / DCFlushRange (os_misc.c) land here with the range the
  * game just wrote.  Every non-copy entry whose encoded bytes overlap it is
@@ -549,6 +558,8 @@ int gx_tex_budget_mb(void) { return (int)(tex_budget_bytes >> 20); } /* M32: for
 static void cache_free_slot(int slot) {
     hash_remove(slot);
     free(cache[slot].cpu_rgba);
+    free(cache[slot].enc_copy);
+    free(cache[slot].row_amin);
     if (gl13_live() && cache[slot].gl_name) {
         GLuint n = cache[slot].gl_name;
         GL(glDeleteTextures)(1, &n);
@@ -747,6 +758,12 @@ void gx_tex_report(void) {
              stat_decodes, stat_decode_s * 1000.0, stat_upload_s * 1000.0, stat_hash_s * 1000.0,
              stat_frames_over20, stat_rekeys, stat_rekey_bytes / 1024,
              port_opt.norekey ? " (--norekey)" : "");
+    if (stat_stripe_updates || stat_stripe_clean) {
+        port_log("port> texture stripes (M41): %lu rewritten textures updated by their changed tile "
+                 "rows (%lu of %lu rows decoded), %lu found unchanged%s\n", stat_stripe_updates,
+                 stat_stripe_rows, stat_stripe_rows_all, stat_stripe_clean,
+                 port_opt.nostripes ? " (--nostripes)" : "");
+    }
     if (stat_dirty_calls) {
         port_log("port> texture dirty ranges (M35): %u DC store/flush calls, %u entries marked, "
                  "%u hashed clean, %u decoded again%s; %u calls touched no texture page (M41)%s\n",
@@ -929,11 +946,26 @@ static void swizzle_rgba(u8* rgba, int w, int h, u8 swap);
  * Everything about the slot except `content` (set by the caller) and the key
  * fields (already correct, either just-assigned or unchanged) is written
  * here. */
+/* M41: when set, the next full decode also records each tile row's alpha
+ * minimum here (tile rows of `stripe_row_th` texel rows) */
+static u8* stripe_row_amin_out;
+static int stripe_row_th;
+
 static void tex_bind_decode_and_upload(int slot, int unit, const GXTexObjPort* o,
                                         const GXTlutObjPort* tlut) {
     int w = 0, h = 0;
     double t0 = port_now_seconds(), t1;
-    u8* rgba = decode(o, tlut, &w, &h);
+    u8* rgba;
+    if (!stripe_row_amin_out && cache[slot].enc_copy) {
+        /* M41: any whole decode but the stripe path's own keep makes the
+         * kept bytes stale (an in-place revalidation, a rekey's miss) */
+        free(cache[slot].enc_copy);
+        free(cache[slot].row_amin);
+        cache[slot].enc_copy = NULL;
+        cache[slot].row_amin = NULL;
+        cache[slot].enc_copy_n = 0;
+    }
+    rgba = decode(o, tlut, &w, &h);
     cache[slot].su = cache[slot].sv = 1.0f;
     cache[slot].alpha_min = 255;
     if (rgba) {
@@ -946,6 +978,22 @@ static void tex_bind_decode_and_upload(int slot, int unit, const GXTexObjPort* o
             }
         }
         cache[slot].alpha_min = amin;
+        if (stripe_row_amin_out) {
+            int r, y;
+            for (r = 0; r * stripe_row_th < h; r++) {
+                u8 m = 255;
+                for (y = r * stripe_row_th; y < h && y < (r + 1) * stripe_row_th; y++) {
+                    const u8* q = rgba + (size_t)y * w * 4;
+                    int x;
+                    for (x = 0; x < w; x++) {
+                        if (q[x * 4 + 3] < m) {
+                            m = q[x * 4 + 3];
+                        }
+                    }
+                }
+                stripe_row_amin_out[r] = m;
+            }
+        }
     }
     t1 = port_now_seconds();
     frame_decodes++;
@@ -1049,6 +1097,192 @@ static void tex_bind_decode_and_upload(int slot, int unit, const GXTexObjPort* o
         }
         free(rgba);
     }
+}
+
+/* ---- M41 (PLAN.md 56): the changed tile rows only -----------------------
+ *
+ * A GX texture is stored as rows of tiles (8x8 texels for the 4-bit formats
+ * and CMPR, 8x4 for the 8-bit ones, 4x4 for the 16- and 32-bit ones; 32
+ * bytes a tile, 64 for RGBA8), and no tile's texels depend on another tile's
+ * bytes -- so a run of tile rows is itself a small texture in the same
+ * format, and decoding it gives exactly the texels a whole decode would put
+ * there.  An entry the game rewrote and flushed whole (the dirty path) keeps
+ * the bytes of its last decode; the next flush compares tile row by tile row,
+ * decodes the rows that changed, uploads them with glTexSubImage2D (padded
+ * like pad_to_pot: the right column repeated, and the last row repeated down
+ * when the run reaches it) and keeps each tile row's alpha minimum, whose
+ * minimum is the entry's (the z pre-pass reads it).  Palette formats are left
+ * to the whole path (the palette can change under unchanged bytes).
+ * --nostripes is the whole decode every time. */
+
+static int stripe_geom(u32 fmt, int* tw, int* th, int* tb) {
+    switch (fmt) {
+        case GX_TF_I4:
+        case GX_TF_CMPR:
+            *tw = 8; *th = 8; *tb = 32;
+            return 1;
+        case GX_TF_I8:
+        case GX_TF_IA4:
+        case GX_TF_A8:
+            *tw = 8; *th = 4; *tb = 32;
+            return 1;
+        case GX_TF_IA8:
+        case GX_TF_RGB565:
+        case GX_TF_RGB5A3:
+            *tw = 4; *th = 4; *tb = 32;
+            return 1;
+        case GX_TF_RGBA8:
+            *tw = 4; *th = 4; *tb = 64;
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+static int stripe_eligible(const CacheEntry* e, const GXTexObjPort* o) {
+    int tw, th, tb;
+    return !port_opt.nostripes && !o->is_ci && !e->efb && o->image &&
+           stripe_geom(o->format, &tw, &th, &tb) && o->width > 0 && o->height > 0;
+}
+
+/* After a whole decode in the dirty path: keep the bytes and the rows'
+ * alpha minima (the decode filled them through stripe_row_amin_out). */
+static void stripe_keep(CacheEntry* e, const GXTexObjPort* o, u8* row_amin) {
+    size_t n = encoded_size(o->format, o->width, o->height);
+    if (!e->enc_copy || e->enc_copy_n != n) {
+        free(e->enc_copy);
+        e->enc_copy = (u8*)malloc(n);
+        e->enc_copy_n = e->enc_copy ? (u32)n : 0;
+    }
+    if (e->enc_copy) {
+        memcpy(e->enc_copy, o->image, n);
+    }
+    if (e->row_amin != row_amin) {
+        free(e->row_amin);
+        e->row_amin = row_amin;
+    }
+}
+
+/* 1: the changed rows were decoded and uploaded; 2: no row changed; 0: take
+ * the whole path */
+static int tex_stripe_update(int slot, int unit, const GXTexObjPort* o) {
+    CacheEntry* e = &cache[slot];
+    int tw, th, tb, w = o->width, h = o->height, pw, ph;
+    int tiles_x, rows, r, r0;
+    size_t rowbytes, n;
+    const u8* img = (const u8*)o->image;
+    int any = 0;
+    double t0;
+    if (!e->enc_copy || !e->row_amin || !e->gl_name || !gl13_live() ||
+        !stripe_eligible(e, o) || !stripe_geom(o->format, &tw, &th, &tb)) {
+        return 0;
+    }
+    n = encoded_size(o->format, w, h);
+    if (n != e->enc_copy_n || o->image != e->image || e->w != o->width || e->h != o->height ||
+        e->format != o->format) {
+        return 0;
+    }
+    t0 = port_now_seconds();
+    tiles_x = (w + tw - 1) / tw;
+    rows = (h + th - 1) / th;
+    rowbytes = (size_t)tiles_x * (size_t)tb;
+    pw = pot_up(w);
+    ph = pot_up(h);
+    if ((pw != w || ph != h) && (e->su != (float)w / (float)pw || e->sv != (float)h / (float)ph)) {
+        return 0; /* the whole upload was not padded (pad_to_pot failed): keep its path */
+    }
+    for (r = 0; r < rows; r = r0) {
+        int r1, sw = 0, sh = 0, y0, y1, uh, y;
+        GXTexObjPort so;
+        u8* rgba;
+        u8* up;
+        if (memcmp(img + (size_t)r * rowbytes, e->enc_copy + (size_t)r * rowbytes, rowbytes) == 0) {
+            r0 = r + 1;
+            continue;
+        }
+        r1 = r;
+        while (r1 + 1 < rows &&
+               memcmp(img + (size_t)(r1 + 1) * rowbytes, e->enc_copy + (size_t)(r1 + 1) * rowbytes,
+                      rowbytes) != 0) {
+            r1++;
+        }
+        r0 = r1 + 1;
+        y0 = r * th;
+        y1 = (r1 + 1) * th < h ? (r1 + 1) * th : h;
+        so = *o;
+        so.image = img + (size_t)r * rowbytes;
+        so.height = (u16)(y1 - y0);
+        rgba = decode(&so, NULL, &sw, &sh);
+        if (!rgba || sw != w || sh != y1 - y0) {
+            free(rgba);
+            return 0; /* cannot happen for these formats; the whole path then */
+        }
+        swizzle_rgba(rgba, sw, sh, e->swap);
+        {
+            int rr;
+            for (rr = r; rr <= r1; rr++) {
+                u8 m = 255;
+                for (y = rr * th - y0; y < (rr + 1) * th - y0 && y < sh; y++) {
+                    const u8* q = rgba + (size_t)y * w * 4;
+                    int x;
+                    for (x = 0; x < w; x++) {
+                        if (q[x * 4 + 3] < m) {
+                            m = q[x * 4 + 3];
+                        }
+                    }
+                }
+                e->row_amin[rr] = m;
+            }
+        }
+        memcpy(e->enc_copy + (size_t)r * rowbytes, img + (size_t)r * rowbytes,
+               (size_t)(r1 - r + 1) * rowbytes);
+        /* the upload: padded as pad_to_pot pads the whole image */
+        uh = (y1 == h) ? ph - y0 : y1 - y0;
+        if (pw == w && uh == sh) {
+            up = rgba;
+        } else {
+            up = (u8*)malloc((size_t)pw * uh * 4);
+            if (!up) {
+                free(rgba);
+                return 0;
+            }
+            for (y = 0; y < uh; y++) {
+                const u8* srow = rgba + (size_t)(y < sh ? y : sh - 1) * w * 4;
+                u8* drow = up + (size_t)y * pw * 4;
+                int x;
+                memcpy(drow, srow, (size_t)w * 4);
+                for (x = w; x < pw; x++) {
+                    memcpy(drow + (size_t)x * 4, srow + (size_t)(w - 1) * 4, 4);
+                }
+            }
+            free(rgba);
+        }
+        glc_active_texture(unit);
+        GL(glBindTexture)(GL_TEXTURE_2D, e->gl_name);
+        glc_note_bind(unit, e->gl_name);
+        rt_texsubimage2d_owned(GL_TEXTURE_2D, 0, 0, y0, pw, uh, GL_RGBA, GL_UNSIGNED_BYTE, up, NULL);
+        stat_stripe_rows += (unsigned long)(r1 - r + 1);
+        any = 1;
+    }
+    {
+        u8 m = 255;
+        for (r = 0; r < rows; r++) {
+            if (e->row_amin[r] < m) {
+                m = e->row_amin[r];
+            }
+        }
+        e->alpha_min = m;
+    }
+    stat_stripe_rows_all += (unsigned long)rows;
+    if (any) {
+        stat_stripe_updates++;
+        frame_decodes++;
+        stat_decodes++;
+    } else {
+        stat_stripe_clean++;
+    }
+    frame_decode_s += port_now_seconds() - t0;
+    return any ? 1 : 2;
 }
 
 /* M23: the frame's decode accounting, taken (and reset) by the perf frame
@@ -1401,19 +1635,53 @@ static void tex_bind_body(int unit, GXTexObjPort* o, u8 swap) {
              * port_gx_tex_dirty).  The exhaustive hash says whether they
              * changed; the sampled one (four 256-byte windows of a 720 KB
              * canvas) cannot. */
-            u32 cf = tex_bind_content_hash(o, tlut, 1 /* exhaustive */);
+            u32 cf;
+            int sr = tex_stripe_update(slot, unit, o);
+            if (sr) {
+                /* M41: the changed tile rows re-decoded and uploaded (or
+                 * none changed); the byte compare stands for the exhaustive
+                 * hash, and the whole-image hash is no longer the entry's */
+                e->dirty = 0;
+                e->validated_epoch = cache_epoch;
+                e->content = tex_bind_content_hash(o, tlut, 0); /* what the epoch compares */
+                e->content_full = 0;
+                if (sr == 1) {
+                    stat_dirty_redecode++;
+                    stat_evict++;
+                } else {
+                    stat_dirty_clean++;
+                    stat_hit++;
+                }
+                dirty_watch(e->image, e->enc_size);
+                tex_bind_finish(unit, o, slot);
+                return;
+            }
+            cf = tex_bind_content_hash(o, tlut, 1 /* exhaustive */);
             e->dirty = 0;
             e->validated_epoch = cache_epoch;
             if (e->content_full && cf == e->content_full) {
                 stat_dirty_clean++;
                 stat_hit++;
             } else {
+                int tw, th, tb;
+                u8* amin = NULL;
                 stat_dirty_redecode++;
                 stat_evict++;
                 e->content_full = cf;
                 e->content = tex_bind_content_hash(o, tlut, 0); /* what the epoch compares */
                 e->enc_size = (u32)encoded_size(o->format, o->width, o->height);
+                if (stripe_eligible(e, o) && stripe_geom(o->format, &tw, &th, &tb)) {
+                    /* M41: the second whole decode of a rewritten texture keeps
+                     * what the next one needs to be a stripe */
+                    amin = (u8*)malloc((size_t)((o->height + th - 1) / th));
+                    stripe_row_amin_out = amin;
+                    stripe_row_th = th;
+                }
                 tex_bind_decode_and_upload(slot, unit, o, tlut);
+                stripe_row_amin_out = NULL;
+                if (amin) {
+                    stripe_keep(e, o, amin);
+                }
             }
             dirty_watch(e->image, e->enc_size);
             tex_bind_finish(unit, o, slot);
@@ -1480,6 +1748,8 @@ static void tex_bind_body(int unit, GXTexObjPort* o, u8 swap) {
             }
             cache_gl_bytes -= cache[slot].gl_bytes;
             free(cache[slot].cpu_rgba);
+            free(cache[slot].enc_copy);
+            free(cache[slot].row_amin);
             memset(&cache[slot], 0, sizeof(cache[slot]));
         } else {
             slot = cache_used++;
@@ -3013,6 +3283,8 @@ void gx_tex_predecode_report(void) {
 void gx_tex_flush_all(void) {
     int i;
     for (i = 0; i < (int)cache_used; i++) {
+        free(cache[i].enc_copy);
+        free(cache[i].row_amin);
         if (gl13_live() && cache[i].gl_name) {
             GLuint n = cache[i].gl_name;
             GL(glDeleteTextures)(1, &n);

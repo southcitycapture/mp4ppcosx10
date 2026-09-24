@@ -317,6 +317,12 @@ static void usage(const char* argv0) {
             "  --clrasclr        M35: GXColor3u8's bytes filed as a colour whatever the\n"
             "                    next attribute is (the background quad after a shadow\n"
             "                    pass drew nothing), for the A/B\n"
+            "  --nofastconcat    M41: C_MTXConcat is the SDK's own body, not the port's\n"
+            "                    register-blocked one (the same arithmetic), for the A/B\n"
+            "  --nostripes       M41: a texture the game rewrites is decoded and uploaded\n"
+            "                    whole at every flush, not only its changed tile rows\n"
+            "  --nounitmemo      M41: the TEV unit layout and register-fix shape decided\n"
+            "                    at every call inside a draw (not once a draw), as before\n"
             "  --norotmemo       M41: C_MTXRotRad (every object walk's mtxRot) calls\n"
             "                    libm's sinf/cosf directly, not through the memo, as before\n"
             "  --nopacklights    M41: a lit vertex-program variant over the card's\n"
@@ -1212,6 +1218,12 @@ int port_parse_args(int argc, char** argv) {
             port_opt.nolitalpha = 1;
         } else if (!strcmp(a, "--clrasclr")) {
             port_opt.clrasclr = 1;
+        } else if (!strcmp(a, "--nofastconcat")) {
+            port_opt.nofastconcat = 1;
+        } else if (!strcmp(a, "--nostripes")) {
+            port_opt.nostripes = 1;
+        } else if (!strcmp(a, "--nounitmemo")) {
+            port_opt.nounitmemo = 1;
         } else if (!strcmp(a, "--norotmemo")) {
             port_opt.norotmemo = 1;
         } else if (!strcmp(a, "--nopacklights")) {

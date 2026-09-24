@@ -383,6 +383,12 @@ typedef struct PortOptions {
                              *   colour whatever the descriptor's next attribute is
                              *   (hsfman.c's background quad, written as U8 positions
                              *   through it, drew nothing), as M3..M34 did */
+    int nofastconcat;       /* --nofastconcat  M41: C_MTXConcat is the SDK body (the
+                             *   operands reloaded after every store) */
+    int nostripes;          /* --nostripes  M41: a rewritten texture is decoded and
+                             *   uploaded whole at every flush (no tile-row stripes) */
+    int nounitmemo;         /* --nounitmemo  M41: the TEV unit layout and register
+                             *   shape decided afresh at every call in a draw */
     int norotmemo;          /* --norotmemo  M41: C_MTXRotRad calls libm's sinf/cosf
                              *   directly (not through the sin/cos memo), as before */
     int nopacklights;       /* --nopacklights  M41: a lit variant over the card's

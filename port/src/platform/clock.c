@@ -62,5 +62,11 @@ double port_now_seconds(void) {
     if (tb.denom == 0) {
         clk_init();
     }
-    return (double)(mach_absolute_time() - base) * tick_s;
+    /* M41: the u64 -> double conversion without libgcc's __floatundidf (a
+     * software routine on a 32-bit G4, ~1% of the game thread): both halves
+     * are exact in a double and so is their sum below 2^53 -- the same value */
+    {
+        uint64_t d = mach_absolute_time() - base;
+        return ((double)(uint32_t)(d >> 32) * 4294967296.0 + (double)(uint32_t)d) * tick_s;
+    }
 }

@@ -445,6 +445,7 @@ void glc_color_sum(int on);
 
 void gx_vprog_probe(void);            /* needs a live GL context */
 int gx_tev_unit_stage(int u); /* M30: the stage a GL unit samples for (gx_tev.c) */
+void gx_unit_memo(int on);    /* M41: the unit layout and register shape decided once a draw */
 /* M35: what GL unit `u` samples this draw -- the texgen slot and the texmap --
  * or 0 when it samples nothing.  The stage's own (gx_tev_unit_stage) on the
  * fixed-function path; on the fragment-shader path (gx_tfs.c) the units past

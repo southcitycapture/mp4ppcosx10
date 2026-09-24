@@ -773,6 +773,12 @@ src/dolphin/mtx/mtx.c	    sinA = sinf(rad);\n    cosA = cosf(rad);\n\n    PSMTXR
 # every module's object walk -- 12.9% of Butterfly Blitz's (m441) consumed frame in
 # libm's sinf/cosf.  The same memo, the same libm values: exact.
 src/dolphin/mtx/mtx.c	    sinA = sinf(rad);\n    cosA = cosf(rad);\n    C_MTXRotTrig(m, axis, sinA, cosA);	    port_rotrad_sincosf(rad, &sinA, &cosA);\n    C_MTXRotTrig(m, axis, sinA, cosA);
+# M41 (PLAN.md 56): C_MTXConcat is the port's (psmtx_c.c), the same
+# arithmetic register-blocked: GCC compiled this body reloading both operands
+# after every store (the output may alias either), 65 loads for 24 and every
+# element's chain serial between stores -- 7.5% of Butterfly Blitz's consumed
+# frame.  The SDK body stays, renamed, for --nofastconcat and the test.
+src/dolphin/mtx/mtx.c	void C_MTXConcat(const Mtx a, const Mtx b, Mtx ab)\n{	void C_MTXConcat_sdk(const Mtx a, const Mtx b, Mtx ab)\n{
 
 # ------------------------------------------------------------------ game/hsfdraw.c
 # M28 experiment (a) (PLAN.md 43): on a consumed frame (frame mode: nothing

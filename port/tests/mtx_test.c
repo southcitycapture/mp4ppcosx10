@@ -545,6 +545,80 @@ static void test_sparse_concat(void) {
     }
 }
 
+/* ---- 6b. M41: the port's register-blocked C_MTXConcat against the SDK's
+ * body (C_MTXConcat_sdk), bit for bit, out of place and in both aliasing
+ * forms (ab == a, ab == b), over matrices with signed zeros, tiny and huge
+ * elements (the underflowing and overflowing products); then the speed of
+ * each over two million calls (PLAN.md 56). */
+void C_MTXConcat_sdk(const Mtx a, const Mtx b, Mtx ab);
+static float frand_zb(void) {
+    unsigned r;
+    rng_state = rng_state * 1103515245u + 12345u;
+    r = (rng_state >> 8) & 0xFF;
+    if (r < 8) {
+        return frand() * 1e20f; /* huge: the overflowing products */
+    }
+    return frand_z();
+}
+static void test_blocked_concat(void) {
+    int trial, ndiff = 0;
+    Mtx a, b, want, got;
+    printf("the blocked C_MTXConcat == the SDK's, bit for bit:\n");
+    port_opt.nofastconcat = 0;
+    for (trial = 0; trial < 500000; trial++) {
+        int i, j;
+        for (i = 0; i < 3; i++) {
+            for (j = 0; j < 4; j++) {
+                a[i][j] = frand_zb();
+                b[i][j] = frand_zb();
+            }
+        }
+        C_MTXConcat_sdk(a, b, want);
+        C_MTXConcat(a, b, got);
+        ndiff += bits_differ(want, got);
+        PSMTXCopy(a, got);
+        C_MTXConcat(got, b, got);
+        ndiff += bits_differ(want, got);
+        PSMTXCopy(b, got);
+        C_MTXConcat(a, got, got);
+        ndiff += bits_differ(want, got);
+        PSMTXCopy(a, got);
+        C_MTXConcat_sdk(a, a, want);
+        C_MTXConcat(got, got, got);
+        ndiff += bits_differ(want, got);
+    }
+    printf("  %d of 2,000,000 concats differ\n", ndiff);
+    if (ndiff) {
+        fail("blocked C_MTXConcat", "differs from C_MTXConcat_sdk");
+    }
+    {
+        clock_t t0;
+        double s_sdk, s_blk;
+        int k;
+        for (k = 0; k < 3; k++) {
+            int j2;
+            for (j2 = 0; j2 < 4; j2++) {
+                a[k][j2] = frand();
+                b[k][j2] = frand();
+            }
+        }
+        t0 = clock();
+        for (k = 0; k < 2000000; k++) {
+            C_MTXConcat_sdk(a, b, a);
+            a[0][3] = b[0][0]; /* keep it finite and live */
+        }
+        s_sdk = (double)(clock() - t0) / CLOCKS_PER_SEC;
+        t0 = clock();
+        for (k = 0; k < 2000000; k++) {
+            C_MTXConcat(a, b, a);
+            a[0][3] = b[0][0];
+        }
+        s_blk = (double)(clock() - t0) / CLOCKS_PER_SEC;
+        printf("  2M in-place concats: the SDK's %.0f ms, blocked %.0f ms\n", s_sdk * 1000.0,
+               s_blk * 1000.0);
+    }
+}
+
 /* ---- 7. M28 (d): port_sqrtf against libm's sqrtf.  Default: sixteen million
  * random floats over the whole range plus the edges; `--sqrt-all` every
  * positive normal float, all 2^31 - 2^23 of them (minutes on the G4), which
@@ -681,6 +755,7 @@ int main(int argc, char** argv) {
     test_romult_altivec();
     test_vec();
     test_sparse_concat();
+    test_blocked_concat();
     bench_concat();
     test_sqrt(all);
     printf("---- %d failure(s) ----\n", failures);

@@ -3562,6 +3562,9 @@ static int app_skip, app_probe; /* M33: --skipobj / --probeobj, named at the app
 static int draw_apply(const u8* s, int n, int in_ring) {
     GxXfDesc* xfd = &app_xfd;
     int on_gpu = 0;
+    if (!port_opt.nounitmemo) {
+        gx_unit_memo(1); /* M41: closed below, before the return */
+    }
     u32 bias = 0; /* M21 --fixbase: the batch's first vertex as an index from the ring's start */
     sub_posm = in_ring ? batch_posm : pi.pos_mtx;
     sub_nrmm = in_ring ? batch_nrmm : pi.nrm_mtx;
@@ -3685,6 +3688,9 @@ static int draw_apply(const u8* s, int n, int in_ring) {
     port_perf_sub_leave();
     app_on_gpu = on_gpu;
     app_bias = bias;
+    if (!port_opt.nounitmemo) {
+        gx_unit_memo(0);
+    }
     return on_gpu;
 }
 

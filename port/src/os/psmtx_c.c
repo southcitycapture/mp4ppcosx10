@@ -464,6 +464,41 @@ f32 PSVECDistance(const Vec* a, const Vec* b) { return C_VECDistance(a, b); }
 void PSMTXIdentity(Mtx m) { C_MTXIdentity(m); }
 void PSMTXCopy(const Mtx src, Mtx dst) { C_MTXCopy(src, dst); }
 void PSMTXConcat(const Mtx a, const Mtx b, Mtx ab) { C_MTXConcat(a, b, ab); }
+
+/* M41 (PLAN.md 56): C_MTXConcat, register-blocked.  The SDK body (mtx.c,
+ * renamed C_MTXConcat_sdk by patches.txt) writes m[i][j] one at a time into
+ * a matrix GCC must assume aliases a and b, so it reloads both after every
+ * store: 65 loads, and the twelve three-term chains run one after another.
+ * Here all of b is loaded first and a a row at a time, so writing ab row i
+ * can clobber neither (a's row i is already in registers, b is all in them):
+ * both aliasing cases without the temporary and its copy.  Each element is
+ * the SDK's own instruction sequence, as GCC contracted it (read off mtx.o,
+ * PLAN.md 43.5): t = a[i][1]*b[1][j]; t = fma(a[i][0], b[0][j], t);
+ * t = fma(a[i][2], b[2][j], t); and a[i][3] + t for the last column --
+ * bit-exact by construction; port/tests/mtx_test.c holds it to that. */
+void C_MTXConcat_sdk(const Mtx a, const Mtx b, Mtx ab);
+void C_MTXConcat(const Mtx a, const Mtx b, Mtx ab) {
+    f32 b00, b01, b02, b03, b10, b11, b12, b13, b20, b21, b22, b23;
+    int i;
+    if (port_opt.nofastconcat) {
+        C_MTXConcat_sdk(a, b, ab);
+        return;
+    }
+    b00 = b[0][0]; b01 = b[0][1]; b02 = b[0][2]; b03 = b[0][3];
+    b10 = b[1][0]; b11 = b[1][1]; b12 = b[1][2]; b13 = b[1][3];
+    b20 = b[2][0]; b21 = b[2][1]; b22 = b[2][2]; b23 = b[2][3];
+    for (i = 0; i < 3; i++) {
+        f32 a0 = a[i][0], a1 = a[i][1], a2 = a[i][2], a3 = a[i][3];
+        f32 m0 = FMA(a2, b20, FMA(a0, b00, a1 * b10));
+        f32 m1 = FMA(a2, b21, FMA(a0, b01, a1 * b11));
+        f32 m2 = FMA(a2, b22, FMA(a0, b02, a1 * b12));
+        f32 m3 = a3 + FMA(a2, b23, FMA(a0, b03, a1 * b13));
+        ab[i][0] = m0;
+        ab[i][1] = m1;
+        ab[i][2] = m2;
+        ab[i][3] = m3;
+    }
+}
 u32 PSMTXInverse(const Mtx src, Mtx inv) { return C_MTXInverse(src, inv); }
 u32 PSMTXInvXpose(const Mtx src, Mtx invX) { return C_MTXInvXpose(src, invX); }
 void PSMTXRotTrig(Mtx m, char axis, f32 sinA, f32 cosA) { C_MTXRotTrig(m, axis, sinA, cosA); }
