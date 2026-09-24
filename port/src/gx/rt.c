@@ -983,6 +983,61 @@ const void* rt_stash(const void* p, size_t n) {
     }
 }
 
+/* M43 (--rtgx): a call record that waits for the next publish like a state
+ * record (the draw after it publishes, and every join publishes first), built
+ * in place: rt_callq_begin reserves `maxn` bytes of arguments in the stream
+ * and returns them; rt_callq_end(n) shrinks the record to the `n` used.
+ * Nothing may be recorded between the two.  Without the stream: a buffer,
+ * and the call at the end. */
+static A_call* callq_rec;
+static u32 callq_len;
+static u8* callq_buf;
+static size_t callq_cap;
+void* rt_callq_begin(void (*fn)(void*), size_t maxn) {
+    if (!RT_REC()) {
+        if (maxn > callq_cap) {
+            free(callq_buf);
+            callq_cap = maxn;
+            callq_buf = (u8*)malloc(maxn);
+        }
+        callq_rec = NULL;
+        callq_len = 0;
+        (void)fn;
+        return callq_buf;
+    }
+    callq_rec = (A_call*)rec(OP_CALL, sizeof(A_call) + maxn);
+    callq_rec->fn = fn;
+    callq_rec->n = (u32)maxn;
+    callq_len = ((Hdr*)callq_rec - 1)->len;
+    return callq_rec + 1;
+}
+void rt_callq_end(void (*fn)(void*), size_t n) {
+    if (!callq_rec) {
+        fn(callq_buf); /* direct: the call now */
+        return;
+    }
+    {
+        Hdr* h = (Hdr*)callq_rec - 1;
+        u32 len = (u32)((sizeof(Hdr) + sizeof(A_call) + n + RT_ALIGN - 1) & ~(RT_ALIGN - 1));
+        if (len < callq_len) {
+            wr -= callq_len - len; /* the unused tail back: nothing followed it */
+            st_bytes -= callq_len - len;
+            st_frame_bytes -= callq_len - len;
+            h->len = len;
+        }
+        callq_rec->n = (u32)n;
+        callq_rec = NULL;
+    }
+    done_op(OP_NOP); /* published with the next draw (or the 32nd record, or a join) */
+}
+void rt_callq(void (*fn)(void*), const void* args, size_t n) {
+    void* a = rt_callq_begin(fn, n);
+    if (a && n) {
+        memcpy(a, args, n);
+    }
+    rt_callq_end(fn, n);
+}
+
 void rt_call(void (*fn)(void*), const void* args, size_t n, int sync) {
     if (!RT_REC()) {
         void* copy = malloc(n ? n : 1);
@@ -2079,6 +2134,19 @@ double rt_auto_last_share(void) { return 0.0; }
 int rt_vcache_inputs(double* a, double* b, double* c, double* d) { (void)a; (void)b; (void)c; (void)d; return 0; }
 double rt_auto_frame_gdec_ms(void) { return 0.0; }
 void rt_ring_enter(int c) { (void)c; }
+static u8* callq_buf0;
+static size_t callq_cap0;
+void* rt_callq_begin(void (*fn)(void*), size_t maxn) {
+    (void)fn;
+    if (maxn > callq_cap0) { free(callq_buf0); callq_cap0 = maxn; callq_buf0 = (u8*)malloc(maxn); }
+    return callq_buf0;
+}
+void rt_callq_end(void (*fn)(void*), size_t n) { (void)n; fn(callq_buf0); }
+void rt_callq(void (*fn)(void*), const void* args, size_t n) {
+    void* a = rt_callq_begin(fn, n);
+    if (a && n) memcpy(a, args, n);
+    rt_callq_end(fn, n);
+}
 void rt_call(void (*fn)(void*), const void* args, size_t n, int sync) {
     void* copy = malloc(n ? n : 1);
     (void)sync;

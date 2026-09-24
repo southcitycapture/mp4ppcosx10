@@ -91,6 +91,9 @@ int rt_threaded(void);
 int rt_is_render_thread(void);
 void rt_set_skip_draws(int on);
 void rt_call(void (*fn)(void*), const void* args, size_t n, int sync); /* gx_rt.h */
+void* rt_callq_begin(void (*fn)(void*), size_t maxn); /* rt.c: a queued call, built in place */
+void rt_callq_end(void (*fn)(void*), size_t n);
+void rt_callq(void (*fn)(void*), const void* args, size_t n);
 
 /* ---- what the render thread's instance reads instead of the game's -------- */
 GXState gx_rti;                    /* the replica                                  */
@@ -189,7 +192,7 @@ void rtgx_fwd(int op, int a, int b, float x, float y, float z) {
     f.y = y;
     f.z = z;
     st_fwd++;
-    rt_call(fwd_fn, &f, sizeof(f), 0);
+    rt_callq(fwd_fn, &f, sizeof(f));
 }
 void rtgx_unexpected(const char* who) {
     static const char* seen[32];
@@ -216,7 +219,7 @@ static void take_fn(void* p) {
 }
 static void take_rt(void) {
     rtgx_owner_rt = 1;
-    rt_call(take_fn, NULL, 0, 0);
+    rt_callq(take_fn, NULL, 0);
     st_to_rt++;
 }
 static void take_game(void) {
@@ -263,7 +266,7 @@ typedef struct RecHdr {
     u32 vp_size, nchunks;
 } RecHdr;
 #define REC_MAX 16384
-static u8 recbuf[REC_MAX] __attribute__((aligned(8)));
+static u8* recbuf; /* M43: the record in the stream itself (rt_callq_begin) */
 static u32 reclen;
 
 static inline void chunk(size_t off, size_t len) {
@@ -398,7 +401,9 @@ static void apply_fn(void* p) {
 /* the batch's state, recorded (the game thread; gx_draw.c draw_apply) */
 void gx_rtgx_record(const GxXfDesc* xfd, int on_gpu, int csum, const u8* ob, int out_stride,
                     int out_off_clr, int out_off_tex, int out_ntex) {
-    RecHdr* h = (RecHdr*)recbuf;
+    RecHdr* h;
+    recbuf = (u8*)rt_callq_begin(apply_fn, REC_MAX);
+    h = (RecHdr*)recbuf;
     size_t vps = on_gpu ? gx_vprog_pending_size() : 0;
     int i;
     memset(h, 0, sizeof(*h));
@@ -434,7 +439,7 @@ void gx_rtgx_record(const GxXfDesc* xfd, int on_gpu, int csum, const u8* ob, int
     }
     deltas();
     st_rec_bytes += reclen;
-    rt_call(apply_fn, recbuf, reclen, 0);
+    rt_callq_end(apply_fn, reclen);
 }
 
 /* ---- the z pre-pass (gx_draw.c draw_issue) ------------------------------------ */
@@ -466,10 +471,10 @@ int gx_rtgx_zp_maybe(void) {
            (port_opt.zprepass != 1 || gx.z_comploc);
 }
 void gx_rtgx_zp_begin(void) {
-    rt_call(zp_begin_fn, gx_unit_alpha_min, 8, 0);
+    rt_callq(zp_begin_fn, gx_unit_alpha_min, 8);
     st_zp++;
 }
-void gx_rtgx_zp_end(void) { rt_call(zp_end_fn, NULL, 0, 0); }
+void gx_rtgx_zp_end(void) { rt_callq(zp_end_fn, NULL, 0); }
 
 /* ---- the frame: on or off, and the auto balance ------------------------------------ */
 static double rt_frame_s;          /* the render thread's apply time this frame */
