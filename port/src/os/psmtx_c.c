@@ -307,10 +307,30 @@ void C_MTXMultVec(const Mtx m, const Vec* src, Vec* dst) {
     dst->z = oz;
 }
 
+/* M41 (PLAN.md 56): the matrix in registers for the whole array.  GCC
+ * reloaded all twelve elements every vertex (a store to dst may alias m as
+ * far as it knows; the game never passes one that does).  The expression per
+ * element is C_MTXMultVec's own, so the contraction is the same;
+ * port/tests/mtx_test.c holds the two loops to each other bit for bit. */
 void C_MTXMultVecArray(const Mtx m, const Vec* srcBase, Vec* dstBase, u32 count) {
     u32 i;
+    if (port_opt.nohoistmtx) {
+        for (i = 0; i < count; i++) {
+            C_MTXMultVec(m, &srcBase[i], &dstBase[i]);
+        }
+        return;
+    }
+    const f32 m00 = m[0][0], m01 = m[0][1], m02 = m[0][2], m03 = m[0][3];
+    const f32 m10 = m[1][0], m11 = m[1][1], m12 = m[1][2], m13 = m[1][3];
+    const f32 m20 = m[2][0], m21 = m[2][1], m22 = m[2][2], m23 = m[2][3];
     for (i = 0; i < count; i++) {
-        C_MTXMultVec(m, &srcBase[i], &dstBase[i]);
+        f32 x = srcBase[i].x, y = srcBase[i].y, z = srcBase[i].z;
+        f32 ox = m00 * x + m01 * y + m02 * z + m03;
+        f32 oy = m10 * x + m11 * y + m12 * z + m13;
+        f32 oz = m20 * x + m21 * y + m22 * z + m23;
+        dstBase[i].x = ox;
+        dstBase[i].y = oy;
+        dstBase[i].z = oz;
     }
 }
 
@@ -603,10 +623,29 @@ void PSMTXROMultVecArray(const ROMtx m, const Vec* srcBase, Vec* dstBase, u32 co
         return;
     }
 #endif
-    for (i = 0; i < count; i++) {
-        f32 x = srcBase[i].x, y = srcBase[i].y, z = srcBase[i].z;
-        dstBase[i].x = m[0][0] * x + m[1][0] * y + m[2][0] * z + m[3][0];
-        dstBase[i].y = m[0][1] * x + m[1][1] * y + m[2][1] * z + m[3][1];
-        dstBase[i].z = m[0][2] * x + m[1][2] * y + m[2][2] * z + m[3][2];
+    if (port_opt.nohoistmtx) {
+        for (i = 0; i < count; i++) {
+            f32 x = srcBase[i].x, y = srcBase[i].y, z = srcBase[i].z;
+            dstBase[i].x = m[0][0] * x + m[1][0] * y + m[2][0] * z + m[3][0];
+            dstBase[i].y = m[0][1] * x + m[1][1] * y + m[2][1] * z + m[3][1];
+            dstBase[i].z = m[0][2] * x + m[1][2] * y + m[2][2] * z + m[3][2];
+        }
+        return;
+    }
+    {
+        /* M41: the matrix in registers for the whole array (as
+         * C_MTXMultVecArray above); the expressions are the loop's own */
+        const f32 m00 = m[0][0], m10 = m[1][0], m20 = m[2][0], m30 = m[3][0];
+        const f32 m01 = m[0][1], m11 = m[1][1], m21 = m[2][1], m31 = m[3][1];
+        const f32 m02 = m[0][2], m12 = m[1][2], m22 = m[2][2], m32 = m[3][2];
+        for (i = 0; i < count; i++) {
+            f32 x = srcBase[i].x, y = srcBase[i].y, z = srcBase[i].z;
+            f32 ox = m00 * x + m10 * y + m20 * z + m30;
+            f32 oy = m01 * x + m11 * y + m21 * z + m31;
+            f32 oz = m02 * x + m12 * y + m22 * z + m32;
+            dstBase[i].x = ox;
+            dstBase[i].y = oy;
+            dstBase[i].z = oz;
+        }
     }
 }

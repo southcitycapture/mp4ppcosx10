@@ -317,6 +317,8 @@ static void usage(const char* argv0) {
             "  --clrasclr        M35: GXColor3u8's bytes filed as a colour whatever the\n"
             "                    next attribute is (the background quad after a shadow\n"
             "                    pass drew nothing), for the A/B\n"
+            "  --nohoistmtx      M41: C_MTXMultVecArray / PSMTXROMultVecArray reload the\n"
+            "                    matrix every vertex, as before, for the A/B\n"
             "  --nofastconcat    M41: C_MTXConcat is the SDK's own body, not the port's\n"
             "                    register-blocked one (the same arithmetic), for the A/B\n"
             "  --nostripes       M41: a texture the game rewrites is decoded and uploaded\n"
@@ -1218,6 +1220,8 @@ int port_parse_args(int argc, char** argv) {
             port_opt.nolitalpha = 1;
         } else if (!strcmp(a, "--clrasclr")) {
             port_opt.clrasclr = 1;
+        } else if (!strcmp(a, "--nohoistmtx")) {
+            port_opt.nohoistmtx = 1;
         } else if (!strcmp(a, "--nofastconcat")) {
             port_opt.nofastconcat = 1;
         } else if (!strcmp(a, "--nostripes")) {

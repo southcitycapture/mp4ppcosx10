@@ -31,8 +31,8 @@ extern "C" {
 /* ---- settings, from argv ------------------------------------------------- */
 /* M32: the shipped version (the dmg's name, the plist, the --defaults header)
  * and the milestone that built it. */
-#define PORT_VERSION_STRING "0.9.9"
-#define PORT_MILESTONE "M40"
+#define PORT_VERSION_STRING "0.9.10"
+#define PORT_MILESTONE "M41"
 
 typedef struct PortOptions {
     const char* image;      /* --image  disc image or extracted files/ tree   */
@@ -383,6 +383,8 @@ typedef struct PortOptions {
                              *   colour whatever the descriptor's next attribute is
                              *   (hsfman.c's background quad, written as U8 positions
                              *   through it, drew nothing), as M3..M34 did */
+    int nohoistmtx;         /* --nohoistmtx  M41: the vertex-array loops reload the
+                             *   matrix every vertex, as before */
     int nofastconcat;       /* --nofastconcat  M41: C_MTXConcat is the SDK body (the
                              *   operands reloaded after every store) */
     int nostripes;          /* --nostripes  M41: a rewritten texture is decoded and

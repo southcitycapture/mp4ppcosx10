@@ -619,6 +619,65 @@ static void test_blocked_concat(void) {
     }
 }
 
+/* ---- 6c. M41: the vertex loops with the matrix hoisted, against the loops
+ * as they were (copied here, compiled with the same flags), bit for bit. */
+static void old_multvecarray(const Mtx m, const Vec* s, Vec* d, u32 n) {
+    u32 i;
+    for (i = 0; i < n; i++) {
+        f32 x = s[i].x, y = s[i].y, z = s[i].z;
+        f32 ox = m[0][0] * x + m[0][1] * y + m[0][2] * z + m[0][3];
+        f32 oy = m[1][0] * x + m[1][1] * y + m[1][2] * z + m[1][3];
+        f32 oz = m[2][0] * x + m[2][1] * y + m[2][2] * z + m[2][3];
+        d[i].x = ox;
+        d[i].y = oy;
+        d[i].z = oz;
+    }
+}
+static void old_romultvecarray(const ROMtx m, const Vec* s, Vec* d, u32 n) {
+    u32 i;
+    for (i = 0; i < n; i++) {
+        f32 x = s[i].x, y = s[i].y, z = s[i].z;
+        d[i].x = m[0][0] * x + m[1][0] * y + m[2][0] * z + m[3][0];
+        d[i].y = m[0][1] * x + m[1][1] * y + m[2][1] * z + m[3][1];
+        d[i].z = m[0][2] * x + m[1][2] * y + m[2][2] * z + m[3][2];
+    }
+}
+static void test_hoisted_vec(void) {
+    static Vec src[64], want[64], got[64];
+    int trial, ndiff = 0, i, j;
+    Mtx m;
+    ROMtx rm;
+    printf("the hoisted vertex loops == the old ones, bit for bit:\n");
+    for (trial = 0; trial < 20000; trial++) {
+        for (i = 0; i < 3; i++) {
+            for (j = 0; j < 4; j++) {
+                m[i][j] = frand_zb();
+            }
+        }
+        for (i = 0; i < 4; i++) {
+            for (j = 0; j < 3; j++) {
+                rm[i][j] = frand_zb();
+            }
+        }
+        for (i = 0; i < 64; i++) {
+            src[i].x = frand_zb();
+            src[i].y = frand_zb();
+            src[i].z = frand_zb();
+        }
+        old_multvecarray(m, src, want, 64);
+        C_MTXMultVecArray(m, src, got, 64);
+        ndiff += memcmp(want, got, sizeof(want)) != 0;
+        old_romultvecarray(rm, src, want, 64);
+        port_mtx_noaltivec = 1;
+        PSMTXROMultVecArray(rm, src, got, 64);
+        ndiff += memcmp(want, got, sizeof(want)) != 0;
+    }
+    printf("  %d of 40,000 arrays of 64 differ\n", ndiff);
+    if (ndiff) {
+        fail("hoisted vertex loops", "differ from the old loops");
+    }
+}
+
 /* ---- 7. M28 (d): port_sqrtf against libm's sqrtf.  Default: sixteen million
  * random floats over the whole range plus the edges; `--sqrt-all` every
  * positive normal float, all 2^31 - 2^23 of them (minutes on the G4), which
@@ -756,6 +815,7 @@ int main(int argc, char** argv) {
     test_vec();
     test_sparse_concat();
     test_blocked_concat();
+    test_hoisted_vec();
     bench_concat();
     test_sqrt(all);
     printf("---- %d failure(s) ----\n", failures);
