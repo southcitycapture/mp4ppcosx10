@@ -84,6 +84,25 @@ game-bound with room on the render thread (m432, m424, w05, m410, m404);
 six are at the bar on their tails (m429, m463, m407, m415, w01, m438). All
 82 at 100% game speed.
 
+**Where M42 left it** (0.9.11, `docs/fps-scoreboard.md`; M41's kept as
+`docs/fps-scoreboard-m41-after.md`; PLAN.md 57): **64 of 82 screens pass**,
+none of M41's passes lost. The scoreboard now runs a screen that lands
+within 2 fps of the bar three times and judges it by the median of the
+three runs' medians (17 screens this time). Crossed the bar: m432 Dungeon
+Duos 25.7 → 29.9 (the vertex cache's write barrier: the maze's unchanging
+arrays are no longer re-hashed every frame), m424 29.1 → 29.9, and m429,
+m407 and m415 by three runs each (30.0 / 30.0 / 29.9). **The line is not
+met.** The 18 still short (PLAN.md 57.10): eleven carry more work on the
+two cores together than a 30 fps cycle allows (m441 24.1, m431 24.9, m436,
+m401, m414, m435, the character select 26.7, m409, m433, m444, m418); four
+are game-bound with 8-11 ms idle on the render thread (m404 28.0, m410
+28.5, w05 29.2, w04 28.0) -- the next lever is the translation on the
+render thread (PLAN.md 57.7), sized and not built; m463 and m438 are short
+on a heavy phase; w01 is 29.2 by the pooled rule (its own runs are 30.0;
+the ~110 board frames inside the minigame teleports' hand-overs pull it
+under -- whether they count is the user's call). All 82 at 100% game
+speed.
+
 ## Done
 
 | area | the claim | the evidence |

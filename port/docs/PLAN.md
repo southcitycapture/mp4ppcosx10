@@ -21255,3 +21255,601 @@ and a three-run scoreboard method for the ones at the bar. Every finding
 here reproduces from its teleport (`tools/m41_chain.sh A:GAME:ARM:K`,
 `L:GAME:ARM`, `S:GAME`/`D:GAME`/`C:GAME` for a profile); no snapshot is
 needed for any of them. The M39 named snapshots (§54.9) stand.
+
+## 57. M42 log: the total work *(2026-09-24, littlejelly)*
+
+M41 left the v1.0 line ("30 fps everything": every reachable screen at a
+median of 29.5 presented fps at 100% game speed, `fps_board.sh` +
+`fps_board.py`) at 59 of 82 on 0.9.10 and sorted the 23 short screens into
+three classes (§56.7): over both cores' budget (the total work has to fall:
+the consumed frame, the render thread's draws), game-bound with room on the
+render thread (the translation on the render thread), and at the bar on
+their tails (the scoreboard's method first). This milestone takes all
+three.
+
+**The short answer.** The method first: `fps_board.sh` runs a screen that
+lands within 2 fps of the bar three times and judges it by the median of
+the three runs' medians; on 0.9.10 that alone moves m429, m407, m415 over
+and m423 under (57.2). The profile of a class-2 screen then found the
+largest single item of its game thread was not the translation §56.7
+named but **the vertex cache re-hashing static geometry every frame** --
+and a **write barrier** (the pages wholly inside a cached array made
+read-only, a store faulting once to mark them, the ends hashed alone)
+removes it exactly: **m432 Dungeon Duos 25.5 → 29.4 in the A/B, 29.9 on
+the scoreboard**, w05 27.3 → 29.1, m438, the character select and m424's
+consumed frame with it (57.5, 57.6). Four exact levers on the consumed
+frame's SDK math (a libm-identical sin/cos proven on all 604 million floats
+of its domain, a memo on the engine's rotation builders, their misses as
+one sparse product proven on 1.2 million, `Hu3DMotionExec` compiled as
+port code) are each worth 0.4-0.8 fps on m433 and nothing measurable on
+m441 or m431, whose cost is the engine's walks through memory (57.3). Fewer
+draws was measured before anything was built: the driver runs `ARL` on
+the card up to the native parameter limit (180 params; §33.2's palette was
+190, the first size over it), and on the render thread's own clock taking
+a fifth of the draws away does not shorten its replay (57.4). The
+translation on the render thread is sized (~1.7 ms of m432's game thread)
+and not built: it needs the render thread to own the whole GL state shadow
+(57.7). **The scoreboard: 59 → 64 of 82** (m432, m424, m429, m407, m415
+crossed; none fell); the md5s never moved; 0.9.11's dmg is cut and the soak
+runs on it.
+
+### 57.1 The soak, read
+
+M41's leave-behind (`isle --soak --com4 --rtc dolphin --freshcard --status
+--perf` on 0.9.10, `isle` `09a0c85e`) had run 26 min when this session
+began; read and stopped by pid (SIGINT, the game's own shutdown and its
+reports, `EXITCODE=0`) at 04:32 G4 time: **63,600 retraces, 1,060 status
+lines** (`docs/soak/m42-soak-m41-leave.log.gz`). Speed **100.0%**, **0
+faults, 0 guard hits, 0 resyncs** (worst lateness 674 ms, a scene load), 0
+split-mixer mismatches; 39 `stall:` lines, the worst 492 ms (texture
+decodes at a module's first frames), no `STUCK`; 36 underruns (the boot 11,
+the first board turn 25); card: 7 writes, 15 image flushes, one rename of
+1.72 s behind the game (§54.4's drive), no flush waited; rss 176 → 251 MB
+and flat. It played the character select, the board to turn 7 and six
+minigames (m410 27.4, m411 29.6, m412 27.6, m415 28.3, m420 29.7, m422
+29.8 on the soak's own lines); the board (w01) 30.0 median over its 603 lines.
+
+### 57.2 The scoreboard's method: three runs for a screen at the bar
+
+A screen within a few tenths of the bar can land either side of it on a
+given night (§56.6: m429 30.0 → 27.1 → 30.0 by chain, run and A/B). So
+`tools/fps_board.sh` now has a three-run mode, `FB_THREE` (default
+`auto`): after a minigame's, a board's or a teleport's run it reads that
+run's median and p10 of its own screen (`stats`, the same median and
+interpolated percentile `fps_board.py` computes, speed 99..110%); if the
+median is within `FB_NEAR` (2.0) fps of the bar either side, the run is
+made twice more, as `NAME~2` and `NAME~3`, with the same arguments. The
+presented rate is capped at 30.0, so a screen *at* the cap counts as near
+only when its p10 is also within 2 fps of the bar (a tail one unlucky
+chain could turn into its median); a screen at 30.0 with a p10 of 28 is
+not re-run. `FB_THREE=all` runs every screen three times, `off` is M40's
+one run. `tools/fps_board.py` groups a family (`NAME`, `NAME~2`,
+`NAME~3`) and judges its own screen (`mNNN` → `mNNNdll`, `bN` → `w0Ndll`,
+`goto-X` → `X`) by **the median of the three runs' medians**; the table
+has a *runs* column with each run's median, the lines, p10 and costs pool
+the three, and from the repeats only the family's own screen is read (the
+boot, the walk and the instruction screens they pass through are counted
+once, from the first run). Everything else is one run, as before.
+
+**The verdicts on 0.9.10, before any lever** (`FB_THREE=all` on the six
+screens §56.7 named and the six that passed at < 30.0 in M41's table; 36
+runs, 04:49-05:50 G4 time, `docs/soak/m42-before/`, the table
+`scoreboard-before.md`):
+
+| screen | M41's one run | the three runs | median of medians | verdict |
+|---|---:|---|---:|---|
+| m429 | 27.1 | 30.0 / 30.0 / 30.0 | **30.0** | PASS |
+| m407 | 29.3 | 30.0 / 30.0 / 29.9 | **30.0** | PASS |
+| m415 Stamp Out! | 29.4 | 30.0 / 30.0 / 29.9 | **30.0** | PASS |
+| w01 (the board: `b1` alone) | 29.1 (pooled) | 30.0 / 30.0 / 30.0 | **30.0** | PASS by its own run; the scoreboard pools w01 (57.9) |
+| m449 | 29.9 | 29.9 / 30.0 / 30.0 | **30.0** | PASS |
+| m406 | 29.9 | 30.0 / 30.0 / 30.0 | **30.0** | PASS |
+| m440 | 29.9 | 29.9 / 29.9 / 29.9 | **29.9** | PASS |
+| m412 | 29.9 | 29.9 / 29.9 / 29.8 | **29.9** | PASS |
+| m430 | 29.9 | 29.9 / 29.5 / 29.6 | **29.6** | PASS |
+| m423 | 29.9 | 29.9 / 29.4 / 28.8 | **29.4** | short by 0.1 |
+| m438 | 28.8 | 27.0 / 28.7 / 28.5 | **28.5** | short by 1.0 |
+| m463 Panel Panic | 27.9 | 27.0 / 28.7 / 27.9 | **27.9** | short by 1.6 |
+
+Three of M41's six at-the-bar screens are passes that one chain's luck had
+put under (m429, m407, m415), and w01's own run passes three times over;
+one M41 pass is not (m423: one run at 29.9, one at 28.8); m438 and m463
+are short in all three runs. On 0.9.10 and this method the scoreboard would
+read **61 of 82** (62 if the board were judged by its own runs, 57.9).
+
+**The heavy phases.** m463's frames are two scenes (`fps_board.py`'s CSV
+by 150-frame windows, the same in both runs looked at): from the entry to
++600 the drawn frame is 13-14 ms on the game thread and 10-11 + 6.5 on the
+render thread, 38 K vertices, 213-237 draws -- 30.0 -- and from **+600 to
++1,500** the panels fall: **89 K vertices, 333-355 draws, the game thread
+28.6-31.9 ms drawn (game 15-19, gx 11-13) + 5.5-6.9 consumed, the render
+thread 18.7-21.6 + 12-15 decode** -- over the cycle on both threads; from
++1,500 it is 48 K and 17 ms again. m438's are three: 14.5 ms drawn to
++450, then 25-30 ms with 580-760 draws to +1,200, then 21-23. Both are the
+total-work class for the length of their heavy phase, not a tail. w01's
+turn-start stalls are texture decodes (the §55.9 finding): its median is
+30.0 over three runs.
+
+### 57.3 The consumed frame: the profile, and four exact levers
+
+**The profile, again, on 0.9.10** (`tools/m42_chain.sh C:m441`: `--turbo
+--nodraw` from the minigame's entry, every frame consumed; `sample` 12 s,
+5,888 game-thread samples, `docs/soak/m42-profile/C-m441.sample.txt.gz`;
+split by `tools/m41_split.py` against 0.9.10's own map): **engine 48.5%,
+sdk 27.6%, audio 10.9%, gx 9.2%, other 3.8%**. Inclusive, the frame is
+`Hu3DDraw`'s object walk 27.8% (`objCall` 23.7%: with nothing drawn, the
+matrices -- `mtxRotCat`, the concats -- and the cull), `Hu3DShadowExec`
+15.4% (the shadow pass's walk), **`Hu3DMotionExec` 13.1%** (self 5.7%,
+`GetCurve` 4.1%, `GetObjTRXPtr` 2.6%, the 36-byte struct copies' `memcpy`
+1.1%), **`Hu3DModelObjMtxGet` 12.1%** (m441's `fn_1_3C00`: each player's
+net hand, once a frame, through `PGObjCalc`'s whole-tree walk -- `mtxRot`
+37.9% of it, the concats 21%), the audio tick 10.1%, `Hu3DDrawPost` 9.4%,
+the bone walk 8.6%, and the SDK math under all of them: `port_sincosf`
+6.7% (the memo's misses into libm's double `sin`/`cos`: 4.2%), the
+concats 5.2%, `C_MTXRotTrig` 1.6%. (The C runs of m431 and m433 finished
+inside the 20 s sample window and came back unsymbolised; `tools/
+m42_symbolize.py` could not place their addresses either. The M42 build's
+`C:m441` is in 57.6.) The engine's own statements are the game's; the SDK
+calls under them are the port's, and so are the four levers:
+
+**(1) libm's sin and cos, without libm** (`src/os/fast_sincos.c`;
+`--nofastsin`). On Leopard `sinf` is `bl _sin; frsp f1,f1` -- the double
+routine rounded to float (`otool -tV libSystem.B.dylib`) -- and the sin/cos
+memo's misses paid two of them, 633 ns a pair. `port_fast_sincosf` reduces
+the argument by pi/2 as a double-double (x - n*P1 exact for |x| <= 1024,
+n*P2 and n*P3 exact products, the sum an exact TwoSum), takes sine and
+cosine of the remainder by their Taylor series to degree 15 and 16 in
+double, and rounds to float only when the double's 29 dropped bits are
+more than 64 units from a rounding boundary -- anything within a few units
+of the true value, libm's answer included, then rounds to the same float;
+otherwise it asks libm. **Proven on the G4 itself over its whole domain**
+(`port/tests/sincos_test.c`, two threads): every float of 2^-26 <= |x| <=
+1024 and the two zeros, **603,979,780 inputs, 0 differ** from libm's
+`sinf`/`cosf` (166 turned away by the guard; the first pass over 2^-10 ..
+64, 268,435,458 inputs, also 0). A pair takes 304 ns against libm's 633.
+
+**(2) The rotation builders memoised** (`src/os/mtx_memo.c`, `patches.txt`
+renames the game's bodies `mtxRot_game`/`mtxRotCat_game`; `--nomtxmemo`).
+`mtxRot(m, x, y, z)` and `mtxRotCat(m, x, y, z)` (hsfdraw.c) are pure: the
+first's matrix is a function of the three angles' bits, the second's of
+the input matrix and the angles. A direct-mapped table keyed on the whole
+input (12 or 60 bytes, compared in full) returns the bits the body
+computed on the same input. The md5 walk's counts: `mtxRotCat` 346,529
+hits / 91,374 misses, `mtxRot` 48,361 / 14,326; in m441 816,666 / 233,891.
+
+**(3) The misses as one sparse product** (`psmtx_c.c` `port_mtx_rotl`;
+`--norotl`). Each axis of a miss was `MTXRotRad(temp)` (twelve stores) and
+`MTXConcat(temp, m, m)` (twenty-four loads, a general product); M28's rule
+for a literal 0 or 1 in a fused multiply-add (§43), applied with the
+rotation on the *left*, gives the same bits from the sine, the cosine and
+the input alone -- the translation column's `a3 +` is the rotation's +0,
+which turns a zero result into +0. `port/tests/mtx_test.c`: **0 of
+1,200,000** left products differ from `C_MTXRotRad` + `C_MTXConcat`
+(random matrices with a quarter signed zeros, tiny elements, both cases of
+each axis letter).
+
+**(4) `Hu3DMotionExec` compiled as port code** (`src/os/motion_exec.c`;
+`patches.txt` renames the game's body `Hu3DMotionExec_game`;
+`--nomotionexec`). The same statements in the same order -- every
+`GetCurve` (which has side effects: a Bezier track's `start`, the bitmap
+pointer) and every `SetObj*Motion` under the same condition on the same
+arguments, every store the same store -- with int counters for the game's
+s16 ones, the struct copy as nine word moves (the bits a `memcpy` copies,
+without the call) and `GetObjTRXPtr`'s switch inline. Exact by
+construction.
+
+**Considered and not built.** A memo of `Hu3DModelObjMtxGet`'s whole walk:
+its inputs are every visited node's transform, and m441's four calls a
+frame name the moving hand of a running character -- a hit only when a
+player stands still; the rotation memo takes the part of its cost that
+repeats. The shadow pass skipped on consumed frames: M41's reading stands
+and has a second reason -- the main pass's skinned models read `MTXBuf`
+slots they never write (`objNull` pushes without a store when `cenvNum` is
+set), and on a consumed frame those slots hold what the shadow walk left
+there.
+
+### 57.4 Fewer draws: measured first, and the render thread's clock says no
+
+**Which draws end a batch, and why** (`m42_chain.sh E:GAME`: the teleport in
+lockstep with `--endlog` at entry +600/+900/+1,200, read by
+`tools/m37_ends.py`; `docs/soak/m42-profile/E-*.log.gz`; three drawn frames
+each):
+
+| scene | batches | GL draws | runs of equal state | batch ends the state did not need | of them needing the matrix carried | ended by `GXLoadPosMtxImm` |
+|---|---:|---:|---:|---:|---:|---:|
+| m441 Butterfly Blitz | 1,345 | 1,940 | 630 | 715 (53%) | 666 | 1,077 |
+| m433 Beach Volley Folly | 1,206 | 1,783 | 507 | 699 (58%) | 692 | 1,109 |
+| m431 Order Up | 1,127 | 1,864 | 949 | 178 (16%) | 174 | 732 |
+
+The object matrix load ends most batches (80-92%), and on m441 and m433
+more than half of those batches differ from the one before in nothing
+else: many small objects of one material (the butterflies, the players'
+parts), each with its own matrix. m431's ends are mostly real changes (its
+material/texture switches: `GXSetChanAmbColor` 165, `GXLoadTexObj` 38).
+The skinned characters are not what ends them: their envelopes are skinned
+on the CPU at the draw (§33.3), one matrix per object.
+
+**Relative addressing on this driver** (`port/tests/vp_arl_test.c`: CGL,
+a pbuffer, 32 objects of 30-1,400 vertices, drawn as one draw per object
+with its matrix in three env params, as one draw indexing a palette with
+`ARL`, and as one draw with one matrix; `docs/soak/m42-profile/
+vp_arl_test-g4.txt`): **the Radeon 9000's Leopard driver runs `ARL` on the
+card** -- 0.49 ms a frame against 0.47 without it at 30 vertices an
+object, 1.72 against 1.79 at 200, 2.02 against 1.92 at 1,400 -- **as long
+as the program's parameters stay under the native limit**: a palette of
+96, 144 or 180 params loads "under native limits: YES" and runs at the
+flat program's speed; at 190 params the same program is "NO, 0 native
+instructions" and costs 0.81 ms (the CPU). §33.2 read its palette's 20 ms
+as ARL itself; the palette there was 46 fixed params + 144 = 190, the
+first size over the line, and today's layout is 82 fixed params + 18
+slots = 190 again (`--palsize` cannot reach under it without giving up
+most of the slots).
+
+**Merging draws on the render thread's clock.** One teleport run each of
+M22's two ways to span a matrix change, at real time (both had been
+silently off in every teleport: they are decided at the first primitive,
+which a teleport reaches inside its fast-forward with drawing off --
+`gx_palette_on` now waits for a drawn primitive):
+
+| scene | arm | draws | presented fps | game work / gdec | rt | dec |
+|---|---|---:|---:|---:|---:|---:|
+| m441 | M42 (57.6, three runs) | 646 | 24.1 | 30.2 / 0.0 | 21.0 | 8.5 |
+| m441 | `--palette --palsize 20` (18 slots, 190 params) | 546 | 16.4 | 44.1 / 13.2 | 36.8 | 0.0 |
+| m441 | `--premerge-max 64` | 512 | 19.0 | 38.1 / 11.8 | 21.2 | 0.0 |
+| m433 | M42 (57.6, three runs) | 589 | 28.0 | 28.4 / 0.0 | 19.7 | 5.6 |
+| m433 | `--palette --palsize 20` | 491 | 19.0 | 40.7 / 13.0 | 33.6 | 0.0 |
+| m433 | `--premerge-max 64` | 473 | 20.5 | 36.3 / 11.7 | 19.1 | 0.0 |
+
+(one run each of the two arms, `docs/soak/m42-ab/p3`.) The pre-transform takes 19-21% of the draws away and the render thread's
+replay does not move (m441 21.2 ms against 21.0, with its decode moved away;
+m433 19.1 against 19.7): what the driver charges on the render thread is
+the state it validates when state changed (`gldUpdateDispatch` under
+`gleDrawArraysOrElements_VAR_Exec` in the replay's samples) and the
+vertices, not the draw call between two batches of the same state -- the
+answer §37.2 gave on the game thread's clock, now on the render thread's.
+Both span a matrix change by rewriting ring vertices, so neither can run
+the decode on the render thread, and the decode comes back to the game
+thread (11.6-13.2 ms); the palette, over the native limit, also moves the
+transform to the CPU (36.8 ms of replay). The pre-transform's picture
+would also need ppmdiff and the console (exact only to rounding, §37.2) --
+moot: it is slower. Nothing here shipped; the settle fix did (it makes the
+arms measure what they say).
+
+### 57.5 The vertex cache's write barrier (class 2, and not the lever the brief named)
+
+**The profile of a class-2 screen first** (`S:m432`, real time, 0.9.10,
+6,375 game-thread samples, `docs/soak/m42-profile/S-m432.sample.txt.gz`;
+the drawn frame 31.1 ms = game 12.0 + gx 18.0, `G:m432`): `draw_apply`,
+the translation §56.7 named for class 2, is **8.7%** inclusive, and a
+sixth of it (the texture binds, 93 of 557 samples) reads game memory and
+stays; the largest single line is not in it: **`vc_hash` 9.4% self** --
+with `vc_arr_check` and `vc_list_begin` around it, **12.8%** -- the
+static-geometry cache (M40) re-hashing every array and display list it
+keys on, at their first use in every drawn frame, because the game may
+have written them. Dungeon Duos' maze is ~3 MB of arrays that never
+change.
+
+**The barrier** (`src/gx/gx_wb.c`, `gx_draw.c` `vc_arr_check`/
+`vc_list_begin`, `crash.c`; `--nowb`). When the cache hashes an array (or
+a list), the pages lying *wholly* inside its bytes are made read-only
+first (`mprotect`), then the bytes are hashed. A store to one of those
+pages faults; the SIGBUS/SIGSEGV handler (`port_wb_fault`, ahead of the
+crash reporter) makes the page writable again, marks it written, and the
+store retries. The next check needs the full hash only if an interior page
+was written, never armed, or re-armed after the array's last hash (another
+array sharing it); otherwise it hashes the partial pages at the two ends
+alone (never protected: a partial page is shared with something else -- a
+heap header, a coroutine stack, an object written every frame) and, if
+those match, the array is unchanged, as the full hash would have said,
+without reading the rest. Exact by construction: a page is trusted only
+while it has been continuously write-protected since before the array's
+bytes were read.
+
+What cannot fault is handled by name: the kernel writing user memory
+(`fread`/`pread` into a read-only page fail with EFAULT) -- the port's
+three kernel writers into MEM1, the disc read (`dvd_fs.c` `do_read`,
+which also covers the resident set's copy) and the snapshot restore,
+disarm their destination first; a device's DMA -- nothing DMAs into MEM1
+(the EFB copies are GL-side). A free (`port_mem_freed`) disarms the block
+and forgets its pages' faults; a page that faults twice is *hot* (a buffer
+rewritten every frame: the skin buffers, particles) and is never protected
+again, so it costs two faults in all and is hashed as before. The handler
+runs on its own stack now (`sigaltstack`, `SA_ONSTACK`): the game's
+processes run on coroutine stacks of a few KB in MEM1, and a signal frame
+pushed there during normal play could run past one. Only MEM1 is watched.
+
+On the md5 walk: **1.1 GB of hashing skipped for 125 faults** (62 pages
+hot), 101,373 array checks clean against 616 written; the md5s hold (57.8).
+
+### 57.6 The A/B
+
+`tools/m42_chain.sh A:GAME:ARM:K` (the scoreboard's teleport at real time,
+three runs an arm, interleaved) read by `tools/m42_ab.py` (M41's reader
+with the boards' screens named and the median of the runs beside the mean;
+the costs are the drawn frame's medians from the CSVs, over the runs).
+Logs: `docs/soak/m42-ab/p2`, `p3` (`ab.md` in each is the reader's whole
+table).
+
+**Round p2** (`630fce6e`: the fast sin/cos over 2^-10..64, the rotation
+memo, the motion exec, the write barrier on arrays; the other arm all four
+off; 05:56-07:34 G4 time):
+
+| scene | arm | presented fps, each run | median | game work | consumed | rt + dec | vc |
+|---|---|---|---:|---:|---:|---:|---:|
+| m432 Dungeon Duos | M42 | 29.0 / 29.4 / 29.9 | **29.4** | 26.9 | 5.0 | 14.7 + 5.8 | 69% |
+| m432 | all four off | 25.5 / 25.1 / 25.6 | **25.5** | 30.6 | 6.8 | 15.0 + 5.8 | 69% |
+| w05 Koopa's Seaside Soirée | M42 | 29.0 / 29.1 / 29.1 | **29.1** | 24.8 | 6.1 | 19.7 + 2.7 | 58% |
+| w05 | all four off | 27.3 / 28.0 / 27.2 | **27.3** | 26.3 | 7.3 | 19.7 + 2.7 | 49% |
+| m438 | M42 | 29.5 / 29.5 / 28.9 | **29.5** | 22.5 | 5.9 | 18.9 + 7.1 | 2% |
+| m438 | all four off | 25.9 / 29.8 / 28.1 | **28.1** | 22.6 | 6.1 | 18.8 + 7.2 | 2% |
+| m424 | M42 | 29.9 / 29.7 / 30.0 | **29.9** | 24.7 | 4.3 | 14.9 + 1.4 | 75% |
+| m424 | all four off | 29.9 / 29.2 / 29.7 | **29.7** | 26.1 | 10.0 | 14.9 + 1.4 | 74% |
+| the character select | M42 | 27.0 / 26.9 / 26.6 | **26.9** | 30.0 | 4.6 | 22.1 + 9.4 | 31% |
+| the character select | all four off | 26.1 / 26.4 / 26.1 | **26.1** | 30.5 | 4.4 | 22.0 + 9.5 | 30% |
+| m433 Beach Volley Folly | M42 | 27.9 / 27.6 / 27.7 | **27.7** | 28.6 | 9.4 | 19.6 + 5.6 | 52% |
+| m433 | all four off | 27.5 / 26.9 / 27.1 | **27.1** | 28.8 | 9.8 | 19.5 + 5.6 | 50% |
+| m463 Panel Panic | M42 | 28.4 / 28.5 / 29.1 | **28.5** | 16.8 | 4.2 | 13.1 + 8.7 | 7% |
+| m463 | all four off | 28.4 / 28.4 / 28.4 | **28.4** | 16.7 | 4.3 | 13.0 + 8.6 | 6% |
+| m441 Butterfly Blitz | M42 | 24.6 / 24.1 / 23.2 † | **24.1** | 30.3 | 10.9 | 21.0 + 8.4 | 24% |
+| m441 | all four off | 24.0 / 23.9 / 23.8 | **23.9** | 30.3 | 10.5 | 20.9 + 8.4 | 23% |
+| m431 Order Up | M42 | 24.5 / 24.2 / 24.2 | **24.2** | 31.1 (0.8 decode) | 8.6 | 24.2 + 8.7 | 38% |
+| m431 | all four off | 25.1 / 24.4 / 24.8 | **24.8** | 31.1 | 8.6 | 24.2 + 8.9 | 39% |
+
+† a 15-second stretch of the run (entry +480..+1,080) had every cost on
+both threads 25% up together -- something else on the G4; the median of
+three is what the method is for. The big one is the write barrier where the
+cache keys static geometry: m432's drawn frame 30.6 → 26.9 ms, w05's 26.3 →
+24.8; m424's consumed frame (the reader's column: the consumed frames that
+took over 10 ms of wall) 10.0 → 4.3 ms, at a rate already at the cap. m431's −0.6 is the auto decode split handing the game thread
+0.8 ms of the render thread's decode once the game thread got cheaper
+(`gdec`), on a screen where the game thread is the longer pole already;
+p3's per-lever arms on the next build have m431 at 24.8-25.0 in every arm.
+
+**Round p3** (`30389ddb`: + the sparse left rotation, the fast sin/cos
+over 2^-26..1024, the barrier on the lists; 07:43-09:57): each lever off on
+its own, on the three screens of 56.7's class 1, three runs an arm:
+
+| scene | M42 (all on) | `--nofastsin` | `--nomtxmemo` | `--norotl` | `--nomotionexec` | `--nowb` |
+|---|---|---|---|---|---|---|
+| m433 fps | **28.0** (28.0/27.9/28.0) | 27.3 | 27.5 | 27.6 | 27.2 | 27.6 |
+| m433 consumed ms | 8.5 | 10.1 | 9.9 | 9.8 | 10.6 | 8.1 |
+| m441 fps | **24.1** (24.1/24.0/24.1) | 24.1 | 24.1 | 24.1 | 24.0 | 24.2 |
+| m441 consumed ms | 10.5 | 10.4 | 10.5 | 10.6 | 10.7 | 10.4 |
+| m431 fps | **24.9** (24.9/25.0/24.9) | 25.0 | 24.9 | 25.0 | 24.9 | 24.8 |
+
+On m433 every lever shows: each alone is worth 0.4-0.8 fps and 1.3-2.1 ms
+of its consumed frame (the four engine levers together took it from 10.1
+in M41 to 8.5). On m441 and m431 none moves the rate past the noise: m441's
+consumed frame is 10.4-10.7 in every arm (its `Hu3DMotionExec` is the walk
+over its objects and tracks in memory -- 13.5% of the consumed frame on
+the M42 build against 13.1% before; the port's compile of the same
+statements gains nothing there, 57.10), m431's walls are the render thread
+(24.4 + 8.6) and a game thread whose consumed frame is the engine's walks.
+And on class 2 (base against all five off, three runs each): **m404 28.6
+against 28.3, m410 28.4 against 28.6** -- both game-bound at 27.4-27.9 ms
+drawn + 3.4-4.2 consumed, with 8 ms of room on the render thread.
+
+### 57.7 The translation on the render thread: sized, and not built
+
+The brief's item 4 was `draw_apply`'s state translation moved to the
+render thread for the class-2 screens (`--rtgx 0/1/auto`). Measured on
+the M42 build (`S:m432`, 4,401 game-thread samples,
+`docs/soak/m42-profile/p3-S-m432.sample.txt.gz`): **`draw_apply` is 8.3%
+of the game thread**, 367 samples -- `gx_tev_apply` 159 (of which the
+texture binds 72: `gx_tex_bind_swapped` → the content hash, the decode and
+upload of a changed texture, reading game memory: they stay), `gx_vprog_bind`
+77, `gx_vprog_draw` 64 (the variant key and lookup; its answer -- whether
+the draw can go to the card at all -- decides the game thread's own path,
+so it stays too), the raster state 29, the transform 7. What could move is
+~230 samples, **5% of the game thread, ~1.7 ms a 30 fps cycle**, before
+the cost of handing the render thread the state it reads (the TEV stages,
+channels, lights, texgens and texture matrices in use, the raster state:
+~2.7 KB of `GXState` against a 450-batch frame, unless it is sent as a
+delta).
+
+Why it was not built in M42, after reading the code: the translation reads
+the global `gx` and writes GL through the `glc_*` shadow, and the shadow
+is *one* model of GL's state -- every GL path of the port goes through it
+(the EFB copies, the clears, the movies, the texture uploads' binds, the
+present). A render thread that translates must own that model, and every
+game-thread path that touches GL state today would have to become a record
+the render thread applies through the same shadow, or invalidate it both
+ways; the translation files (`gx_tev.c`, `gx_vprog.c`, `gx_tfs.c`, the
+raster half of `gl13.c`, ~7,800 lines) would have to run against a state
+replica rather than `gx`, with their own caches (the TEV signature, the unit
+memo, the vertex-program table and its parameter shadow), and the texture
+binds split out of the unit loop they sit in. That is the milestone M41
+called it (§56.3); done under this milestone's scoreboard it could not have
+been proven exact before the dmg. The measurement says where it would pay:
+**m404 (28.6), m410 (28.4), m432 (29.4 in p2's three runs) and w05
+(29.1)** -- game-bound at 25-28 ms drawn plus 3-6 consumed, with 8-12 ms of
+room on the render thread -- which are within 1.2 ms of the bar. It is the
+next lever for exactly those four (57.10).
+
+### 57.8 The md5s
+
+Byte for byte, both walks, every build of the milestone (`N`/`M` of each
+chain):
+
+| build | what it added | `--nomovies` 800 / 3000 / 7000 | movies 800 / 3000 / 7000 |
+|---|---|---|---|
+| `630fce6e` | fast sin/cos, rotation memo, motion exec, write barrier (arrays) | `0b58c5ee` / `2b99c60a` / `4a9a640c` | `d2d40344` / `59008ce4` / `3f98f882` |
+| `30389ddb` | + sparse left rotation, sin/cos to 2^-26..1024, the barrier on lists, the settle fix | the same | the same |
+| `ab5d6022` | 0.9.11 (the scoreboard's candidate) | the same | the same |
+| `9b8597a5` (shipped) | the tier line's count | `0b58c5ee` / `2b99c60a` / `4a9a640c` | `d2d40344` / `59008ce4` / `3f98f882` |
+
+And in lockstep on the shipped build (`L:m416`, `L:m415`,
+`docs/soak/m42-final/`): **m416 `64ff8811` / `13949617`, m415 `bddd931c`
+/ `4357d070` -- M41's (and M40's) lockstep pairs to the byte**, the two
+games whose real-time frames differ from chain to chain with the pacing.
+On the shipped build's `--nomovies` walk the fast sin/cos answered
+1,247,421 of the memo's 1,248,937 misses without libm (1,516 went to libm:
+outside the domain or turned away by the guard); the barrier armed 778
+pages, took 124 faults (62 pages went hot) and skipped 1.14 GB of hashing.
+
+### 57.9 The scoreboard after
+
+`docs/fps-scoreboard.md` -- `tools/fps_board.sh` with `FB_THREE=auto` on
+the 0.9.11 candidate (`isle` `ab5d6022`; the shipped `9b8597a5` differs in
+the tier line's count alone), 10:06-13:01 G4 time, **113 runs, 0 faults**,
+every screen at 100% game speed; 17 screens landed within 2 fps of the bar
+on their first run and were run three times (the median of their three
+medians is their verdict); the `front` run's three frames the
+`--nomovies` references. **64 of 82 screens pass** (M41: 59;
+`docs/fps-scoreboard-m41-after.md`). Logs: `docs/soak/m42-board/` (the
+CSVs trimmed to their real-time rows).
+
+| | before (0.9.10, M41) | fps / p10 | | after (0.9.11) | fps / p10 |
+|---|---|---:|---|---|---:|
+| 1 | m441 Butterfly Blitz | 23.2 / 20.7 | | m441 Butterfly Blitz | 24.1 / 22.8 |
+| 2 | m431 Order Up | 23.5 / 16.6 | | m431 Order Up | 24.9 / 23.2 |
+| 3 | m401 | 24.9 / 18.5 | | m436 | 25.8 / 24.1 |
+| 4 | m436 | 25.5 / 23.6 | | m401 | 25.9 / 20.6 |
+| 5 | m432 Dungeon Duos | 25.7 / 20.6 | | m414 | 26.6 / 24.7 |
+| 6 | m414 | 25.9 / 19.5 | | m435 | 26.7 / 24.6 |
+| 7 | m409 | 26.1 / 20.3 | | the character select | 26.7 / 25.6 |
+| 8 | m435 | 26.4 / 24.6 | | m409 | 27.0 / 22.7 |
+| 9 | w04 Boo's Haunted Bash | 26.7 / 23.1 | | m433 Beach Volley Folly | 27.1 / 24.8 |
+| 10 | the character select | 26.8 / 23.0 | | m404 / m463 / w04 | 28.0 |
+
+**Crossed the bar**: m432 Dungeon Duos 25.7 → **29.9** (29.9 / 29.9 /
+29.9; the write barrier), m424 29.1 → **29.9** (29.9 / 30.0 / 29.9),
+m429 27.1 → **30.0**, m407 29.3 → **30.0** (29.9 / 30.0 / 30.0), m415 29.4
+→ **29.9** (29.9 / 29.9 / 30.0) -- the last three the method (57.2) as
+much as the build. **None of M41's passes fell below the bar**; m423,
+which the before set had at 29.4 on 0.9.10, is 29.9 / 29.9 / 29.9. **The
+movers**: m410 27.0 → 28.5, w04 26.7 → 28.0, w05 27.9 → 29.2, m431 23.5 →
+24.9, m401 24.9 → 25.9, m441 23.2 → 24.1, m409 26.1 → 27.0, m418 28.1 →
+28.9, m414 25.9 → 26.6, m444 28.0 → 28.7; nothing moved down by half a
+frame or more.
+
+**Two notes on the verdicts.** *w01*, the board, is 29.2 and **not
+claimed**: M40/M41's rule pools every w01 status line of the chain, and
+besides the `front` walk's first turn (64 lines, median 30.0) and the `b1`
+run (45 lines, 30.0; a p10 of 29.9, so no three-run) that is ~110 lines
+from inside the 63 minigame teleports -- the board's frames right after
+each teleport's fast-forward hands over to real time, with its decodes.
+The board's own runs are at 30.0 (and `b1` three times on 0.9.10, 57.2);
+whether the hand-over frames belong in the board's verdict is the user's
+call, and until then the pooled number stands. *m433*'s one run (27.1)
+landed outside the three-run window; its three-run A/B on the same build is
+28.0 -- short either way.
+
+**Exactness, 63 games wide.** 126 of the 130 minigame frames the chain
+dumps (+300 and +1,200) are byte-identical to M41's chain
+(`tools/m41_frames.py`); the four others are m415 and m416, the two games
+that copy the screen, whose real-time frames depend on pacing: m415's are
+its lockstep pair (`bddd931c` / `4357d070`, §56.6), and m416 in lockstep on
+the shipped build is 57.8's `L` run.
+
+### 57.10 Each remaining wall, and its next lever
+
+Medians of the drawn frame from the scoreboard (the game thread's cycle is
+its drawn frame's work plus a consumed frame's; the render thread's is its
+replay plus its decode; 66.7 ms is both cores' 30 fps budget):
+
+| screen | fps | game thread (drawn + consumed) | render thread (replay + decode) | both | draws | vc |
+|---|---:|---:|---:|---:|---:|---:|
+| m441 Butterfly Blitz | 24.1 | 40.6 (30.3 + 10.3) | 29.2 (20.7 + 8.5) | 69.8 | 646 | 26% |
+| m431 Order Up | 24.9 | 39.4 (31.1 + 8.3) | 32.8 (24.1 + 8.7) | 72.2 | 569 | 39% |
+| m436 | 25.8 | 33.0 (30.3 + 2.7; 5.7 of it decode) | 31.0 (19.8 + 11.2) | 64.0 | 234 | 15% |
+| m401 | 25.9 | 34.0 (26.6 + 7.4) | 27.4 (20.0 + 7.4) | 61.4 | 464 | 26% |
+| m414 | 26.6 | 33.5 (26.9 + 6.6) | 27.9 (20.3 + 7.6) | 61.4 | 513 | 5% |
+| m435 | 26.7 | 32.3 (29.6 + 2.7; 6.2 decode) | 30.3 (19.5 + 10.8) | 62.6 | 210 | 14% |
+| the character select | 26.7 | 33.6 (29.7 + 3.9) | 31.3 (21.9 + 9.4) | 64.9 | 352 | 30% |
+| m409 | 27.0 | 34.9 (29.0 + 5.9) | 27.5 (22.9 + 4.6) | 62.4 | 532 | 52% |
+| m433 Beach Volley Folly | 27.1 | 35.9 (28.6 + 7.3) | 25.0 (19.4 + 5.6) | 60.9 | 589 | 53% |
+| m404 Trace Race | 28.0 | 31.3 (27.9 + 3.4) | 25.0 (17.0 + 8.0) | 56.3 | 251 | 22% |
+| m463 Panel Panic | 28.0 | 21.0 (16.8 + 4.2) | 21.8 (13.1 + 8.7) | 42.8 | 237 | 6% |
+| w04 Boo's Haunted Bash | 28.0 | 34.0 (27.3 + 6.7) | 24.3 (20.7 + 3.6) | 58.3 | 414 | 59% |
+| m410 | 28.5 | 31.3 (27.0 + 4.3) | 24.3 (16.2 + 8.1) | 55.6 | 441 | 21% |
+| m438 | 28.6 | 28.7 (22.7 + 6.0) | 25.7 (18.7 + 7.0) | 54.4 | 557 | 3% |
+| m444 | 28.7 | 32.6 (27.6 + 5.0; 3.5 decode) | 29.2 (22.8 + 6.4) | 61.8 | 318 | 38% |
+| m418 | 28.9 | 35.5 (27.4 + 8.1; 2.4 decode) | 29.9 (18.1 + 11.8) | 65.4 | 240 | 21% |
+| w01 Toad's Midway Madness | 29.2 | 26.6 (20.8 + 5.8) | 19.8 (14.8 + 5.0) | 46.4 | 343 | 4% |
+| w05 Koopa's Seaside Soirée | 29.2 | 30.5 (24.6 + 5.9) | 22.4 (19.7 + 2.7) | 52.9 | 389 | 61% |
+
+Three classes again, and what each would take:
+
+1. **Over both cores' budget, or within 5 ms of it** (both ≥ 60 ms: m431
+   72.2, m441 69.8, m418 65.4, the character select 64.9, m436 64.0, m435
+   62.6, m409 62.4, m444 61.8, m401 61.4, m414 61.4, m433 60.9 -- eleven).
+   What is left of their total is the engine's own walks, on *both* frames
+   of a cycle -- `Hu3DDraw`'s object walk, the shadow pass, the motion
+   system, `Hu3DModelObjMtxGet`, the particles -- whose cost after this
+   milestone's SDK levers is the game's statements walking memory (57.3:
+   the port's compile of `Hu3DMotionExec` gained nothing on m441; its cost
+   is the objects and tracks it touches), and the render thread's state
+   validation per state change (57.4: fewer draws of the same state do not
+   shorten the replay). No exact lever of the size these need (5-10 ms) is
+   known; the next is to measure the engine walks' cache misses on the G4
+   (a per-object working set the size of the L2), not to guess.
+2. **Game-bound with room on the render thread** (m404 31.3 / 25.0, m410
+   31.3 / 24.3, w05 30.5 / 22.4, w04 34.0 / 24.3): 1-3 ms over on the game
+   thread, 8-11 ms idle on the render thread. **The next lever is 57.7's**:
+   the translation on the render thread, ~1.7 ms of the game thread on
+   m432's profile once the texture binds stay behind -- enough for m404,
+   m410 and w05, not for w04 alone. It needs the render thread to own the
+   GL state shadow for every path; a milestone of its own.
+3. **At the bar on a phase, or by definition** (m463 28.0 and m438 28.6:
+   their medians are short because a heavy phase covers half the game --
+   m463's falling panels, 89 K vertices from +600 to +1,500 with 13-15 ms
+   of decode on the render thread and the static-geometry cache serving 6%
+   of the vertices; m438's 580-760-draw middle third; w01 29.2: the
+   pooled teleport hand-over frames, 57.9). For m463 the next question is
+   why the cache serves so little of the heavy phase (its miss counters,
+   per array, in a `--vcache count` run of the phase); for w01 the verdict
+   rule.
+
+Every finding reproduces from its teleport (`tools/m42_chain.sh
+A:GAME:ARM:K`, `L:GAME:ARM`, `S:GAME`/`C:GAME`/`E:GAME` for a profile or a
+batch-end log); no snapshot is needed. The M39 named snapshots (§54.9)
+stand.
+
+### 57.11 What M42 shipped
+
+| | |
+|---|---|
+| `port/tools/fps_board.sh`, `fps_board.py` | the three-run mode (`FB_THREE=auto/all/off`, `FB_NEAR`, `FB_BAR`; `stats`, `near`, `screen`), the families judged by the median of their runs' medians, the *runs* column |
+| `port/src/gx/gx_wb.c`, `gx_draw.c`, `debug/crash.c`, `dvd/dvd_fs.c`, `debug/snapshot.c`, `gx/gx_skin.c` | the write barrier (`port_wb_arm`/`_clean`/`_ends`/`_fault`/`_disarm`/`_freed`; the arrays' and lists' checks; the handler first in the fault path, on `sigaltstack`; the disc read and the restore disarming; the free forgetting); `--nowb` |
+| `port/src/os/fast_sincos.c`, `psmtx_c.c` | libm's `sinf`/`cosf` without libm where provably the same (`--nofastsin`); `port_mtx_rotl`, the sparse left rotation |
+| `port/src/os/mtx_memo.c`, `patches.txt` | `mtxRot`/`mtxRotCat` memoised, their misses through `port_mtx_rotl` (`--nomtxmemo`, `--norotl`) |
+| `port/src/os/motion_exec.c`, `patches.txt` | `Hu3DMotionExec` compiled as port code (`--nomotionexec`) |
+| `port/src/gx/gx_draw.c` | the palette/pre-transform/lazy-flush decision at the first *drawn* primitive (they had been silently off in every teleport) |
+| `port/tests/sincos_test.c`, `vp_arl_test.c`, `mtx_test.c` | the fast sin/cos against libm over its whole domain; relative addressing on the driver (and the native limit); the sparse left rotation against RotRad + Concat |
+| `port/tools/m42_chain.sh`, `m42_ab.py`, `m42_symbolize.py` | the milestone's chain (M41's, plus `E:` batch-end logs and `FB:` scoreboard runs), the A/B reader with the boards named, a map symboliser for a `sample` of an exited process |
+| `port/include/port.h`, `platform/main.c`, `opt_fields.h`, `machine.c` | the options; 0.9.11, M42; the tier line's count |
+| `port/docs/fps-scoreboard.md`, `fps-scoreboard-m41-after.md`, `release-checklist.md` | the scoreboard (64 of 82), M41's kept, the checklist's M42 state |
+| `port/dist/Read Me.txt` | 0.9.11; the frame rates as the scoreboard has them |
+| `port/docs/soak/m42-*` | the soak read, the before set (`m42-before/`), the profiles and tests (`m42-profile/`), the A/B rounds (`m42-ab/p2`, `p3`), the scoreboard's logs (`m42-board/`), the final walks (`m42-final/`) |
+
+**The disk image**: `Mario Party 4 PowerPC Edition 0.9.11.dmg`, 4,308,865
+bytes, md5 `824cbe244ed1bbf722011b1198ad8cb5`, at
+`littlejelly:~/MarioParty4-PowerPC-0.9.11.dmg` and on the G4 (`~/Mario
+Party 4 PowerPC Edition 0.9.11.dmg`); mounted and listed there: `Mario
+Party 4.app` (`isle` `9b8597a5`, 99 module bundles), `Read Me.txt`
+(0.9.11), `Licences/` (four); no game data.
+
+### 57.12 What is left running, and what M43 starts with
+
+On the G4, since 13:17 G4 time, on 0.9.11 (`isle` `9b8597a5`, exec'd by
+`tools/m42_chain.sh`'s `M42_LEAVE` after the final walks; runner slot
+`~/isle.app` → `MarioParty4-chain.app`, whose executable is
+`m42_chain.sh`):
+
+```
+isle --soak --com4 --rtc dolphin --freshcard --status --perf
+```
+
+log `~/isle-log.txt`, pid 98271. The player's card and
+`~/memcard-backup.raw` untouched (every run `--freshcard`). 0.9.10 stays
+installed beside it as `~/MarioParty4-m41.app` (the `old` arm of
+`m42_chain.sh`); the chain settings are `~/m42.env` and `~/fps-board.env`
+(`FB_DIR=$HOME/fps-board-m42`, `FB_THREE=auto`).
+
+M43: the soak read first -- the first long run with the write barrier's
+faults in normal play. Then 57.10's three: the translation on the render
+thread for m404, m410 and w05 (the GL shadow owned by the render thread),
+the cache's misses in m463's heavy phase, and for class 1 a measurement of
+where the engine's walks miss the caches. And the user's call on w01's
+verdict rule.
