@@ -4935,7 +4935,7 @@ DECODE_RUN(decode_run_tracked, 1)
                 if (NRM) {                                                               \
                     __builtin_prefetch(nb + (size_t)(((u32)pn[2] << 8) | pn[3]) * ns);   \
                 }                                                                        \
-                if (TEX) {                                                               \
+                if (TEX == 1) {                                                          \
                     __builtin_prefetch(tb + (size_t)(((u32)pn[per - 2] << 8) |           \
                                                      pn[per - 1]) * ts);                 \
                 }                                                                        \
@@ -4973,19 +4973,27 @@ DECODE_RUN(decode_run_tracked, 1)
                 memcpy(d, q, 4);                                                         \
                 p += 2;                                                                  \
             }                                                                            \
-            if (TEX) {                                                                   \
+            if (TEX == 1) {                                                              \
                 f32* dp = (f32*)(v + off_tex);                                           \
                 ix = ((u32)p[0] << 8) | p[1];                                            \
                 q = tb + (size_t)ix * ts;                                                \
                 dp[0] = DEC_F32(q, 0);                                                   \
                 dp[1] = DEC_F32(q, 1);                                                   \
                 p += 2;                                                                  \
+            } else if (TEX == 2) {                                                       \
+                p += 2; /* M43: a TEX0 no texgen reads: `pending`'s alone (below) */     \
             }                                                                            \
         }                                                                                \
-        if (lastv && TEX) {                                                              \
+        if (lastv && TEX == 1) {                                                         \
             const f32* t = (const f32*)(lastv + off_tex);                                \
             pending.tex[0][0] = t[0];                                                    \
             pending.tex[0][1] = t[1];                                                    \
+        } else if (TEX == 2 && i > 0) {                                                  \
+            /* the walker stored every vertex's TEX0 into pending; the last stays */     \
+            const u8* lp = p - 2;                                                        \
+            const u8* qt = tb + (size_t)(((u32)lp[0] << 8) | lp[1]) * ts;                \
+            pending.tex[0][0] = DEC_F32(qt, 0);                                          \
+            pending.tex[0][1] = DEC_F32(qt, 1);                                          \
         }                                                                                \
         return p;                                                                        \
     }
@@ -5007,6 +5015,13 @@ DECODE_FAST3(decode_fast_n1c1t1, 1, 1, 1)
 DECODE_FAST3(decode_fast_n2c1t1, 2, 1, 1)
 DECODE_FAST3(decode_fast_n0c1t1, 0, 1, 1)
 DECODE_FAST3(decode_fast_n1c1t0, 1, 1, 0)
+/* M43 (PLAN.md 58.8): the unread-TEX0 shapes (the shadow pass's casters) */
+DECODE_FAST3(decode_fast_n0c0t2, 0, 0, 2)
+DECODE_FAST3(decode_fast_n0c1t2, 0, 1, 2)
+DECODE_FAST3(decode_fast_n1c0t2, 1, 0, 2)
+DECODE_FAST3(decode_fast_n1c1t2, 1, 1, 2)
+DECODE_FAST3(decode_fast_n2c0t2, 2, 0, 2)
+DECODE_FAST3(decode_fast_n2c1t2, 2, 1, 2)
 /* the SKIN axis (M18): 0 no palette, 1 a plain primitive's one slot, 2 a
  * skinned mesh's per-vertex entry */
 #define PICK3(NAME)                                                                      \
@@ -5073,8 +5088,18 @@ static DecodeFast pick_fast(void) {
              * thread job can step over it (its pending is the game
              * thread's, decode_pending_last) */
             pick_tskip = (plan[i].op == DEC_F32_2_2 && plan[i].to_pending && sl.ntex == 0 &&
-                          i + 1 == nplan && plan_nback == 0 && clr != 2)
+                          i + 1 == nplan && plan_nback == 0 && clr != 2 &&
+                          !port_opt.notexskip)
                              ? 1 + nrm * 2 + clr : 0;
+            switch (pick_tskip) {
+                case 1: return PICK3(decode_fast_n0c0t2);
+                case 2: return PICK3(decode_fast_n0c1t2);
+                case 3: return PICK3(decode_fast_n1c0t2);
+                case 4: return PICK3(decode_fast_n1c1t2);
+                case 5: return PICK3(decode_fast_n2c0t2);
+                case 6: return PICK3(decode_fast_n2c1t2);
+                default: break;
+            }
             return (pick_why = 9, (DecodeFast)NULL);
         }
         tex = 1;
@@ -5213,6 +5238,12 @@ static const DecodeJobFn dec_fast_job[14] = {
 /* the index of the shape plan_fast names, or -1: the job carries the number
  * so the render thread never reads this file's statics */
 static int fast_index_of(DecodeFast f) {
+    if (f == decode_fast_n0c0t2s0) return 8;  /* M43: the unread-TEX0 shapes */
+    if (f == decode_fast_n0c1t2s0) return 9;
+    if (f == decode_fast_n1c0t2s0) return 10;
+    if (f == decode_fast_n1c1t2s0) return 11;
+    if (f == decode_fast_n2c0t2s0) return 12;
+    if (f == decode_fast_n2c1t2s0) return 13;
     if (f == decode_fast_n2c0t1s0) return 0;
     if (f == decode_fast_n1c0t1s0) return 1;
     if (f == decode_fast_n1c0t0s0) return 2;
@@ -5358,9 +5389,6 @@ static int rtdec_build(GxDecJob* j, const u8* p, const u8* end, u32 count) {
     j->clr = plan_clr.u;
     j->prefetch = !port_opt.nodcbt;
     j->fast = plan_fast ? fast_index_of(plan_fast) : -1;
-    if (!plan_fast && pick_why == 9 && pick_tskip && !port_opt.notexskip) {
-        j->fast = 8 + (pick_tskip - 1); /* M43: the unread-TEX0 shapes */
-    }
     /* M43: why a run is the general walker's, by vertices (the report's) */
     dec_why_verts[j->fast >= 0 ? 15 : plan_fast ? 14 : pick_why] += count;
     if (plan_fast && j->fast < 0) {
