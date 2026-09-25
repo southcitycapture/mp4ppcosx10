@@ -5607,9 +5607,12 @@ static unsigned vc_arr_check(VcArr* a) {
         const u8* p = a->base + (size_t)a->lo * a->stride;
         /* M42: no interior page written since the last full hash, and the
          * ends the same -- the bytes are the same; nothing else to read */
-        if (a->hashed && a->wb_ser && port_wb_clean(p, len, a->wb_ser)) {
-            vc_ends_hash(p, len, &e1, &e2);
-            if (e1 == a->e1 && e2 == a->e2) {
+        int wc = a->hashed && a->wb_ser ? port_wb_clean(p, len, a->wb_ser) : 0;
+        if (wc) {
+            if (wc == 1) {
+                vc_ends_hash(p, len, &e1, &e2);
+            }
+            if (wc == 2 || (e1 == a->e1 && e2 == a->e2)) {
                 a->epoch = gx_vc_epoch;
                 a->last_frame = gl13_frame_number();
                 return a->ver;
@@ -5822,9 +5825,12 @@ static VcEnt* vc_list_begin(const void* list, u32 nbytes) {
         u32 e1, e2;
         e->lepoch = gx_vc_epoch;
         /* M42: the write barrier, as for the arrays (vc_arr_check) */
-        if (e->wb_ser && port_wb_clean(list, nbytes, e->wb_ser)) {
-            vc_ends_hash((const u8*)list, nbytes, &e1, &e2);
-            if (e1 == e->le1 && e2 == e->le2) {
+        int wc = e->wb_ser ? port_wb_clean(list, nbytes, e->wb_ser) : 0;
+        if (wc) {
+            if (wc == 1) {
+                vc_ends_hash((const u8*)list, nbytes, &e1, &e2);
+            }
+            if (wc == 2 || (e1 == e->le1 && e2 == e->le2)) {
                 e->last_frame = fr;
                 e->dyn_until = 0;
                 return e;

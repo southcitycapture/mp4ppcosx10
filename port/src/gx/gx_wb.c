@@ -54,7 +54,7 @@ static uintptr_t wb_lo, wb_hi;
 static unsigned long wb_npages;
 static int wb_on = -1;
 static volatile unsigned long st_faults, st_hot;
-static unsigned long st_arms, st_arm_calls, st_clean, st_dirty, st_disarm;
+static unsigned long st_arms, st_arm_calls, st_clean, st_ends, st_dirty, st_disarm;
 static double st_bytes_skipped;
 
 static int wb_init(void) {
@@ -174,33 +174,77 @@ u32 port_wb_arm(const void* ptr, size_t n) {
     return ser;
 }
 
-/* 1: no interior page of [ptr, ptr+n) has been written since it was armed at
- * or before `ser` (every interior page armed; none re-armed since) */
+/* M42's whole pages inside [p, p+n), as page indexes [*a, *b) (none: *a == *b) */
+static void whole_pages(const void* ptr, size_t n, unsigned long* a, unsigned long* b) {
+    uintptr_t s = (uintptr_t)ptr, e = s + n;
+    uintptr_t ps = (s + WB_PAGE - 1) & ~(uintptr_t)(WB_PAGE - 1);
+    uintptr_t pe = e & ~(uintptr_t)(WB_PAGE - 1);
+    if (ps < wb_lo) ps = wb_lo;
+    if (pe > wb_hi) pe = wb_hi;
+    if (pe < ps) pe = ps;
+    *a = (ps - wb_lo) >> WB_SHIFT;
+    *b = (pe - wb_lo) >> WB_SHIFT;
+}
+
+static inline int page_clean(unsigned long p, u32 ser) {
+    return wb_state[p] == WB_ARMED && wb_arm_ser[p] <= ser;
+}
+
+/* has [ptr, ptr+n) been written since it was armed at `ser`?
+ * 0: an interior page was (or was never armed, or re-armed since): hash it all;
+ * 1: no interior page was -- the partial pages at the ends decide (hash them,
+ *    port_wb_ends);
+ * 2: --wbpart, and the ends' partial pages are armed and unwritten too: clean.
+ * M43: a partial page that is hot or written (a heap neighbour the game
+ * writes) no longer sends the whole array to a full hash, only to M42's
+ * hash of its two ends -- m429 on the first --wbpart build: 90,047 arrays
+ * "written" and hashed whole every frame, 25.3 fps against 30.0. */
 int port_wb_clean(const void* ptr, size_t n, u32 ser) {
-    unsigned long a, b, p;
-    if (wb_on != 1 || !ser || !interior(ptr, n, &a, &b)) {
+    unsigned long a, b, p, ta, tb;
+    if (wb_on != 1 || !ser) {
         return 0;
     }
+    if (!port_opt.wbpart) {
+        if (!interior(ptr, n, &a, &b)) {
+            return 0;
+        }
+        for (p = a; p < b; p++) {
+            if (!page_clean(p, ser)) {
+                st_dirty++;
+                return 0;
+            }
+        }
+        st_clean++;
+        st_bytes_skipped += (double)((b - a) << WB_SHIFT);
+        return 1;
+    }
+    if (!interior(ptr, n, &ta, &tb)) {
+        return 0;
+    }
+    whole_pages(ptr, n, &a, &b);
     for (p = a; p < b; p++) {
-        if (wb_state[p] != WB_ARMED || wb_arm_ser[p] > ser) {
+        if (!page_clean(p, ser)) {
             st_dirty++;
             return 0;
         }
     }
+    for (p = ta; p < tb; p++) {
+        if ((p < a || p >= b) && !page_clean(p, ser)) {
+            st_clean++;
+            st_ends++;
+            st_bytes_skipped += (double)((b - a) << WB_SHIFT);
+            return 1;
+        }
+    }
     st_clean++;
-    st_bytes_skipped += (double)((b - a) << WB_SHIFT);
-    return 1;
+    st_bytes_skipped += (double)n;
+    return 2;
 }
 
 /* the partial pages at the two ends of [ptr, ptr+n) (everything, when the
  * range has no interior page): *h_lo, *n_lo / *h_hi, *n_hi */
 void port_wb_ends(const void* ptr, size_t n, const u8** h, size_t* hn, const u8** t, size_t* tn) {
     uintptr_t s = (uintptr_t)ptr, e = s + n;
-    if (port_opt.wbpart && wb_on == 1 && n && s >= wb_lo && e <= wb_hi) {
-        /* M43: the ends are armed pages too: nothing is left to hash */
-        *h = (const u8*)ptr; *hn = 0; *t = (const u8*)ptr + n; *tn = 0;
-        return;
-    }
     uintptr_t ps = (s + WB_PAGE - 1) & ~(uintptr_t)(WB_PAGE - 1);
     uintptr_t pe = e & ~(uintptr_t)(WB_PAGE - 1);
     if (ps < wb_lo) ps = wb_lo;
@@ -271,10 +315,10 @@ void port_wb_disarm_all(void) {
 void port_wb_report(void) {
     if (wb_on == 1) {
         port_log("port> write barrier (M42%s): %lu pages armed in %lu calls, %lu faults (%lu pages hot), "
-                 "%lu disarmed by kernel writes/frees; arrays clean %lu / written %lu, %.1f MB of hashing "
-                 "skipped\n",
+                 "%lu disarmed by kernel writes/frees; arrays clean %lu (%lu by their ends' hash) / written "
+                 "%lu, %.1f MB of hashing skipped\n",
                  port_opt.wbpart ? ", --wbpart: the ends' partial pages too" : "",
-                 st_arms, st_arm_calls, st_faults, st_hot, st_disarm, st_clean, st_dirty,
+                 st_arms, st_arm_calls, st_faults, st_hot, st_disarm, st_clean, st_ends, st_dirty,
                  st_bytes_skipped / 1048576.0);
     } else if (port_opt.nowb) {
         port_log("port> write barrier (M42): off (--nowb)\n");
