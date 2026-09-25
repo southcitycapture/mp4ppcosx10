@@ -154,6 +154,16 @@ extern unsigned glc_white_name_shared;
 #define GLC_OWNED(who) do { } while (0)
 #endif
 static unsigned glc_emitted, glc_elided;
+/* M44 (PLAN.md 59): bumped whenever the texture units' GL state changes (a
+ * binding, an enable, the environment, the fold) or is forgotten, so
+ * gx_tev_apply can tell that nobody has touched the units since its own
+ * last apply */
+unsigned glc_unit_gen;
+#define HITU(cond)                                                                       \
+    do {                                                                                 \
+        HIT(cond);                                                                       \
+        glc_unit_gen++;                                                                  \
+    } while (0)
 
 /* --gltrace F: every GL call the shadow lets through during frame F, with
  * its arguments, so two submit shapes can be diffed call by call (M16). */
@@ -185,6 +195,7 @@ int gl13_trace_armed(void) {
 
 void glc_invalidate(void) {
     GLC_FWD(RTGX_F_INVALIDATE, 0, 0, 0, 0, 0);
+    glc_unit_gen++;
     /* The vertex program's binding, enable and parameter block are GL state
      * this shadow does not hold, and they are forgotten for the same reason.
      * So is the TEV state cache (PLAN.md 28.5): it skips the `glTexEnv` calls
@@ -272,7 +283,7 @@ void glc_client_active_texture(int unit) {
 
 void glc_bind_texture(int unit, unsigned name) {
     GLC_FWD(RTGX_F_BIND, unit, (int)name, 0, 0, 0);
-    HIT(glc.unit[unit].tex_name == name);
+    HITU(glc.unit[unit].tex_name == name);
     glc.unit[unit].tex_name = name;
     glc_active_texture(unit);
     TR("glBindTexture unit %d name %u\n", unit, name);
@@ -283,6 +294,7 @@ void glc_bind_texture(int unit, unsigned name) {
  * it is about to fill, and the shadow has to be told rather than guess. */
 void glc_note_bind(int unit, unsigned name) {
     GLC_FWD(RTGX_F_NOTE_BIND, unit, (int)name, 0, 0, 0);
+    glc_unit_gen++;
     glc.unit[unit].tex_name = name;
 }
 
@@ -329,13 +341,14 @@ unsigned glc_white_texture(void) {
             glc.unit[au].tex_name = (unsigned)n;
         }
         glc_white_name = (unsigned)n;
+        glc_unit_gen++;
     }
     return glc_white_name;
 }
 
 void glc_unit_enable_tex2d(int unit, int on) {
     GLC_FWD(RTGX_F_ENABLE2D, unit, on, 0, 0, 0);
-    HIT(glc.unit[unit].tex2d_on == (signed char)on);
+    HITU(glc.unit[unit].tex2d_on == (signed char)on);
     glc.unit[unit].tex2d_on = (signed char)on;
     glc_active_texture(unit);
     TR("glEnable/Disable TEXTURE_2D unit %d on %d\n", unit, on);
@@ -374,7 +387,7 @@ static int* glc_env_slot_i(GlcUnit* u, unsigned pname) {
 void glc_texenvi(int unit, unsigned pname, int v) {
     GLC_OWNED("glc_texenvi");
     int* slot = glc_env_slot_i(&glc.unit[unit], pname);
-    HIT(slot != NULL && *slot == v);
+    HITU(slot != NULL && *slot == v);
     if (slot) {
         *slot = v;
     }
@@ -389,7 +402,7 @@ void glc_texenvf(int unit, unsigned pname, float v) {
     float* slot = pname == GL_RGB_SCALE ? &u->scale_rgb
                 : pname == GL_ALPHA_SCALE ? &u->scale_a
                 : NULL;
-    HIT(slot != NULL && *slot == v);
+    HITU(slot != NULL && *slot == v);
     if (slot) {
         *slot = v;
     }
@@ -401,7 +414,7 @@ void glc_texenvf(int unit, unsigned pname, float v) {
 void glc_texenv_color(int unit, const float* c) {
     GLC_OWNED("glc_texenv_color");
     GlcUnit* u = &glc.unit[unit];
-    HIT(memcmp(u->env_color, c, sizeof(float) * 4) == 0);
+    HITU(memcmp(u->env_color, c, sizeof(float) * 4) == 0);
     memcpy(u->env_color, c, sizeof(float) * 4);
     glc_active_texture(unit);
     TR("glTexEnvColor unit %d %.3f %.3f %.3f %.3f\n", unit, c[0], c[1], c[2], c[3]);
@@ -422,7 +435,7 @@ void glc_tex_matrix_fold(int unit, float su, float sv, float tv) {
     GLfloat m[16];
     GLC_FWD(RTGX_F_TEXMTX_FOLD, unit, 0, su, sv, tv);
     GlcUnit* u = &glc.unit[unit];
-    HIT(u->su == su && u->sv == sv && u->tv == tv);
+    HITU(u->su == su && u->sv == sv && u->tv == tv);
     u->su = su;
     u->sv = sv;
     u->tv = tv;

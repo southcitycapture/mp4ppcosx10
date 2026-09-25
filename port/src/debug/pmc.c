@@ -35,6 +35,11 @@ static const char* const region_name[PMC_R_N] = {
     "rest", "HuPrcCall (processes)", "Hu3DExec (its own loops)", "Hu3DShadowExec",
     "Hu3DMotionExec", "Hu3DDraw (object walk)", "Hu3DDrawPost", "Hu3DModelObjMtxGet",
     "port GX", "audio tick", "present",
+    /* M44: the GX region's sub-regions (port.h PERF_SUB_*) */
+    "GX decode/job", "GX cpu-xf", "GX state (xf+raster)", "GX texbind", "GX issue",
+    "GX index", "GX tev", "GX vprog draw", "GX vprog bind", "GX attr order",
+    "GX vcache keys", "GX prim/batch", "GX job build", "GX pending last", "GX job record",
+    "GX batch flush",
 };
 
 /* the events per set, PMC1..PMC6 (MPC7450UM chapter 11) */
@@ -152,6 +157,7 @@ void port_pmc_init(void) {
     fr_active = pmc_window_open();
     pmc_thread = pthread_self();
     pmc_on = 1;
+    port_sub_on = 1; /* M44: the GX sub-regions too */
     port_log("port> pmc: set %d on the game thread (%s, %s, %s, %s, %s, %s)\n", pmc_set + 1,
              pmc_set_names[pmc_set][0], pmc_set_names[pmc_set][1], pmc_set_names[pmc_set][2],
              pmc_set_names[pmc_set][3], pmc_set_names[pmc_set][4], pmc_set_names[pmc_set][5]);

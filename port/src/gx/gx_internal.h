@@ -230,8 +230,14 @@ void gx_batch_flush_from(const char* who);
  * its own, before anything else reaches GL.  No copy of the state is ever
  * made.  --eagerflush is the pre-M22 shape: the setter submits at once. */
 void gx_batch_touch(const char* who);
+/* M44 (PLAN.md 59): bumped by every GX state setter (the three touch macros
+ * below and gx_state.c's GX_STATE_TOUCH_DECODE; GXInit and a restore reset
+ * the memos that read it).  A primitive whose setter-free predecessor had the
+ * same generation sees the same state: begin_attr_order keeps its layout. */
+extern unsigned gx_state_gen;
 #define GX_STATE_TOUCH()                                                                 \
     do {                                                                                 \
+        gx_state_gen++;                                                                  \
         if (gx_batch_pending) {                                                          \
             gx_batch_touch(__func__);                                                    \
         }                                                                                \
@@ -251,6 +257,7 @@ void gx_batch_touch(const char* who);
  * flushes unconditionally, which is how a wrong compare is bisected. */
 #define GX_STATE_TOUCH_IF(group, changed)                                                \
     do {                                                                                 \
+        gx_state_gen++;                                                                  \
         if (gx_batch_pending && (!(port_opt.cmpmask & (group)) || (changed))) {          \
             gx_batch_touch(__func__);                                                    \
         }                                                                                \
@@ -551,14 +558,48 @@ typedef struct GxDecJob {
     int fast;             /* which specialised loop (gx_draw.c), -1 general */
     int nplan;
     int nfill;
-    struct { u16 dstoff; f32 s, t; } fill[GX_DEC_FILL_MAX];
+    /* M44 (--novcpos): fast == -2, a positions refresh -- the run's other
+     * attributes copied from the vertex cache's stored run (`seed`), the
+     * positions (F32 xyz, indexed; their index `pos_off` bytes into each of
+     * the list's `pos_vb`-byte vertices) decoded again */
+    const u8* seed;
+    u32 pos_off, pos_vb;
+    /* M44: the plan before the fill, so a job with no fill (nearly all) travels
+     * as the header and the steps in use alone (rt_decode_record) */
     DecStep plan[GX_MAX_ATTR];
+    struct { u16 dstoff; f32 s, t; } fill[GX_DEC_FILL_MAX];
 } GxDecJob;
 /* the render thread (rt.c): decode the job's run into the ring; returns the
  * vertices written */
 u32 gx_decode_job(const GxDecJob* j);
 /* the game thread (rt.c): append the run to the stream */
 void rt_decode_record(const GxDecJob* j);
+
+/* M44 (PLAN.md 59): the water -- the indirect warp evaluated at the vertices
+ * (gx_water.c) */
+enum { GX_WATER_OFF = 0, GX_WATER_CHEAP = 1, GX_WATER_FULL = 2 };
+typedef struct GxWaterInd {
+    u8 coord;             /* the indirect stage's texture coordinate (0xFF: unused) */
+    const u8* rgba;       /* its map, decoded on the CPU */
+    int tw, th;
+    u8 wrap_s, wrap_t, linear;
+    float div_s, div_t;   /* GXSetIndTexCoordScale */
+    u8 same_as;           /* an earlier stage with the same map and coordinate, or 0xFF */
+} GxWaterInd;
+typedef struct GxWaterWarp {
+    u8 coord;             /* the warped stage's texture coordinate */
+    u8 ind;               /* its indirect stage */
+    float f[2][3];        /* the matrix times 2^exp, over the direct map's size */
+} GxWaterWarp;
+typedef struct GxWaterPlan {
+    int nwarp;
+    GxWaterWarp w[GX_TEV_STAGES];
+    GxWaterInd ind[4];
+} GxWaterPlan;
+int gx_water_level(void);
+int gx_water_plan(GxWaterPlan* p);
+void gx_water_offsets(const GxWaterPlan* p, u8* out, int n, int stride, int off_tex);
+void gx_water_report(void);
 
 /* one place for "the backend could not do this exactly", counted and named
  * once each by --gxwarn */

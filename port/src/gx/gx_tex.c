@@ -356,6 +356,29 @@ static size_t encoded_size(u32 fmt, int w, int h) {
 
 static u32 fnv(const void* p, size_t n, u32 h) {
     const u8* b = (const u8*)p;
+    if (!port_opt.nowordhash) {
+        /* M44 (PLAN.md 59): a word a step, in two interleaved lanes (the
+         * 7455 overlaps their multiplies), each step a bijection of its lane
+         * for a fixed word -- a one-word change always moves the result.
+         * Every value this hashes is compared only with this function's own
+         * values from the same run.  The byte walk (--nowordhash) was 5-7%
+         * of the front end on the boards: the per-frame revalidation of every
+         * bound texture's sampled windows. */
+        u32 x = h, y = h ^ 0x9e3779b9u;
+        while (n >= 8) {
+            u32 w0, w1;
+            memcpy(&w0, b, 4);
+            memcpy(&w1, b + 4, 4);
+            x = (x ^ w0) * 16777619u;
+            y = (y ^ w1) * 0x9E3779B1u;
+            b += 8;
+            n -= 8;
+        }
+        while (n--) {
+            x = (x ^ *b++) * 16777619u;
+        }
+        return x ^ ((y << 13) | (y >> 19));
+    }
     while (n--) {
         h ^= *b++;
         h *= 16777619u;
@@ -365,6 +388,7 @@ static u32 fnv(const void* p, size_t n, u32 h) {
 
 /* ---- the cache ------------------------------------------------------------ */
 
+unsigned gx_tex_dirty_gen; /* M44: bumped by every dirty mark and cache flush */
 u8 gx_unit_alpha_min[8] = { 255, 255, 255, 255, 255, 255, 255, 255 }; /* M33: per texture unit at bind */
 
 typedef struct CacheEntry {
@@ -532,6 +556,7 @@ void port_gx_tex_dirty(const void* addr, unsigned long n) {
         }
         if (im < a + n && a < im + e->enc_size) {
             e->dirty = 1;
+            gx_tex_dirty_gen++; /* M44: gx_tev_apply's skip rereads its binds */
             stat_dirty_marks++;
         }
     }
@@ -1626,9 +1651,9 @@ void gx_tex_bind_swapped(int unit, GXTexObjPort* o, u8 swap) {
     if (!o || o->magic != TEXOBJ_MAGIC) {
         return;
     }
-    port_perf_sub_enter(PERF_SUB_TEX);
+    PORT_SUB_ENTER(PERF_SUB_TEX);
     tex_bind_body(unit, o, swap);
-    port_perf_sub_leave();
+    PORT_SUB_LEAVE();
 }
 
 static void tex_bind_body(int unit, GXTexObjPort* o, u8 swap) {
@@ -1988,6 +2013,11 @@ void GXLoadTexObj(GXTexObj* obj, GXTexMapID id) {
      * the console's write to the texture registers is, and the game's sprite
      * path depends on it -- HuSprTexLoad's GXTexObj is a stack local. */
     if ((unsigned)id < GX_TEX_UNITS && obj) {
+        /* M44: a map's presence is a layout input (the hilite decision) */
+        extern unsigned gx_layout_gen;
+        if ((gx.bound[id].magic == TEXOBJ_MAGIC) != (((const GXTexObjPort*)obj)->magic == TEXOBJ_MAGIC)) {
+            gx_layout_gen++;
+        }
         gx.bound[id] = *(const GXTexObjPort*)obj;
         /* M24: on a consumed frame nothing binds, so this is the earliest
          * word that the next drawn frame wants this texture */
@@ -3385,6 +3415,7 @@ void gx_tex_predecode_report(void) {
 }
 
 void gx_tex_flush_all(void) {
+    gx_tex_dirty_gen++;
     int i;
     for (i = 0; i < (int)cache_used; i++) {
         free(cache[i].enc_copy);
@@ -3413,4 +3444,90 @@ void gx_tex_flush_all(void) {
     cache_epoch_frame = 0;
     cache_epoch_started = 0;
     glc_invalidate();
+}
+
+/* ---- M44 (PLAN.md 59): an indirect map on the CPU, for the water ----------
+ *
+ * The per-vertex warp (gx_water.c) samples the game's own indirect map on the
+ * CPU.  The map is an ordinary texture in main memory, decoded here into RGBA8
+ * with the same decode() the upload uses, kept in a small table keyed as the
+ * cache is (image, format, size, TLUT) and revalidated once a frame by the
+ * exhaustive content hash (these maps are small; a sampled hash could miss an
+ * animated one).  An EFB copy has no bytes in main memory the port fills: NULL,
+ * and the caller leaves that warp out. */
+#define CPU_TEX_SLOTS 8
+static struct {
+    const void* image;
+    u32 format;
+    u16 w, h;
+    const void* lut;
+    u32 content;
+    unsigned frame;
+    u8* rgba;
+    unsigned last;
+} cpu_tex[CPU_TEX_SLOTS];
+static unsigned cpu_tex_tick;
+const u8* gx_tex_cpu_rgba(const GXTexObjPort* o, int* w, int* h) {
+    const GXTlutObjPort* tlut;
+    int i, slot = -1, lru = 0, is_efb = 0;
+    unsigned fr = gl13_frame_number();
+    u32 content;
+    if (!o || o->magic != TEXOBJ_MAGIC || !o->image || o->format == GX_TF_PORT_RGBA) {
+        return NULL;
+    }
+    if (find_slot(o->image, o->format, o->width, o->height, NULL, GX_SWAP_IDENTITY, &is_efb) >= 0 &&
+        is_efb) {
+        return NULL; /* an EFB copy: its pixels are in GL alone */
+    }
+    tlut = tlut_for(o);
+    for (i = 0; i < CPU_TEX_SLOTS; i++) {
+        if (cpu_tex[i].rgba && cpu_tex[i].image == o->image && cpu_tex[i].format == o->format &&
+            cpu_tex[i].w == o->width && cpu_tex[i].h == o->height &&
+            cpu_tex[i].lut == (tlut ? tlut->lut : NULL)) {
+            slot = i;
+            break;
+        }
+        if (cpu_tex[i].last < cpu_tex[lru].last) {
+            lru = i;
+        }
+    }
+    cpu_tex_tick++;
+    if (slot >= 0 && cpu_tex[slot].frame == fr) {
+        cpu_tex[slot].last = cpu_tex_tick;
+        *w = cpu_tex[slot].w;
+        *h = cpu_tex[slot].h;
+        return cpu_tex[slot].rgba;
+    }
+    content = tex_bind_content_hash_body(o, tlut, 1 /* exhaustive */);
+    if (slot >= 0 && cpu_tex[slot].content == content) {
+        cpu_tex[slot].frame = fr;
+        cpu_tex[slot].last = cpu_tex_tick;
+        *w = cpu_tex[slot].w;
+        *h = cpu_tex[slot].h;
+        return cpu_tex[slot].rgba;
+    }
+    if (slot < 0) {
+        slot = lru;
+    }
+    free(cpu_tex[slot].rgba);
+    cpu_tex[slot].rgba = NULL;
+    {
+        int dw = 0, dh = 0;
+        u8* rgba = decode(o, tlut, &dw, &dh);
+        if (!rgba) {
+            return NULL;
+        }
+        cpu_tex[slot].rgba = rgba;
+        cpu_tex[slot].image = o->image;
+        cpu_tex[slot].format = o->format;
+        cpu_tex[slot].w = (u16)dw;
+        cpu_tex[slot].h = (u16)dh;
+        cpu_tex[slot].lut = tlut ? tlut->lut : NULL;
+        cpu_tex[slot].content = content;
+        cpu_tex[slot].frame = fr;
+        cpu_tex[slot].last = cpu_tex_tick;
+        *w = dw;
+        *h = dh;
+        return rgba;
+    }
 }

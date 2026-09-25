@@ -63,8 +63,13 @@ static int sub_stack[16];
 static double sub_open;
 static int sub_depth;
 
+int port_sub_on; /* M44: --gxsplit or --pmc (port.h PORT_SUB_ENTER) */
+
 void port_perf_sub_enter(int which) {
     double now;
+    if (__builtin_expect(pmc_on, 0)) {
+        port_pmc_enter(PMC_R_GXSUB + which); /* M44: the GX region, finer */
+    }
     if (!port_opt.gxsplit || sub_depth >= 16) {
         return;
     }
@@ -79,6 +84,9 @@ void port_perf_sub_enter(int which) {
 
 void port_perf_sub_leave(void) {
     double now;
+    if (__builtin_expect(pmc_on, 0)) {
+        port_pmc_leave();
+    }
     if (!port_opt.gxsplit || sub_depth <= 0) {
         return;
     }
@@ -464,7 +472,9 @@ void port_perf_report(void) {
     port_log("  fps      %.1f effective\n", n_samples / wall);
     if (port_opt.gxsplit) {
         static const char* names[PERF_SUB_N] = {"decode", "cpu-xf", "state", "texbind",
-                                                "issue", "index"};
+                                                "issue", "index", "tev", "vpdraw",
+                                                "vpbind", "attr", "vckey", "prim", "jobb",
+                                                "pend", "jrec", "flush"};
         double gx_sum = 0.0, sub_sum = 0.0;
         unsigned long df = drawn_frames_seen ? drawn_frames_seen : 1;
         for (i = 0; i < n_samples; i++) {

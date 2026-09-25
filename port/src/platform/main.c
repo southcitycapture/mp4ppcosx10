@@ -39,6 +39,7 @@ unsigned port_rss_mb(void) {
 }
 
 PortOptions port_opt;
+static int water_set; /* M44: --water given on the command line */
 
 void port_log_open(const char* path);
 void* port_game_stack_top(void);
@@ -339,6 +340,15 @@ static void usage(const char* argv0) {
             "                    (MTXRotRad + MTXConcat), not the sparse left product\n"
             "  --notexskip       M43: decode jobs with an unread TEX0 go to the general walker\n"
             "  --nostripepool    M43: the texture stripes allocate their buffers per update\n"
+            "  --nodcbz          M44: no dcbz ahead of the render stream's / vertex ring's writes\n"
+            "  --novpgen         M44: vertex-program parameters compared every draw (no generations)\n"
+            "  --notevdirty      M44: the TEV signature hashed at every draw\n"
+            "  --noattrmemo      M44: a primitive's layout and decode plan derived every primitive\n"
+            "  --nowordhash      M44: the texture content hash byte by byte\n"
+            "  --water L         M44: the water's indirect warp: off, cheap (at the game's vertices),\n"
+            "                    full (subdivided), auto (the default: by machine and screen)\n"
+            "  --watergrid N     M44: full's subdivision levels (default 1: four triangles each)\n"
+            "  --novcpos         M44: no positions refresh of a cached run (the whole run decoded)\n"
             "  --nowbpart        M43: the write barrier arms only the pages wholly inside an\n"
             "                    array (M42's), not its partial end pages (the default since M43)\n"
             "  --oldvtxjoin      M43: the morph rewriters wait for the whole decode stream (M29)\n"
@@ -748,6 +758,8 @@ int port_parse_args(int argc, char** argv) {
     port_opt.vcache_fit = 28.0;
     port_opt.rtgx = 0;       /* M43: the render thread's translation: measured, off (PLAN.md 58.2) */
     port_opt.wbpart = 1;     /* M43: the barrier on the partial end pages too (PLAN.md 58.4, 58.10) */
+    port_opt.water = -1;     /* M44: auto (PLAN.md 59) */
+    port_opt.watergrid = 1;
     port_opt.rtgx_fit = 29.0;
     port_opt.vcache_mb = 8;
     port_opt.resident = -1; /* M36: the resident set's budget by the installed RAM (machine.c) */
@@ -1106,6 +1118,7 @@ int port_parse_args(int argc, char** argv) {
             port_opt.gxwarn = 1;
         } else if (!strcmp(a, "--gxsplit")) {
             port_opt.gxsplit = 1;
+            port_sub_on = 1; /* M44 */
             port_opt.perf = 1;
         } else if (!strcmp(a, "--perf")) {
             port_opt.perf = 1;
@@ -1269,6 +1282,25 @@ int port_parse_args(int argc, char** argv) {
             port_opt.notexskip = 1;
         } else if (!strcmp(a, "--nostripepool")) {
             port_opt.nostripepool = 1;
+        } else if (!strcmp(a, "--nodcbz")) {
+            port_opt.nodcbz = 1;
+        } else if (!strcmp(a, "--novpgen")) {
+            port_opt.novpgen = 1;
+        } else if (!strcmp(a, "--notevdirty")) {
+            port_opt.notevdirty = 1;
+        } else if (!strcmp(a, "--noattrmemo")) {
+            port_opt.noattrmemo = 1;
+        } else if (!strcmp(a, "--nowordhash")) {
+            port_opt.nowordhash = 1;
+        } else if (!strcmp(a, "--water") && i + 1 < argc) {
+            const char* v = argv[++i];
+            port_opt.water = !strcmp(v, "off") ? 0 : !strcmp(v, "cheap") ? 1
+                           : !strcmp(v, "full") ? 2 : -1;
+            water_set = 1;
+        } else if (!strcmp(a, "--watergrid") && i + 1 < argc) {
+            port_opt.watergrid = atoi(argv[++i]);
+        } else if (!strcmp(a, "--novcpos")) {
+            port_opt.novcpos = 1;
         } else if (!strcmp(a, "--wbpart")) {
             port_opt.wbpart = 1;
         } else if (!strcmp(a, "--nowbpart")) {
@@ -1428,8 +1460,10 @@ void port_shutdown(int code) {
     port_workers_shutdown(); /* M24: after the audio's join, before the reports */
     port_dvd_cache_shutdown(); /* M36: the loader's thread, before its report */
     void gx_tev_report(void);
+    void gx_water_report(void);
     void gx_tfs_report(void);
     gx_tev_report();
+    gx_water_report(); /* M44 */
     gx_tfs_report(); /* M35 */
     port_perf_report();
     port_pmc_report(); /* M43: on the game thread, whose counters they are */
@@ -1484,6 +1518,18 @@ int main(int argc, char** argv) {
             /* an absolute path, so a run from another directory finds it */
             port_config_set("image", port_opt.image[0] == '/' ? port_opt.image
                             : realpath(port_opt.image, abs) ? abs : port_opt.image);
+        }
+        /* M44: the water's level, remembered as the fullscreen switch is (a
+         * --water on the command line is stored; otherwise the config's) */
+        if (water_set) {
+            port_config_set("water", port_opt.water == 0 ? "off" : port_opt.water == 1 ? "cheap"
+                                     : port_opt.water == 2 ? "full" : "auto");
+        } else {
+            const char* w = port_config_get("water");
+            if (w) {
+                port_opt.water = !strcmp(w, "off") ? 0 : !strcmp(w, "cheap") ? 1
+                               : !strcmp(w, "full") ? 2 : -1;
+            }
         }
         if (port_opt.fullscreen_set) {
             port_config_set("fullscreen", port_opt.fullscreen ? "1" : "0");

@@ -182,16 +182,68 @@ typedef struct { u32 done; u32 verts; GxDecJob job; } A_decode; /* done: set by 
 #define RT_MASK (RT_BYTES - 1)
 #define RT_ALIGN 8u
 
+/* M44 (PLAN.md 59): the cursors and counters, one owner a cache line.  Each
+ * thread writes its own cursor at every record; declared side by side (M27's
+ * layout) the writer's `wr` and the reader's `rd` shared a line, so each
+ * record the game thread wrote took the line back from the render thread and
+ * the other way about -- a transfer between the two CPUs' caches per record
+ * on both sides (the 7455 counts it as an L3 miss: ~10 a decode record).
+ * Here the writer's private state, each published cursor and the reader's
+ * private state are each on a line of their own, and the writer reads the
+ * reader's cursor only when its own copy (`rd_seen`) says the stream may be
+ * full. */
+#define RT_LINE 64
+static struct {
+    /* the writer's (the game thread) */
+    u32 wr;               /* its position */
+    u32 rd_seen;          /* the reader's position when last read */
+    u32 zeroed;           /* stream_zero_ahead's watermark */
+    u32 last_op;          /* the op of the record being built (done() publishes by it) */
+    u32 unpublished;
+    u32 st_frame_bytes, st_frame_records;
+    unsigned long st_records, st_bytes, st_dec_records;
+    /* published by the writer */
+    volatile u32 wr_pub __attribute__((aligned(RT_LINE)));
+    /* published by the reader */
+    volatile u32 rd __attribute__((aligned(RT_LINE)));
+    volatile u32 dec_pub __attribute__((aligned(RT_LINE)));
+    /* the reader's (the render thread) */
+    u32 dec __attribute__((aligned(RT_LINE)));
+    unsigned replayed_since_test;
+    double st_replay_s;         /* time the reader spent replaying */
+    double st_frame_replay_s;   /* ... in the frame being replayed */
+    double st_dec_s, st_frame_dec_s;
+    unsigned long st_dec_ahead, st_dec_late, st_dec_verts; /* by the decode cursor / by the replay */
+    u8 tail[RT_LINE];
+} __attribute__((aligned(RT_LINE))) R;
+#define wr (R.wr)
+#define rd_seen (R.rd_seen)
+#define zeroed (R.zeroed)
+#define last_op (R.last_op)
+#define unpublished (R.unpublished)
+#define st_frame_bytes (R.st_frame_bytes)
+#define st_frame_records (R.st_frame_records)
+#define st_records (R.st_records)
+#define st_bytes (R.st_bytes)
+#define st_dec_records (R.st_dec_records)
+#define wr_pub (R.wr_pub)
+#define rd (R.rd)
+#define dec_pub (R.dec_pub)
+#define dec (R.dec)
+#define replayed_since_test (R.replayed_since_test)
+#define st_replay_s (R.st_replay_s)
+#define st_frame_replay_s (R.st_frame_replay_s)
+#define st_dec_s (R.st_dec_s)
+#define st_frame_dec_s (R.st_frame_dec_s)
+#define st_dec_ahead (R.st_dec_ahead)
+#define st_dec_late (R.st_dec_late)
+#define st_dec_verts (R.st_dec_verts)
+
 static u8* buf;
-static u32 wr;                /* the writer's private position */
-static volatile u32 wr_pub;   /* published to the reader */
-static volatile u32 rd;       /* published by the reader */
 /* M29: the decode cursor (PLAN.md 44.1).  The reader runs it ahead of `rd`
  * through every published record, executing the OP_DECODE ones as soon as
  * they exist and marking them done; the replay behind it skips those.
  * `dec_pub` is what the game thread's decode joins wait on. */
-static u32 dec;
-static volatile u32 dec_pub;
 static int decmode;           /* --rtdecode: 0 off, 1 joined at once, 2 at the retrace */
 /* M33: --rtdecode auto (3).  Per drawn frame a share of the display-list
  * decode stays on the game thread, sized from the last drawn frame's two
@@ -261,10 +313,8 @@ static fn_fogptr_t x_FogCoordPointerEXT;
 
 /* ---- the statistics ---------------------------------------------------------- */
 
-static unsigned long st_records, st_bytes, st_frames;
-static u32 st_frame_bytes, st_frame_bytes_peak, st_frame_records;
-static double st_replay_s;         /* time the reader spent replaying */
-static double st_frame_replay_s;   /* ... in the frame being replayed */
+static unsigned long st_frames;
+static u32 st_frame_bytes_peak;
 static double st_last_frame_ms;    /* the last presented frame's replay */
 static double st_frame_ms_sum; static unsigned long st_frame_ms_n; static double st_frame_ms_max;
 static double st_tail_s, st_tail_max; /* present executed - present recorded */
@@ -276,9 +326,7 @@ static unsigned long st_full_waits; static double st_full_wait_s;
 static unsigned long st_reader_sleeps, st_writer_wakes;
 static unsigned long st_names;
 static unsigned long st_owned_frees, st_stash_bytes;
-static unsigned long st_dec_records, st_dec_ahead, st_dec_late; /* by the decode cursor / by the replay */
-static unsigned long st_dec_verts;
-static double st_dec_s, st_frame_dec_s, st_last_dec_ms, st_dec_ms_sum, st_dec_ms_max;
+static double st_last_dec_ms, st_dec_ms_sum, st_dec_ms_max;
 #define JOIN_KINDS 12
 static struct { const char* why; unsigned long n; double s, max; } joins[JOIN_KINDS];
 static int njoins;
@@ -375,7 +423,44 @@ static void wait_pos(u32 pos, const char* why, double* acc_s, double* acc_max) {
     wait_var(&rd, pos, why, acc_s, acc_max);
 }
 
-static u32 last_op; /* the op of the record being built (done() publishes by it) */
+/* M44 (PLAN.md 59): the stream is 16 MB, eight times the L3, so every line
+ * a record lands on is cold -- and a store that misses the 7455's L1 reads
+ * the whole line from memory first (a load-miss-queue wait for bytes about
+ * to be overwritten; ~7,000 lines a drawn frame of decode records alone).
+ * `dcbz` establishes the line in the cache, zeroed, without reading it.  Only
+ * lines of the free region are zeroed: from the first whole line at or after
+ * the record's start (the partial line before it holds the previous record's
+ * tail) to the end of the record's last line, and never past what the reader
+ * has released (rd + RT_BYTES); `zeroed` is how far that has gone, so a line
+ * the previous record already zeroed and began to fill is never zeroed twice.
+ * The record's bytes are all written after it, so the stream carries the
+ * same bytes (its padding aside, which nothing reads).  --nodcbz: none. */
+static inline void stream_zero_ahead(u32 start, u32 len) {
+#if defined(__ppc__) || defined(__powerpc__)
+    u32 lo = (start + 31u) & ~31u, hi = (start + len + 31u) & ~31u, lim;
+    if (port_opt.nodcbz) {
+        return;
+    }
+    if ((s32)(zeroed - lo) > 0) {
+        lo = zeroed;
+    }
+    lim = (rd_seen + RT_BYTES) & ~31u; /* the free region's end (a stale copy: a smaller one) */
+    if ((s32)(hi - lim) > 0) {
+        hi = lim;
+    }
+    while ((s32)(hi - lo) > 0) {
+        __asm__ volatile("dcbz 0,%0" : : "r"(buf + (lo & RT_MASK)) : "memory");
+        lo += 32u;
+    }
+    if ((s32)(lo - zeroed) > 0) {
+        zeroed = lo;
+    }
+#else
+    (void)start;
+    (void)len;
+#endif
+}
+
 static void* rec(u32 op, size_t argbytes) {
     u32 len = (u32)((sizeof(Hdr) + argbytes + RT_ALIGN - 1) & ~(RT_ALIGN - 1));
     u32 off = wr & RT_MASK;
@@ -386,7 +471,10 @@ static void* rec(u32 op, size_t argbytes) {
     if (off + len > RT_BYTES) {
         /* pad to the end with a WRAP so the record is contiguous */
         u32 pad = RT_BYTES - off;
-        if ((u32)(wr + pad - rd) > RT_BYTES) {
+        if ((u32)(wr + pad - rd_seen) > RT_BYTES) {
+            rd_seen = rd;
+        }
+        if ((u32)(wr + pad - rd_seen) > RT_BYTES) {
             double t0 = now();
             st_full_waits++;
             wait_pos(wr + pad - RT_BYTES, "full", NULL, NULL);
@@ -398,7 +486,10 @@ static void* rec(u32 op, size_t argbytes) {
         wr += pad;
         off = 0;
     }
-    if ((u32)(wr + len - rd) > RT_BYTES) {
+    if ((u32)(wr + len - rd_seen) > RT_BYTES) {
+        rd_seen = rd; /* M44: the reader's cursor read only when the copy says full */
+    }
+    if ((u32)(wr + len - rd_seen) > RT_BYTES) {
         /* the stream is full: the reader has this much left to consume */
         double t0 = now();
         st_full_waits++;
@@ -406,6 +497,7 @@ static void* rec(u32 op, size_t argbytes) {
         st_full_wait_s += now() - t0;
     }
     h = (Hdr*)(buf + off);
+    stream_zero_ahead(wr, len);
     h->op = op;
     h->len = len;
     wr += len;
@@ -423,7 +515,6 @@ static void* rec(u32 op, size_t argbytes) {
  * for the 32nd state record, so the two barriers of a publish are paid a few
  * times per batch rather than ~2,900 times a frame.  In inline mode the
  * record is replayed now. */
-static u32 unpublished;
 static void done_op(u32 op) {
     if (mode == 1) {
         replay_upto(wr);
@@ -1202,8 +1293,10 @@ double rt_auto_frame_gdec_ms(void) { return au_fr_gdec_s * 1000.0; }
  * at once (the reader's decode cursor is what waits for it) */
 static void vj_note(const void* base, u32 pos); /* M43, below */
 void rt_decode_record(const GxDecJob* j) {
-    /* `plan` is the job's last field: only the steps in use travel */
-    size_t jb = offsetof(GxDecJob, plan) + (size_t)j->nplan * sizeof(DecStep);
+    /* only the steps in use travel -- and the fill, the job's last field,
+     * only when there is one (M44: 96 bytes a record otherwise) */
+    size_t jb = j->nfill ? sizeof(GxDecJob)
+                         : offsetof(GxDecJob, plan) + (size_t)j->nplan * sizeof(DecStep);
     A_decode* a = (A_decode*)rec(OP_DECODE, offsetof(A_decode, job) + jb);
     a->done = 0;
     a->verts = 0;
@@ -1755,7 +1848,7 @@ static void decode_ahead(u32 upto) {
 }
 
 /* replay [rd, to) -- on the render thread, or on the game thread inline */
-static unsigned replayed_since_test, handshakes;
+static unsigned handshakes;
 static void replay_upto(u32 to) {
     double t0;
     if (mode == 1) {

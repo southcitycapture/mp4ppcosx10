@@ -1579,11 +1579,66 @@ static void regchain_plan(int stages, int skip_from, int skip_n) {
  *
  * `--oldtev` restores the unconditional path for the A/B; `--tevstats` counts.
  */
+/* M44 (PLAN.md 59): the signature was an FNV walk a byte at a time over
+ * ~250 bytes a draw (the stages, the constants, the registers, the swap
+ * table): a multiply's latency per byte, ~1,000 instructions of m441's 2,400 a
+ * draw here.  The same bytes now go through two independent word lanes (each
+ * step a bijection of its lane for a fixed word, so a one-word change always
+ * moves the lane it lands in) and the cache compares both lanes: 64 bits of
+ * signature where there were 32.  --notevdirty keeps the byte walk. */
+static u32 tev_sig_b; /* the second lane of the last signature (0 on the old walk) */
+static inline u32 tw_rotl(u32 x, int r) { return (x << r) | (x >> (32 - r)); }
+static inline void tw_mix(u32* a, u32* b, const void* ptr, size_t n) {
+    const u8* p = (const u8*)ptr;
+    u32 x = *a, y = *b;
+    while (n >= 4) {
+        u32 w;
+        memcpy(&w, p, 4);
+        x = (x ^ w) * 0x01000193u;
+        y = (tw_rotl(y, 5) + w) * 0x9E3779B1u;
+        p += 4;
+        n -= 4;
+    }
+    while (n--) {
+        x = (x ^ *p) * 0x01000193u;
+        y = (tw_rotl(y, 5) + *p) * 0x9E3779B1u;
+        p++;
+    }
+    *a = x;
+    *b = y;
+}
 static u32 tev_sig_hash(int stages, u32 have_tex_bits) {
     u32 h = 2166136261u;
     const u8* p;
     size_t n;
     int i;
+    if (!port_opt.notevdirty && !port_opt.regfix2dbg) {
+        u32 a = 2166136261u, b = 0x9e3779b9u;
+        u8 small[4];
+        small[0] = (u8)gx.num_tev;
+        small[1] = (u8)gx_hilite_stage;
+        small[2] = (u8)gx_hilite_mode;
+        small[3] = (u8)gx.num_ind;
+        tw_mix(&a, &b, small, sizeof(small));
+        tw_mix(&a, &b, &have_tex_bits, sizeof(have_tex_bits));
+        tw_mix(&a, &b, &gx_hilite_stage, sizeof(gx_hilite_stage));
+        tw_mix(&a, &b, &gx_hilite_mode, sizeof(gx_hilite_mode));
+        tw_mix(&a, &b, gx.swap_tbl, sizeof(gx.swap_tbl));
+        tw_mix(&a, &b, gx.kcolor, sizeof(gx.kcolor));
+        tw_mix(&a, &b, gx.tev_reg, sizeof(gx.tev_reg));
+        for (i = 0; i < stages; i++) {
+            tw_mix(&a, &b, &gx.tev[i], sizeof(gx.tev[i]));
+            tw_mix(&a, &b, &gx.ind_tile[i], sizeof(gx.ind_tile[i]));
+            tw_mix(&a, &b, &gx.ind_warp[i], sizeof(gx.ind_warp[i]));
+        }
+        if (gx.num_ind) {
+            tw_mix(&a, &b, gx.ind, sizeof(gx.ind));
+            tw_mix(&a, &b, gx.ind_mtx, sizeof(gx.ind_mtx));
+        }
+        tev_sig_b = b;
+        return a;
+    }
+    tev_sig_b = 0;
 #define TEV_MIX(ptr, len)                                                      \
     do {                                                                       \
         p = (const u8*)(ptr);                                                   \
@@ -1620,6 +1675,9 @@ static u32 tev_sig_hash(int stages, u32 have_tex_bits) {
 }
 
 static u32 tev_cache_sig;
+static int tev_snap_ok; /* M44: gx_tev_apply's snapshot stands (below) */
+static u32 tev_cache_sig_b; /* M44: the second lane */
+static unsigned long tev_why[8]; /* M44 --tevstats: a miss's moved inputs */
 static int tev_cache_live;
 /* M21: the last applied config's signature, for gx_draw.c's mergeable-batch
  * count (--submitstats) */
@@ -1637,7 +1695,10 @@ static unsigned long stat_draws_applied;
 static unsigned long tev_hits, tev_misses;
 static unsigned stat_hilite_stages; /* M21: hilite stages emitted as a pass */
 
-void gx_tev_cache_invalidate(void) { tev_cache_live = 0; }
+void gx_tev_cache_invalidate(void) {
+    tev_cache_live = 0;
+    tev_snap_ok = 0; /* M44 */
+}
 
 /* M30 (PLAN.md 45): which TEV stage's texture and coordinate unit `u` reads
  * -- itself, except inside the three-texture shape, where the third texture
@@ -1804,12 +1865,88 @@ void gx_tev_bind_textures(void) {
 }
 #endif
 
+/* M44 (PLAN.md 59): the draw whose TEV inputs are the last apply's, byte for
+ * byte, with nothing touching the texture units since (glc_unit_gen), in the
+ * same frame (the texture cache revalidates once a frame) and with no texture
+ * marked dirty since (gx_tex_dirty_gen) -- the apply would bind the same
+ * objects and emit only elided calls.  It is skipped: a compare of the bytes
+ * the apply reads (the stages in use, the registers, the constants, the swap
+ * table, the hilite decision, each stage's bound texture object and its
+ * TLUT) instead of the hash, the unit loop and the binds.  A warp draw
+ * (num_ind) and --foldcap never skip.  --notevdirty: every draw applies. */
+extern unsigned glc_unit_gen;
+extern unsigned gx_tex_dirty_gen;
+#define TEV_SNAP_MAX 1024
+static struct {
+    u32 len;
+    u8 b[TEV_SNAP_MAX];
+} tev_snap[2];
+static int tev_snap_cur; /* which of the two holds the last apply's */
+static unsigned tev_snap_frame, tev_snap_dirty, tev_snap_unit;
+static unsigned long stat_tev_skips;
+static void tev_snap_put(int w, const void* p, size_t n) {
+    if (tev_snap[w].len + n <= TEV_SNAP_MAX) {
+        memcpy(tev_snap[w].b + tev_snap[w].len, p, n);
+    }
+    tev_snap[w].len += (u32)n; /* past the end: never equal */
+}
+static void tev_snap_take(int w, int stages) {
+    int i, h[2];
+    tev_snap[w].len = 0;
+    h[0] = gx_hilite_stage;
+    h[1] = gx_hilite_mode;
+    tev_snap_put(w, &stages, sizeof(stages));
+    tev_snap_put(w, h, sizeof(h));
+    tev_snap_put(w, &gx.num_tev, sizeof(gx.num_tev));
+    tev_snap_put(w, gx.swap_tbl, sizeof(gx.swap_tbl));
+    tev_snap_put(w, gx.kcolor, sizeof(gx.kcolor));
+    tev_snap_put(w, gx.tev_reg, sizeof(gx.tev_reg));
+    for (i = 0; i < stages && i < GX_TEV_STAGES; i++) {
+        unsigned u = gx.tev[i].map;
+        tev_snap_put(w, &gx.tev[i], sizeof(gx.tev[i]));
+        tev_snap_put(w, &gx.ind_tile[i], sizeof(gx.ind_tile[i]));
+        tev_snap_put(w, &gx.ind_warp[i], sizeof(gx.ind_warp[i]));
+        if (u < GX_TEX_UNITS && gx_bound_tex(u)) {
+            tev_snap_put(w, &gx.bound[u], offsetof(GXTexObjPort, gl_name));
+            if (gx.bound[u].is_ci && gx.bound[u].tlut_name < 64) {
+                tev_snap_put(w, &gx.tlut[gx.bound[u].tlut_name], sizeof(gx.tlut[0]));
+            }
+        } else {
+            tev_snap_put(w, &i, sizeof(i)); /* "no texture" */
+        }
+    }
+}
+
 void gx_tev_apply(void) {
     int stages = gx.num_tev ? gx.num_tev : 1;
     int i;
     int emit = 1;
     u32 have_tex_bits = 0;
     u32 sig;
+    int snap_w = -1;
+    if (stages > gl13_max_tex_units) {
+        stages = gl13_max_tex_units; /* (warned below) */
+    }
+    if (!port_opt.notevdirty && !port_opt.oldtev && !port_opt.foldcap && !port_opt.regfix2dbg &&
+        !port_opt.tfs && !port_opt.rtgx && gx.num_ind == 0 && gl13_live()) {
+        unsigned fr = gl13_frame_number();
+        snap_w = tev_snap_cur ^ 1;
+        tev_snap_take(snap_w, stages);
+        if (tev_snap_ok && tev_cache_live && fr == tev_snap_frame &&
+            gx_tex_dirty_gen == tev_snap_dirty && glc_unit_gen == tev_snap_unit &&
+            tev_snap[snap_w].len == tev_snap[tev_snap_cur].len &&
+            tev_snap[snap_w].len <= TEV_SNAP_MAX &&
+            memcmp(tev_snap[snap_w].b, tev_snap[tev_snap_cur].b, tev_snap[snap_w].len) == 0) {
+            stat_tev_skips++;
+            tev_hits++;
+            stat_draws_applied++;
+            if (cfg_konst_collisions) {
+                stat_konst_draws++;
+            }
+            return;
+        }
+    }
+    stages = gx.num_tev ? gx.num_tev : 1;
     if (stages > gl13_max_tex_units) {
         gx_warn("TEV: the stage chain needs more units than the card has; the "
                 "extra stages are dropped (PLAN.md 3.4 fallback 1)");
@@ -1829,11 +1966,48 @@ void gx_tev_apply(void) {
             }
         }
         sig = tev_sig_hash(stages, have_tex_bits);
-        if (tev_cache_live && sig == tev_cache_sig) {
+        if (__builtin_expect(port_opt.tevstats, 0)) {
+            /* M44: which input moved when the signature did (--tevstats) */
+            static struct {
+                int valid, stages;
+                u32 htb;
+                int hs, hm;
+                u8 swap[sizeof(gx.swap_tbl)], kc[sizeof(gx.kcolor)], reg[sizeof(gx.tev_reg)];
+                GXTevStage tev[GX_TEV_STAGES];
+            } last;
+            if (last.valid && tev_cache_live && !(sig == tev_cache_sig && tev_sig_b == tev_cache_sig_b)) {
+                int k;
+                if (last.stages != stages) tev_why[0]++;
+                if (last.htb != have_tex_bits) tev_why[1]++;
+                if (last.hs != gx_hilite_stage || last.hm != gx_hilite_mode) tev_why[2]++;
+                if (memcmp(last.swap, gx.swap_tbl, sizeof(last.swap))) tev_why[3]++;
+                if (memcmp(last.kc, gx.kcolor, sizeof(last.kc))) tev_why[4]++;
+                if (memcmp(last.reg, gx.tev_reg, sizeof(last.reg))) tev_why[5]++;
+                for (k = 0; k < stages && k < last.stages; k++) {
+                    if (memcmp(&last.tev[k], &gx.tev[k], sizeof(GXTevStage))) {
+                        tev_why[6]++;
+                        break;
+                    }
+                }
+            } else if (!tev_cache_live) {
+                tev_why[7]++;
+            }
+            last.valid = 1;
+            last.stages = stages;
+            last.htb = have_tex_bits;
+            last.hs = gx_hilite_stage;
+            last.hm = gx_hilite_mode;
+            memcpy(last.swap, gx.swap_tbl, sizeof(last.swap));
+            memcpy(last.kc, gx.kcolor, sizeof(last.kc));
+            memcpy(last.reg, gx.tev_reg, sizeof(last.reg));
+            memcpy(last.tev, gx.tev, sizeof(last.tev));
+        }
+        if (tev_cache_live && sig == tev_cache_sig && tev_sig_b == tev_cache_sig_b) {
             emit = 0;
             tev_hits++;
         } else {
             tev_cache_sig = sig;
+            tev_cache_sig_b = tev_sig_b;
             tev_cache_live = 1;
             tev_misses++;
         }
@@ -2082,6 +2256,14 @@ void gx_tev_apply(void) {
     if (cfg_konst_collisions) {
         stat_konst_draws++;
     }
+    if (snap_w >= 0) {
+        /* M44: what this apply read, and the units as it left them */
+        tev_snap_cur = snap_w;
+        tev_snap_ok = tev_cache_live;
+        tev_snap_frame = gl13_frame_number();
+        tev_snap_dirty = gx_tex_dirty_gen;
+        tev_snap_unit = glc_unit_gen;
+    }
 }
 
 void gx_tev_report(void) {
@@ -2130,8 +2312,14 @@ void gx_tev_report(void) {
     }
     if (port_opt.tevstats) {
         unsigned long tot = tev_hits + tev_misses;
+        port_log("port> tev cache (M44): %lu applies skipped whole (the inputs and the units "
+                 "unchanged)\n", stat_tev_skips);
         port_log("port> tev cache: %lu applies, %lu skipped (%.1f%%), %lu emitted\n",
                  tot, tev_hits, tot ? 100.0 * (double)tev_hits / (double)tot : 0.0,
                  tev_misses);
+        port_log("port> tev cache (M44): misses by moved input: stages %lu, textures %lu, hilite %lu, "
+                 "swap %lu, konst %lu, registers %lu, a stage %lu; cold %lu\n",
+                 tev_why[0], tev_why[1], tev_why[2], tev_why[3], tev_why[4], tev_why[5], tev_why[6],
+                 tev_why[7]);
     }
 }

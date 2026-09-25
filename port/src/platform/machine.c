@@ -699,6 +699,21 @@ static void print_inventory(void) {
 /* the scoreboard's count on the reference at the last milestone that ran it;
  * the promise is "30 fps everywhere", the count is where the port is */
 #define MACH_SCOREBOARD "68 of 82 screens there today (0.9.12, docs/fps-scoreboard.md)"
+/* M44 (PLAN.md 59): the class as a number, for the settings chosen per
+ * machine (the water): 0 below the reference, 1 the reference (a dual 1 GHz
+ * G4 + Radeon 9000), 2 faster than it; -1 not judged */
+int port_machine_class(void) {
+    int g5 = mach.cpusubtype == 100;
+    int card = mach.gl && mach.vram_mb >= MACH_FULL_VRAM_MB && mach.texunits >= 6;
+    if (verdict == V_UNSUPPORTED || mach.host_build || !mach.native || !mach.gl) {
+        return -1;
+    }
+    if (mach.ncpu >= 2 && card && (g5 || mach.mhz >= 1000)) {
+        return (!g5 && mach.mhz < 1100) ? 1 : 2;
+    }
+    return 0;
+}
+
 static const char* tier_text(void) {
     int g5 = mach.cpusubtype == 100;
     int card = mach.gl && mach.vram_mb >= MACH_FULL_VRAM_MB && mach.texunits >= 6;

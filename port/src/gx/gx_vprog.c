@@ -422,6 +422,34 @@ static void env4(int i, float x, float y, float z, float w) {
     stat_env_set++;
     rt_ext_env_param4fv(VP_VERTEX_PROGRAM_ARB, (GLuint)i, v);
 }
+
+/* M44 (PLAN.md 59): the parameters of a lit draw were ~2,700 instructions a
+ * draw on m441, most of them re-deriving values from inputs that had not
+ * moved: sixteen to twenty-four single-precision divides by 255 a draw (the
+ * 7455's fdivs is ~20 cycles and not pipelined), a square root per light for
+ * the specular k, and an env4 compare per row.  Two exact shortcuts:
+ *   * the colour byte's quotient from a table built with the very expression
+ *     it replaces (`(float)i / 255.0f`: the same division, done once);
+ *   * each light slot's rows remembered with the light's own bytes and the
+ *     flags that choose its rows: the same bytes and flags are the same
+ *     rows, which the env shadow already holds, so the slot is skipped.
+ * --novpgen is the old path. */
+static float u8_unit[256];
+static int u8_unit_ok;
+static inline float c255(u8 x) { return u8_unit[x]; }
+static void u8_unit_init(void) {
+    int i;
+    for (i = 0; i < 256; i++) {
+        u8_unit[i] = (float)(u8)i / 255.0f;
+    }
+    u8_unit_ok = 1;
+}
+static struct {
+    int valid;
+    u8 fl;
+    GXLight l;
+} vp_lmemo[VPE_NLIGHTS];
+static unsigned stat_vp_lmemo_hits, stat_vp_lmemo_miss;
 #endif
 
 /* ---- the generator ---------------------------------------------------------
@@ -954,15 +982,35 @@ static u32 vp_hash(const VpKey* k) {
     return h;
 }
 
+/* M44: the last two variants found, compared whole before the table's hash
+ * (a byte-at-a-time FNV over the key) -- consecutive draws mostly share one;
+ * a variant is never freed, so a remembered pointer stays good */
+static VpVariant* vp_last[2];
 static VpVariant* vp_lookup(const VpKey* k) {
-    u32 h = vp_hash(k) & (VP_BUCKETS - 1);
+    u32 h;
     VpVariant* v;
     VpBuf b;
     GLint errpos = -1;
     GLuint id = 0;
 
+    if (!port_opt.novpgen) {
+        if (vp_last[0] && memcmp(&vp_last[0]->key, k, sizeof(VpKey)) == 0) {
+            return vp_last[0];
+        }
+        if (vp_last[1] && memcmp(&vp_last[1]->key, k, sizeof(VpKey)) == 0) {
+            v = vp_last[1];
+            vp_last[1] = vp_last[0];
+            vp_last[0] = v;
+            return v;
+        }
+    }
+    h = vp_hash(k) & (VP_BUCKETS - 1);
     for (v = vp_tab[h]; v; v = v->next) {
         if (memcmp(&v->key, k, sizeof(VpKey)) == 0) {
+            if (!port_opt.novpgen) {
+                vp_last[1] = vp_last[0];
+                vp_last[0] = v;
+            }
             return v;
         }
     }
@@ -1097,6 +1145,7 @@ static VpVariant* vp_lookup(const VpKey* k) {
 void gx_vprog_invalidate(void) {
 #ifndef PORT_NO_SDL
     memset(env_valid, 0, sizeof(env_valid));
+    memset(vp_lmemo, 0, sizeof(vp_lmemo)); /* M44: with the shadow they stand for */
     vp_loc_gen++; /* M41: the packed variants' local parameters re-sent */
     vp_bound = 0;
     vp_enabled = -1; /* neither on nor known off: the next draw states it */
@@ -1416,20 +1465,50 @@ void gx_vprog_bind(const GxXfDesc* d) {
         }
     }
     if (key.lit) {
+        int vpgen = !port_opt.novpgen;
+        if (vpgen && !u8_unit_ok) {
+            u8_unit_init();
+        }
         if (key.mat_reg) {
-            env4(VPE_MAT, cc->mat.r / 255.0f, cc->mat.g / 255.0f,
-                 cc->mat.b / 255.0f, cc->mat.a / 255.0f);
+            if (vpgen) {
+                env4(VPE_MAT, c255(cc->mat.r), c255(cc->mat.g), c255(cc->mat.b), c255(cc->mat.a));
+            } else {
+                env4(VPE_MAT, cc->mat.r / 255.0f, cc->mat.g / 255.0f,
+                     cc->mat.b / 255.0f, cc->mat.a / 255.0f);
+            }
         }
         if (key.amb_reg) {
-            env4(VPE_AMB, cc->amb.r / 255.0f, cc->amb.g / 255.0f,
-                 cc->amb.b / 255.0f, cc->amb.a / 255.0f); /* M35: .w for the lit alpha */
+            if (vpgen) {
+                env4(VPE_AMB, c255(cc->amb.r), c255(cc->amb.g), c255(cc->amb.b), c255(cc->amb.a));
+            } else {
+                env4(VPE_AMB, cc->amb.r / 255.0f, cc->amb.g / 255.0f,
+                     cc->amb.b / 255.0f, cc->amb.a / 255.0f); /* M35: .w for the lit alpha */
+            }
         }
         for (i = 0; i < nl && i < VPE_NLIGHTS; i++) {
             const GXLight* l = &gx.light[pending_lightidx[i]];
             int lp = VPE_LIGHT + VPE_LSTRIDE * i;
+            u8 fl = (u8)(((key.spec0 && key.diff_fn != GX_DF_NONE) ? 1 : 0) |
+                         ((key.hilite || key.attn_fn == GX_AF_SPOT || key.spec0) ? 2 : 0));
+            if (vpgen) {
+                if (vp_lmemo[i].valid && vp_lmemo[i].fl == fl &&
+                    memcmp(&vp_lmemo[i].l, l, offsetof(GXLight, used)) == 0) {
+                    stat_vp_lmemo_hits++;
+                    continue; /* the slot's rows are these bytes' rows already */
+                }
+                stat_vp_lmemo_miss++;
+                vp_lmemo[i].valid = 1;
+                vp_lmemo[i].fl = fl;
+                memcpy(&vp_lmemo[i].l, l, offsetof(GXLight, used));
+            }
             env4(lp + 0, l->pos[0], l->pos[1], l->pos[2], 1.0f);
-            env4(lp + 1, l->color.r / 255.0f, l->color.g / 255.0f,
-                 l->color.b / 255.0f, l->color.a / 255.0f); /* M35: .w for the lit alpha */
+            if (vpgen) {
+                env4(lp + 1, c255(l->color.r), c255(l->color.g), c255(l->color.b),
+                     c255(l->color.a));
+            } else {
+                env4(lp + 1, l->color.r / 255.0f, l->color.g / 255.0f,
+                     l->color.b / 255.0f, l->color.a / 255.0f); /* M35: .w for the lit alpha */
+            }
             if (key.spec0 && key.diff_fn != GX_DF_NONE) {
                 /* M35: the specular denominator's k, normalised (Dolphin's
                  * LightingShaderGen, the hardware's rule for a diffuse
@@ -1476,11 +1555,21 @@ void gx_vprog_bind(const GxXfDesc* d) {
         if (key.hilite) {
             const GXChanCtrl* c1 = &gx.chan[GX_COLOR1];
             if (key.mat1_reg) {
-                env4(VPE_MAT1, c1->mat.r / 255.0f, c1->mat.g / 255.0f, c1->mat.b / 255.0f,
-                     c1->mat.a / 255.0f);
+                if (vpgen) {
+                    env4(VPE_MAT1, c255(c1->mat.r), c255(c1->mat.g), c255(c1->mat.b),
+                         c255(c1->mat.a));
+                } else {
+                    env4(VPE_MAT1, c1->mat.r / 255.0f, c1->mat.g / 255.0f, c1->mat.b / 255.0f,
+                         c1->mat.a / 255.0f);
+                }
             }
             if (key.amb1_reg) {
-                env4(VPE_AMB1, c1->amb.r / 255.0f, c1->amb.g / 255.0f, c1->amb.b / 255.0f, 1.0f);
+                if (vpgen) {
+                    env4(VPE_AMB1, c255(c1->amb.r), c255(c1->amb.g), c255(c1->amb.b), 1.0f);
+                } else {
+                    env4(VPE_AMB1, c1->amb.r / 255.0f, c1->amb.g / 255.0f, c1->amb.b / 255.0f,
+                         1.0f);
+                }
             }
         }
     }
@@ -1578,6 +1667,8 @@ void gx_vprog_report(void) {
              tot > 0 ? 100.0 * stat_gpu_verts / tot : 0.0, worst_frame_cpu);
     port_log("port> vprog: env params %u emitted (%u of them M21 bulk matrix uploads), %u elided\n",
              stat_env_set, stat_env_bulk, stat_env_elided);
+    port_log("port> vprog: M44 light slots kept by their bytes %u, re-derived %u%s\n",
+             stat_vp_lmemo_hits, stat_vp_lmemo_miss, port_opt.novpgen ? " (--novpgen)" : "");
     if (stat_packed_variants) {
         port_log("port> vprog: %u variant(s) with the lights packed four to a register (M41)%s\n",
                  stat_packed_variants, port_opt.nopacklights ? " (--nopacklights)" : "");

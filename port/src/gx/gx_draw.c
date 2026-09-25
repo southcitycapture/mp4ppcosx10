@@ -430,11 +430,14 @@ static unsigned stat_offworld;
 static int offworld_named;
 static int dl_shown;
 
+static int attr_memo_valid; /* M44: begin_attr_order's memo (below) */
+static unsigned long stat_attr_memo_hits, stat_attr_memo_miss;
 void gx_draw_reset(void) {
     int i;
     nverts = 0;
     in_prim = 0;
     nactive = 0;
+    attr_memo_valid = 0;
     for (i = 0; i < 256; i++) {
         byte_scale[i] = (float)i / 255.0f;
     }
@@ -470,6 +473,9 @@ void gx_draw_report(void) {
     port_log("port> GX draw: %u primitives, %u vertices, %u glDrawArrays, "
              "%u display lists replayed\n",
              stat_prims, stat_verts, stat_draws, stat_dls);
+    port_log("port> GX draw: M44 layout memo: %lu primitives kept the last one's, %lu settled "
+             "anew%s\n", stat_attr_memo_hits, stat_attr_memo_miss,
+             port_opt.noattrmemo ? " (--noattrmemo)" : "");
     port_log("port> GX draw: %lu vertices through the specialised decode loops "
              "(%.1f%%)\n",
              stat_fast_verts, stat_verts ? 100.0 * (double)stat_fast_verts / stat_verts : 0.0);
@@ -790,7 +796,75 @@ int gx_palette_on(void) {
     return palette_on;
 }
 
+static void begin_attr_order_body(void);
+static void offworld_check(void);
+static void attr_memo_refill(void);
+/* M44 (PLAN.md 59): a primitive's layout, its PrimInv and its decode plan are
+ * a function of the GX state, the vertex format of its opcode and whether a
+ * list is replaying -- ~1,000 instructions a primitive, 1.4-2.0 M cycles of
+ * a drawn frame.  Every GX setter bumps gx_state_gen, so a primitive with the
+ * same generation, format and replay flag as the last one settled finds
+ * everything already settled: the globals begin_attr_order writes (the
+ * layout, the attribute order, the plan) are written by nothing else, and
+ * the PrimInv is copied into the other of its two buffers when the batch took
+ * the one it was settled in.  Redone per primitive regardless: the cursor,
+ * the off-world count, the hilite decision (its statistics), and the plan's
+ * fill values, which are the previous primitive's last vertex.  Off under the
+ * palette (a skinned mesh's pose is per frame).  --noattrmemo: every
+ * primitive derives it all. */
+static unsigned attr_memo_gen;
+extern unsigned gx_layout_gen; /* M44: gx_state.c */
+static u8 attr_memo_fmt, attr_memo_dl;
+static u8 attr_memo_bufs; /* which of pi_bufs hold the memo's PrimInv */
 static void begin_attr_order(void) {
+    PORT_SUB_ENTER(PERF_SUB_ATTR); /* M44 */
+    if (!port_opt.noattrmemo && attr_memo_valid && attr_memo_gen == gx_layout_gen &&
+        attr_memo_fmt == vtxfmt && attr_memo_dl == (u8)dl_replaying && !palette_on &&
+        palette_settled) {
+        u8 bit = (u8)(pi_cur == &pi_bufs[0] ? 1 : 2);
+        if (!(attr_memo_bufs & bit)) {
+            *pi_cur = pi_bufs[bit == 1 ? 1 : 0];
+            attr_memo_bufs |= bit;
+        }
+        acur = 0;
+        offworld_check();
+        gx_hilite_decide();
+        attr_memo_refill();
+        stat_attr_memo_hits++;
+        PORT_SUB_LEAVE();
+        return;
+    }
+    begin_attr_order_body();
+    attr_memo_valid = 1;
+    attr_memo_gen = gx_layout_gen;
+    attr_memo_fmt = vtxfmt;
+    attr_memo_dl = (u8)dl_replaying;
+    attr_memo_bufs = (u8)(pi_cur == &pi_bufs[0] ? 1 : 2);
+    stat_attr_memo_miss++;
+    PORT_SUB_LEAVE();
+}
+
+/* the off-world count (a statistic and --gxwarn's names), per primitive */
+static void offworld_check(void) {
+    if (pi.pos_mtx[3] > GX_OFFWORLD_LIMIT || pi.pos_mtx[3] < -GX_OFFWORLD_LIMIT ||
+        pi.pos_mtx[7] > GX_OFFWORLD_LIMIT || pi.pos_mtx[7] < -GX_OFFWORLD_LIMIT) {
+        stat_offworld++;
+        /* Name the first few, the same way --drawlog does: the matrix GX
+         * was handed is a member of a HU3DDRAWOBJ, so the model and the
+         * HSF object come back from the pointer alone. */
+        if (port_opt.gxwarn && offworld_named < 8) {
+            int mdl = -1;
+            const char* nm = port_drawobj_name(gx_last_posmtx_arg, &mdl);
+            offworld_named++;
+            port_log("gxwarn> off-world draw: model %d object \"%s\" "
+                     "translation %.1f %.1f %.1f\n",
+                     mdl, nm ? nm : "?", pi.pos_mtx[3], pi.pos_mtx[7],
+                     pi.pos_mtx[11]);
+        }
+    }
+}
+
+static void begin_attr_order_body(void) {
     static const int order[] = { GX_VA_POS,  GX_VA_NRM,  GX_VA_CLR0, GX_VA_CLR1,
                                  GX_VA_TEX0, GX_VA_TEX1, GX_VA_TEX2, GX_VA_TEX3,
                                  GX_VA_TEX4, GX_VA_TEX5, GX_VA_TEX6, GX_VA_TEX7 };
@@ -832,22 +906,7 @@ static void begin_attr_order(void) {
         int t;
         pi.pos_mtx = gx.pos_mtx[slot];
         pi.nrm_mtx = gx.nrm_mtx[slot];
-        if (pi.pos_mtx[3] > GX_OFFWORLD_LIMIT || pi.pos_mtx[3] < -GX_OFFWORLD_LIMIT ||
-            pi.pos_mtx[7] > GX_OFFWORLD_LIMIT || pi.pos_mtx[7] < -GX_OFFWORLD_LIMIT) {
-            stat_offworld++;
-            /* Name the first few, the same way --drawlog does: the matrix GX
-             * was handed is a member of a HU3DDRAWOBJ, so the model and the
-             * HSF object come back from the pointer alone. */
-            if (port_opt.gxwarn && offworld_named < 8) {
-                int mdl = -1;
-                const char* nm = port_drawobj_name(gx_last_posmtx_arg, &mdl);
-                offworld_named++;
-                port_log("gxwarn> off-world draw: model %d object \"%s\" "
-                         "translation %.1f %.1f %.1f\n",
-                         mdl, nm ? nm : "?", pi.pos_mtx[3], pi.pos_mtx[7],
-                         pi.pos_mtx[11]);
-            }
-        }
+        offworld_check();
         pi.have_nrm = gx.vcd[GX_VA_NRM] != GX_NONE;
         pi.no_clr0 = gx.vcd[GX_VA_CLR0] == GX_NONE;
         if (gx.num_chans == 0) {
@@ -1220,6 +1279,17 @@ static void build_decode_plan(void) {
     }
     plan_fast = pick_fast();
     plan_fast_idx = plan_fast ? fast_index_of(plan_fast) : -1; /* M43: once a plan, not once a primitive */
+}
+
+/* M44: the plan's fill values are the previous primitive's last vertex:
+ * re-read on a memo hit, as build_decode_plan reads them */
+static void attr_memo_refill(void) {
+    int i;
+    for (i = 0; i < plan_nfill; i++) {
+        int k = (plan_fill[i].dstoff - sl.off_tex) / 8;
+        plan_fill[i].s = pending.tex[k][0];
+        plan_fill[i].t = pending.tex[k][1];
+    }
 }
 
 static void transform_and_store(void);
@@ -2384,6 +2454,8 @@ typedef struct SubmitRec {
 static SubmitRec rec_batch;   /* what the pending batch's submit read       */
 static SubmitRec rec_now;
 static int batch_applied;     /* draw_apply has run for the pending batch   */
+static int batch_rt_runs;     /* M44: runs of the pending batch the render thread decodes */
+static int run_rt;            /* M44: the primitive in hand's run is the render thread's */
 static const char* applied_who;
 
 static void rec_put(SubmitRec* r, const void* p, size_t n) {
@@ -3037,7 +3109,13 @@ static u32 batch_state_sig_body(int with_tex) {
 }
 static u32 batch_state_sig(void) { return batch_state_sig_body(1); }
 
+static void batch_flush_body(void);
 static void batch_flush(void) {
+    PORT_SUB_ENTER(PERF_SUB_FLUSH);
+    batch_flush_body();
+    PORT_SUB_LEAVE();
+}
+static void batch_flush_body(void) {
     if (batch_n) {
         /* cleared before the submit, so a GX_STATE_TOUCH reached from inside
          * it (there is none today) cannot submit the same batch twice */
@@ -3302,10 +3380,11 @@ static void batch_add(void) {
     u32 count = (u32)nverts; /* before anything below can flush */
     u8 p = prim;
     size_t bytes = (size_t)count * sl.stride;
-    if (!vc_run) {
+    if (vc_run != 1 && vc_run != 2) {
         ring_cursor = run_pos + bytes; /* a cache run leaves the ring alone (M40) */
     }
     if (!count) {
+        run_rt = 0;
         return;
     }
     if (batch_n &&
@@ -3323,6 +3402,7 @@ static void batch_add(void) {
         batch_pos = run_pos;
         batch_sl = sl;
         batch_verts = 0;
+        batch_rt_runs = 0; /* M44: counted below, with this primitive's own */
         batch_clean = vc_run == 1;
         /* M22: the batch's matrices are this primitive's own; a merge decided
          * for a batch that a wrap or a late flush has since ended is off,
@@ -3339,6 +3419,8 @@ static void batch_add(void) {
     if (vc_run != 1) {
         batch_clean = 0;
     }
+    batch_rt_runs += run_rt;
+    run_rt = 0;
     batch[batch_n].first = batch_verts;
     batch[batch_n].count = count;
     batch[batch_n].prim = p;
@@ -3583,6 +3665,9 @@ static int obj_named(const char* want) {
     nm = want ? port_drawobj_name(gx_last_posmtx_arg, &mdl) : NULL;
     return nm && !strcmp(nm, want);
 }
+static const GxWaterPlan* water_plan_cur; /* M44: a warped draw on the CPU path (below) */
+static int water_expand(int n);
+static int water_local; /* M44: this list's runs decoded on the game thread (the water) */
 static GxXfDesc app_xfd;  /* what draw_apply settled, for draw_issue */
 static int app_on_gpu;
 static u32 app_bias;
@@ -3612,9 +3697,11 @@ static int draw_apply(const u8* s, int n, int in_ring) {
      * layout as the vertex arrays, and returns 0 for anything it cannot cover
      * -- having counted it.  `--cpuxf` makes it always return 0, which is the
      * A/B (PLAN.md 25). */
-    if (!port_opt.cpuxf) {
+    if (!port_opt.cpuxf && !water_plan_cur) {
+        PORT_SUB_ENTER(PERF_SUB_VPDRAW);
         fill_xf_desc(xfd, s);
         on_gpu = gx_vprog_draw(xfd, n);
+        PORT_SUB_LEAVE();
         /* M21 (--fixbase): the arrays are based at the ring, not at the
          * batch, so their pointers -- and whatever the driver rebuilds when
          * a pointer changes -- change only when the layout does.  The
@@ -3645,15 +3732,21 @@ static int draw_apply(const u8* s, int n, int in_ring) {
         if (!rtgx) {
             gx_vprog_disable(); /* M43: the render thread's apply disables it for its own */
         }
-        if (in_ring) {
-            /* M29: the vertices may still be the render thread's to decode */
+        if (in_ring && (!water_plan_cur || batch_rt_runs)) {
+            /* M29: the vertices may still be the render thread's to decode
+             * (M44: a water batch decoded here has nothing to wait for) */
             rt_decode_join("cpu path");
         }
-        port_perf_sub_enter(PERF_SUB_XF);
+        PORT_SUB_ENTER(PERF_SUB_XF);
         finish_vertices(s, n);
-        port_perf_sub_leave();
+        if (water_plan_cur) {
+            /* M44: the midpoints (full) and the warp's offsets on the
+             * coordinates the texgens made; the arrays below take them all */
+            n = water_expand(n);
+        }
+        PORT_SUB_LEAVE();
     }
-    port_perf_sub_enter(PERF_SUB_STATE);
+    PORT_SUB_ENTER(PERF_SUB_STATE);
     /* M31 (PLAN.md 46): --forceobj NAME[:flags], a diagnostic -- the named
      * object's draws with the cull (1), the z test (2) and the alpha test
      * (4) switched off (all three by default), to tell which of them hides a
@@ -3696,7 +3789,7 @@ static int draw_apply(const u8* s, int n, int in_ring) {
             const u8* ob = (const u8*)rt_stash(out_buf, (size_t)n * (size_t)out_stride);
             gx_rtgx_record(xfd, 0, 0, ob, out_stride, out_off_clr, out_off_tex, out_ntex);
         }
-        port_perf_sub_leave();
+        PORT_SUB_LEAVE();
         app_on_gpu = on_gpu;
         app_bias = bias;
         if (!port_opt.nounitmemo) {
@@ -3709,11 +3802,13 @@ static int draw_apply(const u8* s, int n, int in_ring) {
     }
     gl13_apply_transform();
     gl13_apply_raster_state();
+    PORT_SUB_ENTER(PERF_SUB_TEV);
     gx_tev_apply();
+    PORT_SUB_LEAVE();
     /* M21: the specular colour sum, only where the vertex program wrote a
      * secondary colour for it (gx_internal.h, gx_hilite_decide) */
     glc_color_sum(on_gpu && !port_opt.cpuxf && xfd->hilite == 1);
-    port_perf_sub_leave();
+    PORT_SUB_LEAVE();
 
     /* On the GPU path the arrays are the *source* layout and gx_vprog_draw has
      * already bound them; there is no `out_buf` to point at, because phase 2
@@ -3721,11 +3816,13 @@ static int draw_apply(const u8* s, int n, int in_ring) {
      * reads it from index zero, so the base pointer never moves; the offsets
      * and the stride do, because the layout is packed to the primitive.
      * glc_* compares both. */
-    port_perf_sub_enter(PERF_SUB_ISSUE);
+    PORT_SUB_ENTER(PERF_SUB_ISSUE);
     if (on_gpu) {
         /* the parameters and the arrays, now that the texture binds this draw
          * needs have happened: gx_vprog.c says why that ordering matters */
+        PORT_SUB_ENTER(PERF_SUB_VPBIND);
         gx_vprog_bind(xfd);
+        PORT_SUB_LEAVE();
     } else {
         /* M27: out_buf is rewritten by the next CPU-path draw, so under the
          * render thread this draw's bytes go into the stream as a payload and
@@ -3748,7 +3845,7 @@ static int draw_apply(const u8* s, int n, int in_ring) {
             }
         }
     }
-    port_perf_sub_leave();
+    PORT_SUB_LEAVE();
     if (tg0 > 0.0) {
         gx_rtgx_game_time(port_now_seconds() - tg0);
     }
@@ -3959,7 +4056,7 @@ static void draw_issue(const u8* s, int n, const Seg* segs, int nsegs, int in_ri
             draw_log(segs[i].first, segs[i].count, segs[i].prim);
         }
     }
-    port_perf_sub_enter(PERF_SUB_ISSUE);
+    PORT_SUB_ENTER(PERF_SUB_ISSUE);
     if (on_gpu && in_ring && !issue_clean) {
         /* the CPU cache, out ahead of the DMA (a no-op without VAR); over
          * the batch's final extent, which a lazy flush grew after the apply.
@@ -3987,18 +4084,18 @@ static void draw_issue(const u8* s, int n, const Seg* segs, int nsegs, int in_ri
             GL(glDrawArrays)(gl_prim(segs[i].prim), 0, (GLsizei)segs[i].count);
             stat_draws++;
         }
-        port_perf_sub_leave();
+        PORT_SUB_LEAVE();
         if (probing) probe_end();
         return;
     }
     if (!port_opt.noindexed && !port_opt.oldsubmit) {
         u32 lo = 0, hi = 0, nidx;
-        port_perf_sub_enter(PERF_SUB_INDEX);
+        PORT_SUB_ENTER(PERF_SUB_INDEX);
         nidx = build_indices(segs, nsegs, bias, &lo, &hi);
-        port_perf_sub_leave();
+        PORT_SUB_LEAVE();
         if (nidx) {
             issue_indexed(nidx, lo, hi);
-            port_perf_sub_leave();
+            PORT_SUB_LEAVE();
             if (probing) probe_end();
             return;
         }
@@ -4041,10 +4138,11 @@ static void draw_issue(const u8* s, int n, const Seg* segs, int nsegs, int in_ri
         }
         issue_segments(segs, nsegs);
     }
-    port_perf_sub_leave();
+    PORT_SUB_LEAVE();
     if (probing) probe_end();
 }
 
+static int water_submit(const u8* s, int n, const Seg* segs, int nsegs, int in_ring);
 static void draw_submit(const u8* s, int n, const Seg* segs, int nsegs, int in_ring) {
     if (!n || !nsegs) {
         return;
@@ -4054,8 +4152,196 @@ static void draw_submit(const u8* s, int n, const Seg* segs, int nsegs, int in_r
         stat_verts += (unsigned)n;
         return;
     }
+    if (__builtin_expect(gx.num_ind != 0, 0) && water_submit(s, n, segs, nsegs, in_ring)) {
+        return; /* M44: the water (gx_water.c) */
+    }
     draw_apply(s, n, in_ring);
     draw_issue(s, n, segs, nsegs, in_ring);
+}
+
+/* ---- M44 (PLAN.md 59): the water ------------------------------------------
+ *
+ * A batch with a warped TEV stage, at a level other than off, goes to the CPU
+ * path -- the texgens evaluated per vertex, as the specification in
+ * finish_vertices has them -- and the warp's offsets are added to the warped
+ * stages' coordinates (gx_water_offsets) before the arrays are set.
+ *
+ * cheap: the game's own primitives and vertices, each vertex once.
+ * full: the primitives as triangles (orientation kept: a strip's odd
+ * triangles swapped, a quad as (0,1,2)(0,2,3)), each subdivided `--watergrid`
+ * times in the output: a midpoint vertex per edge, shared by the triangles on
+ * both sides (an edge table), its position, colour and coordinates the
+ * average of the edge's ends (a position and an affine texgen are affine in
+ * the object's space, so the average is what GL would interpolate there),
+ * the warp sampled again at every new vertex -- then drawn indexed.  The
+ * direct stages are bound and combined as before; the indirect maps are read
+ * on the CPU only. */
+static unsigned long stat_water_batches;
+static u32* water_idx;       /* the full level's triangles, as indices into out_buf */
+static u32 water_nidx, water_idx_cap;
+static int water_sub;        /* full's subdivision levels (0: cheap) */
+static const Seg* water_segs;
+static int water_nsegs;
+static u32 water_m;          /* the vertices after the midpoints */
+static u32 water_idx_push(u32 a, u32 b, u32 c) {
+    if (water_nidx + 3 > water_idx_cap) {
+        u32 cap = water_idx_cap ? water_idx_cap * 2 : 65536;
+        u32* nb = (u32*)realloc(water_idx, (size_t)cap * sizeof(u32));
+        if (!nb) {
+            return 0;
+        }
+        water_idx = nb;
+        water_idx_cap = cap;
+    }
+    water_idx[water_nidx++] = a;
+    water_idx[water_nidx++] = b;
+    water_idx[water_nidx++] = c;
+    return 1;
+}
+/* the edge table: (lo, hi) -> the midpoint's index */
+#define WEDGE_BITS 16
+static struct { u32 lo, hi, mid; } water_edge[1u << WEDGE_BITS];
+static u32 water_edge_gen[1u << WEDGE_BITS], water_gen;
+static u32 water_mid(u32 a, u32 b) {
+    u32 lo = a < b ? a : b, hi = a < b ? b : a;
+    u32 h = (lo * 0x9E3779B1u ^ hi * 0x85EBCA6Bu) >> (32 - WEDGE_BITS);
+    int probe;
+    for (probe = 0; probe < 64; probe++, h = (h + 1) & ((1u << WEDGE_BITS) - 1)) {
+        if (water_edge_gen[h] != water_gen) {
+            u8* o;
+            const u8* x;
+            const u8* y;
+            int i;
+            if (water_m >= MAX_VERTS) {
+                return lo; /* out of room: the end stands in */
+            }
+            water_edge_gen[h] = water_gen;
+            water_edge[h].lo = lo;
+            water_edge[h].hi = hi;
+            water_edge[h].mid = water_m;
+            o = out_buf + (size_t)water_m * out_stride;
+            x = out_buf + (size_t)lo * out_stride;
+            y = out_buf + (size_t)hi * out_stride;
+            for (i = 0; i < 3; i++) {
+                ((f32*)o)[i] = 0.5f * (((const f32*)x)[i] + ((const f32*)y)[i]);
+            }
+            for (i = 0; i < 4; i++) {
+                o[out_off_clr + i] =
+                    (u8)(((unsigned)x[out_off_clr + i] + y[out_off_clr + i] + 1u) >> 1);
+            }
+            for (i = 0; i < 2 * out_ntex; i++) {
+                ((f32*)(o + out_off_tex))[i] =
+                    0.5f * (((const f32*)(x + out_off_tex))[i] + ((const f32*)(y + out_off_tex))[i]);
+            }
+            return water_m++;
+        }
+        if (water_edge[h].lo == lo && water_edge[h].hi == hi) {
+            return water_edge[h].mid;
+        }
+    }
+    return lo;
+}
+static void water_tri(u32 a, u32 b, u32 c, int level) {
+    u32 ab, bc, ca;
+    if (level <= 0) {
+        water_idx_push(a, b, c);
+        return;
+    }
+    ab = water_mid(a, b);
+    bc = water_mid(b, c);
+    ca = water_mid(c, a);
+    water_tri(a, ab, ca, level - 1);
+    water_tri(ab, b, bc, level - 1);
+    water_tri(ca, bc, c, level - 1);
+    water_tri(ab, bc, ca, level - 1);
+}
+/* draw_apply's hook, after finish_vertices wrote the batch's n vertices:
+ * the midpoints (full), then the offsets on every vertex; the count drawn */
+static int water_expand(int n) {
+    int i, k;
+    if (water_sub > 0) {
+        water_m = (u32)n;
+        water_nidx = 0;
+        water_gen++;
+        for (i = 0; i < water_nsegs; i++) {
+            u32 b = water_segs[i].first, c = water_segs[i].count;
+            u8 pr = water_segs[i].prim;
+            if (pr == GX_TRIANGLES) {
+                for (k = 0; k + 2 < (int)c; k += 3) {
+                    water_tri(b + k, b + k + 1, b + k + 2, water_sub);
+                }
+            } else if (pr == GX_TRIANGLESTRIP) {
+                for (k = 0; k + 2 < (int)c; k++) {
+                    if (k & 1) {
+                        water_tri(b + k + 1, b + k, b + k + 2, water_sub);
+                    } else {
+                        water_tri(b + k, b + k + 1, b + k + 2, water_sub);
+                    }
+                }
+            } else if (pr == GX_TRIANGLEFAN) {
+                for (k = 1; k + 1 < (int)c; k++) {
+                    water_tri(b, b + k, b + k + 1, water_sub);
+                }
+            } else {
+                for (k = 0; k + 3 < (int)c; k += 4) {
+                    water_tri(b + k, b + k + 1, b + k + 2, water_sub);
+                    water_tri(b + k, b + k + 2, b + k + 3, water_sub);
+                }
+            }
+        }
+        n = (int)water_m;
+    }
+    gx_water_offsets(water_plan_cur, out_buf, n, out_stride, out_off_tex);
+    return n;
+}
+static int water_submit(const u8* s, int n, const Seg* segs, int nsegs, int in_ring) {
+    static GxWaterPlan wp;
+    int level, i;
+    if (port_opt.cpuxf || palette_on || pi.skin || sl.off_skin >= 0 || n > MAX_VERTS ||
+        (level = gx_water_level()) == GX_WATER_OFF) {
+        return 0;
+    }
+    if (!gx_water_plan(&wp)) {
+        return 0;
+    }
+    for (i = 0; i < nsegs; i++) {
+        u8 pr = segs[i].prim;
+        if (pr != GX_TRIANGLES && pr != GX_TRIANGLESTRIP && pr != GX_TRIANGLEFAN && pr != GX_QUADS) {
+            return 0; /* lines and points stay as they were */
+        }
+    }
+    if (in_ring && batch_rt_runs) {
+        rt_decode_join("water"); /* the source vertices may be the render thread's to decode */
+    }
+    water_sub = level == GX_WATER_FULL ? (port_opt.watergrid > 0 ? port_opt.watergrid : 1) : 0;
+    if (water_sub > 3) {
+        water_sub = 3;
+    }
+    water_segs = segs;
+    water_nsegs = nsegs;
+    stat_water_batches++;
+    water_plan_cur = &wp;
+    draw_apply(s, n, in_ring);
+    water_plan_cur = NULL;
+    if (!water_sub) {
+        draw_issue(s, n, segs, nsegs, in_ring);
+    } else if (water_nidx) {
+        /* the arrays are the stashed output (draw_apply); the triangles, indexed */
+        u32 j;
+        if (water_m <= 0xffffu) {
+            u16* p16 = (u16*)water_idx;
+            for (j = 0; j < water_nidx; j++) {
+                p16[j] = (u16)water_idx[j];
+            }
+            gl13_draw_range_elements(GL_TRIANGLES, 0, water_m - 1, (int)water_nidx, 0, p16);
+        } else {
+            gl13_draw_range_elements(GL_TRIANGLES, 0, water_m - 1, (int)water_nidx, 1, water_idx);
+        }
+        stat_draws++;
+        stat_prims += (unsigned)nsegs;
+        stat_verts += (unsigned)n;
+    }
+    return 1;
 }
 
 /* The lazy flush's first half, for the pending batch (gx_batch_touch).
@@ -5317,6 +5603,36 @@ u32 gx_decode_job(const GxDecJob* j) {
     if (j->fast >= 0) {
         return dec_fast_job[j->fast](j);
     }
+    if (j->fast == -2) {
+        /* M44: a positions refresh (vc_decide): the stored run's bytes, then
+         * the positions the list's indices name in today's array */
+        const DecStep* ps = NULL;
+        const u8* p = j->p;
+        u8* v = j->dst;
+        u32 i, n = j->count;
+        int k;
+        for (k = 0; k < j->nplan; k++) {
+            if (j->plan[k].attr == GX_VA_POS) {
+                ps = &j->plan[k];
+            }
+        }
+        if (!ps || (size_t)n * j->pos_vb > (size_t)(j->end - j->p)) {
+            return 0;
+        }
+        memcpy(v, j->seed, (size_t)n * j->stride);
+        if (ps->idx == 2) {
+            for (i = 0; i < n; i++, p += j->pos_vb, v += j->stride) {
+                const u8* q = ps->base + (size_t)(((u32)p[j->pos_off] << 8) | p[j->pos_off + 1]) * ps->stride;
+                memcpy(v, q, 12);
+            }
+        } else {
+            for (i = 0; i < n; i++, p += j->pos_vb, v += j->stride) {
+                const u8* q = ps->base + (size_t)p[j->pos_off] * ps->stride;
+                memcpy(v, q, 12);
+            }
+        }
+        return n;
+    }
     {
         Pending scratch; /* the to_pending steps' values are the game thread's business */
         const u8* p = j->p;
@@ -5476,6 +5792,8 @@ typedef struct VcPrim {
     int narr, valid, stored;
     VcArr* arr[VC_ARR_MAX];
     unsigned ver[VC_ARR_MAX];
+    u8 pos_mode;          /* M44: refreshed last time -- the positions moving */
+    unsigned pos_check;   /* M44: the frame to look at the positions' bytes again */
 } VcPrim;
 typedef struct VcEnt {
     const void* list;
@@ -5505,6 +5823,7 @@ static unsigned vc_store_off_until; /* thrashing: no stores until this frame */
 static unsigned long stat_vc_cooldowns;
 static double stat_vc_s_list, stat_vc_s_hit, stat_vc_s_miss;
 static unsigned long vc_nent, vc_narr;
+static unsigned long stat_vc_refresh, stat_vc_refresh_v; /* M44: positions refreshes */
 static unsigned long stat_vc_lists, stat_vc_dyn_lists, stat_vc_prims, stat_vc_hits;
 static unsigned long stat_vc_verts, stat_vc_miss_new, stat_vc_miss_plan, stat_vc_miss_arr,
     stat_vc_miss_list, stat_vc_inelig, stat_vc_dyn_verts, stat_vc_nostore;
@@ -6079,13 +6398,71 @@ static int vc_decide(VcEnt* e, int i, const u8* p, const u8* end, u32 count, u8 
         return 0;
     }
     if (found) {
-        int ok = 1;
+        int ok = 1, pos_only = 0;
+        const DecStep* ps = NULL;
+        if (!port_opt.novcpos && vp->stored && vp->gen == vc_gen && port_opt.vcache >= 2) {
+            int j2;
+            for (j2 = 0; j2 < nplan; j2++) {
+                if (plan[j2].attr == GX_VA_POS && plan[j2].idx && plan[j2].op == DEC_F32_3_3 &&
+                    plan[j2].dstoff == 0 && !plan[j2].to_pending) {
+                    ps = &plan[j2];
+                }
+            }
+        }
+        if (ps && vp->pos_mode && (int)(gl13_frame_number() - vp->pos_check) < 0) {
+            /* M44: refreshed last time: the other arrays alone are looked at
+             * (a refresh is right whatever the positions are; their bytes are
+             * hashed again only every 64 frames, to find a run gone still) */
+            pos_only = 1;
+            for (k = 0; k < vp->narr; k++) {
+                if (!(vp->arr[k]->base == ps->base && vp->arr[k]->stride == ps->stride) &&
+                    vc_arr_check(vp->arr[k]) != vp->ver[k]) {
+                    pos_only = 0;
+                    break;
+                }
+            }
+            if (pos_only) {
+                e->streak = 0;
+                stat_vc_refresh++;
+                stat_vc_refresh_v += count;
+                vc_cur = vp;
+                vc_reason = VR_ARR;
+                return 3;
+            }
+            vp->pos_mode = 0;
+        }
         for (k = 0; k < vp->narr; k++) {
             if (vc_arr_check(vp->arr[k]) != vp->ver[k]) {
                 ok = 0;
                 vc_reason_arr = vp->arr[k];
                 break;
             }
+        }
+        if (!ok && ps) {
+            /* M44: is the position array the only one that moved?  (m463's
+             * panels, m438: positions rewritten every frame, the rest the
+             * same bytes -- PLAN.md 58.5) */
+            pos_only = 1;
+            for (k = 0; k < vp->narr; k++) {
+                int is_pos = vp->arr[k]->base == ps->base && vp->arr[k]->stride == ps->stride;
+                if (vc_arr_check(vp->arr[k]) != vp->ver[k] && !is_pos) {
+                    pos_only = 0;
+                    break;
+                }
+            }
+            if (pos_only) {
+                e->streak = 0;
+                stat_vc_refresh++;
+                stat_vc_refresh_v += count;
+                vp->pos_mode = 1;
+                vp->pos_check = gl13_frame_number() + 64;
+                vc_cur = vp;
+                vc_reason = VR_ARR;
+                return 3;
+            }
+        }
+        if (ok) {
+            vp->pos_mode = 0;
         }
         if (ok && vp->stored && vp->gen == vc_gen && port_opt.vcache >= 2) {
             e->streak = 0;
@@ -6193,6 +6570,7 @@ static int vc_decide(VcEnt* e, int i, const u8* p, const u8* end, u32 count, u8 
         vp->adv = n * vb;
         vp->valid = 1;
         vp->stored = 0;
+        vp->pos_mode = 0; /* M44: a fresh key */
         if (port_opt.vcache >= 2 && vc_cap && !e->dyn_until &&
             (int)(gl13_frame_number() - vc_store_off_until) >= 0) {
             u32 o;
@@ -6351,6 +6729,9 @@ static void vc_report(void) {
              stat_vc_verts ? 100.0 * (double)stat_vc_hit_verts / (double)stat_vc_verts : 0.0,
              stat_vc_frames ? 100.0 * stat_vc_share_sum / (double)stat_vc_frames : 0.0,
              stat_vc_frames);
+    port_log("port> vcache (M44): %lu positions refreshes (%lu vertices): stored runs whose "
+             "position array alone had moved, copied and their positions decoded again%s\n",
+             stat_vc_refresh, stat_vc_refresh_v, port_opt.novcpos ? " (--novcpos)" : "");
     port_log("port> vcache: misses -- new %lu (%lu v), plan changed %lu (%lu v), arrays changed "
              "%lu (%lu v), list bytes changed %lu lists; ineligible %lu (%lu v, skinned/palette/"
              "premerge); not stored (region full this frame) %lu (%lu v); stored %lu v\n",
@@ -6376,6 +6757,15 @@ void gx_draw_counters(unsigned long* calls, unsigned long* verts, unsigned long*
     *calls = stat_draws;
     *verts = stat_verts;
     *vchit = stat_vc_hit_verts;
+}
+
+/* M44: rtdec_build inside its counter region */
+static int rtdec_build_sub(GxDecJob* j, const u8* p, const u8* end, u32 count) {
+    int r;
+    PORT_SUB_ENTER(PERF_SUB_JOBB);
+    r = rtdec_build(j, p, end, count);
+    PORT_SUB_LEAVE();
+    return r;
 }
 
 void GXCallDisplayList(const void* list, u32 nbytes) {
@@ -6411,6 +6801,10 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
     }
     dl_replaying = 1;
     port_perf_gx_begin();
+    /* M44: a warped list at a water level other than off is decoded here --
+     * the CPU path reads its vertices next, and a run the render thread
+     * decoded is in the other CPU's cache */
+    water_local = gx.num_ind != 0 && gx_water_level() != GX_WATER_OFF;
     frame = gl13_frame_number();
     caching = port_opt.dlcache && nbytes > 0;
     rt_auto_on = rt_recording && rt_decode_mode() == 3;
@@ -6418,12 +6812,16 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
         static unsigned vl_tick;
         if ((++vl_tick & 7u) == 0) {
             double t0 = port_now_seconds();
+            PORT_SUB_ENTER(PERF_SUB_VCKEY);
             vce = vc_list_begin(list, nbytes);
+            PORT_SUB_LEAVE();
             t0 = (port_now_seconds() - t0) * 8.0;
             stat_vc_s += t0;
             stat_vc_s_list += t0;
         } else {
+            PORT_SUB_ENTER(PERF_SUB_VCKEY);
             vce = vc_list_begin(list, nbytes);
+            PORT_SUB_LEAVE();
         }
     }
     /* A scene change strands every entry it had; sweep on a slow cadence so
@@ -6568,14 +6966,18 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
         sv_first = total;
         in_prim = 1;
         begin_attr_order();
+        PORT_SUB_ENTER(PERF_SUB_PRIM);
         batch_prepare(count);
+        PORT_SUB_LEAVE();
         vc_run = 0;
         if (vce) {
             /* timed one call in eight (the timer is a tenth of a hit) */
             static unsigned vc_tick;
             if ((++vc_tick & 7u) == 0) {
                 double t0 = port_now_seconds();
+                PORT_SUB_ENTER(PERF_SUB_VCKEY);
                 vc_run = vc_decide(vce, vci++, p, end, count, op);
+                PORT_SUB_LEAVE();
                 t0 = (port_now_seconds() - t0) * 8.0;
                 stat_vc_s += t0;
                 if (vc_run == 1) {
@@ -6584,13 +6986,16 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
                     stat_vc_s_miss += t0;
                 }
             } else {
+                PORT_SUB_ENTER(PERF_SUB_VCKEY);
                 vc_run = vc_decide(vce, vci++, p, end, count, op);
+                PORT_SUB_LEAVE();
             }
         }
         if (__builtin_expect(port_opt.vcarr_to != 0, 0) && vcarr_in_window()) {
             vcarr_note(list, nbytes, count, vce ? vc_reason : vc_list_off_why, vc_reason_arr);
         }
-        if (vc_run) {
+        PORT_SUB_ENTER(PERF_SUB_PRIM);
+        if (vc_run == 1 || vc_run == 2) {
             run_pos = vc_cur->off; /* M40: a hit, or a store into the region */
             run_cap = src_cap + vc_cap;
         } else {
@@ -6600,6 +7005,7 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
         pal_scan_count = count;
         pal_place();
         pal_scan_p = NULL;
+        PORT_SUB_LEAVE();
         if (nops == 0) {
             list_pos = run_pos;
         } else if (ring_wrapped) {
@@ -6634,7 +7040,7 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
             if (port_opt.decodestats) {
                 ds_plan_note(count);
             }
-            port_perf_sub_enter(PERF_SUB_DECODE);
+            PORT_SUB_ENTER(PERF_SUB_DECODE);
             if (vc_run == 1) {
                 /* M40: a hit -- the run is in the region already; only what
                  * the decode leaves behind for the next primitive (`pending`,
@@ -6645,14 +7051,43 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
                 decode_pending_last(&rtjob, vc_cur->nverts, vb);
                 nverts = (int)vc_cur->nverts;
                 p += vc_cur->adv;
-            } else if (!caching && rtdec_build(&rtjob, p, end, count)) {
+            } else if (!caching && !water_local && rtdec_build_sub(&rtjob, p, end, count)) {
                 /* M29: the run is the render thread's (PLAN.md 44); here only
                  * the list pointer, the vertex count and `pending` advance */
                 u32 vb = job_vertex_bytes(&rtjob);
                 u32 n = job_vertices(&rtjob, vb);
+                run_rt = 1; /* M44: this run is the render thread's (batch_add counts it) */
+                if (vc_run == 3) {
+                    /* M44: a positions refresh -- `pending` from the full plan
+                     * first, then the job told to copy the stored run and
+                     * decode the positions alone (gx_decode_job) */
+                    int k2;
+                    u32 off = 0;
+                    PORT_SUB_ENTER(PERF_SUB_PEND);
+                    decode_pending_last(&rtjob, n, vb);
+                    PORT_SUB_LEAVE();
+                    for (k2 = 0; k2 < rtjob.nplan && rtjob.plan[k2].attr != GX_VA_POS; k2++) {
+                        off += rtjob.plan[k2].advance;
+                    }
+                    rtjob.fast = -2;
+                    rtjob.seed = src_buf + vc_cur->off;
+                    rtjob.pos_off = off;
+                    rtjob.pos_vb = vb;
+                    rtjob.count = n;
+                    rtjob.nfill = 0;
+                    PORT_SUB_ENTER(PERF_SUB_JREC);
+                    rt_decode_record(&rtjob);
+                    PORT_SUB_LEAVE();
+                    gx_skin_stamp_decode(rt_pos());
+                } else {
+                PORT_SUB_ENTER(PERF_SUB_JREC);
                 rt_decode_record(&rtjob);
+                PORT_SUB_LEAVE();
                 gx_skin_stamp_decode(rt_pos()); /* the skin body's join (PLAN.md 44.1) */
+                PORT_SUB_ENTER(PERF_SUB_PEND);
                 decode_pending_last(&rtjob, n, vb);
+                PORT_SUB_LEAVE();
+                }
                 rt_decode_there(n);
                 nverts = (int)n;
                 p += (size_t)n * vb;
@@ -6682,7 +7117,7 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
                     stat_rtdec_here++;
                 }
             }
-            port_perf_sub_leave();
+            PORT_SUB_LEAVE();
         } else {
             for (i = 0; i < count && p < end; i++) {
                 for (k = 0; k < nactive; k++) {
@@ -6768,7 +7203,9 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
                 caching = 0;
             }
         }
+        PORT_SUB_ENTER(PERF_SUB_PRIM);
         batch_add();
+        PORT_SUB_LEAVE();
         vc_run = 0;
         run_cap = src_cap;
         total = sv_first + (u32)nverts;

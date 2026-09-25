@@ -181,6 +181,22 @@ static const char* screen_name(int ovl) {
     return ovl_name[ovl];
 }
 
+/* M44 (PLAN.md 59): the minigame on screen as its number (417 for m417dll),
+ * or 0 -- the water's per-screen level (gx_water.c) */
+int port_cur_mg_number(void) {
+    int ovl = (int)omcurovl;
+    const char* n;
+    if (ovl < 0 || ovl >= OVL_COUNT) {
+        return 0;
+    }
+    n = ovl_name[ovl];
+    if (n[0] == 'm' && n[1] >= '4' && n[1] <= '4' && n[2] >= '0' && n[2] <= '9' && n[3] >= '0' &&
+        n[3] <= '9' && n[4] == 'd') {
+        return (n[1] - '0') * 100 + (n[2] - '0') * 10 + (n[3] - '0');
+    }
+    return 0;
+}
+
 /* ---- --minigame ------------------------------------------------------------
  *
  * The argument is either an mgInfoTbl index, a minigame number (401..463, the

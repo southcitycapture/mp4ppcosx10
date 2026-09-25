@@ -408,6 +408,23 @@ typedef struct PortOptions {
                              *   reads goes to the general walker, as before (PLAN.md 58.8) */
     int nostripepool;       /* --nostripepool  M43: the texture stripes' decode and upload
                              *   buffers allocated and freed each update, as before */
+    /* M44 (PLAN.md 59): the GX front end, built for the 7455 -- each lever's old path */
+    int nodcbz;             /* --nodcbz  M44: no dcbz ahead of the render stream's and the
+                             *   vertex ring's writes (a store miss reads the line first) */
+    int novpgen;            /* --novpgen  M44: the vertex program's parameters compared value by
+                             *   value every draw, not skipped by the lights'/channels'/
+                             *   texture matrices' generations */
+    int notevdirty;         /* --notevdirty  M44: the TEV signature hashed every draw, not only
+                             *   after a TEV setter changed something */
+    int noattrmemo;         /* --noattrmemo  M44: a primitive's layout and decode plan derived
+                             *   every primitive, not kept while nothing they read has changed */
+    int nowordhash;         /* --nowordhash  M44: the texture content hash byte by byte (FNV) */
+    int water;              /* --water off|cheap|full|auto  M44: the indirect warp at the
+                             *   vertices (src/gx/gx_water.c); -1 auto (the default: by the
+                             *   machine's class and the screen) */
+    int watergrid;          /* --watergrid N  M44: full's subdivision levels (default 1) */
+    int novcpos;            /* --novcpos  M44: a stored run whose position array alone moved is
+                             *   decoded whole again (and the list goes animated), not refreshed */
     int wbpart;             /* --nowbpart  M43: the write barrier arms the partial pages at an
                              *   array's (a list's) ends too, the default (src/gx/gx_wb.c;
                              *   PLAN.md 58.4); --nowbpart is M42's interior pages alone */
@@ -660,8 +677,34 @@ enum {
     PERF_SUB_TEX,        /* gx_tex_bind: hash, decode, upload, bind            */
     PERF_SUB_ISSUE,      /* gx_vprog_bind + the VAR flush + the draw calls     */
     PERF_SUB_INDEX,      /* M21: building the batch's index list               */
+    /* M44 (PLAN.md 59): finer, for --pmc's per-function counts */
+    PERF_SUB_TEV,        /* gx_tev_apply (its binds are texbind)               */
+    PERF_SUB_VPDRAW,     /* fill_xf_desc + gx_vprog_draw: the variant, params  */
+    PERF_SUB_VPBIND,     /* gx_vprog_bind: the arrays and the parameters       */
+    PERF_SUB_ATTR,       /* begin_attr_order: a primitive's layout and plan    */
+    PERF_SUB_VCKEY,      /* vc_list_begin / vc_decide: the vertex cache's keys */
+    PERF_SUB_PRIM,       /* batch_prepare / batch_add / ring_claim / pal_place  */
+    PERF_SUB_JOBB,       /* rtdec_build: the render thread's job for a run      */
+    PERF_SUB_PEND,       /* decode_pending_last: the run's last vertex, here    */
+    PERF_SUB_JREC,       /* rt_decode_record: the job into the stream          */
+    PERF_SUB_FLUSH,      /* batch_flush's own work (a batch's submit, less the above) */
     PERF_SUB_N
 };
+/* M44: the sub-regions are entered only when something reads them (--gxsplit
+ * or --pmc): one load and a branch otherwise */
+extern int port_sub_on;
+#define PORT_SUB_ENTER(w)                                                                \
+    do {                                                                                 \
+        if (__builtin_expect(port_sub_on, 0)) {                                          \
+            port_perf_sub_enter(w);                                                      \
+        }                                                                                \
+    } while (0)
+#define PORT_SUB_LEAVE()                                                                 \
+    do {                                                                                 \
+        if (__builtin_expect(port_sub_on, 0)) {                                          \
+            port_perf_sub_leave();                                                       \
+        }                                                                                \
+    } while (0)
 void gx_tex_frame_decode_take(unsigned* n, unsigned* src_kb, unsigned* rgba_kb,
                               double* decode_ms, double* upload_ms, double* hash_ms,
                               unsigned* rekeys); /* M23 */
@@ -676,7 +719,9 @@ void port_perf_report(void);
 /* --pmc (M43), src/debug/pmc.c: the counters split by region, exclusive */
 enum {
     PMC_R_REST = 0, PMC_R_PRC, PMC_R_3DEXEC, PMC_R_SHADOW, PMC_R_MOTION, PMC_R_DRAW,
-    PMC_R_DRAWPOST, PMC_R_OBJMTX, PMC_R_GX, PMC_R_AUDIO, PMC_R_PRESENT, PMC_R_N
+    PMC_R_DRAWPOST, PMC_R_OBJMTX, PMC_R_GX, PMC_R_AUDIO, PMC_R_PRESENT,
+    PMC_R_GXSUB, /* M44: + PERF_SUB_*, the GX region's sub-regions */
+    PMC_R_N = PMC_R_GXSUB + 16
 };
 extern int pmc_on;
 void port_pmc_init(void);
