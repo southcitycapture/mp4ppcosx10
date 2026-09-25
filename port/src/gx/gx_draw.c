@@ -4205,11 +4205,14 @@ static u32 water_idx_push(u32 a, u32 b, u32 c) {
 typedef struct { u32 lo, hi, mid, gen; } WaterEdge;
 static WaterEdge* water_edge; /* allocated at the first full draw (1 MB) */
 static u32 water_gen;
+static int water_bits = 10; /* the edge table's size this draw: twice its edges, a power of two
+                               * (the table is touched only below it: a 1 MB table
+                               * probed at random was the full level's cost) */
 static u32 water_mid(u32 a, u32 b) {
     u32 lo = a < b ? a : b, hi = a < b ? b : a;
-    u32 h = (lo * 0x9E3779B1u ^ hi * 0x85EBCA6Bu) >> (32 - WEDGE_BITS);
+    u32 h = (lo * 0x9E3779B1u ^ hi * 0x85EBCA6Bu) >> (32 - water_bits);
     int probe;
-    for (probe = 0; probe < 64; probe++, h = (h + 1) & ((1u << WEDGE_BITS) - 1)) {
+    for (probe = 0; probe < 64; probe++, h = (h + 1) & ((1u << water_bits) - 1)) {
         if (water_edge[h].gen != water_gen) {
             u8* o;
             const u8* x;
@@ -4269,6 +4272,20 @@ static int water_expand(int n) {
         }
     }
     if (water_sub > 0) {
+        /* the edges a level-L subdivision makes: ~1.5 a triangle at each
+         * level, the triangles four times more each level down */
+        u32 tris = 0, edges = 0, t;
+        int lv;
+        for (i = 0; i < water_nsegs; i++) {
+            tris += water_segs[i].count;
+        }
+        for (lv = 0, t = tris; lv < water_sub; lv++, t *= 4) {
+            edges += t + t / 2 + 16;
+        }
+        water_bits = 10;
+        while (water_bits < WEDGE_BITS && (1u << water_bits) < 2 * edges) {
+            water_bits++;
+        }
         water_m = (u32)n;
         water_nidx = 0;
         water_gen++;

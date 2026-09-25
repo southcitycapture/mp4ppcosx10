@@ -612,6 +612,20 @@ void GXInitLightSpot(GXLightObj* o, f32 cutoff, GXSpotFn fn) {
      * lit the cave wall to wall. */
     GXLight* l = light_of(o);
     f32 a0, a1, a2, d, cr;
+    /* M44 (PLAN.md 59): the material walk re-inits the scene's lights with
+     * the same arguments per material; the last call's result, kept by its
+     * arguments' bits (the arithmetic is a function of them alone) */
+    static f32 m_cut, m_a[3];
+    static int m_fn = -1;
+    const int fn_in = (int)fn;
+    if (!port_opt.novpgen && m_fn == fn_in && memcmp(&m_cut, &cutoff, sizeof(f32)) == 0) {
+        l->a[0] = m_a[0];
+        l->a[1] = m_a[1];
+        l->a[2] = m_a[2];
+        return;
+    }
+    m_fn = -1;
+    memcpy(&m_cut, &cutoff, sizeof(f32));
     if (cutoff <= 0.0f || cutoff > 90.0f) {
         fn = GX_SP_OFF;
     }
@@ -640,11 +654,24 @@ void GXInitLightSpot(GXLightObj* o, f32 cutoff, GXSpotFn fn) {
     l->a[0] = a0;
     l->a[1] = a1;
     l->a[2] = a2;
+    m_a[0] = a0;
+    m_a[1] = a1;
+    m_a[2] = a2;
+    m_fn = fn_in; /* the argument as given: the memo's key */
 }
 void GXInitLightDistAttn(GXLightObj* o, f32 ref_distance, f32 ref_brightness,
                          GXDistAttnFn fn) {
     GXLight* l = light_of(o);
     f32 k0 = 1.0f, k1 = 0.0f, k2 = 0.0f;
+    static f32 m_in[2], m_k[3]; /* M44: the last call's, by its arguments' bits */
+    static int m_fn = -1;
+    if (!port_opt.novpgen && m_fn == (int)fn && memcmp(&m_in[0], &ref_distance, 4) == 0 &&
+        memcmp(&m_in[1], &ref_brightness, 4) == 0) {
+        l->k[0] = m_k[0];
+        l->k[1] = m_k[1];
+        l->k[2] = m_k[2];
+        return;
+    }
     if (fn != GX_DA_OFF && ref_distance > 0.0f && ref_brightness > 0.0f &&
         ref_brightness < 1.0f) {
         f32 t = (1.0f - ref_brightness) / ref_brightness;
@@ -660,6 +687,12 @@ void GXInitLightDistAttn(GXLightObj* o, f32 ref_distance, f32 ref_brightness,
     l->k[0] = k0;
     l->k[1] = k1;
     l->k[2] = k2;
+    memcpy(&m_in[0], &ref_distance, 4);
+    memcpy(&m_in[1], &ref_brightness, 4);
+    m_k[0] = k0;
+    m_k[1] = k1;
+    m_k[2] = k2;
+    m_fn = (int)fn;
 }
 /* M21: exactly the SDK's GXLight.c.  The light's *direction* becomes the
  * half-angle vector between the light and the viewer (0,0,1), which is what
@@ -672,8 +705,22 @@ void GXInitLightDistAttn(GXLightObj* o, f32 ref_distance, f32 ref_brightness,
 void GXInitSpecularDir(GXLightObj* o, f32 x, f32 y, f32 z) {
     GXLight* l = light_of(o);
     f32 vx = -x, vy = -y, vz = -z + 1.0f;
-    f32 mag = vx * vx + vy * vy + vz * vz;
-    mag = mag > 0.0f ? 1.0f / sqrtf(mag) : 0.0f;
+    f32 mag;
+    static f32 m_in[3], m_mag; /* M44: the square root, by the direction's bits */
+    static int m_ok;
+    f32 in3[3];
+    in3[0] = x;
+    in3[1] = y;
+    in3[2] = z;
+    if (!port_opt.novpgen && m_ok && memcmp(m_in, in3, sizeof(in3)) == 0) {
+        mag = m_mag;
+    } else {
+        mag = vx * vx + vy * vy + vz * vz;
+        mag = mag > 0.0f ? 1.0f / sqrtf(mag) : 0.0f;
+        memcpy(m_in, in3, sizeof(in3));
+        m_mag = mag;
+        m_ok = 1;
+    }
     l->dir[0] = vx * mag;
     l->dir[1] = vy * mag;
     l->dir[2] = vz * mag;

@@ -45,22 +45,25 @@ unsigned gl13_frame_number(void);
 
 static unsigned long stat_draws, stat_verts, stat_warps, stat_refused[6];
 
-/* The level for the screen in hand.  The table is the reference class's:
- * each warped screen's level measured on the G4 (PLAN.md 59.x); a faster
- * machine draws every one at full, a machine below the reference at off. */
+/* The level for the screen in hand on the reference class (a dual 1 GHz G4
+ * with a Radeon 9000): each warped screen measured at the three levels on
+ * the G4 (PLAN.md 59.7, tools/m44_water_cost.py), the level whose cost its
+ * cycle holds under 30 fps with a margin.  m430 has no room (its cheap level
+ * is +2.1 ms on a cycle already at the bar); m423's full level costs 0.2 ms;
+ * m442, m455 and m456 warp by an EFB copy the CPU has no bytes for, so their
+ * level changes nothing.  A faster machine draws every one full, a machine
+ * below the reference none. */
 static int level_table(int mg) {
     switch (mg) {
-        case 417: /* Makin' Waves: the ripple */
-        case 405: /* Mario Medley: the caustic */
-        case 434: /* the pond */
-        case 410:
-        case 423:
-        case 427:
-        case 430:
-        case 442:
-        case 455:
-        case 456:
-            return GX_WATER_CHEAP;
+        case 430: /* the rafts' river: no room */
+            return GX_WATER_OFF;
+        case 423: /* the lamp's water: full costs 0.2 ms */
+            return GX_WATER_FULL;
+        case 417: /* Makin' Waves: the ripple (+2.0 ms cheap, +13 ms full) */
+        case 405: /* Mario Medley: the caustic (+2.4 / +9.8) */
+        case 434: /* Cheep Cheep Sweep's pond: the caustic (the reflection's warp is refused) */
+        case 410: /* (+0.0 / +0.6) */
+        case 427: /* (+5.4 / +10.9) */
         default:
             return GX_WATER_CHEAP;
     }
