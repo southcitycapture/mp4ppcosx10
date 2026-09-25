@@ -1,0 +1,9 @@
+# m43 chain start Thu Sep 24 23:41:09 EDT 2026  isle md5 8f26385a939eea4586a4baca59f36c60
+N EXIT=0 wall=205s fault=0 isle=8f26385a md5 800:0b58c5ee 3000:2b99c60a 7000:4a9a640c args='--com4 --rtc dolphin --freshcard --noconfig --status --ovllog --perf --dumpframe 800,3000,7000 --turbo --play board-start-com4.play --frames 9000 --nomovies'
+M EXIT=0 wall=205s fault=0 isle=8f26385a md5 800:d2d40344 3000:59008ce4 7000:3f98f882 args='--com4 --rtc dolphin --freshcard --noconfig --status --ovllog --perf --dumpframe 800,3000,7000 --turbo --play board-start-com4.play --frames 9000'
+A-b5-old-1 EXIT=0 wall=76s fault=0 isle=9b8597a5 md5 args='--com4 --rtc dolphin --freshcard --noconfig --perf --status --ovllog --play board-start-com4.play --nomovies --realtime --board 5 --ffto 7808 --frames 10508'
+A-b5-base-1 EXIT=0 wall=75s fault=0 isle=8f26385a md5 args='--com4 --rtc dolphin --freshcard --noconfig --perf --status --ovllog --play board-start-com4.play --nomovies --realtime --board 5 --ffto 7808 --frames 10508'
+A-b5-old-2 EXIT=0 wall=75s fault=0 isle=9b8597a5 md5 args='--com4 --rtc dolphin --freshcard --noconfig --perf --status --ovllog --play board-start-com4.play --nomovies --realtime --board 5 --ffto 7808 --frames 10508'
+A-b5-base-2 EXIT=0 wall=76s fault=0 isle=8f26385a md5 args='--com4 --rtc dolphin --freshcard --noconfig --perf --status --ovllog --play board-start-com4.play --nomovies --realtime --board 5 --ffto 7808 --frames 10508'
+A-b5-old-3 EXIT=0 wall=76s fault=0 isle=9b8597a5 md5 args='--com4 --rtc dolphin --freshcard --noconfig --perf --status --ovllog --play board-start-com4.play --nomovies --realtime --board 5 --ffto 7808 --frames 10508'
+A-b5-base-3 EXIT=0 wall=76s fault=0 isle=8f26385a md5 args='--com4 --rtc dolphin --freshcard --noconfig --perf --status --ovllog --play board-start-com4.play --nomovies --realtime --board 5 --ffto 7808 --frames 10508'

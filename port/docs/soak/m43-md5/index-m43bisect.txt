@@ -1,0 +1,26 @@
+# m43 chain start Thu Sep 24 23:05:12 EDT 2026  isle md5 f4a925feeb4e35e8a739772ff8aae92b
+N EXIT=0 wall=209s fault=0 isle=f4a925fe md5 800:0b58c5ee 3000:2b99c60a 7000:4a9a640c args='--com4 --rtc dolphin --freshcard --noconfig --status --ovllog --perf --dumpframe 800,3000,7000 --turbo --play board-start-com4.play --frames 9000 --nomovies'
+M EXIT=0 wall=209s fault=0 isle=f4a925fe md5 800:d2d40344 3000:59008ce4 7000:3f98f882 args='--com4 --rtc dolphin --freshcard --noconfig --status --ovllog --perf --dumpframe 800,3000,7000 --turbo --play board-start-com4.play --frames 9000'
+A-b5-old-1 EXIT=0 wall=76s fault=0 isle=9b8597a5 md5 args='--com4 --rtc dolphin --freshcard --noconfig --perf --status --ovllog --play board-start-com4.play --nomovies --realtime --board 5 --ffto 7808 --frames 10508'
+A-b5-base-1 EXIT=0 wall=76s fault=0 isle=f4a925fe md5 args='--com4 --rtc dolphin --freshcard --noconfig --perf --status --ovllog --play board-start-com4.play --nomovies --realtime --board 5 --ffto 7808 --frames 10508'
+A-b5-@m43j-1 EXIT=0 wall=76s fault=0 isle=f4a925fe md5 args='--com4 --rtc dolphin --freshcard --noconfig --perf --status --ovllog --play board-start-com4.play --nomovies --realtime --board 5 --ffto 7808 --frames 10508'
+A-b5-old-2 EXIT=0 wall=75s fault=0 isle=9b8597a5 md5 args='--com4 --rtc dolphin --freshcard --noconfig --perf --status --ovllog --play board-start-com4.play --nomovies --realtime --board 5 --ffto 7808 --frames 10508'
+A-b5-base-2 EXIT=0 wall=75s fault=0 isle=f4a925fe md5 args='--com4 --rtc dolphin --freshcard --noconfig --perf --status --ovllog --play board-start-com4.play --nomovies --realtime --board 5 --ffto 7808 --frames 10508'
+A-b5-@m43j-2 EXIT=0 wall=76s fault=0 isle=f4a925fe md5 args='--com4 --rtc dolphin --freshcard --noconfig --perf --status --ovllog --play board-start-com4.play --nomovies --realtime --board 5 --ffto 7808 --frames 10508'
+A-b5-old-3 EXIT=0 wall=76s fault=0 isle=9b8597a5 md5 args='--com4 --rtc dolphin --freshcard --noconfig --perf --status --ovllog --play board-start-com4.play --nomovies --realtime --board 5 --ffto 7808 --frames 10508'
+A-b5-base-3 EXIT=0 wall=76s fault=0 isle=f4a925fe md5 args='--com4 --rtc dolphin --freshcard --noconfig --perf --status --ovllog --play board-start-com4.play --nomovies --realtime --board 5 --ffto 7808 --frames 10508'
+A-b5-@m43j-3 EXIT=0 wall=76s fault=0 isle=f4a925fe md5 args='--com4 --rtc dolphin --freshcard --noconfig --perf --status --ovllog --play board-start-com4.play --nomovies --realtime --board 5 --ffto 7808 --frames 10508'
+A-m406-base-1 EXIT=0 wall=100s fault=0 isle=f4a925fe md5 args='--com4 --rtc dolphin --freshcard --noconfig --perf --status --ovllog --play board-start-com4.play --nomovies --realtime --minigame m406 --turns 1 --ffto 14000 --frames 20000 --mgend 1800'
+A-m406-@m43j-1 EXIT=0 wall=101s fault=0 isle=f4a925fe md5 args='--com4 --rtc dolphin --freshcard --noconfig --perf --status --ovllog --play board-start-com4.play --nomovies --realtime --minigame m406 --turns 1 --ffto 14000 --frames 20000 --mgend 1800'
+A-m412-base-1 EXIT=0 wall=60s fault=0 isle=f4a925fe md5 args='--com4 --rtc dolphin --freshcard --noconfig --perf --status --ovllog --play board-start-com4.play --nomovies --realtime --minigame m412 --turns 1 --ffto 14000 --frames 20000 --mgend 1800'
+# m43 chain start Thu Sep 24 23:29:53 EDT 2026  isle md5 f4a925feeb4e35e8a739772ff8aae92b
+A-m412-@m43j-1 EXIT=0 wall=106s fault=0 isle=f4a925fe md5 args='--com4 --rtc dolphin --freshcard --noconfig --perf --status --ovllog --play board-start-com4.play --nomovies --realtime --minigame m412 --turns 1 --ffto 14000 --frames 20000 --mgend 1800'
+DONE
+SA-b5-old EXIT=0 wall=96s fault=0 isle=f4a925fe md5 args='--com4 --rtc dolphin --freshcard --noconfig --perf --status --ovllog --play board-start-com4.play --nomovies --realtime --board 5 --ffto 7808 --frames 10508'
+SA-b5-base EXIT=0 wall=75s fault=0 isle=f4a925fe md5 args='--com4 --rtc dolphin --freshcard --noconfig --perf --status --ovllog --play board-start-com4.play --nomovies --realtime --board 5 --ffto 7808 --frames 10508'
+DONE
+# m412 pair and SA runs void (two chains overlapped)
+# m43 chain start Thu Sep 24 23:35:03 EDT 2026  isle md5 f4a925feeb4e35e8a739772ff8aae92b
+SA-b5-old EXIT=0 wall=83s fault=0 isle=9b8597a5 md5 args='--com4 --rtc dolphin --freshcard --noconfig --perf --status --ovllog --play board-start-com4.play --nomovies --realtime --board 5 --ffto 7808 --frames 10508'
+SA-b5-base EXIT=0 wall=83s fault=0 isle=f4a925fe md5 args='--com4 --rtc dolphin --freshcard --noconfig --perf --status --ovllog --play board-start-com4.play --nomovies --realtime --board 5 --ffto 7808 --frames 10508'
+DONE
