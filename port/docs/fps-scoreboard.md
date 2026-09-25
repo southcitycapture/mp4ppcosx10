@@ -92,3 +92,10 @@ Per drawn frame (medians): the game thread's work and its decode share (gdec); t
 | ztardll | 30 | 30.0 | 1 run | 30.0 | 100.0% | 2.1 / 0.0 | 0.7 | 1.5 | 0.1 | 44 | 1330 | 586 | 0% | PASS |
 | m447dll | 30 | 30.0 | 1 run | 30.0 | 100.0% | 9.6 / 0.0 | 2.6 | 8.6 | 4.2 | 115 | 31846 | 1549 | 0% | PASS |
 | m451dll | 30 | 30.0 | 1 run | 30.0 | 100.0% | 4.3 / 0.0 | 1.1 | 4.1 | 0.7 | 91 | 6060 | 1336 | 0% | PASS |
+
+Notes (PLAN.md 58.11):
+
+* **w01dll** is judged, as since M40, on every w01 status line of the chain pooled (208 lines, median 29.1). Board-only -- less the 101 lines whose second overlaps the first second after a minigame teleport's fast-forward hands back to real time (their median 6.8) -- it is 107 lines at a median of 30.0 (the `front` walk's 64, the `b1` run's 43; `tools/m43_w01.py`). The rule is the user's and is unchanged: w01 is short.
+* Four of M42's short screens pass: m404 28.0 → 30.0, m410 28.5 → 30.0, w05 29.2 → 30.0, m418 28.9 → 30.0. None of M42's passes is lost.
+* The dumped frames (+300 and +1,200 of every minigame): 158 of 162 byte-identical to M42's chain; the four others are m415 and m416, the two games that copy the screen, whose real-time frames depend on pacing, as in M42.
+* The build: `isle` `8f44dcbb` (the fourth M43 build); the shipped 0.9.12 `isle` `d14e4637` is the same code with the tier line's "68 of 82". Both walks byte-exact on both.
