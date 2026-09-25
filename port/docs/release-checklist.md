@@ -84,7 +84,7 @@ game-bound with room on the render thread (m432, m424, w05, m410, m404);
 six are at the bar on their tails (m429, m463, m407, m415, w01, m438). All
 82 at 100% game speed.
 
-**Where M42 left it** (0.9.11, `docs/fps-scoreboard.md`; M41's kept as
+**Where M42 left it** (0.9.11, `docs/fps-scoreboard-m42-after.md`; M41's kept as
 `docs/fps-scoreboard-m41-after.md`; PLAN.md 57): **64 of 82 screens pass**,
 none of M41's passes lost. The scoreboard now runs a screen that lands
 within 2 fps of the bar three times and judges it by the median of the
@@ -102,6 +102,25 @@ on a heavy phase; w01 is 29.2 by the pooled rule (its own runs are 30.0;
 the ~110 board frames inside the minigame teleports' hand-overs pull it
 under -- whether they count is the user's call). All 82 at 100% game
 speed.
+
+**Where M43 left it** (0.9.12, `docs/fps-scoreboard.md`; M42's kept as
+`docs/fps-scoreboard-m42-after.md`; PLAN.md 58): **68 of 82 screens pass**,
+none of M42's passes lost. Crossed the bar: m404 Trace Race 28.0 → 30.0,
+m410 28.5 → 30.0, w05 Koopa's Seaside Soirée 29.2 → 30.0, m418 28.9 →
+30.0 (the morph rewriters' precise join, the unread-TEX0 decode shapes,
+the texture stripes' buffer pool, the write barrier on arrays' partial
+pages -- all exact, both walks byte for byte). The translation on the
+render thread (`--rtgx`) is built, exact and measured, and ships off: the
+render thread pays more for it than the game thread saves. The compiler
+(PGO, `-O3` on the hot files, LTO) measured level and ships as it was.
+**The line is not met.** The 14 still short (PLAN.md 58.12): m441 24.0 and
+m431 26.1 over both cores' budget; m401 26.2, m436 27.1, m433 27.6, m435
+28.1, m409 28.2, m414 28.9, the character select 28.9, w04 29.0 and m444
+29.1 game-bound (the engine's own walks: 12-14 M instructions a drawn
+frame at under half an instruction a cycle, a fifth of the cycles waiting
+on memory -- PLAN.md 58.4); m463 28.3 and m438 28.9 short on a phase of
+vertex-animated geometry; w01 29.1 by the pooled rule (30.0 on its own
+board frames). All 82 at 100% game speed.
 
 ## Done
 
@@ -123,7 +142,7 @@ speed.
 | item | what a player sees | why it ships |
 |---|---|---|
 | the pools' ripple (m405 Mario Medley, m417 Makin' Waves, m434 Cheep Cheep Sweep) | a flat tint where the console ripples the water; m405's water grey-green | the ripple is GX's indirect warp, which the Radeon 9000's fixed-function pipeline cannot do. A fragment-shader path (`--tfs`, `GL_ATI_text_fragment_shader`) is built and off: on the Leopard ATI driver its `SampleMap` returns a constant on one-texture draws and white on m434's copies while the coordinates and colours reach the program right (§50.14, §52.8 — the driver finding). Nothing on the port's side is left to try without a different driver |
-| the character select at ~27 fps (0.9.10; 26 in 0.9.9, ~23 in 0.9.8) | one of 23 screens below the 30 cap (the v1.0 line above) | M41 (PLAN.md 56.7): its game thread's cycle is 34.4 ms (a drawn frame 30.4 + a consumed 4.0) against 33.3, the render thread's 31.4 -- 65.8 ms on the two cores against a 66.7 budget, so no split of the work reaches 30; the eight breathing characters are two thirds of its 75,600 vertices a frame and cannot be cached (skinned every frame). M33's split, M37's batch enders, M40's cache and M41's concat and loops took it 20 → 23 → 26 → 27. The game's speed there is the console's; only the picture rate is lower |
+| the character select at ~29 fps (28.9 in 0.9.12; ~27 in 0.9.10, 26 in 0.9.9, ~23 in 0.9.8) | one of 14 screens below the 30 cap (the v1.0 line above) | M43 (PLAN.md 58.12): the unread-TEX0 decode shapes took its drawn frame 29.7 → 28.3 ms; its game thread's cycle is 31.8 ms, the render thread's 29.1 -- 60.9 ms of a 66.7 budget, the game thread's walks the wall. M41 (PLAN.md 56.7): its game thread's cycle is 34.4 ms (a drawn frame 30.4 + a consumed 4.0) against 33.3, the render thread's 31.4 -- 65.8 ms on the two cores against a 66.7 budget, so no split of the work reaches 30; the eight breathing characters are two thirds of its 75,600 vertices a frame and cannot be cached (skinned every frame). M33's split, M37's batch enders, M40's cache and M41's concat and loops took it 20 → 23 → 26 → 27. The game's speed there is the console's; only the picture rate is lower |
 | controllers 3 and 4 | untested | wired the same way as 2 (§49.8: every Xbox One pad claimed, every SDL joystick opened, ports in order); there is one pad in the house |
 | one memory card | slot A only; slot B is always empty | the game needs one card; a second would be a second image file and nobody has asked |
 | one-CPU Macs and the movies | on one processor, Stamp Out! (m415) falls to about 13 frames a second and 94% of the console's speed, with one-second catch-ups and the sound breaking up (285 underruns in its minigame) | Stamp Out! reads its own picture back to paint with (§20's canvas copy reads), and on one CPU the game thread also replays the render thread's work. The same minigame on two CPUs: 20 fps, 100.6%, 0 underruns. It is **not** the movies: §54.2's A/B found 0 underruns in every movie on one CPU; the extra underruns M38 blamed on them were this minigame, which the movies' schedule deals where `--nomovies` deals m412. The reference machine has two CPUs; the Read Me says what one gets |

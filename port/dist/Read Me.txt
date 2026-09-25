@@ -1,6 +1,6 @@
 Mario Party 4 PowerPC Edition
 =============================
-Version 0.9.11
+Version 0.9.12
 
 
 WHAT THIS IS
@@ -244,20 +244,25 @@ an hour on the reference machine; the project's notes, PLAN.md section 55,
 have what 0.9.9 measured.)
 
 Not every screen reaches 30 frames a second yet on the reference machine:
-64 of the 82 screens measured do; the character select runs at about 27
-frames a second, Boo's and Koopa's boards at about 28 and 29, and 14 of
-the 63 minigames between 24 and 29.5 (Butterfly Blitz and Order Up the
-slowest, at about 24 and 25).  The game's own speed is the console's
-everywhere; only the picture is slower there.  0.9.11 took Dungeon Duos
-from about 26 frames a second to 30 and Koopa's board from about 27 to 29
-(the port no longer re-reads a level's unchanging geometry every frame to
-check it has not changed: the processor's memory protection tells it
-instead), and a screen at the edge is now measured three times rather
-than once.  0.9.10 took Trace Race and Stamp Out! from about 16 frames a
-second to 28-30 (the canvases they paint are now redrawn only where they
-changed) and Archaeologuess to 30 (its six-lamp rooms are lit on the
-graphics card); Right Oar Left?'s boat lamps now light the water in front
-of the boats, as on the console.
+68 of the 82 screens measured do; the character select runs at about 29
+frames a second, Boo's board at about 29 (Toad's just under 30 by the
+scoreboard's strict count), and 11 of the 63 minigames between 24 and 29.5
+(Butterfly Blitz and Order Up the slowest, at about 24 and 26).  The
+game's own speed is the console's everywhere; only the picture is slower
+there.  0.9.12 took Trace Race, Koopa's board and two more minigames to 30
+and most of the slower screens up by one or two frames a second (the port
+now waits only for the parts of a model the game is about to reshape,
+skips texture work nobody reads, and lets the memory protection watch
+small pieces of geometry too).  0.9.11 took Dungeon Duos from about 26
+frames a second to 30 and Koopa's board from about 27 to 29 (the port no
+longer re-reads a level's unchanging geometry every frame to check it has
+not changed: the processor's memory protection tells it instead), and a
+screen at the edge is now measured three times rather than once.  0.9.10
+took Trace Race and Stamp Out! from about 16 frames a second to 28-30 (the
+canvases they paint are now redrawn only where they changed) and
+Archaeologuess to 30 (its six-lamp rooms are lit on the graphics card);
+Right Oar Left?'s boat lamps now light the water in front of the boats, as
+on the console.
 
 On a single-processor G4 the heaviest minigames fall behind the
 console's speed -- Stamp Out!, which reads its own picture back to
