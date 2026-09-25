@@ -330,8 +330,9 @@ struct GxXfDesc;
 enum { RTGX_F_INVALIDATE = 1, RTGX_F_ACTIVE, RTGX_F_CLIENT_ACTIVE, RTGX_F_BIND, RTGX_F_NOTE_BIND,
        RTGX_F_ENABLE2D, RTGX_F_TEXMTX, RTGX_F_TEXMTX_FOLD, RTGX_F_VP_DISABLE, RTGX_F_VP_FORGET };
 extern int rtgx_owner_rt;
-void rtgx_fwd(int op, int a, int b, float x, float y, float z);
-void rtgx_unexpected(const char* who);
+void rtgx_fwd(int op, int a, int b, float x, float y, float z) __attribute__((cold, noinline));
+void rtgx_unexpected(const char* who) __attribute__((cold, noinline));
+extern int rtgx_frame_on; /* M43: this drawn frame's batches are the render thread's */
 int gx_rtgx_batch(void);
 void gx_rtgx_release(void);
 int gx_rtgx_frame_on(void);

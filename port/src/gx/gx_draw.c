@@ -1068,6 +1068,8 @@ static int dec_clr_op_of(u8 type) {
 /* Called at the end of begin_attr_order(), once everything it settles is in
  * hand: the layout, the texgen sources, and which colour wins. */
 typedef const u8* (*DecodeFast)(const u8*, const u8*, u32);
+static int plan_fast_idx = -1; /* M43: fast_index_of(plan_fast), kept with it */
+static int fast_index_of(DecodeFast f);
 static DecodeFast pick_fast(void);
 static DecodeFast plan_fast;
 
@@ -1217,6 +1219,7 @@ static void build_decode_plan(void) {
         }
     }
     plan_fast = pick_fast();
+    plan_fast_idx = plan_fast ? fast_index_of(plan_fast) : -1; /* M43: once a plan, not once a primitive */
 }
 
 static void transform_and_store(void);
@@ -2008,7 +2011,7 @@ void GXBegin(GXPrimitive type, GXVtxFmt fmt, u16 n) {
         dl_u16(n);
         return;
     }
-    if (port_opt.vcarr_to && !gl13_draw_off()) {
+    if (__builtin_expect(port_opt.vcarr_to != 0, 0) && !gl13_draw_off()) {
         gx_vcarr_imm(n);
     }
     prim = (u8)type;
@@ -3591,7 +3594,11 @@ static int draw_apply(const u8* s, int n, int in_ring) {
     int on_gpu = 0;
     /* M43 (--rtgx, gx_rtgx.c): this batch's translation is the render
      * thread's -- the shadow handed over (or taken back) first */
-    int rtgx = (rtgx_owner_rt || gx_rtgx_frame_on()) ? gx_rtgx_batch() : 0;
+#ifndef PORT_NO_RTGX
+    int rtgx = __builtin_expect(rtgx_owner_rt | rtgx_frame_on, 0) ? gx_rtgx_batch() : 0;
+#else
+    const int rtgx = 0;
+#endif
     double tg0 = 0.0;
     if (!port_opt.nounitmemo) {
         gx_unit_memo(1); /* M41: closed below, before the return */
@@ -3677,7 +3684,7 @@ static int draw_apply(const u8* s, int n, int in_ring) {
             port_log("port> probeobj: frame %u model %d name \"%s\" (%d verts)\n", fr, mdl, nm ? nm : "(null)", n);
         }
     }
-    if (rtgx) {
+    if (__builtin_expect(rtgx, 0)) {
         /* M43: the binds here (the texture cache reads the game's memory);
          * the transform, the raster state, the units, the colour sum, the
          * program's parameters and the arrays on the render thread, from the
@@ -3697,7 +3704,7 @@ static int draw_apply(const u8* s, int n, int in_ring) {
         }
         return on_gpu;
     }
-    if (port_opt.rtgx == 2) {
+    if (__builtin_expect(port_opt.rtgx == 2, 0)) {
         tg0 = port_now_seconds(); /* M43: the auto's estimate of what would move */
     }
     gl13_apply_transform();
@@ -4005,7 +4012,7 @@ static void draw_issue(const u8* s, int n, const Seg* segs, int nsegs, int in_ri
             biased[i] = segs[i];
             biased[i].first += bias;
         }
-        if (rtgx_owner_rt) {
+        if (__builtin_expect(rtgx_owner_rt, 0)) {
             /* M43: the render thread's shadow decides (gx_rtgx.c) */
             if (gx_rtgx_zp_maybe()) {
                 gx_rtgx_zp_begin();
@@ -4020,7 +4027,7 @@ static void draw_issue(const u8* s, int n, const Seg* segs, int nsegs, int in_ri
         }
         issue_segments(biased, nsegs);
     } else {
-        if (rtgx_owner_rt) {
+        if (__builtin_expect(rtgx_owner_rt, 0)) {
             if (gx_rtgx_zp_maybe()) {
                 gx_rtgx_zp_begin();
                 issue_segments(segs, nsegs);
@@ -5388,7 +5395,7 @@ static int rtdec_build(GxDecJob* j, const u8* p, const u8* end, u32 count) {
     j->clr_const = plan_clr_const;
     j->clr = plan_clr.u;
     j->prefetch = !port_opt.nodcbt;
-    j->fast = plan_fast ? fast_index_of(plan_fast) : -1;
+    j->fast = plan_fast_idx;
     /* M43: why a run is the general walker's, by vertices (the report's) */
     dec_why_verts[j->fast >= 0 ? 15 : plan_fast ? 14 : pick_why] += count;
     if (plan_fast && j->fast < 0) {
@@ -5910,7 +5917,7 @@ static int vc_eligible(u32 count) {
     if (!plan_ok || port_opt.olddecode || sl.off_skin >= 0 || pi.skin || premerge_on ||
         palette_on || port_opt.decodestats || nplan > GX_MAX_ATTR ||
         plan_nfill > GX_DEC_FILL_MAX || count == 0 || count >= MAX_VERTS || sl.stride <= 0 ||
-        (plan_fast && fast_index_of(plan_fast) < 0)) {
+        (plan_fast && plan_fast_idx < 0)) {
         return 0;
     }
     for (k = 0; k < nplan; k++) {
@@ -5947,7 +5954,7 @@ static void vc_plan_hash(u32 count, u8 op, u32* h1, u32* h2) {
     *w++ = (u32)plan_clr_const;
     *w++ = plan_clr_const ? plan_clr.u : 0;
     *w++ = (u32)nplan | ((u32)plan_nfill << 8) | ((u32)vtxfmt << 16) | ((u32)op << 24);
-    *w++ = (u32)fast_index_of(plan_fast);
+    *w++ = (u32)plan_fast_idx;
     *w++ = count;
     *w++ = (u32)sl.stride;
     *w++ = (u32)sl.off_nrm;
@@ -5976,7 +5983,7 @@ static void job_fill(GxDecJob* j, const u8* p, const u8* end, u32 count) {
     j->clr_const = plan_clr_const;
     j->clr = plan_clr.u;
     j->prefetch = !port_opt.nodcbt;
-    j->fast = plan_fast ? fast_index_of(plan_fast) : -1;
+    j->fast = plan_fast_idx;
     j->nplan = nplan;
     memcpy(j->plan, plan, (size_t)nplan * sizeof(DecStep));
     j->nfill = plan_nfill;
@@ -6574,7 +6581,7 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
                 vc_run = vc_decide(vce, vci++, p, end, count, op);
             }
         }
-        if (port_opt.vcarr_to && vcarr_in_window()) {
+        if (__builtin_expect(port_opt.vcarr_to != 0, 0) && vcarr_in_window()) {
             vcarr_note(list, nbytes, count, vce ? vc_reason : vc_list_off_why, vc_reason_arr);
         }
         if (vc_run) {

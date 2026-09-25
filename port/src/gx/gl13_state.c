@@ -135,17 +135,17 @@ extern unsigned glc_white_name_shared;
  * -- are not made here: they go into the stream as calls to the render
  * thread's instance, in order (GLC_FWD).  The render thread's instance never
  * forwards. */
-#ifndef GX_RTI
+#if !defined(GX_RTI) && !defined(PORT_NO_RTGX)
 #define GLC_FWD(op, a, b, x, y, z)                                                            \
     do {                                                                                      \
-        if (rtgx_owner_rt) {                                                                  \
+        if (__builtin_expect(rtgx_owner_rt, 0)) {                                             \
             rtgx_fwd(op, a, b, x, y, z);                                                      \
             return;                                                                           \
         }                                                                                     \
     } while (0)
 #define GLC_OWNED(who)                                                                        \
     do {                                                                                      \
-        if (rtgx_owner_rt) {                                                                  \
+        if (__builtin_expect(rtgx_owner_rt, 0)) {                                             \
             rtgx_unexpected(who);                                                             \
         }                                                                                     \
     } while (0)

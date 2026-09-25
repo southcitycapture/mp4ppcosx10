@@ -1071,8 +1071,8 @@ static VpVariant* vp_lookup(const VpKey* k) {
     v->id = id;
     v->ok = 1;
     vp_bound = id;
-#ifndef GX_RTI
-    if (rtgx_owner_rt) {
+#if !defined(GX_RTI) && !defined(PORT_NO_RTGX)
+    if (__builtin_expect(rtgx_owner_rt, 0)) {
         rtgx_fwd(RTGX_F_VP_FORGET, 0, 0, 0, 0, 0); /* the compile bound it there */
     }
 #endif
@@ -1118,8 +1118,8 @@ void gx_vprog_forget_bound(void) {
 }
 
 void gx_vprog_disable(void) {
-#ifndef GX_RTI
-    if (rtgx_owner_rt) {
+#if !defined(GX_RTI) && !defined(PORT_NO_RTGX)
+    if (__builtin_expect(rtgx_owner_rt, 0)) {
         rtgx_fwd(RTGX_F_VP_DISABLE, 0, 0, 0, 0, 0);
         return;
     }

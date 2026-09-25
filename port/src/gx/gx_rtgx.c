@@ -140,7 +140,8 @@ int rti_tex_bind_tiled_refused(int unit, GXTexObjPort* sheet, GXTexObjPort* map,
 
 /* ---- the game thread's side ------------------------------------------------ */
 int rtgx_owner_rt;          /* the render thread's shadow describes GL at the stream's end */
-static int frame_on;        /* this drawn frame's batches are the render thread's          */
+int rtgx_frame_on;          /* this drawn frame's batches are the render thread's          */
+#define frame_on rtgx_frame_on
 static int mode_resolved = -1;
 static GXState gx_sent;     /* the replica, as the records built it                        */
 static unsigned long st_rt_batches, st_game_batches, st_to_rt, st_to_game, st_fwd,

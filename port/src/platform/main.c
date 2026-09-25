@@ -339,7 +339,8 @@ static void usage(const char* argv0) {
             "                    (MTXRotRad + MTXConcat), not the sparse left product\n"
             "  --notexskip       M43: decode jobs with an unread TEX0 go to the general walker\n"
             "  --nostripepool    M43: the texture stripes allocate their buffers per update\n"
-            "  --wbpart          M43: the write barrier arms an array's partial end pages too\n"
+            "  --nowbpart        M43: the write barrier arms only the pages wholly inside an\n"
+            "                    array (M42's), not its partial end pages (the default since M43)\n"
             "  --oldvtxjoin      M43: the morph rewriters wait for the whole decode stream (M29)\n"
             "  --rtgx 0|1|auto   M43: the GX state translation on the render thread (the\n"
             "                    game thread records GX state; PLAN.md 58.2); auto per frame\n"
@@ -745,7 +746,8 @@ int port_parse_args(int argc, char** argv) {
     port_opt.resample4 = 0;
     port_opt.vcache = 3;    /* M40: the static-geometry cache, auto (PLAN.md 55) */
     port_opt.vcache_fit = 28.0;
-    port_opt.rtgx = 0;       /* M43: the render thread's translation, off until the A/B */
+    port_opt.rtgx = 0;       /* M43: the render thread's translation: measured, off (PLAN.md 58.2) */
+    port_opt.wbpart = 1;     /* M43: the barrier on the partial end pages too (PLAN.md 58.4, 58.10) */
     port_opt.rtgx_fit = 29.0;
     port_opt.vcache_mb = 8;
     port_opt.resident = -1; /* M36: the resident set's budget by the installed RAM (machine.c) */
@@ -1269,6 +1271,8 @@ int port_parse_args(int argc, char** argv) {
             port_opt.nostripepool = 1;
         } else if (!strcmp(a, "--wbpart")) {
             port_opt.wbpart = 1;
+        } else if (!strcmp(a, "--nowbpart")) {
+            port_opt.wbpart = 0;
         } else if (!strcmp(a, "--oldvtxjoin")) {
             port_opt.oldvtxjoin = 1;
         } else if (!strcmp(a, "--rtgx") && i + 1 < argc) {

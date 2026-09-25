@@ -56,6 +56,12 @@
 
 static u8* region; /* [ guard | stack | guard | MEM1 | guard ], one 4 GB window */
 static u8* mem1;
+#ifndef PORT_MEM1_ALIGN
+#define PORT_MEM1_ALIGN 0x100000u /* M43: MEM1's base alignment (1 MB) ... */
+#endif
+#ifndef PORT_MEM1_ALIGN_OFF
+#define PORT_MEM1_ALIGN_OFF 0x70000u /* ... and offset: 0.9.11's low bits (0x3570000) */
+#endif
 static u8* aram;
 static void* arena_lo;
 static void* arena_hi;
@@ -166,9 +172,23 @@ void port_mem_init(void) {
     u8* stack_lo;
     u8* aram_map;
 
-    region = mmap(NULL, total, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
-    if (region == MAP_FAILED) {
-        port_fatal("cannot map %zu bytes for the game stack + MEM1", total);
+    /* M43 (PLAN.md 58.10): MEM1's base at a fixed alignment and offset, not
+     * wherever the kernel's first fit puts it -- the game's hot pages'
+     * placement in the 7455's translation lookaside buffer follows the base,
+     * and the base followed the size of the binary's own data (0x3570000 in
+     * 0.9.11, 0x359a000 once M43's statics grew it: m432's game thread 0.9 ms
+     * slower).  The mapping is over-sized by two alignments and the unused
+     * head stays mapped (a megabyte or two, never touched). */
+    {
+        u8* raw = (u8*)mmap(NULL, total + 2 * (size_t)PORT_MEM1_ALIGN, PROT_READ | PROT_WRITE,
+                            MAP_PRIVATE | MAP_ANON, -1, 0);
+        uintptr_t m;
+        if (raw == (u8*)MAP_FAILED) {
+            port_fatal("cannot map %zu bytes for the game stack + MEM1", total);
+        }
+        m = (uintptr_t)raw + PORT_GUARD_SIZE + PORT_GAME_STACK + PORT_GUARD_SIZE;
+        m = ((m + PORT_MEM1_ALIGN - 1) & ~(uintptr_t)(PORT_MEM1_ALIGN - 1)) + PORT_MEM1_ALIGN_OFF;
+        region = (u8*)(m - (PORT_GUARD_SIZE + PORT_GAME_STACK + PORT_GUARD_SIZE));
     }
     stack_lo = region + PORT_GUARD_SIZE;
     mem1 = stack_lo + PORT_GAME_STACK + PORT_GUARD_SIZE;

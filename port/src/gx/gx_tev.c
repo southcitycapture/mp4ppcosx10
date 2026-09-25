@@ -1742,7 +1742,8 @@ static void regfix_decide(int stages) {
 
 #ifndef GX_RTI
 /* The unit's texture bind, out of gx_tev_apply's loop (M43) */
-static void tev_unit_bind(int i, const GXTevStage* s, GXTexObjPort* bound) {
+static inline __attribute__((always_inline)) void tev_unit_bind(int i, const GXTevStage* s,
+                                                                   GXTexObjPort* bound) {
     /* The tile-map case is composed on the CPU and bound as one
      * ordinary texture (gx_tex.c); everything else indirect is
      * still the direct stage alone. */

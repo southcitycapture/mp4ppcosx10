@@ -91,7 +91,7 @@ static unsigned long drawn_frames_seen;
 static int gx_pmc_depth; /* M43: --pmc's GX region, entered at the outermost begin */
 
 void port_perf_gx_begin(void) {
-    if (pmc_on && gx_pmc_depth++ == 0) {
+    if (__builtin_expect(pmc_on, 0) && gx_pmc_depth++ == 0) {
         port_pmc_enter(PMC_R_GX);
     }
     if (!port_opt.perf) {
@@ -103,7 +103,7 @@ void port_perf_gx_begin(void) {
 }
 
 void port_perf_gx_end(void) {
-    if (pmc_on && gx_pmc_depth > 0 && --gx_pmc_depth == 0) {
+    if (__builtin_expect(pmc_on, 0) && gx_pmc_depth > 0 && --gx_pmc_depth == 0) {
         port_pmc_leave();
     }
     if (!port_opt.perf) {

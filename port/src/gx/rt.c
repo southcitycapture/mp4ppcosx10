@@ -220,7 +220,7 @@ static inline int rt_self(void) { return thread_up && pthread_equal(pthread_self
  * targets: --rtgx's instance, the compile), so the thread is asked only
  * while one is running: a load, not a pthread_self, on every recorded call */
 static volatile int rt_in_call;
-#define RT_REC() (rt_recording && !(rt_in_call && rt_self()))
+#define RT_REC() (rt_recording && !(__builtin_expect(rt_in_call, 0) && rt_self()))
 int rt_is_render_thread(void) { return rt_self(); }
 /* --rtgx's z pre-pass: the render thread decides; a draw of a pre-pass it
  * declined is skipped at the replay */
