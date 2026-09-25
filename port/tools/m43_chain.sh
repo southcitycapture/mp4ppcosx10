@@ -47,6 +47,8 @@ sampler() {
         case $mode in
             cs) f=$(grep '^port> status f' "$log" | tail -1 | sed 's/^port> status f\([0-9]*\).*/\1/')
                 [ -n "$f" ] && [ "$f" -ge 3000 ] && break ;;
+            bd) f=$(grep '^port> status f' "$log" | tail -1 | sed 's/^port> status f\([0-9]*\).*/\1/')
+                [ -n "$f" ] && [ "$f" -ge 8400 ] && break ;;
             *)  grep -q 'mgdump: entered minigame' "$log" && break ;;
         esac
         sleep 1; n=$((n+1)); [ $n -gt 900 ] && return
@@ -62,7 +64,7 @@ run() {
     name=$1; ceiling=$2; smode=$3; shift 3
     RAPP="$APP"
     case $name in
-        *-old-*) RAPP="${M43_APP_OLD:-$HOME/MarioParty4-m42.app/Contents/MacOS/isle}" ;;
+        *-old-*|*-old) RAPP="${M43_APP_OLD:-$HOME/MarioParty4-m42.app/Contents/MacOS/isle}" ;;
         *-@*) b=${name#*-@}; b=${b%%[-,]*}; RAPP="$HOME/mp4-$b.app/Contents/MacOS/isle" ;;
     esac
     mkdir -p "$D/$name"
@@ -108,7 +110,7 @@ scene() {
         m*)     echo "--minigame $1 --turns 1 --ffto 14000 --frames 20000 --mgend 1800" ;;
     esac
 }
-smode() { case $1 in cs) echo cs ;; m*) echo mg ;; *) echo - ;; esac; }
+smode() { case $1 in cs) echo cs ;; m*) echo mg ;; b*) echo bd ;; *) echo - ;; esac; }
 
 [ $# -gt 0 ] && M43_RUNS="$*"
 for r in ${M43_RUNS:-N}; do

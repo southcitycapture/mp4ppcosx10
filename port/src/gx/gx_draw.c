@@ -5238,12 +5238,6 @@ static const DecodeJobFn dec_fast_job[14] = {
 /* the index of the shape plan_fast names, or -1: the job carries the number
  * so the render thread never reads this file's statics */
 static int fast_index_of(DecodeFast f) {
-    if (f == decode_fast_n0c0t2s0) return 8;  /* M43: the unread-TEX0 shapes */
-    if (f == decode_fast_n0c1t2s0) return 9;
-    if (f == decode_fast_n1c0t2s0) return 10;
-    if (f == decode_fast_n1c1t2s0) return 11;
-    if (f == decode_fast_n2c0t2s0) return 12;
-    if (f == decode_fast_n2c1t2s0) return 13;
     if (f == decode_fast_n2c0t1s0) return 0;
     if (f == decode_fast_n1c0t1s0) return 1;
     if (f == decode_fast_n1c0t0s0) return 2;
@@ -5252,6 +5246,12 @@ static int fast_index_of(DecodeFast f) {
     if (f == decode_fast_n2c1t1s0) return 5;
     if (f == decode_fast_n0c1t1s0) return 6;
     if (f == decode_fast_n1c1t0s0) return 7;
+    if (f == decode_fast_n0c0t2s0) return 8;  /* M43: the unread-TEX0 shapes, after the common eight */
+    if (f == decode_fast_n0c1t2s0) return 9;
+    if (f == decode_fast_n1c0t2s0) return 10;
+    if (f == decode_fast_n1c1t2s0) return 11;
+    if (f == decode_fast_n2c0t2s0) return 12;
+    if (f == decode_fast_n2c1t2s0) return 13;
     return -1;
 }
 

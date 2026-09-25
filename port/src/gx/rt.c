@@ -216,7 +216,11 @@ static int thread_up, quit;
  * render thread's instance of the translation (--rtgx), run from a call
  * record -- is the GL call, not another record */
 static inline int rt_self(void) { return thread_up && pthread_equal(pthread_self(), thread); }
-#define RT_REC() (rt_recording && !rt_self())
+/* the render thread runs twins only from inside a call record (rt_call's
+ * targets: --rtgx's instance, the compile), so the thread is asked only
+ * while one is running: a load, not a pthread_self, on every recorded call */
+static volatile int rt_in_call;
+#define RT_REC() (rt_recording && !(rt_in_call && rt_self()))
 int rt_is_render_thread(void) { return rt_self(); }
 /* --rtgx's z pre-pass: the render thread decides; a draw of a pre-pass it
  * declined is skipped at the replay */
@@ -1662,7 +1666,14 @@ static void replay_one(const Hdr* h) {
         case OP_ENV4: { const A_env4* a = p; x_ProgramEnvParameter4fvARB(a->target, a->idx, a->v); cls = RC_DRAW; break; }
         case OP_LOCAL4: { const A_env4* a = p; x_ProgramLocalParameter4fvARB(a->target, a->idx, a->v); cls = RC_DRAW; break; }
         case OP_ENVN: { const A_envn* a = p; x_ProgramEnvParameters4fvEXT(a->target, a->idx, a->n, (const GLfloat*)(a + 1)); cls = RC_DRAW; break; }
-        case OP_CALL: { const A_call* a = p; a->fn((void*)(a + 1)); cls = RC_OTHER; break; }
+        case OP_CALL: {
+            const A_call* a = p;
+            rt_in_call = 1;
+            a->fn((void*)(a + 1));
+            rt_in_call = 0;
+            cls = RC_OTHER;
+            break;
+        }
         case OP_PRESENT: {
             const A_present* a = p;
             double t = now();

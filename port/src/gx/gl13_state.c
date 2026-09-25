@@ -159,7 +159,11 @@ static unsigned glc_emitted, glc_elided;
  * its arguments, so two submit shapes can be diffed call by call (M16). */
 unsigned gl13_frame_number(void);
 int gl13_trace_armed(void) {
-    unsigned f = gl13_frame_number() + 1;
+    unsigned f;
+    if (!port_opt.gltrace) {
+        return 0; /* M43: before the call -- gl13_frame_number is in gl13.c now */
+    }
+    f = gl13_frame_number() + 1;
     return port_opt.gltrace && f <= (unsigned)port_opt.gltrace &&
            f + 40 > (unsigned)port_opt.gltrace; /* the forty frames up to F */
 }
