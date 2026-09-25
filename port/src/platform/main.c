@@ -769,10 +769,18 @@ int port_parse_args(int argc, char** argv) {
     /* M21 (PLAN.md 36): measured on the 9,000-frame walk and both *off*.
      * --indexed (one glDrawRangeElements per batch) is 4-12% slower than the
      * driver's multi-draw of strips and its triangle setup differs at the
-     * rounding level; --fixbase and --envbulk are exact and within noise. */
+     * rounding level; --fixbase and --envbulk are exact and were within noise
+     * then (M44 turned both on, below). */
     port_opt.noindexed = 1;
-    port_opt.nofixbase = 1;
-    port_opt.noenvbulk = 1; /* exact; gx_vprog_bind 3.4% -> 3.2% of the board frame, noise */
+    /* M44 (PLAN.md 59): both on.  M21 measured them level when every GL
+     * call was the driver's (36.3); since M27 every call is a record the game
+     * thread writes and the render thread replays, and the arrays' pointers
+     * (the same base batch after batch) and the matrix rows (one record for
+     * six) are records not written: m441's front end -0.28 / -0.34 M cycles
+     * a drawn frame each (the counters, 59.3).  --nofixbase / --noenvbulk are
+     * the old shape. */
+    port_opt.nofixbase = 0;
+    port_opt.noenvbulk = 0;
     port_opt.premerge_max = 0; /* M22 (PLAN.md 37): the CPU pre-transform, measured and off */
     for (i = 1; i < argc; i++) {
         const char* a = argv[i];

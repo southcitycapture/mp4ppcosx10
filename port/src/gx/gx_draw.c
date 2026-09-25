@@ -3674,9 +3674,11 @@ static u32 app_bias;
 static int app_skip, app_probe; /* M33: --skipobj / --probeobj, named at the apply (the
                                  * lazy flush issues after the matrix pointer has moved on) */
 
+void gx_tev_pre_reset(void);
 static int draw_apply(const u8* s, int n, int in_ring) {
     GxXfDesc* xfd = &app_xfd;
     int on_gpu = 0;
+    gx_tev_pre_reset(); /* M44: this draw's TEV snapshot is taken afresh */
     /* M43 (--rtgx, gx_rtgx.c): this batch's translation is the render
      * thread's -- the shadow handed over (or taken back) first */
 #ifndef PORT_NO_RTGX
@@ -4200,14 +4202,15 @@ static u32 water_idx_push(u32 a, u32 b, u32 c) {
 }
 /* the edge table: (lo, hi) -> the midpoint's index */
 #define WEDGE_BITS 16
-static struct { u32 lo, hi, mid; } water_edge[1u << WEDGE_BITS];
-static u32 water_edge_gen[1u << WEDGE_BITS], water_gen;
+typedef struct { u32 lo, hi, mid, gen; } WaterEdge;
+static WaterEdge* water_edge; /* allocated at the first full draw (1 MB) */
+static u32 water_gen;
 static u32 water_mid(u32 a, u32 b) {
     u32 lo = a < b ? a : b, hi = a < b ? b : a;
     u32 h = (lo * 0x9E3779B1u ^ hi * 0x85EBCA6Bu) >> (32 - WEDGE_BITS);
     int probe;
     for (probe = 0; probe < 64; probe++, h = (h + 1) & ((1u << WEDGE_BITS) - 1)) {
-        if (water_edge_gen[h] != water_gen) {
+        if (water_edge[h].gen != water_gen) {
             u8* o;
             const u8* x;
             const u8* y;
@@ -4215,7 +4218,7 @@ static u32 water_mid(u32 a, u32 b) {
             if (water_m >= MAX_VERTS) {
                 return lo; /* out of room: the end stands in */
             }
-            water_edge_gen[h] = water_gen;
+            water_edge[h].gen = water_gen;
             water_edge[h].lo = lo;
             water_edge[h].hi = hi;
             water_edge[h].mid = water_m;
@@ -4259,6 +4262,12 @@ static void water_tri(u32 a, u32 b, u32 c, int level) {
  * the midpoints (full), then the offsets on every vertex; the count drawn */
 static int water_expand(int n) {
     int i, k;
+    if (water_sub > 0 && !water_edge) {
+        water_edge = (WaterEdge*)calloc((size_t)1 << WEDGE_BITS, sizeof(WaterEdge));
+        if (!water_edge) {
+            water_sub = 0;
+        }
+    }
     if (water_sub > 0) {
         water_m = (u32)n;
         water_nidx = 0;

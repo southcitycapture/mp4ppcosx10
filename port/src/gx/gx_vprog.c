@@ -450,6 +450,8 @@ static struct {
     GXLight l;
 } vp_lmemo[VPE_NLIGHTS];
 static unsigned stat_vp_lmemo_hits, stat_vp_lmemo_miss;
+static unsigned long stat_vp_key_memo; /* M44 */
+unsigned gx_tev_inputs_serial(void);
 #endif
 
 /* ---- the generator ---------------------------------------------------------
@@ -1330,7 +1332,58 @@ int gx_vprog_draw(const GxXfDesc* d, int nverts) {
     if (!gx_vprog_available() || port_opt.cpuxf) {
         return 0;
     }
-    vp_build_key(d, &pending_key, &nl, pending_lightidx);
+    {
+        /* M44 (PLAN.md 59): the key's inputs -- the descriptor's fields it
+         * reads, the four channel controls, the lights' use, the fog, and
+         * the TEV and texture inputs (gx_tev_inputs_serial: the same bytes
+         * as the full TEV apply whose serial this is) -- byte for byte the
+         * last computed key's: the same key, not built again */
+        static struct {
+            unsigned tev;
+            u8 have_nrm, chan_mode, pal, hilite, ntexgen, fog, lused, pad;
+            u8 tg[GX_TEXCOORDS][4];
+            GXChanCtrl chan[4];
+        } in, last;
+        static int last_ok, last_nl, last_lidx[8];
+        static VpKey last_key;
+        unsigned ts = port_opt.novpgen ? 0 : gx_tev_inputs_serial();
+        int i;
+        if (ts) {
+            memset(&in, 0, sizeof(in));
+            in.tev = ts;
+            in.have_nrm = (u8)(d->have_nrm != 0);
+            in.chan_mode = (u8)d->chan_mode;
+            in.pal = (u8)(d->pal_n > 0);
+            in.hilite = (u8)d->hilite;
+            in.ntexgen = (u8)d->ntexgen;
+            in.fog = (u8)gx.fog_type;
+            for (i = 0; i < 8; i++) {
+                in.lused |= (u8)((gx.light[i].used ? 1u : 0u) << i);
+            }
+            for (i = 0; i < d->ntexgen && i < GX_TEXCOORDS; i++) {
+                in.tg[i][0] = d->tg[i].src_kind;
+                in.tg[i][1] = d->tg[i].src_k;
+                in.tg[i][2] = d->tg[i].divide;
+                in.tg[i][3] = (u8)(d->tg[i].mtx != NULL);
+            }
+            memcpy(in.chan, gx.chan, sizeof(in.chan));
+        }
+        if (ts && last_ok && memcmp(&in, &last, sizeof(in)) == 0) {
+            pending_key = last_key;
+            nl = last_nl;
+            memcpy(pending_lightidx, last_lidx, sizeof(last_lidx));
+            stat_vp_key_memo++;
+        } else {
+            vp_build_key(d, &pending_key, &nl, pending_lightidx);
+            last_ok = ts != 0;
+            if (ts) {
+                last = in;
+                last_key = pending_key;
+                last_nl = nl;
+                memcpy(last_lidx, pending_lightidx, sizeof(last_lidx));
+            }
+        }
+    }
     pending_nl = nl;
     v = pending_key.alit == 2 ? NULL : vp_lookup(&pending_key);
     if (pending_key.alit == 2) {
@@ -1667,8 +1720,10 @@ void gx_vprog_report(void) {
              tot > 0 ? 100.0 * stat_gpu_verts / tot : 0.0, worst_frame_cpu);
     port_log("port> vprog: env params %u emitted (%u of them M21 bulk matrix uploads), %u elided\n",
              stat_env_set, stat_env_bulk, stat_env_elided);
-    port_log("port> vprog: M44 light slots kept by their bytes %u, re-derived %u%s\n",
-             stat_vp_lmemo_hits, stat_vp_lmemo_miss, port_opt.novpgen ? " (--novpgen)" : "");
+    port_log("port> vprog: M44 light slots kept by their bytes %u, re-derived %u; keys kept by "
+             "their inputs %lu%s\n",
+             stat_vp_lmemo_hits, stat_vp_lmemo_miss, stat_vp_key_memo,
+             port_opt.novpgen ? " (--novpgen)" : "");
     if (stat_packed_variants) {
         port_log("port> vprog: %u variant(s) with the lights packed four to a register (M41)%s\n",
                  stat_packed_variants, port_opt.nopacklights ? " (--nopacklights)" : "");

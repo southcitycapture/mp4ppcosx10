@@ -1676,6 +1676,7 @@ static u32 tev_sig_hash(int stages, u32 have_tex_bits) {
 
 static u32 tev_cache_sig;
 static int tev_snap_ok; /* M44: gx_tev_apply's snapshot stands (below) */
+static int tev_pre_taken; /* M44: this draw's snapshot is taken (below) */
 static u32 tev_cache_sig_b; /* M44: the second lane */
 static unsigned long tev_why[8]; /* M44 --tevstats: a miss's moved inputs */
 static int tev_cache_live;
@@ -1698,6 +1699,7 @@ static unsigned stat_hilite_stages; /* M21: hilite stages emitted as a pass */
 void gx_tev_cache_invalidate(void) {
     tev_cache_live = 0;
     tev_snap_ok = 0; /* M44 */
+    tev_pre_taken = 0;
 }
 
 /* M30 (PLAN.md 45): which TEV stage's texture and coordinate unit `u` reads
@@ -1917,6 +1919,40 @@ static void tev_snap_take(int w, int stages) {
     }
 }
 
+/* M44: the snapshot taken ahead of the apply, for gx_vprog_draw (below):
+ * whether this draw's TEV inputs are the last full apply's, and that apply's
+ * serial.  Taken once a draw; the apply uses it. */
+static int tev_pre_w, tev_pre_same;
+static unsigned tev_snap_serial;
+static int tev_snap_possible(void) {
+    return !port_opt.notevdirty && !port_opt.oldtev && !port_opt.foldcap && !port_opt.regfix2dbg &&
+           !port_opt.tfs && !port_opt.rtgx && gx.num_ind == 0 && gl13_live();
+}
+static void tev_pre(void) {
+    int stages = gx.num_tev ? gx.num_tev : 1;
+    if (stages > gl13_max_tex_units) {
+        stages = gl13_max_tex_units;
+    }
+    tev_pre_w = tev_snap_cur ^ 1;
+    tev_snap_take(tev_pre_w, stages);
+    tev_pre_same = tev_snap_ok && tev_snap[tev_pre_w].len == tev_snap[tev_snap_cur].len &&
+                   tev_snap[tev_pre_w].len <= TEV_SNAP_MAX &&
+                   memcmp(tev_snap[tev_pre_w].b, tev_snap[tev_snap_cur].b,
+                          tev_snap[tev_pre_w].len) == 0;
+    tev_pre_taken = 1;
+}
+void gx_tev_pre_reset(void) { tev_pre_taken = 0; } /* draw_apply's start: a new draw */
+/* 0: not known the same; else the serial of the full apply whose inputs these are */
+unsigned gx_tev_inputs_serial(void) {
+    if (!tev_snap_possible()) {
+        return 0;
+    }
+    if (!tev_pre_taken) {
+        tev_pre();
+    }
+    return tev_pre_same ? tev_snap_serial : 0;
+}
+
 void gx_tev_apply(void) {
     int stages = gx.num_tev ? gx.num_tev : 1;
     int i;
@@ -1927,16 +1963,15 @@ void gx_tev_apply(void) {
     if (stages > gl13_max_tex_units) {
         stages = gl13_max_tex_units; /* (warned below) */
     }
-    if (!port_opt.notevdirty && !port_opt.oldtev && !port_opt.foldcap && !port_opt.regfix2dbg &&
-        !port_opt.tfs && !port_opt.rtgx && gx.num_ind == 0 && gl13_live()) {
+    if (tev_snap_possible()) {
         unsigned fr = gl13_frame_number();
-        snap_w = tev_snap_cur ^ 1;
-        tev_snap_take(snap_w, stages);
-        if (tev_snap_ok && tev_cache_live && fr == tev_snap_frame &&
-            gx_tex_dirty_gen == tev_snap_dirty && glc_unit_gen == tev_snap_unit &&
-            tev_snap[snap_w].len == tev_snap[tev_snap_cur].len &&
-            tev_snap[snap_w].len <= TEV_SNAP_MAX &&
-            memcmp(tev_snap[snap_w].b, tev_snap[tev_snap_cur].b, tev_snap[snap_w].len) == 0) {
+        if (!tev_pre_taken) {
+            tev_pre();
+        }
+        tev_pre_taken = 0;
+        snap_w = tev_pre_w;
+        if (tev_pre_same && tev_cache_live && fr == tev_snap_frame &&
+            gx_tex_dirty_gen == tev_snap_dirty && glc_unit_gen == tev_snap_unit) {
             stat_tev_skips++;
             tev_hits++;
             stat_draws_applied++;
@@ -2256,9 +2291,11 @@ void gx_tev_apply(void) {
     if (cfg_konst_collisions) {
         stat_konst_draws++;
     }
+    tev_pre_taken = 0;
     if (snap_w >= 0) {
         /* M44: what this apply read, and the units as it left them */
         tev_snap_cur = snap_w;
+        tev_snap_serial++;
         tev_snap_ok = tev_cache_live;
         tev_snap_frame = gl13_frame_number();
         tev_snap_dirty = gx_tex_dirty_gen;
