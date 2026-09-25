@@ -1,0 +1,10 @@
+/tmp/ppm/N/frame-00800.ppm  vs  /tmp/ppm/N-fm/frame-00800.ppm   640x480
+pixels differing at all : 16 of 307200 (0.005%)
+channel samples differing by more than 1  :        24 (0.0026%)
+channel samples differing by more than 2  :        23 (0.0025%)
+channel samples differing by more than 4  :        21 (0.0023%)
+channel samples differing by more than 8  :        19 (0.0021%)
+channel samples differing by more than 16 :        17 (0.0018%)
+channel samples differing by more than 32 :        14 (0.0015%)
+worst channel difference: 185 at pixel (555,288)
+mean absolute channel difference: 0.00166 levels

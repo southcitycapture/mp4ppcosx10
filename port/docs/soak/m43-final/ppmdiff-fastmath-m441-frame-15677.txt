@@ -1,0 +1,10 @@
+/tmp/ppm/L-m441-base/frame-15677.ppm  vs  /tmp/ppm/L-m441-@fastmath/frame-15677.ppm   640x480
+pixels differing at all : 35083 of 307200 (11.420%)
+channel samples differing by more than 1  :     96187 (10.4370%)
+channel samples differing by more than 2  :     94361 (10.2388%)
+channel samples differing by more than 4  :     91372 (9.9145%)
+channel samples differing by more than 8  :     86155 (9.3484%)
+channel samples differing by more than 16 :     77733 (8.4346%)
+channel samples differing by more than 32 :     64520 (7.0009%)
+worst channel difference: 255 at pixel (208,99)
+mean absolute channel difference: 7.03324 levels
