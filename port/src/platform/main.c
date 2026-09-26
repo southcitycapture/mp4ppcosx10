@@ -778,8 +778,13 @@ int port_parse_args(int argc, char** argv) {
      * thread writes and the render thread replays, and the arrays' pointers
      * (the same base batch after batch) and the matrix rows (one record for
      * six) are records not written: m441's front end -0.28 / -0.34 M cycles
-     * a drawn frame each (the counters, 59.3).  --nofixbase / --noenvbulk are
-     * the old shape. */
+     * a drawn frame each (the counters, 59.3), and without --fixbase the GL
+     * calls a drawn frame rise 30-55% where the vertex cache serves (m409,
+     * m414, m418, m420 fell under the bar, 59.9).  The G4 locked up once, at a
+     * board load, on a build with both on (candidate 11); --fixbase is the
+     * lever that moves the addresses the card fetches, so it was taken off,
+     * measured off, put back and run long in that very workload (59.9).
+     * --nofixbase / --noenvbulk are the old shape. */
     port_opt.nofixbase = 0;
     port_opt.noenvbulk = 0;
     port_opt.premerge_max = 0; /* M22 (PLAN.md 37): the CPU pre-transform, measured and off */

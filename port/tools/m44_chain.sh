@@ -179,6 +179,17 @@ for r in ${M44_RUNS:-N}; do
             run "K-$g-$k-@${kb:-pmc}$(echo $kf | tr -d ' ')" 600 - $BASE --realtime --pmc $k --pmcwin $w $(scene $g) $kf ;;
         FB:*)
             FB_SETTLE=0 sh "$HOME/fps_board.sh" $(echo ${r#FB:} | tr ',' ' ') ;;
+        PROOF:*)
+            # M44 (PLAN.md 59.9): the workload the G4 locked up in -- the
+            # scoreboard's front run (fps_board.sh's, the board load at 5,108
+            # included), again and again for MIN minutes, each with its md5s
+            mins=${r#PROOF:}; tp=$(( $(date +%s) + mins * 60 )); k=1
+            while [ $(date +%s) -lt $tp ]; do
+                run "proof-$k" 400 - --rtc dolphin --freshcard --noconfig --realtime --perf --status \
+                    --ovllog --com4 --play board-start-com4.play --nomovies --frames 9000 \
+                    --dumpframe 800,3000,7000
+                k=$((k + 1))
+            done ;;
         SOAK:*)
             mins=${r#SOAK:}
             run "soak-$mins" $((mins * 60 + 300)) - --soak --com4 --rtc dolphin --freshcard --status --perf \
