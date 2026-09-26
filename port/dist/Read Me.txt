@@ -1,6 +1,6 @@
 Mario Party 4 PowerPC Edition
 =============================
-Version 0.9.12
+Version 0.9.13
 
 
 WHAT THIS IS
@@ -85,6 +85,29 @@ choice is remembered.  For a window instead, run it once from the Terminal
 
 or change `fullscreen = 1` to `fullscreen = 0` in the config file.  Either is
 remembered from then on; --fullscreen puts it back.
+
+
+THE WATER
+
+The GameCube ripples some of its water with a trick the Radeon's fixed
+pipeline cannot do per pixel (a second texture bending the first one's
+picture).  Since 0.9.13 the port does it at the corners of the water's
+triangles instead, from the game's own ripple texture, so the water moves
+with the game's own waves -- close to the console where the water is a fine
+grid (Makin' Waves), fainter where the console bends it by a copy of the
+picture itself, which the port cannot read back cheaply (Mario Medley's
+second ripple, Cheep Cheep Sweep's reflection).  Three levels:
+
+    off       flat water, as before 0.9.13
+    cheap     the ripple at the water's own corners (costs almost nothing)
+    full      each water triangle split into four first: smoother, and
+              meant for a faster Mac than the reference machine
+    auto      (the default) full on a faster Mac, off on a slower one, and
+              on the reference machine the level each minigame measured
+              room for: cheap in most, full in one, off in the rafts' river
+
+Run once from the Terminal with --water off (or cheap, full, auto), or put
+`water = cheap` in the config file; the choice is remembered.
 
 
 LOADING
@@ -208,7 +231,8 @@ WHERE YOUR THINGS LIVE
         memcard-slot-a.raw    the memory card (a 59-block card image, the
                               same layout Dolphin uses, so a save moves
                               either way)
-        config                the disc image's path, the fullscreen choice
+        config                the disc image's path, the fullscreen and
+                              water choices
         MarioParty4.log       the log of the last run
 
 Deleting the folder loses your save file, so that is the folder to back up.
@@ -222,17 +246,21 @@ and the author of this package then went through every frame by hand
 (37 notes: shadows, water, black where the console draws, and single
 games); what is left that a player can see:
 
-    Mario Medley        the pool's light ripple is a flat tint, and the
-                        water is grey-green where the console's is blue
-    Makin' Waves        the pool has a flat tint where the console
-                        ripples it
+    Mario Medley        the pool's light ripple is fainter than the
+                        console's (its second ripple bends a copy of the
+                        picture), and the water is grey-green where the
+                        console's is blue
+    Makin' Waves        the pool ripples at the water's corners rather
+                        than at every pixel (see THE WATER)
     Cheep Cheep Sweep   the pond is clear where the console's reflects
-                        the sky (the same missing ripple)
+                        the sky (the reflection's ripple bends a copy of
+                        the picture)
 
-The ripple of those three pools is a warp the card's fixed pipeline
-cannot do; a fragment-program path for it is in this build behind
---tfs, and stays off because the Radeon's Leopard driver draws two of
-the three pools wrong through it (the notes say how far it got).
+The ripple of those pools is a warp the card's fixed pipeline cannot do
+per pixel; since 0.9.13 it is drawn at the vertices (THE WATER).  A
+fragment-program path is also in this build behind --tfs, and stays off
+because the Radeon's Leopard driver draws two of the three pools wrong
+through it (the notes say how far it got).
 
 Now and then the game can stop for one to two seconds and then catch
 up, the music with it, when the disk is slow to answer.  Since 0.9.9 the

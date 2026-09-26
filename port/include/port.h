@@ -31,8 +31,8 @@ extern "C" {
 /* ---- settings, from argv ------------------------------------------------- */
 /* M32: the shipped version (the dmg's name, the plist, the --defaults header)
  * and the milestone that built it. */
-#define PORT_VERSION_STRING "0.9.12"
-#define PORT_MILESTONE "M43"
+#define PORT_VERSION_STRING "0.9.13"
+#define PORT_MILESTONE "M44"
 
 typedef struct PortOptions {
     const char* image;      /* --image  disc image or extracted files/ tree   */
@@ -423,6 +423,8 @@ typedef struct PortOptions {
                              *   vertices (src/gx/gx_water.c); -1 auto (the default: by the
                              *   machine's class and the screen) */
     int watergrid;          /* --watergrid N  M44: full's subdivision levels (default 1) */
+    int norastermemo;       /* --norastermemo  M44: the transform and raster state applied every
+                             *   draw, not skipped when their inputs and the shadow are unchanged */
     int novcpos;            /* --novcpos  M44: a stored run whose position array alone moved is
                              *   decoded whole again (and the list goes animated), not refreshed */
     int wbpart;             /* --nowbpart  M43: the write barrier arms the partial pages at an

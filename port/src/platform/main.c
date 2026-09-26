@@ -349,6 +349,7 @@ static void usage(const char* argv0) {
             "                    full (subdivided), auto (the default: by machine and screen)\n"
             "  --watergrid N     M44: full's subdivision levels (default 1: four triangles each)\n"
             "  --novcpos         M44: no positions refresh of a cached run (the whole run decoded)\n"
+            "  --norastermemo    M44: the transform and raster state applied at every draw\n"
             "  --nowbpart        M43: the write barrier arms only the pages wholly inside an\n"
             "                    array (M42's), not its partial end pages (the default since M43)\n"
             "  --oldvtxjoin      M43: the morph rewriters wait for the whole decode stream (M29)\n"
@@ -1309,6 +1310,8 @@ int port_parse_args(int argc, char** argv) {
             port_opt.watergrid = atoi(argv[++i]);
         } else if (!strcmp(a, "--novcpos")) {
             port_opt.novcpos = 1;
+        } else if (!strcmp(a, "--norastermemo")) {
+            port_opt.norastermemo = 1;
         } else if (!strcmp(a, "--wbpart")) {
             port_opt.wbpart = 1;
         } else if (!strcmp(a, "--nowbpart")) {

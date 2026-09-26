@@ -3675,6 +3675,7 @@ static int app_skip, app_probe; /* M33: --skipobj / --probeobj, named at the app
                                  * lazy flush issues after the matrix pointer has moved on) */
 
 void gx_tev_pre_reset(void);
+void gl13_apply_xf_raster(void);
 static int draw_apply(const u8* s, int n, int in_ring) {
     GxXfDesc* xfd = &app_xfd;
     int on_gpu = 0;
@@ -3802,8 +3803,7 @@ static int draw_apply(const u8* s, int n, int in_ring) {
     if (__builtin_expect(port_opt.rtgx == 2, 0)) {
         tg0 = port_now_seconds(); /* M43: the auto's estimate of what would move */
     }
-    gl13_apply_transform();
-    gl13_apply_raster_state();
+    gl13_apply_xf_raster(); /* M44: skipped when nothing it reads moved */
     PORT_SUB_ENTER(PERF_SUB_TEV);
     gx_tev_apply();
     PORT_SUB_LEAVE();

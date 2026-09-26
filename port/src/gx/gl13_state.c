@@ -1056,6 +1056,54 @@ void gl13_apply_raster_state(void) {
  * `+ 1` was right all along.  A clipping bug of two ten-thousandths.
  */
 
+/* M44 (PLAN.md 59): the transform and the raster state together, skipped
+ * when the GX fields they read are the bytes they were at the last apply
+ * AND the shadow's raster block (the viewport through the modelview flag)
+ * is the bytes that apply left -- then every value they would compute is
+ * the same and every call they would make is elided.  Nothing is tracked
+ * for the other writers (the z pre-pass, a copy, the present, an
+ * invalidate): a shadow any of them moved does not compare equal.
+ * --norastermemo applies every draw. */
+extern int gx_force_flags;
+#define XR_IN_MAX 256
+static u8 xr_in[XR_IN_MAX], xr_last_in[XR_IN_MAX], xr_last_glc[256];
+static u32 xr_len, xr_last_len;
+static int xr_ok;
+static unsigned long stat_xr_skips;
+static void xr_put(const void* p, size_t n) {
+    if (xr_len + n <= XR_IN_MAX) {
+        memcpy(xr_in + xr_len, p, n);
+    }
+    xr_len += (u32)n;
+}
+void gl13_apply_xf_raster(void) {
+    size_t gb = offsetof(Glc, vertex_array_on) - offsetof(Glc, vp);
+    xr_len = 0;
+#define XP(f) xr_put(&gx.f, sizeof(gx.f))
+    XP(proj); XP(proj_type); XP(vp); XP(scissor); XP(line_width); XP(cull);
+    XP(z_enable); XP(z_func); XP(z_update); XP(color_update); XP(alpha_update);
+    XP(blend_mode); XP(blend_src); XP(blend_dst);
+    XP(alpha_comp0); XP(alpha_ref0); XP(alpha_op); XP(alpha_comp1); XP(alpha_ref1);
+    XP(fog_type); XP(fog_startz); XP(fog_endz); XP(fog_color);
+#undef XP
+    xr_put(&gx_force_flags, sizeof(gx_force_flags));
+    if (!port_opt.norastermemo && gl_on && xr_ok && gb <= sizeof(xr_last_glc) &&
+        xr_len == xr_last_len && xr_len <= XR_IN_MAX && memcmp(xr_in, xr_last_in, xr_len) == 0 &&
+        memcmp((const u8*)&glc + offsetof(Glc, vp), xr_last_glc, gb) == 0) {
+        stat_xr_skips++;
+        return;
+    }
+    gl13_apply_transform();
+    gl13_apply_raster_state();
+    xr_ok = gl_on && xr_len <= XR_IN_MAX && gb <= sizeof(xr_last_glc);
+    if (xr_ok) {
+        memcpy(xr_last_in, xr_in, xr_len);
+        xr_last_len = xr_len;
+        memcpy(xr_last_glc, (const u8*)&glc + offsetof(Glc, vp), gb);
+    }
+}
+unsigned long gl13_xr_skips(void) { return stat_xr_skips; }
+
 void gl13_apply_transform(void) {
     GLC_OWNED("gl13_apply_transform");
     float m[16];
