@@ -31,17 +31,17 @@ applied at build time.
 
 ## Where it stands
 
-Build **0.9.12**, measured on a dual 1 GHz Power Mac G4 (Quicksilver) with a
+Build **0.9.13**, measured on a dual 1 GHz Power Mac G4 (Quicksilver) with a
 Radeon 9000 under Mac OS X 10.5:
 
 | | |
 |---|---|
 | Game speed | 100% of the console on every screen |
-| 30 fps scoreboard | **68 of 82** reachable screens at a median of 29.5 fps or better; the 0.9.13 candidate in final testing reads 74 |
-| Boards | four of six at 30; Toad's and Boo's at 29 |
-| Minigames | most at 30; the heaviest (m441, m431) about 24 to 26 |
+| 30 fps scoreboard | **73 of 82** reachable screens at a median of 29.5 fps or better |
+| Boards | five of six at 30; Toad's at 29.4 (30.0 on its own board frames) |
+| Minigames | most at 30; the heaviest (m441, m436, m431) about 26 to 28 |
 | Picture | 59 of 63 minigames match the console frame for frame; all six boards play |
-| Stability | multi-hour unattended soaks on 0.9.8 to 0.9.12 with no faults and, since 0.9.9, no drive pauses |
+| Stability | multi-hour unattended soaks on 0.9.8 to 0.9.13 with no faults and, since 0.9.9, no drive pauses |
 | Movies | all twelve play with sound |
 
 The target for 1.0 is **30 fps on every screen** on that machine, measured by
@@ -52,10 +52,14 @@ Mac OS X 10.4 or later, 256 MB of memory and a Radeon 9000-class card), and
 **30 fps everywhere** on a dual 1 GHz G4 with a Radeon 9000 or faster. The app
 checks the machine at launch and says which it is.
 
-**New in 0.9.13 (in testing):** the water ripple returns. Leopard's Radeon
-driver can't draw the console's per-pixel ripple, so the port rebuilds it per
-vertex from the game's own ripple map, with a water setting of full, cheap or
-off chosen per screen so no screen loses its 30 fps.
+**New in 0.9.13:** the water ripple returns. Leopard's Radeon driver can't
+draw the console's per-pixel ripple, so the port rebuilds it per vertex from
+the game's own ripple map, with a water setting of full, cheap or off
+(`--water`) chosen per screen so no screen loses its 30 fps.
+
+Known in 0.9.13, being fixed in the next build: half of m427's split screen
+can go black, m427's headlamp light on the water is missing, and using a Mega
+Mushroom on the board blinks the screen black for a moment.
 
 ## Documentation
 
