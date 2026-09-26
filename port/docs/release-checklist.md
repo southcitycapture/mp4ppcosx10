@@ -122,6 +122,27 @@ on memory -- PLAN.md 58.4); m463 28.3 and m438 28.9 short on a phase of
 vertex-animated geometry; w01 29.1 by the pooled rule (30.0 on its own
 board frames). All 82 at 100% game speed.
 
+**Where M44 left it** (0.9.13, `docs/fps-scoreboard.md`; M43's kept as
+`docs/fps-scoreboard-m43-after.md`; PLAN.md 59): **73 of 82 screens pass**,
+none of M43's passes lost. Crossed the bar: m433 Beach Volley Folly 27.6 →
+29.8, m414 28.9 → 29.9, m438 28.9 → 29.9, the character select 28.9 →
+30.0, w04 Boo's Haunted Bash 29.0 → 29.9 -- the GX front end rewritten for
+the G4 (the TEV apply skipped when nothing it reads moved, the layout kept
+by value, the vertex program's key and light rows kept by their bytes, the
+render stream's records fewer and a cache line apart with `dcbz` ahead of
+the writer, the word hashes, the transform and raster state skipped; all
+exact, both walks byte for byte). The water ripples again (`--water
+off|cheap|full|auto`, the warp at the vertices from the game's own bump
+map, cheap by default on the reference; PLAN.md 59.7). The G4 locked up
+once during the milestone's runs; `--fixbase` was measured off, cost four
+passes and was put back after two hours of that exact workload, the whole
+scoreboard and a two-hour soak ran clean on the same code (PLAN.md 59.9).
+**The line is not met.** The 9 still short (PLAN.md 59.11): m441 26.3,
+m431 27.9, m409 29.4 and m401 28.1 on the game thread's drawn frame; m436
+27.8, m435 28.8 and m444 29.2 with 4.2-4.7 ms of decode on the game
+thread; m463 28.9 on a phase of vertex-animated geometry; w01 29.4 by the
+pooled rule (30.0 on its own board frames). All 82 at 100% game speed.
+
 ## Done
 
 | area | the claim | the evidence |
@@ -141,8 +162,7 @@ board frames). All 82 at 100% game speed.
 
 | item | what a player sees | why it ships |
 |---|---|---|
-| the pools' ripple (m405 Mario Medley, m417 Makin' Waves, m434 Cheep Cheep Sweep) | a flat tint where the console ripples the water; m405's water grey-green | the ripple is GX's indirect warp, which the Radeon 9000's fixed-function pipeline cannot do. A fragment-shader path (`--tfs`, `GL_ATI_text_fragment_shader`) is built and off: on the Leopard ATI driver its `SampleMap` returns a constant on one-texture draws and white on m434's copies while the coordinates and colours reach the program right (§50.14, §52.8 — the driver finding). Nothing on the port's side is left to try without a different driver |
-| the character select at ~29 fps (28.9 in 0.9.12; ~27 in 0.9.10, 26 in 0.9.9, ~23 in 0.9.8) | one of 14 screens below the 30 cap (the v1.0 line above) | M43 (PLAN.md 58.12): the unread-TEX0 decode shapes took its drawn frame 29.7 → 28.3 ms; its game thread's cycle is 31.8 ms, the render thread's 29.1 -- 60.9 ms of a 66.7 budget, the game thread's walks the wall. M41 (PLAN.md 56.7): its game thread's cycle is 34.4 ms (a drawn frame 30.4 + a consumed 4.0) against 33.3, the render thread's 31.4 -- 65.8 ms on the two cores against a 66.7 budget, so no split of the work reaches 30; the eight breathing characters are two thirds of its 75,600 vertices a frame and cannot be cached (skinned every frame). M33's split, M37's batch enders, M40's cache and M41's concat and loops took it 20 → 23 → 26 → 27. The game's speed there is the console's; only the picture rate is lower |
+| the pools' ripple (m405 Mario Medley, m417 Makin' Waves, m434 Cheep Cheep Sweep) | since 0.9.13 the ripple is drawn at the water's vertices (`--water`, PLAN.md 59.7): close to the console on Makin' Waves, fainter on Mario Medley and Cheep Cheep Sweep, whose second warp bends a copy of the picture itself (the port keeps those copies on the card); m405's water grey-green, m434's pond clear where the console's reflects the sky | GX's indirect warp per pixel is beyond the Radeon 9000's fixed pipeline, and the fragment-shader path (`--tfs`) samples wrong on the Leopard ATI driver (§50.14, §52.8); the vertex warp is the approximation that fits; the user watched m417 on the G4 at each level (full "looks great", cheap "looks great surprisingly"); the comparison images are `docs/screenshots/m44-water-*.jpg`. The tuning notes (stronger waves, no sky reflection, m434's pond surface, m405's colour) are M45's |
 | controllers 3 and 4 | untested | wired the same way as 2 (§49.8: every Xbox One pad claimed, every SDL joystick opened, ports in order); there is one pad in the house |
 | one memory card | slot A only; slot B is always empty | the game needs one card; a second would be a second image file and nobody has asked |
 | one-CPU Macs and the movies | on one processor, Stamp Out! (m415) falls to about 13 frames a second and 94% of the console's speed, with one-second catch-ups and the sound breaking up (285 underruns in its minigame) | Stamp Out! reads its own picture back to paint with (§20's canvas copy reads), and on one CPU the game thread also replays the render thread's work. The same minigame on two CPUs: 20 fps, 100.6%, 0 underruns. It is **not** the movies: §54.2's A/B found 0 underruns in every movie on one CPU; the extra underruns M38 blamed on them were this minigame, which the movies' schedule deals where `--nomovies` deals m412. The reference machine has two CPUs; the Read Me says what one gets |
