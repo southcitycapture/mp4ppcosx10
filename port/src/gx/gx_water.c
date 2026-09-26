@@ -69,6 +69,46 @@ static int level_table(int mg) {
     }
 }
 
+/* M45 (PLAN.md 60): the port's look, the user's tuning of M44's water after
+ * watching Makin' Waves on the G4 ("make the actual waves more pronounced
+ * and noticeable and the reflection [of] the sky remove").  Not the
+ * console's: `--waterlook console` (the config's `waterlook = console`) is
+ * the console's amplitude and its sky.  The gain multiplies the warp's
+ * matrix (the ripple's amplitude, in the direct map's texels), cheap and
+ * full alike; `--wavegain PCT` sets it for every warped screen (100 = the
+ * console's). */
+static int look_gain_pct(int mg) {
+    if (port_opt.wavegain > 0) {
+        return port_opt.wavegain;
+    }
+    if (port_opt.waterlook == 0) {
+        return 100;
+    }
+    switch (mg) {
+        case 417: /* Makin' Waves: the ripple read from across a room */
+            return GX_WATER_GAIN_M417;
+        default:
+            return 100;
+    }
+}
+
+/* m417's water (water.c fn_1_604C) is five stages: the pool floor (the
+ * screen copy, warped), + the sky map projected at 70 degrees times A0
+ * (0x4C, stage 1: the sky's reflection), + the caustic times A1, and the
+ * highlight's blend to C1.  Its reflection is removed by A0 = 0 for the
+ * draw -- REG0's alpha is read by no other stage of it -- and put back
+ * after, so the game's state is what it set. */
+int gx_water_look_begin(u8* saved) {
+    if (port_opt.waterlook == 0 || port_cur_mg_number() != 417 || gx.num_tev != 5 ||
+        gx.tev[1].cin[2] != GX_CC_A0) {
+        return 0;
+    }
+    *saved = gx.tev_reg[1].a;
+    gx.tev_reg[1].a = 0;
+    return 1;
+}
+void gx_water_look_end(u8 saved) { gx.tev_reg[1].a = saved; }
+
 int gx_water_level(void) {
     int cls;
     if (port_opt.water >= 0) {
@@ -187,7 +227,7 @@ int gx_water_plan(GxWaterPlan* p) {
             continue;
         }
         m = &gx.ind_mtx[w->mtx - 1];
-        sc = ldexpf(1.0f, m->exp);
+        sc = ldexpf(1.0f, m->exp) * (float)look_gain_pct(port_cur_mg_number()) * 0.01f;
         ww = &p->w[p->nwarp++];
         ww->coord = t->coord;
         ww->ind = w->ind;
@@ -245,7 +285,7 @@ static inline void sample(const GxWaterInd* in, float s, float t, float out[3]) 
     }
 }
 
-void gx_water_offsets(const GxWaterPlan* p, u8* out, int n, int stride, int off_tex) {
+void gx_water_offsets(const GxWaterPlan* p, u8* out, int n, int stride, int off_tex, int tw) {
     int v, j;
     float inv_s[4], inv_t[4];
     if (!biased_ok) {
@@ -277,8 +317,10 @@ void gx_water_offsets(const GxWaterPlan* p, u8* out, int n, int stride, int off_
                     stu[w->ind][1] = stu[in->same_as][1];
                     stu[w->ind][2] = stu[in->same_as][2];
                 } else {
-                    sample(in, tex[2 * in->coord] * inv_s[w->ind],
-                           tex[2 * in->coord + 1] * inv_t[w->ind], stu[w->ind]);
+                    /* M45: a projected coordinate (tw 4) is (s, t, 0, q) */
+                    float rq = tw == 4 ? 1.0f / tex[4 * in->coord + 3] : 1.0f;
+                    sample(in, tex[tw * in->coord] * rq * inv_s[w->ind],
+                           tex[tw * in->coord + 1] * rq * inv_t[w->ind], stu[w->ind]);
                 }
                 have |= 1 << w->ind;
             }
@@ -289,8 +331,9 @@ void gx_water_offsets(const GxWaterPlan* p, u8* out, int n, int stride, int off_
         /* all offsets from the coordinates as the texgens made them, then
          * added (an indirect coordinate is never a warped one: checked) */
         for (j = 0; j < p->nwarp; j++) {
-            tex[2 * p->w[j].coord] += d[j][0];
-            tex[2 * p->w[j].coord + 1] += d[j][1];
+            float qw = tw == 4 ? tex[4 * p->w[j].coord + 3] : 1.0f; /* s/q + d = (s + d q)/q */
+            tex[tw * p->w[j].coord] += d[j][0] * qw;
+            tex[tw * p->w[j].coord + 1] += d[j][1] * qw;
         }
     }
 }

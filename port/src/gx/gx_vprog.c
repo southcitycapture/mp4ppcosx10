@@ -1185,6 +1185,116 @@ void gx_vprog_disable(void) {
 #endif
 }
 
+/* M45 (PLAN.md 60): the CPU path's positions on the card.  A water draw
+ * (gx_water.c) is transformed, lit and texgen'd on the CPU, and handed GL a
+ * view-space position under an identity modelview -- so its depth is the
+ * CPU's arithmetic where every other draw's is the vertex program's.  Two
+ * surfaces drawn at the same place then disagree in the last bits: m427's
+ * headlamp beams (cone0-3, drawn after the river with LEQUAL) lost the
+ * whole pool where they meet the water on 0.9.13 (the river went to the CPU
+ * path with M44's water), as they had on the CPU path of every build before
+ * M41's packed lights.  Here the CPU path gives the object-space position
+ * and this program transforms it with the vertex program's own
+ * instructions and parameters (DP4 by the position matrix's rows, DP4 by the
+ * projection, the fog coordinate as vp_gen writes it); the colour and the
+ * coordinates pass through, the coordinates through each unit's texture
+ * matrix (the NPOT fold the fixed function applies).  One variant a fog
+ * mode.  --nowaterpt: the view-space position, as M44. */
+static unsigned vp_pt_id[3];
+static int vp_pt_state[3]; /* 0 untried, 1 ok, -1 refused */
+static int vp_pt_mode(void) {
+    if (gx.fog_type == GX_FOG_NONE) {
+        return 0;
+    }
+    return port_opt.oldfog ? 2 : 1;
+}
+int gx_vprog_passthrough_ready(void) {
+#ifdef PORT_NO_SDL
+    return 0;
+#else
+    int m = vp_pt_mode(), u;
+    VpBuf b;
+    RtCompile c;
+    if (!gx_vprog_available() || port_opt.cpuxf || port_opt.nowaterpt) {
+        return 0;
+    }
+    if (vp_pt_state[m]) {
+        return vp_pt_state[m] > 0;
+    }
+    memset(&b, 0, sizeof(b));
+    vpb_add(&b, "!!ARBvp1.0\n# M45: the CPU path's object-space position, on the card\n");
+    vpb_add(&b, "TEMP vp, t0;\n");
+    vpi(&b, "DP4 vp.x, program.env[%d], vertex.position;\n", VPE_POSMTX + 0);
+    vpi(&b, "DP4 vp.y, program.env[%d], vertex.position;\n", VPE_POSMTX + 1);
+    vpi(&b, "DP4 vp.z, program.env[%d], vertex.position;\n", VPE_POSMTX + 2);
+    vpi(&b, "MOV vp.w, 1.0;\n");
+    vpi(&b, "DP4 result.position.x, state.matrix.projection.row[0], vp;\n");
+    vpi(&b, "DP4 result.position.y, state.matrix.projection.row[1], vp;\n");
+    vpi(&b, "DP4 result.position.z, state.matrix.projection.row[2], vp;\n");
+    vpi(&b, "DP4 result.position.w, state.matrix.projection.row[3], vp;\n");
+    if (m == 1) {
+        vpi(&b, "ABS t0.x, vp.z;\n");
+        vpi(&b, "SUB t0.x, t0.x, state.fog.params.y;\n");
+        vpi(&b, "MAX result.fogcoord.x, t0.x, 0.0;\n");
+    } else if (m == 2) {
+        vpi(&b, "ABS result.fogcoord.x, vp.z;\n");
+    }
+    vpi(&b, "MOV result.color, vertex.color;\n");
+    for (u = 0; u < gl13_max_tex_units && u < 8; u++) {
+        vpi(&b, "DP4 result.texcoord[%d].x, state.matrix.texture[%d].row[0], vertex.texcoord[%d];\n", u, u, u);
+        vpi(&b, "DP4 result.texcoord[%d].y, state.matrix.texture[%d].row[1], vertex.texcoord[%d];\n", u, u, u);
+        vpi(&b, "DP4 result.texcoord[%d].z, state.matrix.texture[%d].row[2], vertex.texcoord[%d];\n", u, u, u);
+        vpi(&b, "DP4 result.texcoord[%d].w, state.matrix.texture[%d].row[3], vertex.texcoord[%d];\n", u, u, u);
+    }
+    vpb_add(&b, "END\n");
+    if (!b.s) {
+        vp_pt_state[m] = -1;
+        return 0;
+    }
+    memset(&c, 0, sizeof(c));
+    c.text = b.s;
+    c.len = (int)b.len;
+    rt_compile_vprog(&c);
+    vp_bound = 0; /* the compile bound it (or 0) */
+    if (c.errpos != -1 || !c.under_native || b.instr > vpl.max_native_instr) {
+        port_log("port> vprog: the water's position program (fog mode %d) %s -- the CPU's "
+                 "positions instead\n", m, c.errpos != -1 ? "REJECTED" : "not native");
+        if (c.errpos != -1) {
+            port_log("%s", b.s);
+        }
+        vp_pt_state[m] = -1;
+        free(b.s);
+        return 0;
+    }
+    vp_pt_id[m] = (unsigned)c.id;
+    vp_pt_state[m] = 1;
+    if (port_opt.vprogstats || port_opt.vproglog) {
+        port_log("port> vprog: the water's position program (fog mode %d), %d instructions\n", m,
+                 b.instr);
+    }
+    free(b.s);
+    return 1;
+#endif
+}
+void gx_vprog_passthrough_bind(const f32* m) {
+#ifdef PORT_NO_SDL
+    (void)m;
+#else
+    unsigned id = vp_pt_id[vp_pt_mode()];
+    if (vp_bound != id) {
+        vp_bound = id;
+        rt_ext_bind_program(VP_VERTEX_PROGRAM_ARB, id);
+    }
+    if (vp_enabled != 1) {
+        vp_enabled = 1;
+        glEnable(VP_VERTEX_PROGRAM_ARB);
+    }
+    env4(VPE_POSMTX + 0, m[0], m[1], m[2], m[3]);
+    env4(VPE_POSMTX + 1, m[4], m[5], m[6], m[7]);
+    env4(VPE_POSMTX + 2, m[8], m[9], m[10], m[11]);
+#endif
+}
+
 void gx_vprog_frame_reset(void) {
 #ifndef PORT_NO_SDL
     if (frame_cpu_draws > worst_frame_cpu) {

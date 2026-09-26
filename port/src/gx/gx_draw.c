@@ -131,6 +131,16 @@ static u8 out_buf[MAX_VERTS * OUT_MAX_STRIDE] __attribute__((aligned(16)));
 static u8 sink_vtx[SRC_MAX_STRIDE] __attribute__((aligned(16)));
 static Layout sl;              /* the source layout of the primitive in hand  */
 static int out_stride, out_off_clr, out_off_tex, out_ntex;
+/* M45 (PLAN.md 60): the floats a texture coordinate takes in the output --
+ * 2 (s, t), or 4 (s, t, 0, q) when a texgen of the primitive projects
+ * (GX_TG_MTX3x4): the CPU path divided by q at each vertex and GL then
+ * interpolated s/q and t/q across the triangle, which is not what the
+ * hardware (or the vertex program) does -- over m427's water, whose
+ * projector reaches behind the camera, it lost the headlamps' pool of light
+ * (PLAN.md 56.6's "why the CPU path drops the pool").  Carried by out_stride
+ * (16 + 4 * w * out_ntex), so every save of the layout keeps it.
+ * --affinetex: the per-vertex divide, as M3..M44. */
+#define OUT_TEX_W (out_ntex ? (out_stride - out_off_tex) / (4 * out_ntex) : 2)
 static int nverts;             /* vertices in the primitive being assembled   */
 static u32 sv_first;           /* the primitive's first vertex, list-relative */
 static size_t run_pos;         /* byte offset in the ring of the run in hand  */
@@ -979,7 +989,17 @@ static void begin_attr_order_body(void) {
         out_ntex = tex_slots;
         out_off_clr = 12;
         out_off_tex = 16;
-        out_stride = 16 + 8 * out_ntex;
+        {
+            int w = 2, t;
+            if (!port_opt.affinetex && !port_opt.rtgx) {
+                for (t = 0; t < pi.ntexgen; t++) {
+                    if (pi.tg[t].divide) {
+                        w = 4;
+                    }
+                }
+            }
+            out_stride = 16 + 4 * w * out_ntex;
+        }
     }
 
     /* M18: is the position array a skinned mesh's buffer?  Then the decode
@@ -1671,11 +1691,12 @@ static void light_channel(int c, const float* wpos, const float* wnrm,
  * primitive's for a cached list (gx_batch_spans is off with --dlcache). */
 static const f32* sub_posm;
 static const f32* sub_nrmm;
+static int water_pt; /* M45: this CPU-path draw's positions go to the card (gx_vprog.c) */
 
 static void finish_vertices(const u8* s, int n) {
     const f32* m = sub_posm;
     const f32* nm = sub_nrmm;
-    const int sstride = sl.stride, ostride = out_stride;
+    const int sstride = sl.stride, ostride = out_stride, tw = OUT_TEX_W;
     int i;
 
     if (n <= 0) {
@@ -1762,19 +1783,41 @@ static void finish_vertices(const u8* s, int n) {
                     if (pi.tg[t].divide) {
                         float q =
                             tm[8] * in[0] + tm[9] * in[1] + tm[10] * in[2] + tm[11];
+                        if (tw == 4) {
+                            ot[4 * t] = sc;
+                            ot[4 * t + 1] = tc;
+                            ot[4 * t + 2] = 0.0f;
+                            ot[4 * t + 3] = q; /* GL divides at each pixel */
+                            continue;
+                        }
                         if (q != 0.0f) {
                             sc /= q;
                             tc /= q;
                         }
                     }
                 }
-                ot[2 * t] = sc;
-                ot[2 * t + 1] = tc;
+                ot[tw * t] = sc;
+                ot[tw * t + 1] = tc;
+                if (tw == 4) {
+                    ot[4 * t + 2] = 0.0f;
+                    ot[4 * t + 3] = 1.0f;
+                }
             }
             for (; t < out_ntex; t++) {
-                ot[2 * t] = 0.0f;
-                ot[2 * t + 1] = 0.0f;
+                ot[tw * t] = 0.0f;
+                ot[tw * t + 1] = 0.0f;
+                if (tw == 4) {
+                    ot[4 * t + 2] = 0.0f;
+                    ot[4 * t + 3] = 1.0f;
+                }
             }
+        }
+        if (water_pt) {
+            /* M45: lit and texgen'd from the view-space position above; the
+             * card transforms the object-space one (gx_vprog_passthrough) */
+            op[0] = px;
+            op[1] = py;
+            op[2] = pz;
         }
     }
 }
@@ -3731,10 +3774,12 @@ static int draw_apply(const u8* s, int n, int in_ring) {
             stat_fixbase_miss++;
         }
     }
+    water_pt = 0;
     if (!on_gpu) {
         if (!rtgx) {
             gx_vprog_disable(); /* M43: the render thread's apply disables it for its own */
         }
+        water_pt = water_plan_cur && !rtgx && gx_vprog_passthrough_ready(); /* M45 */
         if (in_ring && (!water_plan_cur || batch_rt_runs)) {
             /* M29: the vertices may still be the render thread's to decode
              * (M44: a water batch decoded here has nothing to wait for) */
@@ -3831,6 +3876,9 @@ static int draw_apply(const u8* s, int n, int in_ring) {
          * the arrays point at the copy (rt_stash returns out_buf itself when
          * the stream is off) */
         const u8* ob = (const u8*)rt_stash(out_buf, (size_t)n * (size_t)out_stride);
+        if (water_pt) {
+            gx_vprog_passthrough_bind(sub_posm); /* M45 */
+        }
         glc_vertex_array(ob, out_stride);
         glc_color_array(ob + out_off_clr, out_stride);
         glc_normal_array(NULL, 0);
@@ -3840,7 +3888,8 @@ static int draw_apply(const u8* s, int n, int in_ring) {
                 u8 coord = 0, map = 0;
                 if (gx_tev_unit_source(i, &coord, &map) && coord < out_ntex &&
                     gx_bound_tex(map) != NULL) {
-                    glc_coord_array(i, ob + out_off_tex + 8 * coord, out_stride);
+                    glc_coord_array_n(i, ob + out_off_tex + 4 * OUT_TEX_W * coord, out_stride,
+                                      OUT_TEX_W);
                 } else {
                     glc_coord_array(i, NULL, 0);
                 }
@@ -4235,7 +4284,7 @@ static u32 water_mid(u32 a, u32 b) {
                 o[out_off_clr + i] =
                     (u8)(((unsigned)x[out_off_clr + i] + y[out_off_clr + i] + 1u) >> 1);
             }
-            for (i = 0; i < 2 * out_ntex; i++) {
+            for (i = 0; i < OUT_TEX_W * out_ntex; i++) {
                 ((f32*)(o + out_off_tex))[i] =
                     0.5f * (((const f32*)(x + out_off_tex))[i] + ((const f32*)(y + out_off_tex))[i]);
             }
@@ -4317,7 +4366,7 @@ static int water_expand(int n) {
         }
         n = (int)water_m;
     }
-    gx_water_offsets(water_plan_cur, out_buf, n, out_stride, out_off_tex);
+    gx_water_offsets(water_plan_cur, out_buf, n, out_stride, out_off_tex, OUT_TEX_W);
     return n;
 }
 static int water_submit(const u8* s, int n, const Seg* segs, int nsegs, int in_ring) {
@@ -4347,7 +4396,14 @@ static int water_submit(const u8* s, int n, const Seg* segs, int nsegs, int in_r
     water_nsegs = nsegs;
     stat_water_batches++;
     water_plan_cur = &wp;
-    draw_apply(s, n, in_ring);
+    {
+        u8 look_saved = 0;
+        int look = gx_water_look_begin(&look_saved); /* M45 */
+        draw_apply(s, n, in_ring);
+        if (look) {
+            gx_water_look_end(look_saved);
+        }
+    }
     water_plan_cur = NULL;
     if (!water_sub) {
         draw_issue(s, n, segs, nsegs, in_ring);

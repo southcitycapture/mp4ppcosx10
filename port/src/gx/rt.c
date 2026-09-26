@@ -1507,8 +1507,77 @@ void rt_compile_vprog(RtCompile* c) {
     rt_call(compile_fn, &p, sizeof(p), 1);
 }
 
+/* M45 (PLAN.md 60): --halfwatch N -- every Nth presented frame, before the
+ * swap, three rows of the back buffer (a quarter, a half and three quarters
+ * down) are read and each half's lit pixels counted (any channel over 12).
+ * A half with none while the other has 32 or more is a half-black picture
+ * (m427's left view, the user's photograph of 0.9.13): counted, and the
+ * first eight written whole to the shot directory.  On the thread that owns
+ * the context; the game thread reports (rt_halfwatch_report).  Windowed
+ * only: under --fullscreen the back buffer holds the scaled picture. */
+static volatile unsigned hw_checked, hw_black, hw_last_frame, hw_last_side, hw_last_lit[2];
+static void halfwatch(unsigned frame) {
+    static unsigned char row[640 * 4];
+    unsigned lit[2] = {0, 0};
+    int y, x;
+    if (!port_opt.halfwatch || frame % (unsigned)port_opt.halfwatch != 0 || gl13_fullscreen()) {
+        return;
+    }
+    for (y = 120; y <= 360; y += 120) {
+        glReadPixels(0, y, 640, 1, GL_RGBA, GL_UNSIGNED_BYTE, row);
+        for (x = 0; x < 640; x++) {
+            const unsigned char* q = row + x * 4;
+            if (q[0] > 12 || q[1] > 12 || q[2] > 12) {
+                lit[x >= 320]++;
+            }
+        }
+    }
+    hw_checked++;
+    if ((lit[0] == 0 && lit[1] >= 32) || (lit[1] == 0 && lit[0] >= 32)) {
+        hw_last_frame = frame;
+        hw_last_side = lit[0] == 0 ? 0 : 1;
+        hw_last_lit[0] = lit[0];
+        hw_last_lit[1] = lit[1];
+        if (hw_black < 8) {
+            static unsigned char px[640 * 480 * 3];
+            char path[1024];
+            FILE* f;
+            glPixelStorei(GL_PACK_ALIGNMENT, 1);
+            glReadPixels(0, 0, 640, 480, GL_RGB, GL_UNSIGNED_BYTE, px);
+            snprintf(path, sizeof(path), "%s/halfblack-f%05u.ppm",
+                     port_opt.shotdir ? port_opt.shotdir : ".", frame);
+            f = fopen(path, "wb");
+            if (f) {
+                fprintf(f, "P6\n640 480\n255\n");
+                for (y = 479; y >= 0; y--) {
+                    fwrite(px + (size_t)y * 640 * 3, 1, 640 * 3, f);
+                }
+                fclose(f);
+            }
+        }
+        hw_black++;
+    }
+}
+/* the game thread's side: one line per new half-black frame seen */
+void rt_halfwatch_report(int final) {
+    static unsigned told;
+    if (!port_opt.halfwatch) {
+        return;
+    }
+    if (hw_black != told) {
+        told = hw_black;
+        port_log("port> halfwatch: HALF BLACK #%u at frame %u (the %s half; lit %u / %u)\n", told,
+                 hw_last_frame, hw_last_side ? "right" : "left", hw_last_lit[0], hw_last_lit[1]);
+    }
+    if (final) {
+        port_log("port> halfwatch: %u frames checked (every %d), %u half-black\n", hw_checked,
+                 port_opt.halfwatch, hw_black);
+    }
+}
+
 void rt_present(unsigned frame) {
     if (!rt_recording) {
+        halfwatch(frame);
         SDL_GL_SwapWindow(win);
         return;
     }
@@ -1771,6 +1840,7 @@ static void replay_one(const Hdr* h) {
             const A_present* a = p;
             double t = now();
             double tail = t - a->t_rec;
+            halfwatch(a->frame);
             SDL_GL_SwapWindow(win);
             gx_rtgx_rt_present(); /* M43: the translation's time this frame, published */
             st_tail_s += tail;
@@ -2135,6 +2205,7 @@ double rt_last_dec_ms(void) { return st_last_dec_ms; }
 
 void rt_report(void) {
     int i;
+    rt_halfwatch_report(1);
     if (mode == 0) {
         return;
     }
@@ -2226,6 +2297,7 @@ int rt_mode(void) { return 0; }
 int rt_decode_mode(void) { return 0; }
 void rt_frame_end(void) {}
 void rt_report(void) {}
+void rt_halfwatch_report(int final) { (void)final; }
 void rt_status(char* buf, size_t n) { (void)n; buf[0] = '\0'; }
 void rt_join(const char* why) { (void)why; }
 int rt_gate(double s) { (void)s; return 1; }

@@ -40,6 +40,7 @@ unsigned port_rss_mb(void) {
 
 PortOptions port_opt;
 static int water_set; /* M44: --water given on the command line */
+static int waterlook_set; /* M45: --waterlook given on the command line */
 
 void port_log_open(const char* path);
 void* port_game_stack_top(void);
@@ -340,6 +341,12 @@ static void usage(const char* argv0) {
             "                    (MTXRotRad + MTXConcat), not the sparse left product\n"
             "  --notexskip       M43: decode jobs with an unread TEX0 go to the general walker\n"
             "  --nostripepool    M43: the texture stripes allocate their buffers per update\n"
+            "  --giveitem N,..   M45: on a board, hand each player with an empty slot item N\n"
+            "  --waterlook L     M45: port (the user's tuning: m417's ripple x2.5, no sky) | console\n"
+            "  --wavegain PCT    M45: the water warp's amplitude on every screen (100 = console)\n"
+            "  --nowaterpt       M45: the water's CPU-path positions as M44 (view space, identity)\n"
+            "  --affinetex       M45: the CPU path's projected texcoords divided at the vertex\n"
+            "  --halfwatch N     M45: every Nth presented frame, count a half-black picture\n"
             "  --nodcbz          M44: no dcbz ahead of the render stream's / vertex ring's writes\n"
             "  --novpgen         M44: vertex-program parameters compared every draw (no generations)\n"
             "  --notevdirty      M44: the TEV signature hashed at every draw\n"
@@ -761,6 +768,7 @@ int port_parse_args(int argc, char** argv) {
     port_opt.wbpart = 1;     /* M43: the barrier on the partial end pages too (PLAN.md 58.4, 58.10) */
     port_opt.water = -1;     /* M44: auto (PLAN.md 59) */
     port_opt.watergrid = 1;
+    port_opt.waterlook = 1;  /* M45: the user's tuning (PLAN.md 60) */
     port_opt.rtgx_fit = 29.0;
     port_opt.vcache_mb = 8;
     port_opt.resident = -1; /* M36: the resident set's budget by the installed RAM (machine.c) */
@@ -1296,6 +1304,20 @@ int port_parse_args(int argc, char** argv) {
             port_opt.notexskip = 1;
         } else if (!strcmp(a, "--nostripepool")) {
             port_opt.nostripepool = 1;
+        } else if (!strcmp(a, "--giveitem") && i + 1 < argc) {
+            port_opt.giveitem = argv[++i];
+        } else if (!strcmp(a, "--waterlook") && i + 1 < argc) {
+            i++;
+            port_opt.waterlook = !strcmp(argv[i], "console") ? 0 : 1;
+            waterlook_set = 1;
+        } else if (!strcmp(a, "--wavegain") && i + 1 < argc) {
+            port_opt.wavegain = atoi(argv[++i]);
+        } else if (!strcmp(a, "--nowaterpt")) {
+            port_opt.nowaterpt = 1;
+        } else if (!strcmp(a, "--affinetex")) {
+            port_opt.affinetex = 1;
+        } else if (!strcmp(a, "--halfwatch") && i + 1 < argc) {
+            port_opt.halfwatch = atoi(argv[++i]);
         } else if (!strcmp(a, "--nodcbz")) {
             port_opt.nodcbz = 1;
         } else if (!strcmp(a, "--novpgen")) {
@@ -1545,6 +1567,15 @@ int main(int argc, char** argv) {
             if (w) {
                 port_opt.water = !strcmp(w, "off") ? 0 : !strcmp(w, "cheap") ? 1
                                : !strcmp(w, "full") ? 2 : -1;
+            }
+        }
+        /* M45: the water's look, remembered the same way */
+        if (waterlook_set) {
+            port_config_set("waterlook", port_opt.waterlook ? "port" : "console");
+        } else {
+            const char* w = port_config_get("waterlook");
+            if (w) {
+                port_opt.waterlook = strcmp(w, "console") != 0;
             }
         }
         if (port_opt.fullscreen_set) {

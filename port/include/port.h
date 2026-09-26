@@ -409,6 +409,12 @@ typedef struct PortOptions {
     int nostripepool;       /* --nostripepool  M43: the texture stripes' decode and upload
                              *   buffers allocated and freed each update, as before */
     /* M44 (PLAN.md 59): the GX front end, built for the 7455 -- each lever's old path */
+    const char* giveitem;   /* --giveitem N[,N..]  M45: items for the board players */
+    int waterlook;          /* --waterlook port|console  M45: the user's tuning (1) or not */
+    int wavegain;           /* --wavegain PCT  M45: the warp's amplitude, every screen */
+    int nowaterpt;          /* --nowaterpt  M45: the water's positions from the CPU (M44) */
+    int affinetex;          /* --affinetex  M45: the CPU path divides by q at the vertex */
+    int halfwatch;          /* --halfwatch N  M45: count half-black presented frames */
     int nodcbz;             /* --nodcbz  M44: no dcbz ahead of the render stream's and the
                              *   vertex ring's writes (a store miss reads the line first) */
     int novpgen;            /* --novpgen  M44: the vertex program's parameters compared value by
@@ -942,6 +948,7 @@ void rt_join(const char* why);        /* drain the stream; counted by name */
 int rt_gate(double max_s);            /* drained, or drained within max_s */
 void rt_ring_enter(int chunk);      /* the ring writer reuses a chunk: the join at reuse */
 void rt_report(void);
+void rt_halfwatch_report(int final); /* M45: --halfwatch */
 void rt_status(char* buf, size_t n);
 double rt_last_frame_ms(void);
 /* M29 (PLAN.md 44): the decode records.  rt_decode_on says whether the

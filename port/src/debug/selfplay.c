@@ -1096,14 +1096,92 @@ static void title_guard(u32 frame) {
 /* Once per retrace, from the gate in port/src/platform/vi.c, after the game's
  * own PadReadVSync post-callback -- so a parked value is the last word on the
  * frame the game is about to run. */
+/* ---- --giveitem (M45, PLAN.md 60) -------------------------------------------
+ * The picture checks' item uses: on a board, every player whose first item
+ * slot is empty is handed the next item of the list (`--giveitem 1` the Mega
+ * Mushroom for everyone, `--giveitem 0,1,2,3` round the list; the game's
+ * item numbers, item.c's itemFuncTbl), and the harness names the frame each
+ * one leaves the slot -- a COM's use (com.c ChooseUseItem decides; a Mega
+ * Mushroom is used whenever no star is within ten spaces).  A written slot is
+ * what the item shop's purchase writes; nothing else is touched. */
+static void give_items(u32 frame) {
+    static int next, have[4] = {-1, -1, -1, -1};
+    const char* n;
+    int ovl = (int)omcurovl, i;
+    if (!port_opt.giveitem || ovl < 0 || ovl >= OVL_COUNT) {
+        return;
+    }
+    n = ovl_name[ovl];
+    if (n[0] != 'w' || n[1] != '0' || n[3] != 'd') {
+        return;
+    }
+    if (!strcmp(port_opt.giveitem, "log")) {
+        /* `--giveitem log`: nothing given; every slot's change named (a
+         * COM's natural item use, found in a --nodraw run and then shot in
+         * lockstep on any build: the game is the same) */
+        static s8 last[4][3];
+        static int primed;
+        int k;
+        for (i = 0; i < 4; i++) {
+            for (k = 0; k < 3; k++) {
+                s8 cur = GWPlayer[i].items[k];
+                if (primed && cur != last[i][k]) {
+                    port_log("port> itemlog: frame %u turn %d player %d slot %d: %d -> %d%s\n", frame,
+                             (int)GWSystem.turn, i, k, (int)last[i][k], (int)cur,
+                             cur == -1 && k == 0 ? " (used, or taken)" : "");
+                }
+                last[i][k] = cur;
+            }
+        }
+        primed = 1;
+        return;
+    }
+    for (i = 0; i < 4; i++) {
+        int cur = GWPlayer[i].items[0];
+        if (have[i] >= 0 && cur != have[i]) {
+            port_log("port> giveitem: player %d's item %d left the slot at frame %u (now %d)\n", i,
+                     have[i], frame, cur);
+            have[i] = -1;
+        }
+        if (cur == -1 && GWSystem.turn >= 1) {
+            const char* p = port_opt.giveitem;
+            int k = 0, item = -1;
+            while (*p) {
+                if (k == next) {
+                    item = atoi(p);
+                    break;
+                }
+                while (*p && *p != ',') {
+                    p++;
+                }
+                if (*p == ',') {
+                    p++;
+                }
+                k++;
+            }
+            if (item < 0 || item > 13) {
+                next = 0;
+                item = atoi(port_opt.giveitem);
+            }
+            next++;
+            GWPlayer[i].items[0] = (s8)item;
+            have[i] = item;
+            port_log("port> giveitem: player %d given item %d at frame %u\n", i, item, frame);
+        } else if (cur >= 0 && have[i] < 0) {
+            have[i] = cur;
+        }
+    }
+}
+
 void port_selfplay_tick(u32 frame) {
     if (!port_opt.com4 && !port_opt.turns && !port_opt.minigame &&
         !port_opt.status && !port_opt.stuckwatch && !port_opt.soak &&
         !port_opt.mgdump && !port_opt.mgend && !port_opt.board &&
-        !port_opt.boarddump) {
+        !port_opt.boarddump && !port_opt.giveitem) {
         return;
     }
     park_players();
+    give_items(frame);
     watch_roulette(frame);
     park_minigame();
     park_board();

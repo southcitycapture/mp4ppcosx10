@@ -1004,6 +1004,7 @@ void gl13_present(void) {
         fs_blit_out();
     }
     rt_present(frame_no); /* M27: SDL_GL_SwapWindow on the GL thread */
+    rt_halfwatch_report(0); /* M45 */
     if (fs_on) {
         fs_blit_back();
     }

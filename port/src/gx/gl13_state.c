@@ -74,6 +74,7 @@ typedef struct GlcUnit {
                             * copy, which is flipped (M24b, PLAN.md 39b) */
     const void* coord_ptr;
     int coord_stride;
+    int coord_size; /* M45: 2, or 4 for the CPU path's projected coordinates */
 } GlcUnit;
 
 typedef struct Glc {
@@ -244,6 +245,7 @@ void glc_invalidate(void) {
             u->tv = 0.0f;
             u->coord_ptr = (const void*)-1;
             u->coord_stride = -1;
+            u->coord_size = -1;
             for (j = 0; j < 3; j++) {
                 u->src_rgb[j] = u->op_rgb[j] = -1;
                 u->src_a[j] = u->op_a[j] = -1;
@@ -673,17 +675,18 @@ void glc_get_tex_fold(int unit, float* su, float* sv, float* tv) {
     *tv = glc.unit[unit].tv;
 }
 
-void glc_coord_array(int unit, const void* p, int stride) {
+void glc_coord_array_n(int unit, const void* p, int stride, int size) {
     GLC_OWNED("glc_coord_array");
     GlcUnit* u = &glc.unit[unit];
     HIT(u->coord_array_on == (signed char)(p != NULL) && u->coord_ptr == p &&
-        u->coord_stride == stride);
+        u->coord_stride == stride && (!p || u->coord_size == size));
     glc_client_active_texture(unit);
     if (p) {
         if (u->coord_array_on != 1) {
             GL(glEnableClientState)(GL_TEXTURE_COORD_ARRAY);
         }
-        GL(glTexCoordPointer)(2, GL_FLOAT, (GLsizei)stride, p);
+        GL(glTexCoordPointer)(size, GL_FLOAT, (GLsizei)stride, p);
+        u->coord_size = size;
     } else if (u->coord_array_on != 0) {
         GL(glDisableClientState)(GL_TEXTURE_COORD_ARRAY);
     }
@@ -691,6 +694,7 @@ void glc_coord_array(int unit, const void* p, int stride) {
     u->coord_ptr = p;
     u->coord_stride = stride;
 }
+void glc_coord_array(int unit, const void* p, int stride) { glc_coord_array_n(unit, p, stride, 2); }
 
 
 /* ---- the raster state, straight out of GXState ---------------------------- */

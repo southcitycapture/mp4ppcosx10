@@ -376,6 +376,7 @@ void glc_modelview_identity(void);
 void glc_vertex_array(const void* p, int stride);
 void glc_color_array(const void* p, int stride);
 void glc_coord_array(int unit, const void* p, int stride); /* NULL turns it off */
+void glc_coord_array_n(int unit, const void* p, int stride, int size); /* M45: 2 or 4 floats */
 void glc_normal_array(const void* p, int stride);          /* NULL turns it off */
 void glc_fogcoord_array(const void* p, int stride);        /* M18: the palette slot */
 int glc_fogcoord_available(void);
@@ -597,8 +598,13 @@ typedef struct GxWaterPlan {
     GxWaterInd ind[4];
 } GxWaterPlan;
 int gx_water_level(void);
+int gx_vprog_passthrough_ready(void); /* M45: the water's positions on the card */
+void gx_vprog_passthrough_bind(const f32* pos_mtx);
+int gx_water_look_begin(u8* saved); /* M45: the port's look (m417's sky) */
+void gx_water_look_end(u8 saved);
+#define GX_WATER_GAIN_M417 250 /* M45: the ripple, percent of the console's */
 int gx_water_plan(GxWaterPlan* p);
-void gx_water_offsets(const GxWaterPlan* p, u8* out, int n, int stride, int off_tex);
+void gx_water_offsets(const GxWaterPlan* p, u8* out, int n, int stride, int off_tex, int tw);
 void gx_water_report(void);
 
 /* one place for "the backend could not do this exactly", counted and named
