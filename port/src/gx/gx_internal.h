@@ -600,8 +600,9 @@ typedef struct GxWaterPlan {
 int gx_water_level(void);
 int gx_vprog_passthrough_ready(void); /* M45: the water's positions on the card */
 void gx_vprog_passthrough_bind(const f32* pos_mtx);
-int gx_water_look_begin(u8* saved); /* M45: the port's look (m417's sky) */
-void gx_water_look_end(u8 saved);
+typedef struct GxWaterLook { int what; GXColor reg0, reg1; u8 cin1; } GxWaterLook;
+int gx_water_look_begin(GxWaterLook* sv); /* M45: the port's look (m417's sky, m434's pond) */
+void gx_water_look_end(const GxWaterLook* sv);
 #define GX_WATER_GAIN_M417 250 /* M45: the ripple, percent of the console's */
 int gx_water_plan(GxWaterPlan* p);
 void gx_water_offsets(const GxWaterPlan* p, u8* out, int n, int stride, int off_tex, int tw);

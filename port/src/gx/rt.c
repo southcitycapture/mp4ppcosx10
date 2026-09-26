@@ -1509,16 +1509,43 @@ void rt_compile_vprog(RtCompile* c) {
 
 /* M45 (PLAN.md 60): --halfwatch N -- every Nth presented frame, before the
  * swap, three rows of the back buffer (a quarter, a half and three quarters
- * down) are read and each half's lit pixels counted (any channel over 12).
- * A half with none while the other has 32 or more is a half-black picture
- * (m427's left view, the user's photograph of 0.9.13): counted, and the
- * first eight written whole to the shot directory.  On the thread that owns
- * the context; the game thread reports (rt_halfwatch_report).  Windowed
- * only: under --fullscreen the back buffer holds the scaled picture. */
+ * down) are read and two things counted, each written whole to the shot
+ * directory the first eight times:
+ *   * a half-black picture: a half with no lit pixel (any channel over 12)
+ *     while the other has 32 or more (m427's left view, the user's
+ *     photograph of 0.9.13);
+ *   * a blip: the rows' brightness falling under 35% of the frame before and
+ *     back over 70% of it within 12 frames (the board filter's black frames,
+ *     the user's "black blip" at a Mega Mushroom's use) -- a fade or a wipe
+ *     is slower than that and is not one.
+ * On the thread that owns the context; the game thread reports
+ * (rt_halfwatch_report).  Windowed only: under --fullscreen the back buffer
+ * holds the scaled picture. */
 static volatile unsigned hw_checked, hw_black, hw_last_frame, hw_last_side, hw_last_lit[2];
+static volatile unsigned hw_blips, hw_blip_frame, hw_blip_len;
+static void halfwatch_shot(const char* what, unsigned frame) {
+    static unsigned char px[640 * 480 * 3];
+    char path[1024];
+    FILE* f;
+    int y;
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glReadPixels(0, 0, 640, 480, GL_RGB, GL_UNSIGNED_BYTE, px);
+    snprintf(path, sizeof(path), "%s/%s-f%05u.ppm", port_opt.shotdir ? port_opt.shotdir : ".",
+             what, frame);
+    f = fopen(path, "wb");
+    if (f) {
+        fprintf(f, "P6\n640 480\n255\n");
+        for (y = 479; y >= 0; y--) {
+            fwrite(px + (size_t)y * 640 * 3, 1, 640 * 3, f);
+        }
+        fclose(f);
+    }
+}
 static void halfwatch(unsigned frame) {
     static unsigned char row[640 * 4];
-    unsigned lit[2] = {0, 0};
+    static unsigned lum_before, dark_from, dark_shot;
+    static int in_dark;
+    unsigned lit[2] = {0, 0}, lum = 0;
     int y, x;
     if (!port_opt.halfwatch || frame % (unsigned)port_opt.halfwatch != 0 || gl13_fullscreen()) {
         return;
@@ -1527,11 +1554,15 @@ static void halfwatch(unsigned frame) {
         glReadPixels(0, y, 640, 1, GL_RGBA, GL_UNSIGNED_BYTE, row);
         for (x = 0; x < 640; x++) {
             const unsigned char* q = row + x * 4;
-            if (q[0] > 12 || q[1] > 12 || q[2] > 12) {
+            unsigned m = q[0] > q[1] ? q[0] : q[1];
+            m = m > q[2] ? m : q[2];
+            lum += m;
+            if (m > 12) {
                 lit[x >= 320]++;
             }
         }
     }
+    lum /= 1920;
     hw_checked++;
     if ((lit[0] == 0 && lit[1] >= 32) || (lit[1] == 0 && lit[0] >= 32)) {
         hw_last_frame = frame;
@@ -1539,28 +1570,38 @@ static void halfwatch(unsigned frame) {
         hw_last_lit[0] = lit[0];
         hw_last_lit[1] = lit[1];
         if (hw_black < 8) {
-            static unsigned char px[640 * 480 * 3];
-            char path[1024];
-            FILE* f;
-            glPixelStorei(GL_PACK_ALIGNMENT, 1);
-            glReadPixels(0, 0, 640, 480, GL_RGB, GL_UNSIGNED_BYTE, px);
-            snprintf(path, sizeof(path), "%s/halfblack-f%05u.ppm",
-                     port_opt.shotdir ? port_opt.shotdir : ".", frame);
-            f = fopen(path, "wb");
-            if (f) {
-                fprintf(f, "P6\n640 480\n255\n");
-                for (y = 479; y >= 0; y--) {
-                    fwrite(px + (size_t)y * 640 * 3, 1, 640 * 3, f);
-                }
-                fclose(f);
-            }
+            halfwatch_shot("halfblack", frame);
         }
         hw_black++;
     }
+    if (!in_dark) {
+        if (lum_before >= 40 && lum * 100 < lum_before * 35) {
+            in_dark = 1;
+            dark_from = frame;
+            dark_shot = 0;
+            if (hw_blips < 8) {
+                halfwatch_shot("blip", frame);
+                dark_shot = 1;
+            }
+        } else {
+            lum_before = lum;
+        }
+    } else if (lum * 100 >= lum_before * 70) {
+        if (frame - dark_from <= 12) {
+            hw_blip_frame = dark_from;
+            hw_blip_len = frame - dark_from;
+            hw_blips++;
+        }
+        in_dark = 0;
+        lum_before = lum;
+    } else if (frame - dark_from > 12) {
+        in_dark = 0; /* a fade or a wipe: slower than a blip */
+        lum_before = lum;
+    }
 }
-/* the game thread's side: one line per new half-black frame seen */
+/* the game thread's side: one line per new half-black frame or blip seen */
 void rt_halfwatch_report(int final) {
-    static unsigned told;
+    static unsigned told, told_blips;
     if (!port_opt.halfwatch) {
         return;
     }
@@ -1569,9 +1610,14 @@ void rt_halfwatch_report(int final) {
         port_log("port> halfwatch: HALF BLACK #%u at frame %u (the %s half; lit %u / %u)\n", told,
                  hw_last_frame, hw_last_side ? "right" : "left", hw_last_lit[0], hw_last_lit[1]);
     }
+    if (hw_blips != told_blips) {
+        told_blips = hw_blips;
+        port_log("port> halfwatch: BLIP #%u at frame %u (dark for %u frames)\n", told_blips,
+                 hw_blip_frame, hw_blip_len);
+    }
     if (final) {
-        port_log("port> halfwatch: %u frames checked (every %d), %u half-black\n", hw_checked,
-                 port_opt.halfwatch, hw_black);
+        port_log("port> halfwatch: %u frames checked (every %d), %u half-black, %u blips\n",
+                 hw_checked, port_opt.halfwatch, hw_black, hw_blips);
     }
 }
 

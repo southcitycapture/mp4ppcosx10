@@ -205,6 +205,45 @@ for r in ${M45_RUNS:-N}; do
             k=${r%%:*}; n=$(echo $r | cut -d: -f2); a=$(echo $r | cut -d: -f3)
             case $k in T) md=--turbo ;; *) md=--realtime ;; esac
             run "$k-$n-$a" 1500 - $BASE $md --status ${M45_TDUMP:+--dumpframe $M45_TDUMP} $(arm $a) ;;
+        PC:*)
+            # M45 (PLAN.md 60): the picture checks -- PC:ARM[:old] into
+            # M45_DIR/pc-ARM/: m427 (the 2-vs-2 split screen) and m414 (four
+            # views) in lockstep at seven moments and at real time twice each;
+            # the board's natural Mega Mushroom (turn 2, frame 14,443 of --board
+            # 1) around its use; each item kind handed to the COMs (--giveitem
+            # 0..13, ten frames after each use's start).  Every run with
+            # --halfwatch 1 (half-black frames and blips counted and shot).
+            # ":old" = a pre-M45 bundle: no --halfwatch, no --giveitem runs.
+            # tools/m45_piccheck.py compares two such directories.
+            a=$(echo $r | cut -d: -f2); o=$(echo $r | cut -d: -f3)
+            hw="--halfwatch 1"; [ "$o" = old ] && hw=""
+            D0=$D; D="$D/pc-$(echo $a | tr -d '@' | tr ',' '_')"; mkdir -p "$D"
+            for g in m427 m414; do
+                run "L-$g-$a" 600 - --com4 --rtc dolphin --freshcard --noconfig --status --ovllog \
+                    --play board-start-com4.play --nomovies --minigame $g --turns 1 --ffto 14000 \
+                    --lockstep --frames 20000 --mgend 2400 --mgdump 60,300,600,900,1200,1500,2100 $hw $(arm $a)
+                for k in 1 2; do
+                    run "R-$g-$a-$k" 600 - $BASE --realtime $(scene $g) --mgend 2400 --mgdump 300,1200 $hw $(arm $a)
+                done
+            done
+            run "T-mega-$a" 900 - $BASE --turbo --board 1 --ffto 7808 --frames 14605 \
+                --dumpframe 14530-14545 $hw $(arm $a)
+            if [ "$o" != old ]; then
+                for it in 0 1 2 3 4 5 6 7 8 9 10 11 12 13; do
+                    run "T-item$it-$a" 900 - $BASE --turbo --board 1 --ffto 7808 --frames 9800 \
+                        --giveitem $it --dumpframe 8240-9800/40 $hw $(arm $a)
+                done
+            fi
+            D=$D0 ;;
+        SF:*|SFR:*)
+            # M45: SF:NAME:ARM -- the soak's own arguments (SOAK:'s, which the
+            # user's photograph of m427 came from) with the arm's flags (a
+            # --ffto into the soak, --frames), in lockstep (every frame drawn,
+            # the dump spread M45_TDUMP); SFR: the same at real time
+            k=${r%%:*}; n=$(echo $r | cut -d: -f2); a=$(echo $r | cut -d: -f3)
+            case $k in SF) md=--lockstep ;; *) md="" ;; esac
+            run "$k-$n-$a" 5400 - --soak --com4 --rtc dolphin --freshcard --status --perf --stuckwatch 200 \
+                --ovllog $md ${M45_TDUMP:+--dumpframe $M45_TDUMP} $(arm $a) ;;
         SX:*)
             # M45: a realtime soak of MIN minutes with an arm (its flags, e.g.
             # --minigame,m427 to deal one game every turn) and --halfwatch

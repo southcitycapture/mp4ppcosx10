@@ -411,6 +411,8 @@ typedef struct PortOptions {
     /* M44 (PLAN.md 59): the GX front end, built for the 7455 -- each lever's old path */
     const char* giveitem;   /* --giveitem N[,N..]  M45: items for the board players */
     int waterlook;          /* --waterlook port|console  M45: the user's tuning (1) or not */
+    int pondlook;           /* --pondlook sky|tint  M45: m434's pond (0 sky, 1 tint) */
+    int pondmix;            /* --pondmix PCT  M45: its blend (60 sky / 45 tint) */
     int wavegain;           /* --wavegain PCT  M45: the warp's amplitude, every screen */
     int nowaterpt;          /* --nowaterpt  M45: the water's positions from the CPU (M44) */
     int affinetex;          /* --affinetex  M45: the CPU path divides by q at the vertex */

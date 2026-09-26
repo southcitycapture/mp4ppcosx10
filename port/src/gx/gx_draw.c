@@ -4397,11 +4397,11 @@ static int water_submit(const u8* s, int n, const Seg* segs, int nsegs, int in_r
     stat_water_batches++;
     water_plan_cur = &wp;
     {
-        u8 look_saved = 0;
+        GxWaterLook look_saved;
         int look = gx_water_look_begin(&look_saved); /* M45 */
         draw_apply(s, n, in_ring);
         if (look) {
-            gx_water_look_end(look_saved);
+            gx_water_look_end(&look_saved);
         }
     }
     water_plan_cur = NULL;

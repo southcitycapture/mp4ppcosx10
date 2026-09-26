@@ -41,6 +41,7 @@ unsigned port_rss_mb(void) {
 PortOptions port_opt;
 static int water_set; /* M44: --water given on the command line */
 static int waterlook_set; /* M45: --waterlook given on the command line */
+static int pondlook_set;  /* M45: --pondlook given on the command line */
 
 void port_log_open(const char* path);
 void* port_game_stack_top(void);
@@ -343,6 +344,8 @@ static void usage(const char* argv0) {
             "  --nostripepool    M43: the texture stripes allocate their buffers per update\n"
             "  --giveitem N,..   M45: on a board, hand each player with an empty slot item N\n"
             "  --waterlook L     M45: port (the user's tuning: m417's ripple x2.5, no sky) | console\n"
+            "  --pondlook L      M45: m434's pond: sky (the reflection at 60%) | tint (water, no sky)\n"
+            "  --pondmix PCT     M45: the pond look's blend\n"
             "  --wavegain PCT    M45: the water warp's amplitude on every screen (100 = console)\n"
             "  --nowaterpt       M45: the water's CPU-path positions as M44 (view space, identity)\n"
             "  --affinetex       M45: the CPU path's projected texcoords divided at the vertex\n"
@@ -1310,6 +1313,12 @@ int port_parse_args(int argc, char** argv) {
             i++;
             port_opt.waterlook = !strcmp(argv[i], "console") ? 0 : 1;
             waterlook_set = 1;
+        } else if (!strcmp(a, "--pondlook") && i + 1 < argc) {
+            i++;
+            port_opt.pondlook = !strcmp(argv[i], "tint") ? 1 : 0;
+            pondlook_set = 1;
+        } else if (!strcmp(a, "--pondmix") && i + 1 < argc) {
+            port_opt.pondmix = atoi(argv[++i]);
         } else if (!strcmp(a, "--wavegain") && i + 1 < argc) {
             port_opt.wavegain = atoi(argv[++i]);
         } else if (!strcmp(a, "--nowaterpt")) {
@@ -1576,6 +1585,14 @@ int main(int argc, char** argv) {
             const char* w = port_config_get("waterlook");
             if (w) {
                 port_opt.waterlook = strcmp(w, "console") != 0;
+            }
+        }
+        if (pondlook_set) {
+            port_config_set("pondlook", port_opt.pondlook ? "tint" : "sky");
+        } else {
+            const char* w = port_config_get("pondlook");
+            if (w) {
+                port_opt.pondlook = !strcmp(w, "tint");
             }
         }
         if (port_opt.fullscreen_set) {
