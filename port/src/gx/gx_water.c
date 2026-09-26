@@ -107,9 +107,9 @@ static int look_gain_pct(int mg) {
  * under a quarter of the sky -- "it doesn't even look like there's water in
  * there".  Two looks, the user's to pick (`--pondlook`, the config's
  * `pondlook =`): "sky" (the default) the reflection's weight raised to
- * --pondmix percent (60): the console's reading, a sky on the water; "tint"
- * the reflection replaced by a flat water colour (REG1 for the draw) at
- * 45%: water without the sky, as m417's. */
+ * --pondmix percent (42) over the floor darkened and blued (TEXC x C1 in
+ * stage 0): the console's reading, deep water with a sky on it; "tint" the
+ * same floor under a flat water colour (REG2) at 40% and no sky, as m417's. */
 int gx_water_look_begin(GxWaterLook* sv) {
     int mg;
     sv->what = 0;
@@ -124,19 +124,31 @@ int gx_water_look_begin(GxWaterLook* sv) {
         return 1;
     }
     if (mg == 434 && gx.num_tev == 2 && gx.tev[1].cin[0] == GX_CC_CPREV &&
-        gx.tev[1].cin[1] == GX_CC_TEXC && gx.tev[1].cin[2] == GX_CC_A0) {
-        int mix = port_opt.pondmix > 0 && port_opt.pondmix <= 100 ? port_opt.pondmix : 60;
+        gx.tev[1].cin[1] == GX_CC_TEXC && gx.tev[1].cin[2] == GX_CC_A0 &&
+        gx.tev[0].cin[0] == GX_CC_ZERO && gx.tev[0].cin[1] == GX_CC_ZERO &&
+        gx.tev[0].cin[2] == GX_CC_ZERO && gx.tev[0].cin[3] == GX_CC_TEXC) {
+        int mix;
         sv->what = 2;
         sv->reg0 = gx.tev_reg[1];
         sv->reg1 = gx.tev_reg[2];
+        sv->reg2 = gx.tev_reg[3];
+        memcpy(sv->cin0, gx.tev[0].cin, 4);
         sv->cin1 = gx.tev[1].cin[1];
+        /* both: the floor seen through the water, darkened and blued
+         * (stage 0: TEXC x C1 where the game had TEXC) */
+        gx.tev[0].cin[1] = GX_CC_TEXC;
+        gx.tev[0].cin[2] = GX_CC_C1;
+        gx.tev[0].cin[3] = GX_CC_ZERO;
         if (port_opt.pondlook == 1) {
-            /* tint: the water's own colour in REG1, 45% over the floor */
-            gx.tev_reg[2].r = 34;
-            gx.tev_reg[2].g = 78;
-            gx.tev_reg[2].b = 104;
-            gx.tev[1].cin[1] = GX_CC_C1;
-            mix = port_opt.pondmix > 0 && port_opt.pondmix <= 100 ? port_opt.pondmix : 45;
+            /* tint: no sky -- a flat water colour (REG2) over the tinted floor */
+            gx.tev_reg[2].r = 150; gx.tev_reg[2].g = 190; gx.tev_reg[2].b = 205;
+            gx.tev_reg[3].r = 30; gx.tev_reg[3].g = 105; gx.tev_reg[3].b = 145;
+            gx.tev[1].cin[1] = GX_CC_C2;
+            mix = port_opt.pondmix > 0 && port_opt.pondmix <= 100 ? port_opt.pondmix : 40;
+        } else {
+            /* sky: the reflection at 42%, over the darkened floor */
+            gx.tev_reg[2].r = 150; gx.tev_reg[2].g = 172; gx.tev_reg[2].b = 188;
+            mix = port_opt.pondmix > 0 && port_opt.pondmix <= 100 ? port_opt.pondmix : 42;
         }
         gx.tev_reg[1].a = (u8)(mix * 255 / 100);
         return 1;
@@ -149,6 +161,8 @@ void gx_water_look_end(const GxWaterLook* sv) {
     } else if (sv->what == 2) {
         gx.tev_reg[1] = sv->reg0;
         gx.tev_reg[2] = sv->reg1;
+        gx.tev_reg[3] = sv->reg2;
+        memcpy(gx.tev[0].cin, sv->cin0, 4);
         gx.tev[1].cin[1] = sv->cin1;
     }
 }

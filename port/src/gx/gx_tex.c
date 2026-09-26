@@ -437,6 +437,7 @@ typedef struct CacheEntry {
      * box-filters 2x2 down to what the copy unit would have written. */
     u16 copy_w, copy_h;
     u8 copy_half;
+    unsigned copy_ifmt; /* M45: the GL internal format the copy was sized with */
     /* M23: once the game has read this copy back (port_gx_copy_read), every
      * later copy also reads itself back at the destination size through
      * gl13_downsample_read into `cpu_rgba` (w*h*4 bytes), so the game's
@@ -2246,10 +2247,25 @@ void gx_tex_copy(void* dest, int clear) {
     }
     {
         GLuint name = cache[slot].gl_name;
+        /* M45 (PLAN.md 60): a copy into a one-channel colour format (GX_CTF_R8,
+         * R4: every projected shadow map, hsfman.c) holds the EFB's red and
+         * nothing else, and the game samples it as I8 -- the same byte in
+         * TEXC and TEXA.  Copied into RGBA8 it kept all three channels, which
+         * a black-and-white shadow pass never showed; m405 sets its copy-clear
+         * colour to the pool's blue (30, 102, 162) before the shadow pass
+         * clears with it, and the floor's shadow stage, CPREV x (1 - TEXC),
+         * took (0.12, 0.40, 0.64) off the cyan floor where the console takes
+         * 0.12 -- the grey-green water.  An INTENSITY8 texture is GL's I = R
+         * (glCopyTexSubImage's conversion).  --rgbcopy: RGBA8 as M1..M44. */
+        GLenum ifmt = (!port_opt.rgbcopy && (gx.tex_dst_fmt == GX_CTF_R8 ||
+                                             gx.tex_dst_fmt == GX_CTF_R4))
+                          ? GL_INTENSITY8 : GL_RGBA8;
         if (!name) {
             GL(glGenTextures)(1, &name);
             cache[slot].gl_name = name;
             cache[slot].param_wrap_s = -1;
+        } else if (cache[slot].copy_ifmt != (unsigned)ifmt) {
+            cache[slot].param_wrap_s = -1; /* sized again below, in the other format */
         } else if (cache[slot].copy_w != (u16)cw || cache[slot].copy_h != (u16)ch) {
             /* the same buffer copied at another size (a shadow map resized
              * by Hu3DShadowSizeSet): the texture is sized again below */
@@ -2283,8 +2299,9 @@ void gx_tex_copy(void* dest, int clear) {
              * past the region reads what the console's would. */
             u8* zero = (u8*)calloc((size_t)pw * ph, 4);
             (port_opt.glcheck ? gl13_check("glTexImage2D") : 0);
-            rt_teximage2d_owned(GL_TEXTURE_2D, 0, GL_RGBA8, pw, ph, 0, GL_RGBA,
+            rt_teximage2d_owned(GL_TEXTURE_2D, 0, (GLint)ifmt, pw, ph, 0, GL_RGBA,
                                 GL_UNSIGNED_BYTE, zero); /* M27: freed after the call */
+            cache[slot].copy_ifmt = (unsigned)ifmt;
             cache[slot].param_wrap_s = 0;
             cache_gl_bytes -= cache[slot].gl_bytes;
             cache[slot].gl_bytes = (unsigned)(pw * ph * 4);

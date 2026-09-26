@@ -243,7 +243,7 @@ for r in ${M45_RUNS:-N}; do
             k=${r%%:*}; n=$(echo $r | cut -d: -f2); a=$(echo $r | cut -d: -f3)
             case $k in SF) md=--lockstep ;; *) md="" ;; esac
             run "$k-$n-$a" 5400 - --soak --com4 --rtc dolphin --freshcard --status --perf --stuckwatch 200 \
-                --ovllog $md ${M45_TDUMP:+--dumpframe $M45_TDUMP} $(arm $a) ;;
+                --ovllog $md ${M45_TDUMP:+--dumpframe $M45_TDUMP} ${M45_SFEXTRA} $(arm $a) ;;
         SX:*)
             # M45: a realtime soak of MIN minutes with an arm (its flags, e.g.
             # --minigame,m427 to deal one game every turn) and --halfwatch

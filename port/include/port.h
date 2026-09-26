@@ -31,8 +31,8 @@ extern "C" {
 /* ---- settings, from argv ------------------------------------------------- */
 /* M32: the shipped version (the dmg's name, the plist, the --defaults header)
  * and the milestone that built it. */
-#define PORT_VERSION_STRING "0.9.13"
-#define PORT_MILESTONE "M44"
+#define PORT_VERSION_STRING "0.9.14"
+#define PORT_MILESTONE "M45"
 
 typedef struct PortOptions {
     const char* image;      /* --image  disc image or extracted files/ tree   */
@@ -414,6 +414,8 @@ typedef struct PortOptions {
     int pondlook;           /* --pondlook sky|tint  M45: m434's pond (0 sky, 1 tint) */
     int pondmix;            /* --pondmix PCT  M45: its blend (60 sky / 45 tint) */
     int wavegain;           /* --wavegain PCT  M45: the warp's amplitude, every screen */
+    int rgbcopy;            /* --rgbcopy  M45: R8 copies kept as RGBA8 (M1..M44) */
+    int novcposoff;         /* --novcposoff  M45: no positions refresh on an off frame */
     int nowaterpt;          /* --nowaterpt  M45: the water's positions from the CPU (M44) */
     int affinetex;          /* --affinetex  M45: the CPU path divides by q at the vertex */
     int halfwatch;          /* --halfwatch N  M45: count half-black presented frames */

@@ -5886,6 +5886,7 @@ typedef struct VcEnt {
     unsigned dyn_until;        /* animated: left to the ring until this frame */
     unsigned lepoch;           /* gx_vc_epoch of the list's last hash */
     u32 wb_ser, le1, le2;      /* M42: the write barrier's serial, the ends' hash */
+    u8 has_pos;                /* M45: a primitive of it was refreshed (positions moving) */
     int nprims, cap;
     VcPrim* prims;
     struct VcEnt* next;
@@ -5915,8 +5916,19 @@ static double stat_vc_list_bytes, stat_vc_arr_bytes, stat_vc_s;
 static unsigned long stat_vc_resets, stat_vc_region_peak, stat_vc_frames, stat_vc_clears;
 static unsigned long vc_frame_verts, vc_frame_hits; /* for the drawn-frame share */
 static int vc_frame_on = 1;        /* --vcache auto: this drawn frame keys */
+/* M45 (PLAN.md 60): the positions refresh on a frame the auto keys off.  M44's
+ * refresh (vc_decide's 3) served only the frames the cache keyed, and on
+ * m463's falling panels the game thread is the pole, so the auto keys off
+ * and the panels were decoded whole again (59.5).  Now a list one of whose
+ * primitives was refreshed (has_pos) is still looked up on an off frame --
+ * refresh-only: a refresh or a hit is served, a miss goes to the ring as
+ * before and nothing is keyed or stored.  Idle within 600 frames of the
+ * last refresh.  --novcposoff: off frames as M44. */
+static int vc_refresh_only;
+static unsigned vc_last_refresh = ~0u;
 static unsigned long vc_last_hits; /* the last keyed frame's hits, in vertices */
 static unsigned long stat_vc_auto_on, stat_vc_auto_off, stat_vc_list_memo;
+static unsigned long stat_vc_refresh_only_lists, stat_vc_refresh_off; /* M45 */
 static double stat_vc_share_sum;
 
 static u32 vc_rotl(u32 x, int r) { return (x << r) | (x >> (32 - r)); }
@@ -6186,13 +6198,28 @@ static VcEnt* vc_list_begin(const void* list, u32 nbytes) {
         }
     }
     vc_list_off_why = VR_OFF;
+    vc_refresh_only = 0;
     if (!vc_frame_on) {
-        return NULL;
-    }
-    stat_vc_lists++;
-    for (e = vc_tbl[b]; e; e = e->next) {
-        if (e->list == list && e->nbytes == nbytes) {
-            break;
+        if (port_opt.novcposoff || port_opt.novcpos || vc_last_refresh == ~0u ||
+            fr - vc_last_refresh > 600u) {
+            return NULL;
+        }
+        for (e = vc_tbl[b]; e; e = e->next) {
+            if (e->list == list && e->nbytes == nbytes) {
+                break;
+            }
+        }
+        if (!e || !e->has_pos) {
+            return NULL;
+        }
+        vc_refresh_only = 1;
+        stat_vc_refresh_only_lists++;
+    } else {
+        stat_vc_lists++;
+        for (e = vc_tbl[b]; e; e = e->next) {
+            if (e->list == list && e->nbytes == nbytes) {
+                break;
+            }
         }
     }
     if (e && e->dyn_until && (int)(fr - e->dyn_until) < 0) {
@@ -6294,6 +6321,9 @@ static VcPrim* vc_prim_find(VcEnt* e, int i, u32 h1, u32 h2, int* found) {
         if (!lru || !q->valid || (lru->valid && (int)(q->last_frame - lru->last_frame) < 0)) {
             lru = q;
         }
+    }
+    if (vc_refresh_only) {
+        return NULL; /* M45: an off frame keys nothing: no place is taken */
     }
     if (nvar >= VC_VARIANTS || (lru && !lru->valid)) {
         free(lru->key);
@@ -6507,6 +6537,11 @@ static int vc_decide(VcEnt* e, int i, const u8* p, const u8* end, u32 count, u8 
                 e->streak = 0;
                 stat_vc_refresh++;
                 stat_vc_refresh_v += count;
+                e->has_pos = 1;
+                vc_last_refresh = gl13_frame_number();
+                if (vc_refresh_only) {
+                    stat_vc_refresh_off++;
+                }
                 vc_cur = vp;
                 vc_reason = VR_ARR;
                 return 3;
@@ -6536,6 +6571,11 @@ static int vc_decide(VcEnt* e, int i, const u8* p, const u8* end, u32 count, u8 
                 e->streak = 0;
                 stat_vc_refresh++;
                 stat_vc_refresh_v += count;
+                e->has_pos = 1;
+                vc_last_refresh = gl13_frame_number();
+                if (vc_refresh_only) {
+                    stat_vc_refresh_off++;
+                }
                 vp->pos_mode = 1;
                 vp->pos_check = gl13_frame_number() + 64;
                 vc_cur = vp;
@@ -6545,6 +6585,9 @@ static int vc_decide(VcEnt* e, int i, const u8* p, const u8* end, u32 count, u8 
         }
         if (ok) {
             vp->pos_mode = 0;
+        }
+        if (vc_refresh_only && !(ok && vp->stored && vp->gen == vc_gen && port_opt.vcache >= 2)) {
+            return 0; /* M45: an off frame keys nothing */
         }
         if (ok && vp->stored && vp->gen == vc_gen && port_opt.vcache >= 2) {
             e->streak = 0;
@@ -6579,6 +6622,8 @@ static int vc_decide(VcEnt* e, int i, const u8* p, const u8* end, u32 count, u8 
             stat_vc_miss_new++; /* a reset forgot it, or a full region never stored it */
             stat_vc_miss_new_v += count;
         }
+    } else if (vc_refresh_only) {
+        return 0; /* M45: an off frame keys nothing */
     } else if (e->nprims > 1 && vp->slot == i && e->last_frame == gl13_frame_number() &&
                vp != &e->prims[0]) {
         vc_reason = VR_PLAN;
@@ -6814,6 +6859,10 @@ static void vc_report(void) {
     port_log("port> vcache (M44): %lu positions refreshes (%lu vertices): stored runs whose "
              "position array alone had moved, copied and their positions decoded again%s\n",
              stat_vc_refresh, stat_vc_refresh_v, port_opt.novcpos ? " (--novcpos)" : "");
+    port_log("port> vcache (M45): on the frames the auto keyed off, %lu lists looked up "
+             "refresh-only, %lu refreshes served there%s\n",
+             stat_vc_refresh_only_lists, stat_vc_refresh_off,
+             port_opt.novcposoff ? " (--novcposoff)" : "");
     port_log("port> vcache: misses -- new %lu (%lu v), plan changed %lu (%lu v), arrays changed "
              "%lu (%lu v), list bytes changed %lu lists; ineligible %lu (%lu v, skinned/palette/"
              "premerge); not stored (region full this frame) %lu (%lu v); stored %lu v\n",
