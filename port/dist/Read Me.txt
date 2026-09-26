@@ -1,6 +1,6 @@
 Mario Party 4 PowerPC Edition
 =============================
-Version 0.9.13
+Version 0.9.14
 
 
 WHAT THIS IS
@@ -108,6 +108,23 @@ second ripple, Cheep Cheep Sweep's reflection).  Three levels:
 
 Run once from the Terminal with --water off (or cheap, full, auto), or put
 `water = cheap` in the config file; the choice is remembered.
+
+Since 0.9.14 the water has this port's own look, tuned by eye on the G4
+rather than copied from the console:
+
+    Makin' Waves        the waves two and a half times the console's and
+                        no sky reflected in the pool
+    Cheep Cheep Sweep   the pond reads as deep water: the floor darkened
+                        and blued under it, and the sky and the trees on
+                        the water ("sky", the default), or the same water
+                        with no sky ("tint")
+    Mario Medley        the pool's blue now matches the console's
+
+The console's own amplitude and sky come back with --waterlook console
+(`waterlook = console` in the config file); the pond's choice is
+--pondlook sky or --pondlook tint (`pondlook = tint`); --wavegain PERCENT
+sets the waves on every rippling pool (100 is the console's).  All of them
+are remembered like the water level.
 
 
 LOADING
@@ -232,7 +249,7 @@ WHERE YOUR THINGS LIVE
                               same layout Dolphin uses, so a save moves
                               either way)
         config                the disc image's path, the fullscreen and
-                              water choices
+                              water choices (level, look, the pond)
         MarioParty4.log       the log of the last run
 
 Deleting the folder loses your save file, so that is the folder to back up.
@@ -248,13 +265,13 @@ games); what is left that a player can see:
 
     Mario Medley        the pool's light ripple is fainter than the
                         console's (its second ripple bends a copy of the
-                        picture), and the water is grey-green where the
-                        console's is blue
+                        picture)
     Makin' Waves        the pool ripples at the water's corners rather
-                        than at every pixel (see THE WATER)
-    Cheep Cheep Sweep   the pond is clear where the console's reflects
-                        the sky (the reflection's ripple bends a copy of
-                        the picture)
+                        than at every pixel, and on purpose not as the
+                        console's (see THE WATER)
+    Cheep Cheep Sweep   the pond's reflection does not ripple (its ripple
+                        bends a copy of the picture); its look is the
+                        port's own (see THE WATER)
 
 The ripple of those pools is a warp the card's fixed pipeline cannot do
 per pixel; since 0.9.13 it is drawn at the vertices (THE WATER).  A

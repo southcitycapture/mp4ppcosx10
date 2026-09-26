@@ -1,0 +1,39 @@
+run	frame	verdict	sim	>8%	ref L/R	new L/R
+L-m414	frame-14537.ppm	identical	100	0		
+L-m414	frame-14777.ppm	identical	100	0		
+L-m414	frame-15077.ppm	identical	100	0		
+L-m414	frame-15377.ppm	identical	100	0		
+L-m414	frame-15677.ppm	identical	100	0		
+L-m414	frame-15977.ppm	identical	100	0		
+L-m414	frame-16577.ppm	identical	100	0		
+L-m427	frame-14537.ppm	differs	99.8	2.4	14.8/15.6	14.2/15.0
+L-m427	frame-14777.ppm	DARKER (look)	98.5	14.1	20.1/21.1	16.5/17.1
+L-m427	frame-15077.ppm	DARKER (look)	98.1	20.8	21.4/21.8	16.5/16.9
+L-m427	frame-15377.ppm	DARKER (look)	98.1	19.3	21.9/22.2	17.1/17.5
+L-m427	frame-15677.ppm	DARKER (look)	98.4	15.0	23.2/23.2	19.1/19.1
+L-m427	frame-15977.ppm	DARKER (look)	98.5	12.4	21.9/21.1	17.9/17.5
+L-m427	frame-16577.ppm	differs	99.4	2.9	15.5/16.9	13.7/15.4
+R-m414-1	frame-14777.ppm	identical	100	0		
+R-m414-1	frame-15677.ppm	identical	100	0		
+R-m414-2	frame-14777.ppm	identical	100	0		
+R-m414-2	frame-15677.ppm	identical	100	0		
+R-m427-1	frame-14777.ppm	DARKER (look)	98.5	14.1	20.1/21.1	16.5/17.1
+R-m427-1	frame-15677.ppm	DARKER (look)	98.4	15.0	23.2/23.2	19.1/19.1
+R-m427-2	frame-14777.ppm	DARKER (look)	98.5	14.1	20.1/21.1	16.5/17.1
+R-m427-2	frame-15677.ppm	DARKER (look)	98.4	15.0	23.2/23.2	19.1/19.1
+T-mega	frame-14530.ppm	identical	100	0		
+T-mega	frame-14531.ppm	identical	100	0		
+T-mega	frame-14532.ppm	identical	100	0		
+T-mega	frame-14533.ppm	identical	100	0		
+T-mega	frame-14534.ppm	identical	100	0		
+T-mega	frame-14535.ppm	FAIL (a half went dark)	60.9	89.4	111.7/122.1	16.8/17.4
+T-mega	frame-14536.ppm	FAIL (a half went dark)	61.8	89.3	111.6/122.0	18.9/19.8
+T-mega	frame-14537.ppm	FAIL (a half went dark)	62.7	89.2	111.5/122.0	21.1/22.2
+T-mega	frame-14538.ppm	FAIL (a half went dark)	63.7	89.1	111.3/121.8	23.3/24.6
+T-mega	frame-14539.ppm	FAIL (a half went dark)	64.7	89.1	111.0/121.7	25.4/27.0
+T-mega	frame-14540.ppm	identical	100	0		
+T-mega	frame-14541.ppm	identical	100	0		
+T-mega	frame-14542.ppm	identical	100	0		
+T-mega	frame-14543.ppm	identical	100	0		
+T-mega	frame-14544.ppm	identical	100	0		
+T-mega	frame-14545.ppm	identical	100	0		
