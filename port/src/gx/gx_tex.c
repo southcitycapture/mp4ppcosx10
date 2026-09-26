@@ -2247,19 +2247,18 @@ void gx_tex_copy(void* dest, int clear) {
     }
     {
         GLuint name = cache[slot].gl_name;
-        /* M45 (PLAN.md 60): a copy into a one-channel colour format (GX_CTF_R8,
-         * R4: every projected shadow map, hsfman.c) holds the EFB's red and
-         * nothing else, and the game samples it as I8 -- the same byte in
-         * TEXC and TEXA.  Copied into RGBA8 it kept all three channels, which
-         * a black-and-white shadow pass never showed; m405 sets its copy-clear
-         * colour to the pool's blue (30, 102, 162) before the shadow pass
-         * clears with it, and the floor's shadow stage, CPREV x (1 - TEXC),
-         * took (0.12, 0.40, 0.64) off the cyan floor where the console takes
-         * 0.12 -- the grey-green water.  An INTENSITY8 texture is GL's I = R
-         * (glCopyTexSubImage's conversion).  --rgbcopy: RGBA8 as M1..M44. */
-        GLenum ifmt = (!port_opt.rgbcopy && (gx.tex_dst_fmt == GX_CTF_R8 ||
-                                             gx.tex_dst_fmt == GX_CTF_R4))
-                          ? GL_INTENSITY8 : GL_RGBA8;
+        /* M45 (PLAN.md 60): an R8 copy (every projected shadow map) holds
+         * the EFB's red alone, sampled as I8; here it keeps all three
+         * channels, so the shadow pass's background must be grey for the two
+         * to agree -- gl13_clear makes the region grey (the clear colour's
+         * red) when the frame's clear colour is not (gl13_note_r8_region).
+         * An INTENSITY8 copy did it in GL and cost ~5 ms a frame (the ATI
+         * driver converts on the CPU): measured, and not kept. */
+        GLenum ifmt = GL_RGBA8;
+        if (!port_opt.rgbcopy && !from_front &&
+            (gx.tex_dst_fmt == GX_CTF_R8 || gx.tex_dst_fmt == GX_CTF_R4)) {
+            gl13_note_r8_region(sl, st, sw, sh);
+        }
         if (!name) {
             GL(glGenTextures)(1, &name);
             cache[slot].gl_name = name;

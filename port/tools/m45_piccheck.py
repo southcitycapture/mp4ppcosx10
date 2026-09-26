@@ -15,6 +15,8 @@ half).  A FAIL is:
   * a half-black frame or a blip counted by --halfwatch in a new run (the
     reference is a pre-M45 build without the counter, or its own counts);
   * a new run that exits non-zero or faults.
+A half 15% darker or more than the reference's is listed as LOOK (M44's lost
+lamp pool made m427's left half 18% darker).
 Frames that differ without failing are listed for a look (the water's tuning
 moves m427's river on purpose).  Writes OUT/piccheck.tsv and, for every failing
 or differing frame, OUT/NAME-frame-N.jpg (reference | new | the difference x4).
@@ -81,6 +83,7 @@ def main():
     tsv.write("run\tframe\tverdict\tsim\t>8%\tref L/R\tnew L/R\n")
     n_frames = n_same = n_diff = 0
     fails = []
+    warns = []
     for k in sorted(N):
         hb, bl, fault, bad = halfwatch(N[k] + ".log")
         if hb:
@@ -110,6 +113,10 @@ def main():
             al, ar = halves(a)
             bl_, br = halves(b)
             verdict = "differs"
+            if (al > 8 and bl_ < 0.85 * al) or (ar > 8 and br < 0.85 * ar):
+                # a half 15% darker or more: M44's m427 lamp pool was 18%
+                verdict = "DARKER (look)"
+                warns.append("%s %s: a half darker (%.1f/%.1f -> %.1f/%.1f)" % (k, fr, al, ar, bl_, br))
             if (al > 12 and bl_ < 0.4 * al) or (ar > 12 and br < 0.4 * ar):
                 verdict = "FAIL (a half went dark)"
                 fails.append("%s %s: a half went dark (%.1f/%.1f -> %.1f/%.1f)" % (k, fr, al, ar, bl_, br))
@@ -123,6 +130,8 @@ def main():
           % (len(N), n_frames, n_same, n_diff, len(fails)))
     for f in fails:
         print("  FAIL", f)
+    for w in warns:
+        print("  LOOK", w)
     print("  table: %s" % os.path.join(out, "piccheck.tsv"))
     sys.exit(1 if fails else 0)
 

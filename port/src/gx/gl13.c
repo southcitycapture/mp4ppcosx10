@@ -683,6 +683,30 @@ void gl13_clear_at_swap(GXColor c, u32 z) {
     clear_z = z;
 }
 
+/* M45 (PLAN.md 60): the shadow pass's region, for the frame's clear.  A
+ * GX_CTF_R8 copy takes the EFB's red alone, and the game samples it as I8;
+ * the port's copy is RGBA (an INTENSITY8 copy converts on the CPU in the ATI
+ * driver: ~5 ms a frame).  The shadow pass (hsfman.c Hu3DShadowExec) draws
+ * its casters over whatever the frame's clear left in the region, so a
+ * frame cleared to a colour that is not grey -- m405 sets the pool's blue
+ * (30, 102, 162) -- gave the shadow map a blue background, and the floor's
+ * shadow stage, CPREV x (1 - TEXC), took (0.12, 0.40, 0.64) off the cyan
+ * floor where the console takes 0.12: the grey-green water.  So the region
+ * the last R8 copies read is cleared to the clear colour's red in all three
+ * channels, which is the byte the console's copy holds.  The region is
+ * cleared again by the copy itself before the scene is drawn (the copy's
+ * clear, hsfman.c:2007), so no pixel a player sees changes.  --rgbcopy: off. */
+static int r8_x, r8_y, r8_w, r8_h;
+static unsigned r8_frame;
+static int r8_valid;
+void gl13_note_r8_region(int x, int y, int w, int h) {
+    r8_x = x;
+    r8_y = y;
+    r8_w = w;
+    r8_h = h;
+    r8_frame = frame_no;
+    r8_valid = 1;
+}
 void gl13_clear(GXColor c, u32 z) {
     if (!gl_on) {
         return;
@@ -693,6 +717,11 @@ void gl13_clear(GXColor c, u32 z) {
     GL(glClearColor)(c.r / 255.0f, c.g / 255.0f, c.b / 255.0f, c.a / 255.0f);
     GL(glClearDepth)((double)z / (double)0xFFFFFF);
     GL(glClear)(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    if (r8_valid && frame_no - r8_frame <= 8u && (c.r != c.g || c.g != c.b) && !port_opt.rgbcopy) {
+        GL(glScissor)(r8_x, EFB_H - (r8_y + r8_h), r8_w, r8_h);
+        GL(glClearColor)(c.r / 255.0f, c.r / 255.0f, c.r / 255.0f, c.a / 255.0f);
+        GL(glClear)(GL_COLOR_BUFFER_BIT);
+    }
     /* The clear sets scissor, both masks and the clear colour behind the
      * shadow's back, so the shadow forgets.  Once a frame, which is nothing. */
     glc_invalidate();

@@ -23,15 +23,15 @@ CONSOLE = {"m417": 13494, "m405": 11737, "m434": 11959}  # the M35 capture at en
 BOX = {"m417": (60, 110, 520, 330), "m405": (0, 250, 640, 230), "m434": (160, 150, 330, 190)}
 OFF = 1200
 RUNS = {
-    "m417": [("W-m417-@r13", "0.9.13 (cheap)"), ("W-m417-@w5,--water,cheap", "M45 cheap: no sky, ripple x2.5"),
-             ("W-m417-@w7,--water,full", "M45 full: no sky, ripple x2.5")],
-    "m405": [("W-m405-@r13", "0.9.13 (cheap)"), ("W-m405-@w7", "M45 cheap"), ("W-m405-@w7,--water,full", "M45 full")],
-    "m434": [("W-m434-@r13", "0.9.13 (cheap)"), ("W-m434-@w7", "M45 cheap, pond 'sky'"),
-             ("W-m434-@w7,--water,full", "M45 full, pond 'sky'")],
+    "m417": [("W-m417-@r13", "0.9.13 (cheap)"), ("W-m417-@w12", "M45 cheap: no sky, ripple x2.5"),
+             ("W-m417-@w12,--water,full", "M45 full: no sky, ripple x2.5")],
+    "m405": [("W-m405-@r13", "0.9.13 (cheap)"), ("W-m405-@w12", "M45 cheap"), ("W-m405-@w12,--water,full", "M45 full")],
+    "m434": [("W-m434-@r13", "0.9.13 (cheap)"), ("W-m434-@w12", "M45 cheap, pond 'sky'"),
+             ("W-m434-@w12,--water,full", "M45 full, pond 'sky'")],
 }
-LOOKS = [("W-m434-@r13", "0.9.13 (cheap)"), ("W-m434-@w7", "M45 --pondlook sky (the default)"),
-         ("W-m434-@w7,--pondlook,tint", "M45 --pondlook tint (no sky)"),
-         ("W-m434-@w7,--water,full", "M45 full, sky"), ("W-m434-@w7,--water,full,--pondlook,tint", "M45 full, tint")]
+LOOKS = [("W-m434-@r13", "0.9.13 (cheap)"), ("W-m434-@w12", "M45 --pondlook sky (the default)"),
+         ("W-m434-@w12,--pondlook,tint", "M45 --pondlook tint (no sky)"),
+         ("W-m434-@w12,--water,full", "M45 full, sky"), ("W-m434-@w12,--water,full,--pondlook,tint", "M45 full, tint")]
 
 
 def stats(a, b, box=None):

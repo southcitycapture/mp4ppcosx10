@@ -348,7 +348,8 @@ static void usage(const char* argv0) {
             "  --pondmix PCT     M45: the pond look's blend\n"
             "  --wavegain PCT    M45: the water warp's amplitude on every screen (100 = console)\n"
             "  --rgbcopy         M45: an R8 copy (a shadow map) kept as RGBA8 (M1..M44)\n"
-            "  --novcposoff      M45: the positions refresh only on the frames the cache keys\n"
+            "  --vcposoff        M45: the positions refresh on the frames the cache keys off too\n"
+            "                    (exact; measured level on m463, so off by default)\n"
             "  --nowaterpt       M45: the water's CPU-path positions as M44 (view space, identity)\n"
             "  --affinetex       M45: the CPU path's projected texcoords divided at the vertex\n"
             "  --halfwatch N     M45: every Nth presented frame, count a half-black picture\n"
@@ -774,6 +775,7 @@ int port_parse_args(int argc, char** argv) {
     port_opt.water = -1;     /* M44: auto (PLAN.md 59) */
     port_opt.watergrid = 1;
     port_opt.waterlook = 1;  /* M45: the user's tuning (PLAN.md 60) */
+    port_opt.novcposoff = 1; /* M45: measured level on m463 (PLAN.md 60); --vcposoff turns it on */
     port_opt.rtgx_fit = 29.0;
     port_opt.vcache_mb = 8;
     port_opt.resident = -1; /* M36: the resident set's budget by the installed RAM (machine.c) */
@@ -1327,6 +1329,8 @@ int port_parse_args(int argc, char** argv) {
             port_opt.rgbcopy = 1;
         } else if (!strcmp(a, "--novcposoff")) {
             port_opt.novcposoff = 1;
+        } else if (!strcmp(a, "--vcposoff")) {
+            port_opt.novcposoff = 0;
         } else if (!strcmp(a, "--nowaterpt")) {
             port_opt.nowaterpt = 1;
         } else if (!strcmp(a, "--affinetex")) {
