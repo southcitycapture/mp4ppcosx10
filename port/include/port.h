@@ -425,6 +425,8 @@ typedef struct PortOptions {
     int nopendlast;         /* --nopendlast  M46: the run's last vertex decoded whole for `pending` */
     int dcbtdist;           /* --dcbtdist N  M46: the decode loops prefetch N vertices ahead (1) */
     const char* keytest;    /* --keytest K,K  M46: each key through the keyboard's poll, logged */
+    int oldscissor;         /* --oldscissor  M46: the scissor test as 0.9.14 left it after a read-back */
+    int readbacktest;       /* --readbacktest  M46: one copy read-back at the first drawn frame */
     int nodcbz;             /* --nodcbz  M44: no dcbz ahead of the render stream's and the
                              *   vertex ring's writes (a store miss reads the line first) */
     int novpgen;            /* --novpgen  M44: the vertex program's parameters compared value by

@@ -1107,6 +1107,16 @@ int gl13_shot_pending(void) { return pending_shot != NULL; }
  * is where the clear used to be; under --realtime it is the first thing a
  * drawn frame does after any number of consumed ones. */
 void gl13_begin_frame(void) {
+    if (port_opt.readbacktest && gl_on && !draw_off) {
+        /* M46 (PLAN.md 61.10): --readbacktest -- one read-back through
+         * gl13_downsample_read at the first drawn frame, as Stamp Out!'s
+         * intro makes, to show what it leaves behind (--oldscissor: as 0.9.14) */
+        static unsigned char px[16 * 16 * 4];
+        port_opt.readbacktest = 0;
+        gl13_downsample_read(0, 1.0f, 1.0f, 0, 0, 16, 16, px);
+        port_log("port> --readbacktest: one downsample read at frame %u%s\n", frame_no + 1,
+                 port_opt.oldscissor ? " (--oldscissor: the scissor test left off)" : "");
+    }
     if (clear_pending && gl_on && !draw_off) {
         clear_pending = 0;
         gl13_clear(clear_color, clear_z);
@@ -1179,6 +1189,17 @@ void gl13_downsample_read(unsigned name, float su, float sv, int x, int y, int w
     GL(glMatrixMode)(GL_MODELVIEW);
     GL(glPixelStorei)(GL_PACK_ALIGNMENT, 1);
     GL(glReadPixels)(x, y, w, h, GL_RGBA, GL_UNSIGNED_BYTE, out_rgba);
+    /* M46 (PLAN.md 61.10): the scissor test back on.  The shadow does not
+     * track it (it is on from gl13_init to the end), so this read left it off
+     * for the rest of a windowed run -- fullscreen's present turns it on
+     * again every frame -- and every GXCopyTex clear after it (scissored to
+     * the copied region) cleared the whole window: m427's right view's
+     * copy-and-clear wiped the left view, from the first read-back (Stamp
+     * Out!'s intro, the soak's first minigame) on.  The user's photograph of
+     * 0.9.13's black left half. */
+    if (!port_opt.oldscissor) {
+        GL(glEnable)(GL_SCISSOR_TEST);
+    }
     glc_invalidate();
 }
 

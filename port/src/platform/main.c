@@ -358,6 +358,9 @@ static void usage(const char* argv0) {
             "                    (exact; measured level on m463, so off by default)\n"
             "  --nowaterpt       M45: the water's CPU-path positions as M44 (view space, identity)\n"
             "  --affinetex       M45: the CPU path's projected texcoords divided at the vertex\n"
+            "  --oldscissor      M46: a copy read-back leaves the scissor test off, as\n"
+            "                    0.9.14 did (m427's black left half; PLAN.md 61.10)\n"
+            "  --readbacktest    M46: one copy read-back at the first drawn frame\n"
             "  --keytest K,K     M46: each SDL key name held alone through the keyboard's\n"
             "                    poll (the controls file's table or the built-in one), logged\n"
             "  --dcbtdist N      M46: the decode loops prefetch the array entries N\n"
@@ -1363,6 +1366,10 @@ int port_parse_args(int argc, char** argv) {
             port_opt.nowaterpt = 1;
         } else if (!strcmp(a, "--affinetex")) {
             port_opt.affinetex = 1;
+        } else if (!strcmp(a, "--oldscissor")) {
+            port_opt.oldscissor = 1;
+        } else if (!strcmp(a, "--readbacktest")) {
+            port_opt.readbacktest = 1;
         } else if (!strcmp(a, "--keytest") && i + 1 < argc) {
             port_opt.keytest = argv[++i];
         } else if (!strcmp(a, "--dcbtdist") && i + 1 < argc) {

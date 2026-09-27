@@ -2396,6 +2396,11 @@ void gx_tex_copy(void* dest, int clear) {
      * next thing into the same back buffer and expects the copied region to be
      * blank.  So it happens now, scissored to the region that was copied. */
     if (clear) {
+        /* M46: the scissor test on for the clear, whatever left it off
+         * (--oldscissor: as before) */
+        if (!port_opt.oldscissor) {
+            GL(glEnable)(GL_SCISSOR_TEST);
+        }
         GL(glScissor)(sl, 480 - (st + sh), sw, sh);
         GL(glColorMask)(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
         GL(glDepthMask)(GL_TRUE);

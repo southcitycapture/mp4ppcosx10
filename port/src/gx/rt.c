@@ -1513,7 +1513,8 @@ void rt_compile_vprog(RtCompile* c) {
  * directory the first eight times:
  *   * a half-black picture: a half with no lit pixel (any channel over 12)
  *     while the other has 32 or more (m427's left view, the user's
- *     photograph of 0.9.13);
+ *     photograph of 0.9.13) -- M46: the centre band x 288..351 left out of
+ *     both halves;
  *   * a blip: the rows' brightness falling under 35% of the frame before and
  *     back over 70% of it within 12 frames (the board filter's black frames,
  *     the user's "black blip" at a Mega Mushroom's use) -- a fade or a wipe
@@ -1576,7 +1577,12 @@ static void halfwatch(unsigned frame) {
             unsigned m = q[0] > q[1] ? q[0] : q[1];
             m = m > q[2] ? m : q[2];
             lum += m;
-            if (m > 12) {
+            /* M46 (PLAN.md 61.10): the centre band is left out of the halves:
+             * m427's race draws its course strip there (x 293-347), lit in
+             * both views' half, and a black left view beside it counted as
+             * "lit" -- the soak's shot at 411,753 had it, and the counter
+             * never could see m427's black half */
+            if (m > 12 && (x < 288 || x >= 352)) {
                 lit[x >= 320]++;
             }
         }
