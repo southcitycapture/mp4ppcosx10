@@ -98,6 +98,7 @@ void pad_sdl_init(void) {
         port_log("port> pad: SDL joystick subsystem unavailable (%s); keyboard only\n", SDL_GetError());
         return;
     }
+    pad_controls_sdl_db(); /* M46: PowerPCube's mappings, before the pads open */
     open_pads();
 }
 
@@ -173,10 +174,16 @@ static void map_stick(int ax, int ay, s8* x, s8* y) {
     *y = (s8)my;
 }
 
+void (*pad_stick_map)(int ax, int ay, s8* x, s8* y) = map_stick;
+
 void pad_sdl_poll_keys(PortPadRaw* out) {
     const Uint8* k = SDL_GetKeyboardState(NULL);
     u16 b = 0;
 
+    if (pad_controls_active()) { /* M46: PowerPCube's controls file */
+        pad_controls_keys(k, out);
+        return;
+    }
     memset(out, 0, sizeof(*out));
 
     if (k[SDL_SCANCODE_Z]) {
@@ -237,6 +244,31 @@ void pad_sdl_poll_pad(int i, PortPadRaw* out) {
     }
     pad = pads[i].pad;
     joy = pads[i].joy;
+    if (pad != NULL && pad_controls_active()) {
+        /* M46: through PowerPCube's table (its defaults are the code below) */
+        static const SDL_GameControllerButton bt[PADIN_NBUTTONS] = {
+            SDL_CONTROLLER_BUTTON_A, SDL_CONTROLLER_BUTTON_B, SDL_CONTROLLER_BUTTON_X,
+            SDL_CONTROLLER_BUTTON_Y, SDL_CONTROLLER_BUTTON_BACK, SDL_CONTROLLER_BUTTON_GUIDE,
+            SDL_CONTROLLER_BUTTON_START, SDL_CONTROLLER_BUTTON_LEFTSTICK,
+            SDL_CONTROLLER_BUTTON_RIGHTSTICK, SDL_CONTROLLER_BUTTON_LEFTSHOULDER,
+            SDL_CONTROLLER_BUTTON_RIGHTSHOULDER, SDL_CONTROLLER_BUTTON_DPAD_UP,
+            SDL_CONTROLLER_BUTTON_DPAD_DOWN, SDL_CONTROLLER_BUTTON_DPAD_LEFT,
+            SDL_CONTROLLER_BUTTON_DPAD_RIGHT};
+        static const SDL_GameControllerAxis ax[PADIN_NAXES] = {
+            SDL_CONTROLLER_AXIS_LEFTX, SDL_CONTROLLER_AXIS_LEFTY, SDL_CONTROLLER_AXIS_RIGHTX,
+            SDL_CONTROLLER_AXIS_RIGHTY, SDL_CONTROLLER_AXIS_TRIGGERLEFT, SDL_CONTROLLER_AXIS_TRIGGERRIGHT};
+        PadInState st;
+        int k;
+        for (k = 0; k < PADIN_NBUTTONS; k++) {
+            st.button[k] = (unsigned char)SDL_GameControllerGetButton(pad, bt[k]);
+        }
+        for (k = 0; k < PADIN_NAXES; k++) {
+            st.axis[k] = SDL_GameControllerGetAxis(pad, ax[k]);
+        }
+        pad_stick_map = map_stick;
+        pad_controls_eval(&st, out);
+        return;
+    }
     if (pad != NULL) {
         int rx, ry;
         map_stick(SDL_GameControllerGetAxis(pad, SDL_CONTROLLER_AXIS_LEFTX),
@@ -331,5 +363,7 @@ void pad_sdl_poll_pad(int i, PortPadRaw* out) { (void)i; memset(out, 0, sizeof(*
 void pad_sdl_poll_keys(PortPadRaw* out) { memset(out, 0, sizeof(*out)); }
 int pad_sdl_rumble_supported(int i) { (void)i; return 0; }
 void pad_sdl_rumble(int i, int on) { (void)i; (void)on; }
+static void map_none(int ax, int ay, s8* x, s8* y) { (void)ax; (void)ay; *x = *y = 0; }
+void (*pad_stick_map)(int ax, int ay, s8* x, s8* y) = map_none;
 
 #endif

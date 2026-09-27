@@ -32,7 +32,7 @@ extern "C" {
 /* M32: the shipped version (the dmg's name, the plist, the --defaults header)
  * and the milestone that built it. */
 #define PORT_VERSION_STRING "0.9.14"
-#define PORT_MILESTONE "M45"
+#define PORT_MILESTONE "M46"
 
 typedef struct PortOptions {
     const char* image;      /* --image  disc image or extracted files/ tree   */

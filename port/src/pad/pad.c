@@ -79,6 +79,7 @@ BOOL PADInit(void) {
 
     memset(src, 0, sizeof(src));
     kb_under_port1 = 0;
+    pad_controls_init(); /* M46: PowerPCube's controls file (never on a scripted run) */
     if (port_opt.nopad) {
         port_log("port> PADInit: --nopad, controller 1 unplugged\n");
     } else {
@@ -94,10 +95,65 @@ BOOL PADInit(void) {
             pads[npads].kind = SRC_SDL;
             pads[npads++].idx = i;
         }
+        /* M46 (PLAN.md 61): PowerPCube's player slots (the controls file's
+         * player1..4), unless --kbport says where the keyboard goes */
+        {
+            int want[PAD_CHANMAX], used[PORT_PAD_MAX * 2], none[PAD_CHANMAX];
+            int slots = 0;
+            memset(used, 0, sizeof(used));
+            memset(none, 0, sizeof(none));
+            for (i = 0; i < PAD_CHANMAX; i++) {
+                want[i] = kbport ? PADCTL_AUTO : pad_controls_player(i);
+                slots |= want[i] != PADCTL_AUTO;
+            }
+            if (slots) {
+                for (i = 0; i < PAD_CHANMAX; i++) {
+                    if (want[i] == PADCTL_KEYBOARD) {
+                        if (!kbport) {
+                            kbport = i + 1;
+                            src[i].kind = SRC_KB;
+                        }
+                    } else if (want[i] == PADCTL_NONE) {
+                        none[i] = 1;
+                    } else if (want[i] >= PADCTL_PAD0) {
+                        int k = want[i] - PADCTL_PAD0;
+                        if (k < npads && !used[k]) {
+                            src[i] = pads[k];
+                            used[k] = 1;
+                        } else {
+                            port_log("port> PADInit: player%d = pad:%d, but there is no such pad; "
+                                     "unplugged\n", i + 1, k + 1);
+                            none[i] = 1;
+                        }
+                    }
+                }
+                for (i = 0; i < npads; i++) {
+                    if (used[i]) {
+                        continue;
+                    }
+                    while (n < PAD_CHANMAX && (src[n].kind != SRC_NONE || none[n] || want[n] != PADCTL_AUTO)) {
+                        n++;
+                    }
+                    if (n >= PAD_CHANMAX) {
+                        break;
+                    }
+                    src[n] = pads[i];
+                }
+                if (!kbport && !none[0]) {
+                    if (src[0].kind == SRC_NONE) {
+                        src[0].kind = SRC_KB;
+                    } else {
+                        kb_under_port1 = 1;
+                    }
+                }
+                npads = 0; /* laid out: the default layout below has nothing left to do */
+                kbport = kbport ? kbport : -1;
+            }
+        }
         /* the ports, in order: the pads fill them, the keyboard's own port
          * (--kbport) is skipped over; with no --kbport the keyboard is
          * controller 1 alone or beside the pad that holds it (M32) */
-        if (kbport) {
+        if (kbport > 0 && src[kbport - 1].kind == SRC_NONE) {
             src[kbport - 1].kind = SRC_KB;
         }
         for (i = 0; i < npads; i++) {
@@ -123,7 +179,7 @@ BOOL PADInit(void) {
             switch (src[i].kind) {
             case SRC_XONE: what = pad_xone_name(src[i].idx); drv = " (driver: Xbox-One-IOUSBLib)"; break;
             case SRC_SDL: what = pad_sdl_name(src[i].idx); drv = " (driver: SDL joystick)"; break;
-            case SRC_KB: what = "keyboard"; drv = kbport ? " (--kbport)" : ""; break;
+            case SRC_KB: what = "keyboard"; drv = port_opt.kbport ? " (--kbport)" : kbport ? " (the controls file)" : ""; break;
             default: break;
             }
             if (what) {

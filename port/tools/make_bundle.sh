@@ -171,6 +171,18 @@ cat > "$out/Contents/Info.plist" <<PLIST
 </dict>
 </plist>
 PLIST
+# M46 (PLAN.md 61): PowerPCube's manifest for this game, Contents/Resources/
+# PowerPCube.plist.  PowerPCube prefers the bundle's copy unless its own
+# built-in one has a higher manifestVersion, so a stale copy is harmless.
+# port/resources/PowerPCube.plist is powerpcube's resources/Manifests/mp4.plist
+# (github.com/southcitycapture/powerpcube, commit bbfadc3, manifestVersion 2,
+# taken read-only 2026-09-27); POWERPCUBE_MANIFEST=path takes a fresher one
+# (regenerated there with `python3 tools/gen_manifests.py`).
+manifest=${POWERPCUBE_MANIFEST:-$here/../resources/PowerPCube.plist}
+if [ -f "$manifest" ]; then
+    cp "$manifest" "$out/Contents/Resources/PowerPCube.plist"
+    echo "  PowerPCube.plist: manifestVersion $(awk '/manifestVersion/{getline; gsub(/[^0-9]/,""); print}' "$manifest")"
+fi
 printf 'APPL????' > "$out/Contents/PkgInfo"
 echo "bundle: $out"
 [ "$with_image" = 1 ] || echo "  (no disc image inside: put yours in ~/MarioParty4/ on the G4)"

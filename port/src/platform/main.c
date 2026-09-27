@@ -42,6 +42,10 @@ PortOptions port_opt;
 static int water_set; /* M44: --water given on the command line */
 static int waterlook_set; /* M45: --waterlook given on the command line */
 static int pondlook_set;  /* M45: --pondlook given on the command line */
+/* M46 (PLAN.md 61): PowerPCube's keys -- movies, prefetch, resident -- are
+ * read from the config and never written by the game; a flag overrides them
+ * for one run */
+static int movies_set, prefetch_set, resident_set;
 
 void port_log_open(const char* path);
 void* port_game_stack_top(void);
@@ -104,11 +108,13 @@ static void usage(const char* argv0) {
             "  --noprefetch      M36: no read-ahead of a dealt minigame's files at the\n"
             "                    roulette (nor the board's at the results, the board\n"
             "                    set at the mode select); the game's own reads stay\n"
-            "                    exactly where they were either way\n"
+            "                    exactly where they were either way (the config's\n"
+            "                    `prefetch = 0'; --prefetch overrides it for a run)\n"
             "  --resident MB     M36: the resident set -- the files every game reads,\n"
             "                    held in memory and served from there; 0 = off, default\n"
             "                    by the installed RAM (0 under 768 MB, 128 at 1 GB, 256\n"
-            "                    at 1.5 GB and up), never less than 384 MB left over\n"
+            "                    at 1.5 GB and up), never less than 384 MB left over;\n"
+            "                    `auto' = that rule (the config's `resident =')\n"
             "  --dvdlog          M36: one line per DVD read (frame, file, range, ms, source)\n"
             "  --cpuskin         the game's own CPU skinning at every EnvelopeProc\n"
             "                    (M18 A/B; default: the same skinning, run only when\n"
@@ -478,7 +484,8 @@ static void usage(const char* argv0) {
             "                    A/B can name both sides\n"
             "  --clickstat       count mix discontinuities as they are produced\n"
             "  --nomovies        skip the THP movies (the opening, the mode select's,\n"
-            "                    the story endings, the credits) as M2-M37 did\n"
+            "                    the story endings, the credits) as M2-M37 did (the\n"
+            "                    config's `movies = 0'; --movies overrides it for a run)\n"
             "  --thpyuv          draw a movie frame the game's way -- three I8\n"
             "                    planes through THPDraw's TEV -- not as the CPU's\n"
             "                    RGBA (an A/B; its colours are wrong, PLAN.md 53.4)\n"
@@ -939,8 +946,14 @@ int port_parse_args(int argc, char** argv) {
             port_opt.nodcbt = 1;
         } else if (!strcmp(a, "--noprefetch")) {
             port_opt.noprefetch = 1;
+            prefetch_set = 1;
+        } else if (!strcmp(a, "--prefetch")) {
+            port_opt.noprefetch = 0; /* M46: over the config's `prefetch = 0' */
+            prefetch_set = 1;
         } else if (!strcmp(a, "--resident") && i + 1 < argc) {
-            port_opt.resident = atoi(argv[++i]);
+            ++i;
+            port_opt.resident = !strcmp(argv[i], "auto") ? -1 : atoi(argv[i]);
+            resident_set = 1;
         } else if (!strcmp(a, "--dvdlog")) {
             port_opt.dvdlog = 1;
         } else if (!strcmp(a, "--olddecode3")) {
@@ -1066,6 +1079,10 @@ int port_parse_args(int argc, char** argv) {
             port_opt.noaicb = 1;
         } else if (!strcmp(a, "--nomovies")) {
             port_opt.nomovies = 1;
+            movies_set = 1;
+        } else if (!strcmp(a, "--movies")) {
+            port_opt.nomovies = 0; /* M46: over the config's `movies = 0' */
+            movies_set = 1;
         } else if (!strcmp(a, "--thpyuv")) {
             port_opt.thpyuv = 1;
         } else if (!strcmp(a, "--thplog")) {
@@ -1613,6 +1630,21 @@ int main(int argc, char** argv) {
             const char* w = port_config_get("pondlook");
             if (w) {
                 port_opt.pondlook = !strcmp(w, "tint");
+            }
+        }
+        /* M46 (PLAN.md 61): the launcher's keys (PowerPCube writes them;
+         * the game only reads them): movies = 1|0, prefetch = 1|0,
+         * resident = auto|0|64|128|256.  A flag wins for its run. */
+        {
+            const char* v;
+            if (!movies_set && (v = port_config_get("movies")) != NULL) {
+                port_opt.nomovies = atoi(v) == 0;
+            }
+            if (!prefetch_set && (v = port_config_get("prefetch")) != NULL) {
+                port_opt.noprefetch = atoi(v) == 0;
+            }
+            if (!resident_set && (v = port_config_get("resident")) != NULL) {
+                port_opt.resident = !strcmp(v, "auto") ? -1 : atoi(v) < 0 ? -1 : atoi(v);
             }
         }
         if (port_opt.fullscreen_set) {

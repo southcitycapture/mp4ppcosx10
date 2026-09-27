@@ -1544,14 +1544,16 @@ static void halfwatch_shot(const char* what, unsigned frame) {
 /* M46 (PLAN.md 61): the blip rule tightened -- a flash is a picture much
  * darker than both its neighbours, and a neighbour is a steady picture:
  *   * the fall: a check at most 20% as bright as the one before it (40 or
- *     more), which was itself within 15% of the check before it (a fade's
- *     last step comes out of a fall already under way);
+ *     more), which was itself no more than 15% darker than the check before
+ *     it (a fade's last step comes out of a fall already under way; the
+ *     Mega Mushroom's comes out of the item menu's dim easing *up*);
  *   * the return: back to 70% of the level before within 12 frames, the
  *     darkest check at most 20% of the returning one, and the check after
  *     the return within 15% of it (steady again -- a fade in is still
  *     climbing; the count waits one check for it).
- * The Mega Mushroom's frames (115 -> 17 in one frame and back) pass all
- * three; the six fades of M45's soak fail the first.  M45's rule is still
+ * The Mega Mushroom's frames (122 -> 9 in one frame and back) pass all
+ * three; the fades of M45's soak fail the first (tools/m46_flash.py runs
+ * both rules over every frame of a stretch at every sampling).  M45's rule is still
  * counted beside it (hw_blips45) so a run says what the old rule would have
  * called.  Whether a blip is the game's own is the picture checks' question
  * (tools/m46_flash.py: the previous release at the same moment). */
@@ -1619,8 +1621,7 @@ static void halfwatch(unsigned frame) {
         }
     }
     if (!in_dark) {
-        if (lum_before >= 40 && lum * 100 <= lum_before * 20 &&
-            lum_before * 100 >= lum_before2 * 85 && lum_before * 100 <= lum_before2 * 115) {
+        if (lum_before >= 40 && lum * 100 <= lum_before * 20 && lum_before * 100 >= lum_before2 * 85) {
             in_dark = 1;
             dark_from = frame;
             dark_min = lum;

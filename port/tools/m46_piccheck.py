@@ -1,0 +1,166 @@
+#!/usr/bin/env python3
+"""M46 (PLAN.md 61): M45's picture checks with the flash rule's second half -- a
+blip counted in a new run is a FAIL only when the reference's run of the same name
+has no blip within 3 frames of it (a fade the previous release draws the same way
+is the game's); the B-m435/6/7 runs (the pillar lights) pair like the rest.
+
+M45 (PLAN.md 60): the picture checks -- a build's frames against the previous
+release's, so a picture regression the md5 walks never reach cannot ship again.
+
+    python3 port/tools/m45_piccheck.py REF_DIR NEW_DIR [--out DIR]
+
+REF_DIR and NEW_DIR are two `PC:` directories of tools/m45_chain.sh (pulled from
+the G4: pc-ARM/NAME/frame-N.ppm, pc-ARM/NAME.log).  Runs are paired by name with
+the arm stripped (L-m427-@c14 <-> L-m427-@w5).  For every frame both dumped:
+identical (md5), or how it differs (sim = 100 (1 - mean |d| / 255), the share of
+pixels whose worst channel moved by more than 8, the mean brightness of each
+half).  A FAIL is:
+  * a half of the new frame at most 40% as bright as the reference's (a black
+    or dropped view: m427's left half on 0.9.13), or the whole frame so;
+  * a half-black frame or a blip counted by --halfwatch in a new run (the
+    reference is a pre-M45 build without the counter, or its own counts);
+  * a new run that exits non-zero or faults.
+A half 15% darker or more than the reference's is listed as LOOK (M44's lost
+lamp pool made m427's left half 18% darker).
+Frames that differ without failing are listed for a look (the water's tuning
+moves m427's river on purpose).  Writes OUT/piccheck.tsv and, for every failing
+or differing frame, OUT/NAME-frame-N.jpg (reference | new | the difference x4).
+Exit status 1 if anything failed."""
+import glob
+import hashlib
+import os
+import re
+import sys
+
+from PIL import Image, ImageChops, ImageStat
+
+
+def md5(path):
+    return hashlib.md5(open(path, "rb").read()).hexdigest()[:8]
+
+
+def key(name):
+    # L-m427-@c14 / R-m427-@w5,--flag-1 / T-item3-@w5 -> L-m427 / R-m427-1 / T-item3
+    m = re.match(r"^([A-Z]+-[a-z0-9]+)-(?:@[^-]*|old|base)(?:,[^/]*?)?(-\d+)?$", name)
+    if m:
+        return m.group(1) + (m.group(2) or "")
+    return name
+
+
+def runs(d):
+    out = {}
+    for p in sorted(glob.glob(os.path.join(d, "*"))):
+        if os.path.isdir(p):
+            out[key(os.path.basename(p))] = p
+    return out
+
+
+LIT_MIN = 250  # the lit half's samples (of 960) for a half-black to count
+
+
+def halfwatch(log):
+    """The run's half-black frames and blips.  The counter in the port is
+    sensitive (a half with no lit sample while the other has 32); a half-black
+    counts here only when the other half is a lit scene (LIT_MIN samples of
+    its 960): m416's dark room, lit by one moving lamp, has one half empty and
+    the other at 70-180 (the soak before 0.9.14's dmg, PLAN.md 60.11), where
+    m427's views have 325-660 each."""
+    seen = False
+    hb = 0
+    bl = []
+    fault = 0
+    exitbad = False
+    if not os.path.exists(log):
+        return None, None, fault, True
+    for line in open(log, errors="replace"):
+        if re.search(r"halfwatch: \d+ frames checked", line):
+            seen = True
+        m = re.search(r"halfwatch: HALF BLACK #\d+ at frame \d+ \(the \w+ half; lit (\d+) / (\d+)\)", line)
+        if m and max(int(m.group(1)), int(m.group(2))) >= LIT_MIN:
+            hb += 1
+        m = re.search(r"halfwatch: BLIP #\d+ at frame (\d+)", line)
+        if m:
+            bl.append(int(m.group(1)))
+        if line.startswith("*** port"):
+            fault += 1
+        if "over the" in line and "ceiling" in line:
+            exitbad = True
+    return (hb if seen else None), (bl if seen else None), fault, exitbad
+
+
+def halves(im):
+    l = sum(ImageStat.Stat(im.crop((0, 0, 320, 480))).mean) / 3.0
+    r = sum(ImageStat.Stat(im.crop((320, 0, 640, 480))).mean) / 3.0
+    return l, r
+
+
+def main():
+    ref, new = sys.argv[1], sys.argv[2]
+    out = sys.argv[sys.argv.index("--out") + 1] if "--out" in sys.argv else os.path.join(new, "piccheck")
+    os.makedirs(out, exist_ok=True)
+    R, N = runs(ref), runs(new)
+    tsv = open(os.path.join(out, "piccheck.tsv"), "w")
+    tsv.write("run\tframe\tverdict\tsim\t>8%\tref L/R\tnew L/R\n")
+    n_frames = n_same = n_diff = 0
+    fails = []
+    warns = []
+    for k in sorted(N):
+        hb, bl, fault, bad = halfwatch(N[k] + ".log")
+        if hb:
+            fails.append("%s: %d half-black frame(s) (--halfwatch)" % (k, hb))
+        if bl:
+            rbl = halfwatch(R[k] + ".log")[1] if k in R else None
+            for f in bl:
+                if rbl and any(abs(f - g) <= 3 for g in rbl):
+                    warns.append("%s: a blip at frame %d, the reference's too (the game's own)" % (k, f))
+                else:
+                    fails.append("%s: a blip at frame %d (--halfwatch)%s" % (k, f,
+                                 "" if rbl is not None else "; the reference counted none"))
+        if fault or bad:
+            fails.append("%s: %d fault(s)%s" % (k, fault, ", over its ceiling" if bad else ""))
+        for f in sorted(glob.glob(os.path.join(N[k], "frame-*.ppm"))):
+            n_frames += 1
+            fr = os.path.basename(f)
+            rf = os.path.join(R[k], fr) if k in R else None
+            if not rf or not os.path.exists(rf):
+                tsv.write("%s\t%s\tno reference\t\t\t\t\n" % (k, fr))
+                continue
+            if md5(f) == md5(rf):
+                n_same += 1
+                tsv.write("%s\t%s\tidentical\t100\t0\t\t\n" % (k, fr))
+                continue
+            n_diff += 1
+            a = Image.open(rf).convert("RGB")
+            b = Image.open(f).convert("RGB")
+            d = ImageChops.difference(a, b)
+            sim = 100.0 * (1.0 - sum(ImageStat.Stat(d).mean) / 3.0 / 255.0)
+            px = d.getdata()
+            over = 100.0 * sum(1 for p in px if max(p) > 8) / len(px)
+            al, ar = halves(a)
+            bl_, br = halves(b)
+            verdict = "differs"
+            if (al > 8 and bl_ < 0.85 * al) or (ar > 8 and br < 0.85 * ar):
+                # a half 15% darker or more: M44's m427 lamp pool was 18%
+                verdict = "DARKER (look)"
+                warns.append("%s %s: a half darker (%.1f/%.1f -> %.1f/%.1f)" % (k, fr, al, ar, bl_, br))
+            if (al > 12 and bl_ < 0.4 * al) or (ar > 12 and br < 0.4 * ar):
+                verdict = "FAIL (a half went dark)"
+                fails.append("%s %s: a half went dark (%.1f/%.1f -> %.1f/%.1f)" % (k, fr, al, ar, bl_, br))
+            tsv.write("%s\t%s\t%s\t%.1f\t%.1f\t%.1f/%.1f\t%.1f/%.1f\n" % (k, fr, verdict, sim, over, al, ar, bl_, br))
+            sheet = Image.new("RGB", (960, 240))
+            sheet.paste(a.resize((320, 240)), (0, 0))
+            sheet.paste(b.resize((320, 240)), (320, 0))
+            sheet.paste(Image.eval(d, lambda v: min(255, v * 4)).resize((320, 240)), (640, 0))
+            sheet.save(os.path.join(out, "%s-%s.jpg" % (k, fr[:-4])), quality=80)
+    print("picture checks: %d runs, %d frames, %d identical to the reference, %d differ, %d failures"
+          % (len(N), n_frames, n_same, n_diff, len(fails)))
+    for f in fails:
+        print("  FAIL", f)
+    for w in warns:
+        print("  LOOK", w)
+    print("  table: %s" % os.path.join(out, "piccheck.tsv"))
+    sys.exit(1 if fails else 0)
+
+
+if __name__ == "__main__":
+    main()

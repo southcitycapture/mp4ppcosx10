@@ -38,6 +38,27 @@ typedef struct PortPadRaw {
     u8 triggerL, triggerR;
 } PortPadRaw;
 
+/* ---- pad_controls.c: PowerPCube's controls file (M46, PLAN.md 61) --------- */
+/* a pad's state in SDL game-controller terms, for the table */
+enum { PADIN_A, PADIN_B, PADIN_X, PADIN_Y, PADIN_BACK, PADIN_GUIDE, PADIN_START, PADIN_LSTICK,
+       PADIN_RSTICK, PADIN_LSHOULDER, PADIN_RSHOULDER, PADIN_DPUP, PADIN_DPDOWN, PADIN_DPLEFT,
+       PADIN_DPRIGHT, PADIN_NBUTTONS };
+enum { PADIN_AX_LX, PADIN_AX_LY, PADIN_AX_RX, PADIN_AX_RY, PADIN_AX_LT, PADIN_AX_RT, PADIN_NAXES };
+typedef struct PadInState {
+    unsigned char button[PADIN_NBUTTONS];
+    int axis[PADIN_NAXES]; /* SDL's ranges: sticks -32768..32767 (y down), triggers 0..32767 */
+} PadInState;
+enum { PADCTL_AUTO = -3, PADCTL_NONE = -2, PADCTL_KEYBOARD = -1, PADCTL_PAD0 = 0 };
+void pad_controls_init(void);       /* PADInit: reads the file unless the run is scripted */
+void pad_controls_sdl_db(void);     /* PowerPCube's gamecontrollerdb.txt into SDL */
+int pad_controls_active(void);      /* a controls file was read */
+int pad_controls_player(int port);  /* PADCTL_*, or the pad's index in the Xbox-first order */
+void pad_controls_eval(const PadInState* st, PortPadRaw* out);
+void pad_controls_keys(const unsigned char* kb, PortPadRaw* out);
+/* a stick axis pair to the pot's range: pad_sdl.c's dead zone and clamp, or
+ * the Xbox One driver's straight scale (each driver's own, as before) */
+extern void (*pad_stick_map)(int ax, int ay, s8* x, s8* y);
+
 /* ---- pad_sdl.c: SDL joysticks/game controllers + the keyboard ------------ */
 void pad_sdl_init(void);              /* opens every pad SDL reports, up to PORT_PAD_MAX */
 void pad_sdl_shutdown(void);

@@ -317,6 +317,12 @@ static s8 scale_stick(int16_t v) {
     return (s8)s;
 }
 
+/* M46: the table's stick hook -- today's straight scale (y back to up) */
+static void xone_stick(int ax, int ay, s8* x, s8* y) {
+    *x = scale_stick((int16_t)(ax > 32767 ? 32767 : ax < -32768 ? -32768 : ax));
+    *y = scale_stick((int16_t)(-ay > 32767 ? 32767 : -ay < -32768 ? -32768 : -ay));
+}
+
 void pad_xone_poll(int i, PortPadRaw* out) {
     struct pad_xone_state s;
     u16 b = 0;
@@ -326,6 +332,36 @@ void pad_xone_poll(int i, PortPadRaw* out) {
         return;
     }
     s = pads[i].state; /* struct copy: a torn read costs one frame, not a crash */
+    if (pad_controls_active()) {
+        /* M46: through PowerPCube's table, the report in SDL's terms (the
+         * defaults give the mapping below, bit for bit) */
+        PadInState st;
+        memset(&st, 0, sizeof(st));
+        st.button[PADIN_A] = (s.buttons & 0x10) != 0;
+        st.button[PADIN_B] = (s.buttons & 0x20) != 0;
+        st.button[PADIN_X] = (s.buttons & 0x40) != 0;
+        st.button[PADIN_Y] = (s.buttons & 0x80) != 0;
+        st.button[PADIN_START] = (s.buttons & 0x04) != 0;
+        st.button[PADIN_BACK] = (s.buttons & 0x08) != 0;
+        st.button[PADIN_DPUP] = (s.dpad & 0x01) != 0;
+        st.button[PADIN_DPDOWN] = (s.dpad & 0x02) != 0;
+        st.button[PADIN_DPLEFT] = (s.dpad & 0x04) != 0;
+        st.button[PADIN_DPRIGHT] = (s.dpad & 0x08) != 0;
+        st.button[PADIN_LSHOULDER] = (s.dpad & 0x10) != 0;
+        st.button[PADIN_RSHOULDER] = (s.dpad & 0x20) != 0;
+        st.button[PADIN_LSTICK] = (s.dpad & 0x40) != 0;
+        st.button[PADIN_RSTICK] = (s.dpad & 0x80) != 0;
+        st.button[PADIN_GUIDE] = s.guide != 0;
+        st.axis[PADIN_AX_LX] = s.lx;
+        st.axis[PADIN_AX_LY] = -(int)s.ly; /* SDL's y is down */
+        st.axis[PADIN_AX_RX] = s.rx;
+        st.axis[PADIN_AX_RY] = -(int)s.ry;
+        st.axis[PADIN_AX_LT] = (int)s.lt * 32; /* 0..1023 -> SDL's 0..32767 (>>7 = today's >>2) */
+        st.axis[PADIN_AX_RT] = (int)s.rt * 32;
+        pad_stick_map = xone_stick;
+        pad_controls_eval(&st, out);
+        return;
+    }
 
     out->stickX = scale_stick(s.lx);
     out->stickY = scale_stick(s.ly);
