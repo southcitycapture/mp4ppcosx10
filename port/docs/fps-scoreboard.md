@@ -2,7 +2,7 @@
 
 M46 (2026-09-27), on 0.9.15's code (the scoreboard's build `isle` `692258c5`, candidate
 c1; the shipped `0b949266` differs in the tier line's string alone): `tools/fps_board.sh`
-`front title boards mg menus`, FB_THREE=auto, 05:07-08:20 G4 time, the lab looking at the
+`front title boards mg menus`, FB_THREE=auto, 05:07-08:08 G4 time, the lab looking at the
 G4 once every ten minutes at most.  M45's table is `fps-scoreboard-m45-after.md`.
 
 **w01 by both counts** (`tools/m43_w01.py`, PLAN.md 61.8): pooled -- the rule's -- 218

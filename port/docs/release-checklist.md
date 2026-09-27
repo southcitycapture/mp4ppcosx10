@@ -162,6 +162,20 @@ pairs, against the previous release); the water tuned to the user's notes
 (Makin' Waves' waves x2.5 and no sky, Cheep Cheep Sweep's pond in two looks
 for the user to pick, Mario Medley's colour found: a shadow map's background).
 
+**Where M46 left it** (0.9.15, `docs/fps-scoreboard.md`; M45's kept as
+`docs/fps-scoreboard-m45-after.md`; PLAN.md 61): **75 of 82 screens pass**,
+none of M45's passes lost; m409 (29.8) and w01 (29.6 pooled, 30.0 board-only)
+crossed.  Seven short: m441 25.9, m436 27.4, m401 27.7, m431 27.9, m463 28.8,
+m435 28.8, m444 29.2 (the drawn frames' work as M45's; the walls in PLAN.md
+61.9).  **The Bowser room's pillar lights** (the user's finding on 0.9.14):
+drawn as the console draws them in lockstep, frame for frame (54 pairs); the
+flashing was the console's 60 Hz shimmer shown at 30 fps and is now drawn
+between the two game frames each picture stands for.  **The flash rule** of
+the picture checks no longer counts the game's fades and still catches the
+Mega blip.  **PowerPCube's hooks**: the config's movies / prefetch /
+resident, `PowerPCube.plist` in the bundle, the controls file and
+gamecontrollerdb.txt (interactive runs only).
+
 ## Done
 
 | area | the claim | the evidence |
@@ -237,3 +251,18 @@ none is a known fault.
    seen again, an F5 screenshot (the picture the game drew, written to the
    Desktop) tells the port's frame from the display's; `--halfwatch` counts
    it in the lab's runs.
+10. **The pillar lights at 30 fps (M46)**: the console's four-frame shimmer
+   cannot be shown at thirty frames a second; 0.9.15 draws each presented
+   frame's lights between its two game frames (a gentle pulse, the same on
+   every stretch), where 0.9.14 showed a steady ball or a strobe by chance
+   (`docs/screenshots/m46-bowser-lights-realtime.jpg`: 0.9.14, 0.9.15, the
+   console).  Whether it reads right on the G4 is the user's eye;
+   `--nolights` is the old picture.
+11. **PowerPCube's controls (M46)**: tested on the G4 through `--keytest`
+   (the keyboard's own poll fed a held key: Space -> A with the file, Z -> A
+   without) and the logged table; no real key press reached the game from
+   the lab (System Events' taps are shorter than a frame), no pad remap was
+   run with a pad, and PowerPCube itself has not launched this build.
+12. **w01's rule**: 29.6 pooled / 30.0 board-only this time (M45: 29.2 /
+   30.0) -- the pooled median lies where the board's lines and the teleports'
+   hand-over lines meet, so it moves between runs; the rule is the user's.

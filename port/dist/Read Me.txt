@@ -1,6 +1,6 @@
 Mario Party 4 PowerPC Edition
 =============================
-Version 0.9.14
+Version 0.9.15
 
 
 WHAT THIS IS
@@ -332,11 +332,15 @@ an hour on the reference machine; the project's notes, PLAN.md section 55,
 have what 0.9.9 measured.)
 
 Not every screen reaches 30 frames a second yet on the reference machine:
-73 of the 82 screens measured do; Toad's board is just under 30 by the
-scoreboard's strict count (its own frames are 30), and 8 of the 63
-minigames run between 26 and 29.5 (Butterfly Blitz the slowest, at about
-27).  The game's own speed is the console's everywhere; only the picture
-is slower there.  0.9.14 fixed three pictures instead: Right Oar Left?'s
+75 of the 82 screens measured do; 7 of the 63 minigames run between 26
+and 29.5 (Butterfly Blitz the slowest, at about 26).  The game's own speed
+is the console's everywhere; only the picture is slower there.  0.9.15
+steadies the glowing lights on the pillars of Bowser's room (Darts, Fruits
+and Balloon of Doom): they sparkle sixty times a second on a console, and
+shown at thirty they strobed between a big and a small ball -- each picture
+now shows them between the two moments it stands for.  It also reads the
+PowerPCube launcher's settings and controls (LOADING, MOVIES, CONTROLS).
+0.9.14 fixed three pictures: Right Oar Left?'s
 boat lamps light the water in front of the boats again (0.9.13 had lost
 that), a black flash of about a tenth of a second at the end of every
 dimming of the board (the item menu, the minigame roulette, the lottery,
