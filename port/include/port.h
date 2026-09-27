@@ -423,6 +423,19 @@ typedef struct PortOptions {
     int motlog;             /* --motlog N  M46: every Nth frame, each animated model's motion */
     int nolights;           /* --nolights  M46: the pillar lights as the frame drew them (gx_lights.c) */
     int nopendlast;         /* --nopendlast  M46: the run's last vertex decoded whole for `pending` */
+    /* M47 (PLAN.md 62): the skin at the decode */
+    int noskindecode;       /* --noskindecode  M47: the deferred skin body writes the
+                             *   mesh arrays and the decode gathers them (M18..M46) */
+    int skinverify;         /* --skinverify  M47: the arrays written AND the skin at the
+                             *   decode, every fused vertex compared bit for bit */
+    int oldvcskin;          /* --oldvcskin  M47: the skin body ends every vertex-cache
+                             *   array memo (the epoch), as M40..M46 */
+    int fullskinsig;        /* --fullskinsig  M47: the skin registry hashes each HSF's
+                             *   envelope tables at every EnvelopeProc, as M18..M46 */
+    int noskindcbz;         /* --noskindcbz  M47: no dcbz of the skin loop's whole
+                             *   destination lines, no read-ahead of its source */
+    int skinvec;            /* --skinvec  M47: the skin decode's pos/nrm/tex0 shape in
+                             *   AltiVec (gx_skinvec.c), for the A/B */
     int dcbtdist;           /* --dcbtdist N  M46: the decode loops prefetch N vertices ahead (1) */
     const char* keytest;    /* --keytest K,K  M46: each key through the keyboard's poll, logged */
     int oldscissor;         /* --oldscissor  M46: the scissor test as 0.9.14 left it after a read-back */

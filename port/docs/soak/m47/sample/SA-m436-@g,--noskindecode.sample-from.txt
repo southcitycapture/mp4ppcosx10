@@ -1,0 +1,2 @@
+port> status f14580   m436dll      board 0 turn 1/1  mg 436 (m436dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.30 ms  speed 100%  30.0 fps presented  tex 163/13813 KB  rss 210 MB  res 114/256 MB  cpu 2  rt 9.1 ms dec 6.8+0.0  machine ok  ur 20
+port> status f15900   m436dll      board 0 turn 1/1  mg 436 (m436dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.24 ms  speed 101%  24.2 fps presented  tex 207/16713 KB  rss 216 MB  res 114/256 MB  cpu 2  rt 20.4 ms dec 16.6+2.4  machine ok  ur 20

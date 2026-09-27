@@ -566,6 +566,11 @@ typedef struct GxDecJob {
      * the list's `pos_vb`-byte vertices) decoded again */
     const u8* seed;
     u32 pos_off, pos_vb;
+    /* M47 (PLAN.md 62): the skin at the decode -- the positions (and, with
+     * skin_nrm, the normals) computed from the mesh's rest pose and its
+     * entries' matrices instead of gathered from the arrays (gx_skin.h) */
+    const struct GxSkinDec* skin;
+    int skin_nrm;
     /* M44: the plan before the fill, so a job with no fill (nearly all) travels
      * as the header and the steps in use alone (rt_decode_record) */
     DecStep plan[GX_MAX_ATTR];

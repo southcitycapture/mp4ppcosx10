@@ -313,6 +313,7 @@ int gx_hilite_decide(void) {
     return -1;
 }
 static void batch_prepare(u32 count);
+static void skin_decide(int can); /* M47 */
 static void pal_place(void);
 int gx_palette_active;     /* the batches carry a matrix palette (M18)      */
 #define palette_on gx_palette_active
@@ -2135,6 +2136,7 @@ void GXBegin(GXPrimitive type, GXVtxFmt fmt, u16 n) {
     sv_first = 0;
     in_prim = 1;
     begin_attr_order();
+    skin_decide(0); /* M47: immediate mode reads the arrays: any owed are written */
     batch_prepare(n);
     run_pos = ring_claim((size_t)n * (size_t)sl.stride);
     pal_place();
@@ -5711,7 +5713,242 @@ static const u8* decode_job_vertex(const GxDecJob* j, const u8* p, u8* v, Pendin
     return p;
 }
 
+
+/* ---- M47 (PLAN.md 62): the skin at the decode --------------------------------
+ *
+ * A skinned mesh's run, decoded from the rest pose: per list vertex, the
+ * position (and, with skin_nrm, the normal) is the multiply SetEnvelop would
+ * have done for that index with the entry that wrote it last (gx_skin.c,
+ * fuse_build), the copy entry's rest value, or -- an index no entry writes --
+ * the live array's, as the gather read it.  Everything else in the vertex is
+ * the fast loops' own.  The shapes are the specialised loops' with the normal
+ * f32 or absent; any other plan runs the walker below. */
+#define SKIN_POS(dst, IX)                                                                \
+    do {                                                                                 \
+        u32 e_ = (IX) < npos ? pent[IX] : GX_SKIN_UNNAMED;                               \
+        if (e_ - 1u < (u32)(GX_SKIN_UNNAMED - 1)) {                                      \
+            gx_skin_mul(PM + 12 * e_, rp + 3 * (IX), (dst));                             \
+        } else if (e_ == 0) {                                                            \
+            (dst)[0] = rp[3 * (IX) + 0];                                                 \
+            (dst)[1] = rp[3 * (IX) + 1];                                                 \
+            (dst)[2] = rp[3 * (IX) + 2];                                                 \
+        } else {                                                                         \
+            const u8* q_ = pb + (size_t)(IX) * ps;                                       \
+            (dst)[0] = DEC_F32(q_, 0);                                                   \
+            (dst)[1] = DEC_F32(q_, 1);                                                   \
+            (dst)[2] = DEC_F32(q_, 2);                                                   \
+        }                                                                                \
+    } while (0)
+#define SKIN_NRM(dst, IX)                                                                \
+    do {                                                                                 \
+        u32 e_ = (IX) < nnrm ? nent[IX] : GX_SKIN_UNNAMED;                               \
+        if (e_ != GX_SKIN_UNNAMED) {                                                     \
+            gx_skin_mul(NM + 12 * e_, rn + 3 * (IX), (dst));                             \
+        } else {                                                                         \
+            const u8* q_ = nb + (size_t)(IX) * ns;                                       \
+            (dst)[0] = DEC_F32(q_, 0);                                                   \
+            (dst)[1] = DEC_F32(q_, 1);                                                   \
+            (dst)[2] = DEC_F32(q_, 2);                                                   \
+        }                                                                                \
+    } while (0)
+#define DECODE_SKIN_JOB(NAME, NRM, CLR, TEX)                                             \
+    static u32 NAME(const GxDecJob* j) {                                                 \
+        const GxSkinDec* sd = j->skin;                                                   \
+        const f32* rp = sd->rest_pos;                                                    \
+        const f32* rn = sd->rest_nrm;                                                    \
+        const u16* pent = sd->pent;                                                      \
+        const u16* nent = sd->nent;                                                      \
+        const f32* PM = sd->P;                                                           \
+        const f32* NM = sd->N;                                                           \
+        const u32 npos = sd->npos, nnrm = sd->nnrm;                                      \
+        const int sn = NRM && j->skin_nrm;                                               \
+        const int PREFETCH = j->prefetch;                                                \
+        const u8* p = j->p;                                                              \
+        const u8* end = j->end;                                                          \
+        const u32 count = j->count;                                                      \
+        const u32 stride = j->stride;                                                    \
+        const u8* pb = j->plan[0].base;                                                  \
+        const u32 ps = j->plan[0].stride;                                                \
+        const u8* nb = NRM ? j->plan[1].base : NULL;                                     \
+        const u32 ns = NRM ? j->plan[1].stride : 0;                                      \
+        const int ci = NRM ? 2 : 1;                                                      \
+        const u8* cb = CLR ? j->plan[ci].base : NULL;                                    \
+        const u32 cs = CLR ? j->plan[ci].stride : 0;                                     \
+        const int ti = ci + (CLR ? 1 : 0);                                               \
+        const u8* tb = TEX ? j->plan[ti].base : NULL;                                    \
+        const u32 ts = TEX ? j->plan[ti].stride : 0;                                     \
+        const int off_nrm = j->off_nrm, off_clr = j->off_clr, off_tex = j->off_tex;      \
+        const int clr_const = j->clr_const;                                              \
+        const u32 clr = j->clr;                                                          \
+        const int per = 2 * (1 + (NRM ? 1 : 0) + (CLR ? 1 : 0) + (TEX ? 1 : 0));         \
+        u8* v = j->dst;                                                                  \
+        u32 i;                                                                           \
+        (void)nent; (void)NM; (void)rn; (void)nnrm; (void)sn;                            \
+        for (i = 0; i < count && p + per <= end; i++, v += stride) {                     \
+            u32 ix;                                                                      \
+            if (clr_const) {                                                             \
+                *(u32*)(v + off_clr) = clr;                                              \
+            }                                                                            \
+            if (PREFETCH && p + (PREFETCH + 1) * per <= end) {                            \
+                const u8* pn = p + PREFETCH * per;                                       \
+                const u32 px = ((u32)pn[0] << 8) | pn[1];                                \
+                __builtin_prefetch(rp + 3 * px);                                         \
+                if (NRM) {                                                               \
+                    const u32 nx = ((u32)pn[2] << 8) | pn[3];                            \
+                    __builtin_prefetch(sn ? (const u8*)(rn + 3 * nx)                     \
+                                          : nb + (size_t)nx * ns);                       \
+                }                                                                        \
+                if (TEX == 1) {                                                          \
+                    __builtin_prefetch(tb + (size_t)(((u32)pn[per - 2] << 8) |           \
+                                                     pn[per - 1]) * ts);                 \
+                }                                                                        \
+            }                                                                            \
+            ix = ((u32)p[0] << 8) | p[1];                                                \
+            SKIN_POS((f32*)v, ix);                                                       \
+            p += 2;                                                                      \
+            if (NRM) {                                                                   \
+                f32* dp = (f32*)(v + off_nrm);                                           \
+                ix = ((u32)p[0] << 8) | p[1];                                            \
+                if (sn) {                                                                \
+                    SKIN_NRM(dp, ix);                                                    \
+                } else {                                                                 \
+                    const u8* q = nb + (size_t)ix * ns;                                  \
+                    dp[0] = DEC_F32(q, 0);                                               \
+                    dp[1] = DEC_F32(q, 1);                                               \
+                    dp[2] = DEC_F32(q, 2);                                               \
+                }                                                                        \
+                p += 2;                                                                  \
+            }                                                                            \
+            if (CLR) {                                                                   \
+                const u8* q;                                                             \
+                ix = ((u32)p[0] << 8) | p[1];                                            \
+                q = cb + (size_t)ix * cs;                                                \
+                memcpy(v + off_clr, q, 4);                                               \
+                p += 2;                                                                  \
+            }                                                                            \
+            if (TEX == 1) {                                                              \
+                f32* dp = (f32*)(v + off_tex);                                           \
+                const u8* q;                                                             \
+                ix = ((u32)p[0] << 8) | p[1];                                            \
+                q = tb + (size_t)ix * ts;                                                \
+                dp[0] = DEC_F32(q, 0);                                                   \
+                dp[1] = DEC_F32(q, 1);                                                   \
+                p += 2;                                                                  \
+            } else if (TEX == 2) {                                                       \
+                p += 2;                                                                  \
+            }                                                                            \
+        }                                                                                \
+        return i;                                                                        \
+    }
+/* the fast shapes whose normal is f32 or absent, by fast_index_of's number */
+DECODE_SKIN_JOB(decs_n2c0t1, 2, 0, 1)
+DECODE_SKIN_JOB(decs_n2c0t0, 2, 0, 0)
+DECODE_SKIN_JOB(decs_n2c1t1, 2, 1, 1)
+DECODE_SKIN_JOB(decs_n0c1t1, 0, 1, 1)
+DECODE_SKIN_JOB(decs_n0c0t2, 0, 0, 2)
+DECODE_SKIN_JOB(decs_n0c1t2, 0, 1, 2)
+DECODE_SKIN_JOB(decs_n2c0t2, 2, 0, 2)
+DECODE_SKIN_JOB(decs_n2c1t2, 2, 1, 2)
+static const DecodeJobFn dec_skin_job[14] = {
+    decs_n2c0t1, NULL, NULL, decs_n2c0t0, NULL, decs_n2c1t1, decs_n0c1t1, NULL,
+    decs_n0c0t2, decs_n0c1t2, NULL, NULL, decs_n2c0t2, decs_n2c1t2,
+};
+
+/* one vertex of a skinned run through the plan (decode_job_vertex, with the
+ * position and the skinned normal from the rest pose) */
+static const u8* decode_job_vertex_skin(const GxDecJob* j, const u8* p, u8* v, Pending* pend) {
+    const GxSkinDec* sd = j->skin;
+    const f32* rp = sd->rest_pos;
+    const f32* rn = sd->rest_nrm;
+    const u16* pent = sd->pent;
+    const u16* nent = sd->nent;
+    const f32* PM = sd->P;
+    const f32* NM = sd->N;
+    const u32 npos = sd->npos, nnrm = sd->nnrm;
+    const DecStep* st = j->plan;
+    int k;
+    if (j->clr_const) {
+        *(u32*)(v + j->off_clr) = j->clr;
+    }
+    for (k = 0; k < j->nfill; k++) {
+        f32* t = (f32*)(v + j->fill[k].dstoff);
+        t[0] = j->fill[k].s;
+        t[1] = j->fill[k].t;
+    }
+    for (k = j->nplan; k > 0; k--, st++) {
+        const u8* q;
+        u8* d;
+        f32* dp;
+        f32 sc;
+        const f32* tb;
+        u32 ix = 0;
+        if (st->idx == 2) {
+            ix = ((u32)p[0] << 8) | p[1];
+            q = st->base + (size_t)ix * st->stride;
+            p += 2;
+        } else if (st->idx == 1) {
+            ix = p[0];
+            q = st->base + (size_t)ix * st->stride;
+            p += 1;
+        } else {
+            q = p;
+            p += st->advance;
+        }
+        d = st->to_pending ? (u8*)pend + st->dstoff : v + st->dstoff;
+        dp = (f32*)d;
+        if (st->attr == GX_VA_POS && st->idx == 2) {
+            const u8* pb = st->base;
+            const u32 ps = st->stride;
+            SKIN_POS(dp, ix);
+            continue;
+        }
+        if (st->attr == GX_VA_NRM && st->idx == 2 && j->skin_nrm) {
+            const u8* nb = st->base;
+            const u32 ns = st->stride;
+            SKIN_NRM(dp, ix);
+            continue;
+        }
+        sc = st->scale;
+        tb = st->tbl;
+        switch (st->op) {
+            DEC_CASE_F32
+            DEC_CASE_TYPE(S16, DEC_S16)
+            DEC_CASE_TYPE(U16, DEC_U16)
+            DEC_CASE_TYPE(S8, DEC_S8)
+            DEC_CASE_TYPE(U8, DEC_U8)
+            DEC_CASE_TBL(TS8)
+            DEC_CASE_TBL(TU8)
+            DEC_CASE_COLOUR
+            default: break;
+        }
+    }
+    return p;
+}
+
+u32 gx_skinvec_n2c0t1(const GxDecJob* j); /* gx_skinvec.c (--skinvec) */
+static u32 gx_decode_skin_job(const GxDecJob* j) {
+    if (port_opt.skinvec && j->fast == 0 && j->skin->PV) {
+        return gx_skinvec_n2c0t1(j);
+    }
+    if (j->fast >= 0 && j->fast < 14 && dec_skin_job[j->fast]) {
+        return dec_skin_job[j->fast](j);
+    }
+    {
+        Pending scratch;
+        const u8* p = j->p;
+        u8* v = j->dst;
+        u32 i;
+        for (i = 0; i < j->count && p < j->end; i++, v += j->stride) {
+            p = decode_job_vertex_skin(j, p, v, &scratch);
+        }
+        return i;
+    }
+}
+
 u32 gx_decode_job(const GxDecJob* j) {
+    if (__builtin_expect(j->skin != NULL, 0)) {
+        return gx_decode_skin_job(j);
+    }
     if (j->fast >= 0) {
         return dec_fast_job[j->fast](j);
     }
@@ -5817,6 +6054,35 @@ static void decode_pending_kept(const GxDecJob* j, const u8* p, u8* v) {
         if (!st->to_pending && !(st->attr >= GX_VA_TEX0 && st->attr <= GX_VA_TEX7)) {
             continue; /* into the vertex alone: not kept */
         }
+        if (j->skin && st->idx == 2 && st->to_pending &&
+            ((st->attr == GX_VA_NRM && j->skin_nrm) || st->attr == GX_VA_POS)) {
+            /* M47: a skinned normal (or position) the layout does not store:
+             * pending gets the skin's value, as it got the array's */
+            const GxSkinDec* sd = j->skin;
+            u32 ix = ((u32)p[-2] << 8) | p[-1];
+            f32* o = (f32*)((u8*)&pending + st->dstoff);
+            u32 e;
+            if (st->attr == GX_VA_NRM) {
+                e = ix < sd->nnrm ? sd->nent[ix] : GX_SKIN_UNNAMED;
+                if (e != GX_SKIN_UNNAMED) {
+                    gx_skin_mul(sd->N + 12 * e, sd->rest_nrm + 3 * ix, o);
+                    continue;
+                }
+            } else {
+                e = ix < sd->npos ? sd->pent[ix] : GX_SKIN_UNNAMED;
+                if (e - 1u < (u32)(GX_SKIN_UNNAMED - 1)) {
+                    gx_skin_mul(sd->P + 12 * e, sd->rest_pos + 3 * ix, o);
+                    continue;
+                }
+                if (e == 0) {
+                    o[0] = sd->rest_pos[3 * ix + 0];
+                    o[1] = sd->rest_pos[3 * ix + 1];
+                    o[2] = sd->rest_pos[3 * ix + 2];
+                    continue;
+                }
+            }
+            /* unnamed: the live array's, as below */
+        }
         d = st->to_pending ? (u8*)&pending + st->dstoff : v + st->dstoff;
         dp = (f32*)d;
         sc = st->scale;
@@ -5843,7 +6109,11 @@ static void decode_pending_last(const GxDecJob* j, u32 n, u32 vbytes) {
         return;
     }
     pl = j->p + (size_t)(n - 1) * vbytes;
-    if (port_opt.nopendlast) {
+    if (j->skin && port_opt.nopendlast) {
+        /* M47: a skinned run's last vertex whole, its position and normal
+         * the skin's (a normal the layout does not store goes to pending) */
+        decode_job_vertex_skin(j, pl, scratch, &pending);
+    } else if (port_opt.nopendlast) {
         decode_job_vertex(j, pl, scratch, &pending);
     } else {
         decode_pending_kept(j, pl, scratch);
@@ -5877,6 +6147,8 @@ static int rtdec_build(GxDecJob* j, const u8* p, const u8* end, u32 count) {
     j->clr = plan_clr.u;
     j->prefetch = port_opt.nodcbt ? 0 : port_opt.dcbtdist;
     j->fast = plan_fast_idx;
+    j->skin = NULL;
+    j->skin_nrm = 0;
     /* M43: why a run is the general walker's, by vertices (the report's) */
     dec_why_verts[j->fast >= 0 ? 15 : plan_fast ? 14 : pick_why] += count;
     if (plan_fast && j->fast < 0) {
@@ -5982,6 +6254,9 @@ void port_wb_ends(const void* ptr, size_t n, const u8** h, size_t* hn, const u8*
 static u32 vc_key[VC_KEY_MAX]; /* the plan in hand, as words (vc_plan_hash) */
 static VcEnt* vc_tbl[VC_BUCKETS];
 static VcArr* vc_arrs[VC_ARR_BUCKETS];
+/* M47: the arrays' membership or reach changed (a new array, a wider read, a
+ * grown extent, a clear): a mesh's remembered overlap set is scanned again */
+static unsigned vc_arr_gen = 1;
 static unsigned vc_gen = 1;
 static unsigned vc_frame_seen = ~0u;
 static unsigned vc_reset_frame = ~0u;
@@ -6062,6 +6337,7 @@ static VcArr* vc_arr_find(const u8* base, u32 stride, u32 elem) {
         if (a->base == base && a->stride == stride) {
             if (elem > a->elem) {
                 a->elem = elem; /* a wider read of the same array: a new extent */
+                vc_arr_gen++;   /* M47: its reach grew */
                 a->ver++;
                 a->epoch = 0;
             }
@@ -6079,6 +6355,7 @@ static VcArr* vc_arr_find(const u8* base, u32 stride, u32 elem) {
     a->next = vc_arrs[b];
     vc_arrs[b] = a;
     vc_narr++;
+    vc_arr_gen++; /* M47 */
     return a;
 }
 
@@ -6121,6 +6398,9 @@ static unsigned vc_arr_check(VcArr* a) {
         stat_vc_arr_bytes += (double)len;
         if (a->wb_ser) {
             vc_ends_hash(p, len, &a->e1, &a->e2);
+        }
+        if (!a->hashed) {
+            vc_arr_gen++; /* M47: now it can be named by the skin body's notice */
         }
         if (!a->hashed || h1 != a->h1 || h2 != a->h2) {
             if (a->hashed) {
@@ -6165,6 +6445,73 @@ void gx_vc_array_set(const void* base) {
     }
 }
 
+/* M47 (PLAN.md 62): a writer the port knows (the skin body) names the bytes
+ * it rewrote: every array whose extent could overlap them is re-checked at
+ * its next use, and no other memo ends -- where M40..M46 ended the epoch,
+ * i.e. every array's memo, once per skinned model drawn.  Exact: the body
+ * writes the mesh's position and normal buffers and nothing else a GX array
+ * can name (the bone matrices go to the card through GXLoadPosMtxImm, by
+ * value).  --oldvcskin: the epoch, as before. */
+static unsigned long stat_vc_skin_named, stat_vc_skin_marked, stat_vc_skin_scans;
+static int vc_arr_overlaps(const VcArr* a, const u8* lo, const u8* hi) {
+    /* the most any read of it can reach: its extent (hashed arrays only) */
+    const u8* alo = a->base + (size_t)a->lo * a->stride;
+    const u8* ahi = a->base + (size_t)a->hi * a->stride + a->elem;
+    return alo < hi && lo < ahi;
+}
+void gx_vc_arrays_written(const void* p, size_t n, GxVcMark* c) {
+    const u8* lo = (const u8*)p;
+    const u8* hi = lo + n;
+    int b, k;
+    if (port_opt.oldvcskin) {
+        gx_vc_epoch++;
+        return;
+    }
+    stat_vc_skin_named++;
+    if (!vc_narr) {
+        return;
+    }
+    if (c && c->gen == vc_arr_gen) {
+        /* the same arrays as last time: a set only ever too wide (an array
+         * hashed since reaches less than it did), never too narrow */
+        for (k = 0; k < c->n; k++) {
+            VcArr* a = (VcArr*)c->a[k];
+            if (a->epoch) {
+                a->epoch = 0;
+                stat_vc_skin_marked++;
+            }
+        }
+        return;
+    }
+    stat_vc_skin_scans++;
+    if (c) {
+        c->n = 0;
+        c->gen = vc_arr_gen;
+    }
+    for (b = 0; b < VC_ARR_BUCKETS; b++) {
+        VcArr* a;
+        for (a = vc_arrs[b]; a; a = a->next) {
+            /* an array not hashed yet is hashed at its next check whatever
+             * its epoch; it joins a set when it is (vc_arr_check bumps the
+             * generation) */
+            if (!a->hashed || !vc_arr_overlaps(a, lo, hi)) {
+                continue;
+            }
+            if (c) {
+                if (c->n < GX_VC_MARK_MAX) {
+                    c->a[c->n++] = a;
+                } else {
+                    c->gen = 0; /* too many to remember: scan every time */
+                }
+            }
+            if (a->epoch) {
+                a->epoch = 0;
+                stat_vc_skin_marked++;
+            }
+        }
+    }
+}
+
 /* grow the extent to cover [lo, hi]: a new version when it grows */
 static void vc_arr_extend(VcArr* a, u32 lo, u32 hi) {
     if (!a->hashed) {
@@ -6177,6 +6524,7 @@ static void vc_arr_extend(VcArr* a, u32 lo, u32 hi) {
         if (hi > a->hi) a->hi = hi;
         a->ver++;
         a->hashed = 0;
+        vc_arr_gen++; /* M47: its reach grew */
     }
 }
 
@@ -6226,6 +6574,7 @@ static void vc_sweep(unsigned now) {
             }
         }
         vc_narr = 0;
+        vc_arr_gen++; /* M47 */
         stat_vc_clears++;
     }
 }
@@ -6431,11 +6780,53 @@ static VcPrim* vc_prim_find(VcEnt* e, int i, u32 h1, u32 h2, int* found) {
     return lru;
 }
 
+/* M47 (PLAN.md 62): is the primitive in hand a skinned mesh's run the decode
+ * skins from the rest pose (`can`: the display list's decode path could
+ * carry it)?  Every primitive asks, since a reader that is not the skin
+ * decode must find the arrays written (gx_skin_fuse_for writes them). */
+static const GxSkinDec* skin_cur;
+static int skin_cur_nrm;
+static int skin_nrm_off; /* the normal index's byte offset in a list vertex */
+extern int gx_skin_fuse_live_flag; /* gx_skin.c: an HSF registered, the skin decode on */
+static void skin_decide(int can) {
+    const void* pb = NULL;
+    const void* nb = NULL;
+    int k, nrm_ok = 0, off = 0;
+    skin_cur = NULL;
+    skin_cur_nrm = 0;
+    if (!gx_skin_fuse_live_flag) {
+        return;
+    }
+    for (k = 0; k < nplan; k++) {
+        const DecStep* st = &plan[k];
+        if (st->idx && st->base) {
+            if (st->attr == GX_VA_POS) {
+                pb = st->base;
+            } else if (st->attr == GX_VA_NRM) {
+                nb = st->base;
+                nrm_ok = st->idx == 2 && st->op == DEC_F32_3_3 && st->stride == 12 &&
+                         st->advance == 2;
+                skin_nrm_off = off;
+            }
+        }
+        off += st->advance;
+    }
+    if (!pb && !nb) {
+        return;
+    }
+    can = can && plan_ok && !port_opt.olddecode && nplan >= 1 && plan[0].attr == GX_VA_POS &&
+          plan[0].idx == 2 && plan[0].op == DEC_F32_3_3 && plan[0].stride == 12 &&
+          !plan[0].to_pending && plan[0].dstoff == 0 && sl.off_skin < 0 && !pi.skin &&
+          !premerge_on && !palette_on && !port_opt.decodestats && nplan <= GX_MAX_ATTR &&
+          plan_nfill <= GX_DEC_FILL_MAX;
+    skin_cur = gx_skin_fuse_for(pb, nb, can, nrm_ok, &skin_cur_nrm);
+}
+
 /* may this primitive's run be cached at all */
 static int vc_eligible(u32 count) {
     int k, narr = 0;
     if (!plan_ok || port_opt.olddecode || sl.off_skin >= 0 || pi.skin || premerge_on ||
-        palette_on || port_opt.decodestats || nplan > GX_MAX_ATTR ||
+        palette_on || port_opt.decodestats || nplan > GX_MAX_ATTR || skin_cur ||
         plan_nfill > GX_DEC_FILL_MAX || count == 0 || count >= MAX_VERTS || sl.stride <= 0 ||
         (plan_fast && plan_fast_idx < 0)) {
         return 0;
@@ -6504,6 +6895,8 @@ static void job_fill(GxDecJob* j, const u8* p, const u8* end, u32 count) {
     j->clr = plan_clr.u;
     j->prefetch = port_opt.nodcbt ? 0 : port_opt.dcbtdist;
     j->fast = plan_fast_idx;
+    j->skin = NULL;
+    j->skin_nrm = 0;
     j->nplan = nplan;
     memcpy(j->plan, plan, (size_t)nplan * sizeof(DecStep));
     j->nfill = plan_nfill;
@@ -6585,6 +6978,11 @@ static int vc_decide(VcEnt* e, int i, const u8* p, const u8* end, u32 count, u8 
         vc_reason = VR_INELIG;
         stat_vc_inelig++;
         stat_vc_inelig_v += count;
+        if (skin_cur) {
+            /* M47: skinned at the decode -- never cached, and the list need
+             * not be hashed either: left to the ring as an animated list is */
+            e->dyn_until = gl13_frame_number() + 600u;
+        }
         return 0;
     }
     vc_plan_hash(count, op, &h1, &h2);
@@ -6956,6 +7354,10 @@ static void vc_report(void) {
              "%lu list hash(es) memoised, %lu memo end(s) leaving module code\n",
              stat_vc_auto_on, stat_vc_auto_off, port_opt.vcache_fit, stat_vc_list_memo,
              stat_vc_foreign_bumps);
+    port_log("port> vcache (M47): the skin body named its arrays %lu times (%lu scans), %lu "
+             "array memos ended by them%s\n", stat_vc_skin_named, stat_vc_skin_scans,
+             stat_vc_skin_marked,
+             port_opt.oldvcskin ? " (--oldvcskin: every memo, the epoch)" : "");
     port_log("port> vcache: hashed %.1f MB of lists and %.1f MB of arrays (%.1f KB a list call); "
              "%.0f ms keying on the game thread (sampled 1 in 8: lists %.0f, hits %.0f, misses %.0f); region %lu KB, "
              "peak %lu KB, %lu reset(s), %lu cooldown(s); %lu entries, %lu arrays live, %lu "
@@ -7180,6 +7582,7 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
         sv_first = total;
         in_prim = 1;
         begin_attr_order();
+        skin_decide(!caching && !water_local); /* M47 */
         PORT_SUB_ENTER(PERF_SUB_PRIM);
         batch_prepare(count);
         PORT_SUB_LEAVE();
@@ -7265,6 +7668,53 @@ void GXCallDisplayList(const void* list, u32 nbytes) {
                 decode_pending_last(&rtjob, vc_cur->nverts, vb);
                 nverts = (int)vc_cur->nverts;
                 p += vc_cur->adv;
+            } else if (skin_cur && (run_pos + (size_t)count * sl.stride > run_cap ||
+                                    count >= MAX_VERTS)) {
+                /* M47: a run the ring cannot take whole goes the old way
+                 * (the sink): the arrays first */
+                skin_decide(0);
+                p = plan_fast ? plan_fast(p, end, count) : decode_run(p, end, count);
+            } else if (skin_cur) {
+                /* M47 (PLAN.md 62): skinned at the decode, from the rest
+                 * pose -- the render thread's job, or run here as one */
+                u32 vb, n;
+                job_fill(&rtjob, p, end, count);
+                rtjob.skin = skin_cur;
+                rtjob.skin_nrm = skin_cur_nrm;
+                vb = job_vertex_bytes(&rtjob);
+                n = job_vertices(&rtjob, vb);
+                if (!port_opt.skinverify && rt_decode_want(count)) {
+                    run_rt = 1;
+                    PORT_SUB_ENTER(PERF_SUB_JREC);
+                    rt_decode_record(&rtjob);
+                    PORT_SUB_LEAVE();
+                    gx_skin_fuse_stamp(rt_pos());
+                    gx_skin_stamp_decode(rt_pos());
+                    PORT_SUB_ENTER(PERF_SUB_PEND);
+                    decode_pending_last(&rtjob, n, vb);
+                    PORT_SUB_LEAVE();
+                    rt_decode_there(n);
+                    stat_rtdec_runs++;
+                    stat_rtdec_verts += n;
+                } else {
+                    double t0 = rt_auto_on ? port_now_seconds() : 0.0;
+                    n = gx_decode_job(&rtjob);
+                    if (port_opt.skinverify) {
+                        gx_skin_fuse_verify(skin_cur, p, n, vb, 0, skin_nrm_off, src_buf + run_pos,
+                                            (u32)sl.stride, sl.off_nrm, skin_cur_nrm);
+                    }
+                    decode_pending_last(&rtjob, n, vb);
+                    if (rt_auto_on) {
+                        rt_decode_here(n, port_now_seconds() - t0);
+                        stat_rtdec_here++;
+                    }
+                }
+                gx_skin_fuse_count(n);
+                nverts = (int)n;
+                p += (size_t)n * vb;
+                if (plan_fast) {
+                    stat_fast_verts += count;
+                }
             } else if (!caching && !water_local && rtdec_build_sub(&rtjob, p, end, count)) {
                 /* M29: the run is the render thread's (PLAN.md 44); here only
                  * the list pointer, the vertex count and `pending` advance */

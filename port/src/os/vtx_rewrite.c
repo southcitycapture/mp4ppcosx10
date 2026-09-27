@@ -30,6 +30,11 @@
 void port_vtx_rewrite(const char* who);              /* rt.c: M29's join */
 void rt_vtx_rewrite_range(const void* p, unsigned long n, const char* who);
 void port_vtx_rewrite_done(void);                    /* rt.c: the vertex cache's epoch */
+/* M47 (PLAN.md 62): a skinned mesh whose arrays the skin decode left owed
+ * gets them written first, so the rewriter overwrites what the game's body
+ * would have left there (gx_skin.c) */
+void gx_skin_rewrite_notify(const void* pos_array);
+void gx_skin_rewrite_notify_all(void);
 
 static unsigned long st_cluster_calls, st_shape_calls, st_ranges;
 
@@ -37,6 +42,7 @@ void port_vtx_rewrite_cluster(HU3DMODEL* model) {
     s32 i, j;
     st_cluster_calls++;
     if (port_opt.oldvtxjoin) {
+        gx_skin_rewrite_notify_all();
         port_vtx_rewrite("ClusterProc");
         return;
     }
@@ -67,6 +73,7 @@ void port_vtx_rewrite_cluster(HU3DMODEL* model) {
                 }
             }
             st_ranges++;
+            gx_skin_rewrite_notify(o->mesh.vertex->data);
             rt_vtx_rewrite_range(o->mesh.vertex->data, (unsigned long)n * sizeof(Vec), "ClusterProc range");
         }
     }
@@ -78,6 +85,7 @@ void port_vtx_rewrite_shape(HSFDATA* hsf) {
     s32 i, s;
     st_shape_calls++;
     if (port_opt.oldvtxjoin) {
+        gx_skin_rewrite_notify_all();
         port_vtx_rewrite("ShapeProc");
         return;
     }
@@ -94,6 +102,7 @@ void port_vtx_rewrite_shape(HSFDATA* hsf) {
             }
         }
         st_ranges++;
+        gx_skin_rewrite_notify(o->mesh.vertex->data);
         rt_vtx_rewrite_range(o->mesh.vertex->data, (unsigned long)n * sizeof(Vec), "ShapeProc range");
     }
     port_vtx_rewrite_done();

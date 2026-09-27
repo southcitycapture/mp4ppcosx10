@@ -365,6 +365,18 @@ static void usage(const char* argv0) {
             "                    poll (the controls file's table or the built-in one), logged\n"
             "  --dcbtdist N      M46: the decode loops prefetch the array entries N\n"
             "                    vertices ahead (default 1, the next vertex)\n"
+            "  --noskindecode    M47: the skinned meshes' arrays written by the deferred\n"
+            "                    body and gathered by the decode (M18..M46), for the A/B\n"
+            "  --skinverify      M47: both -- the arrays written and the skin at the\n"
+            "                    decode, every fused position/normal compared bit for bit\n"
+            "  --oldvcskin       M47: the skin body ends every vertex-cache array memo\n"
+            "                    (the epoch, M40..M46), not only its own arrays'\n"
+            "  --fullskinsig     M47: the skin registry hashes the envelope tables at every\n"
+            "                    EnvelopeProc (M18..M46), not only when a pointer moved\n"
+            "  --noskindcbz      M47: the skin loop (PSMTXROMultVecArray) without dcbz of\n"
+            "                    its whole destination lines and read-ahead of its source\n"
+            "  --skinvec         M47: the skin decode's commonest shape in AltiVec (Java\n"
+            "                    mode), bit for bit the scalar loop's, for the A/B\n"
             "  --nopendlast      M46: each run's last vertex decoded whole for the next\n"
             "                    primitive's fill (the A/B; only the kept steps now)\n"
             "  --nolights        M46: the Bowser arena's pillar lights not drawn between two frames\n"
@@ -1377,6 +1389,18 @@ int port_parse_args(int argc, char** argv) {
             if (port_opt.dcbtdist < 1) {
                 port_opt.dcbtdist = 1;
             }
+        } else if (!strcmp(a, "--noskindecode")) {
+            port_opt.noskindecode = 1;
+        } else if (!strcmp(a, "--skinverify")) {
+            port_opt.skinverify = 1;
+        } else if (!strcmp(a, "--oldvcskin")) {
+            port_opt.oldvcskin = 1;
+        } else if (!strcmp(a, "--fullskinsig")) {
+            port_opt.fullskinsig = 1;
+        } else if (!strcmp(a, "--noskindcbz")) {
+            port_opt.noskindcbz = 1;
+        } else if (!strcmp(a, "--skinvec")) {
+            port_opt.skinvec = 1;
         } else if (!strcmp(a, "--nopendlast")) {
             port_opt.nopendlast = 1;
         } else if (!strcmp(a, "--nolights")) {

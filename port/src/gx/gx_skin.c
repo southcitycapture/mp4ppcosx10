@@ -67,6 +67,9 @@ unsigned gl13_frame_number(void);
 #include <stdlib.h>
 #include <string.h>
 
+static int fuse_mode(void);           /* M47 */
+extern int gx_skin_fuse_live_flag;    /* M47 */
+
 /* the game's, made visible by port/patches.txt */
 void SetEnvelopMtx(HSFOBJECT* arg0, HSFOBJECT* arg1, Mtx arg2);
 void SetEnvelopMain(HSFDATA* arg0);
@@ -82,6 +85,7 @@ extern u32 nMesh;
 static SkinHsf hsfs[SKIN_HSF_MAX];
 static int nhsfs;
 static SkinMesh* mesh_hash[SKIN_HASH]; /* by vtxenv pointer, chained */
+static SkinMesh* nrm_hash[SKIN_HASH];  /* M47: by normenv pointer, chained */
 
 static unsigned stat_proc_calls, stat_proc_deferred, stat_proc_cpu, stat_sync_runs,
     stat_sync_skipped_consumed, stat_pose_builds, stat_registered, stat_rebuilt,
@@ -110,9 +114,19 @@ static void mesh_unhash(SkinMesh* m) {
     while (*pp) {
         if (*pp == m) {
             *pp = m->hnext;
-            return;
+            break;
         }
         pp = &(*pp)->hnext;
+    }
+    if (m->normenv) {
+        pp = &nrm_hash[hash_ptr(m->normenv)];
+        while (*pp) {
+            if (*pp == m) {
+                *pp = m->nhnext;
+                break;
+            }
+            pp = &(*pp)->nhnext;
+        }
     }
 }
 
@@ -123,11 +137,22 @@ static void mesh_free(SkinMesh* m) {
     free(m->ent_slotf);
     free(m->P);
     free(m->N);
+    free(m->fpent);
+    free(m->fnent);
+    free(m->PVbuf);
+    free(m->NVbuf);
     memset(m, 0, sizeof(*m));
 }
 
+static unsigned reg_serial = 1; /* M47: bumped when the meshes' table changes */
 static void hsf_free(SkinHsf* h) {
     int i;
+    reg_serial++;
+    if (h->dec_valid) {
+        /* M47: a pending decode job may hold this HSF's meshes' tables */
+        rt_decode_join_pos(h->dec_pos, "skin free");
+        h->dec_valid = 0;
+    }
     for (i = 0; i < h->nmesh; i++) {
         mesh_unhash(&h->mesh[i]);
         mesh_free(&h->mesh[i]);
@@ -347,6 +372,8 @@ static void range_set(u16* tab, int n, int from, int count, int e, unsigned* ove
     }
 }
 
+static void fuse_build(SkinMesh* m, HSFOBJECT* o);
+
 /* Build one mesh's tables.  The order is SetEnvelop's -- single, dual, multi,
  * copy -- so a vertex two entries both name ends up with the one that wrote
  * it last on the CPU. */
@@ -473,7 +500,133 @@ static int mesh_build(SkinHsf* h, SkinMesh* m, HSFOBJECT* o, int objIdx, int mes
     }
     m->pose_serial = 0;
     m->fallback = 0;
+    fuse_build(m, o);
     return 0;
+}
+
+
+/* ---- M47 (PLAN.md 62): the skin at the decode -------------------------------
+ *
+ * The deferred body (M18) runs SetEnvelopMain at the draw: every skinned
+ * vertex read from the rest pose, multiplied, written into the mesh's arrays
+ * -- and then the decode gathers the arrays it just wrote, index by index,
+ * into the ring.  On m436 that is 8.1 M cycles of the drawn frame's object
+ * walk, most of it the stores' and the gathers' cache misses (PLAN.md 61.9).
+ *
+ * Here the body builds only what SetEnvelop computes once per entry -- each
+ * entry's position and normal matrix, with the game's own PSMTX calls in its
+ * order (ent_pose, verbatim) -- and the decode, per list vertex, reads the
+ * rest pose at the vertex's index and does the multiply SetEnvelop would
+ * have done for that index: m[0]*x + m[1]*y + m[2]*z + m[3], which is the
+ * expression of all three of SetEnvelop's multipliers (PSMTXMultVec,
+ * PSMTXMultVecArray, PSMTXROMultVecArray on the reordered matrix) and
+ * compiles to the same fmuls/fmadds/fmadds/fadds in each.  The arrays are not
+ * written; nothing but the draw reads them (PLAN.md 33.3).  Which entry
+ * wrote an index last is SetEnvelop's order, table by table below, with its
+ * two quirks: a single entry of one position multiplies ONE normal whatever
+ * its normalNum (PSMTXMultVec), and the copy writes positions only.
+ *
+ * A mesh the decode cannot do this for -- a multi entry (none on the walk,
+ * PLAN.md 33.2), a range past its arrays, arrays that are the file's own, a
+ * cluster or shape that wrote it this frame (writeNum: the in-place case) --
+ * makes its HSF run the game's body as before.  And any reader that is not
+ * the skin decode (a plan it cannot carry, the immediate mode, a rewriter
+ * about to write the array) gets the arrays written first, from the same
+ * matrices (fuse_materialize).  `--noskindecode` is the M46 path;
+ * `--skinverify` runs both and compares every fused vertex, bit for bit. */
+static unsigned long stat_fuse_poses, stat_fuse_old_bodies, stat_fuse_materialized,
+    stat_fuse_mat_rewrite, stat_fuse_prims, stat_fuse_verts, stat_fuse_nrm_prims;
+static unsigned long stat_verify_pos, stat_verify_nrm, stat_verify_pos_bad,
+    stat_verify_nrm_bad, stat_verify_unnamed;
+static unsigned stat_fuse_meshes_ok, stat_fuse_meshes_no[4];
+
+static int fuse_range(u16* tab, int n, int from, int count, int e) {
+    int i;
+    if (count < 0 || from < 0 || from + count > n) {
+        return -1; /* SetEnvelop would write past the array: not ours to model */
+    }
+    for (i = 0; i < count; i++) {
+        tab[from + i] = (u16)e;
+    }
+    return 0;
+}
+
+/* SetEnvelop's writes, in its order: per cenv, the singles, the duals' weights,
+ * (the multis), the copy.  The entries are numbered as mesh_build numbered
+ * them (the same walk), so e indexes m->P / m->N. */
+static void fuse_build(SkinMesh* m, HSFOBJECT* o) {
+    int j, e = 1, why = 0;
+    unsigned k;
+    m->fuse_ok = 0;
+    m->fpent = (u16*)malloc((size_t)(m->nvtx > 0 ? m->nvtx : 1) * sizeof(u16));
+    m->fnent = (u16*)malloc((size_t)(m->nnrm > 0 ? m->nnrm : 1) * sizeof(u16));
+    if (!m->fpent || !m->fnent) {
+        return;
+    }
+    memset(m->fpent, 0xFF, (size_t)(m->nvtx > 0 ? m->nvtx : 1) * sizeof(u16));
+    memset(m->fnent, 0xFF, (size_t)(m->nnrm > 0 ? m->nnrm : 1) * sizeof(u16));
+    if (!o->mesh.normal || !m->normenv || m->vtxenv == o->mesh.file[0] ||
+        m->normenv == o->mesh.file[1] || !o->mesh.file[0] || !o->mesh.file[1]) {
+        why = 1;
+    }
+    for (j = 0; !why && j < (int)o->mesh.cenvNum; j++) {
+        const HSFCENV* c = &o->mesh.cenv[j];
+        const HSFCENVSINGLE* sg = c->singleData;
+        const HSFCENVDUAL* d = c->dualData;
+        for (k = 0; !why && k < c->singleCount; k++, sg++, e++) {
+            if (m->ent[e].kind != SKIN_ENT_SINGLE ||
+                fuse_range(m->fpent, m->nvtx, (int)sg->pos, (int)sg->posNum, e) < 0 ||
+                fuse_range(m->fnent, m->nnrm, (int)sg->normal,
+                           sg->posNum == 1 ? 1 : (int)sg->normalNum, e) < 0) {
+                why = 2;
+            }
+        }
+        for (k = 0; !why && k < c->dualCount; k++, d++) {
+            const HSFCENVDUALWEIGHT* w = d->weight;
+            u32 q;
+            for (q = 0; !why && q < d->weightNum; q++, w++, e++) {
+                if (m->ent[e].kind != SKIN_ENT_DUAL ||
+                    fuse_range(m->fpent, m->nvtx, (int)w->pos, (int)w->posNum, e) < 0 ||
+                    fuse_range(m->fnent, m->nnrm, (int)w->normal, (int)w->normalNum, e) < 0) {
+                    why = 2;
+                }
+            }
+        }
+        if (!why && c->multiCount) {
+            why = 3;
+        }
+        if (!why && fuse_range(m->fpent, m->nvtx, (int)c->vtxCount, (int)c->copyCount, 0) < 0) {
+            why = 2;
+        }
+    }
+    if (!why && e != m->nent) {
+        why = 2;
+    }
+    if (why) {
+        stat_fuse_meshes_no[why]++;
+        return;
+    }
+    m->fuse_ok = 1;
+    stat_fuse_meshes_ok++;
+    m->dec.live_pos = (const u8*)m->vtxenv;
+    m->dec.live_nrm = (const u8*)m->normenv;
+    m->dec.pent = m->fpent;
+    m->dec.nent = m->fnent;
+    m->dec.P = &m->P[0].m[0][0];
+    m->dec.N = &m->N[0].m[0][0];
+    m->dec.npos = (u32)m->nvtx;
+    m->dec.nnrm = (u32)m->nnrm;
+    m->dec.rest_pos = (const f32*)o->mesh.file[0];
+    m->dec.rest_nrm = (const f32*)o->mesh.file[1];
+    if (port_opt.skinvec) {
+        /* malloc is 16-byte aligned on Mac OS X (gx_skinvec.c's lvx) */
+        m->PVbuf = (f32*)calloc((size_t)m->nent * 16, sizeof(f32));
+        m->NVbuf = (f32*)calloc((size_t)m->nent * 16, sizeof(f32));
+        if (m->PVbuf && m->NVbuf && !((uintptr_t)m->PVbuf & 15) && !((uintptr_t)m->NVbuf & 15)) {
+            m->dec.PV = m->PVbuf;
+            m->dec.NV = m->NVbuf;
+        }
+    }
 }
 
 static SkinHsf* hsf_find(const HSFDATA* hsf) {
@@ -486,13 +639,58 @@ static SkinHsf* hsf_find(const HSFDATA* hsf) {
     return NULL;
 }
 
+/* M47 (PLAN.md 62): the pointers and counts hsf_signature starts from, and
+ * each skinned object's buffers -- everything but the envelope tables'
+ * contents, which are the model file's and change only if the model is
+ * freed and another loaded (port_mem_freed drops the entry then, M19). */
+static u32 hsf_cheap_signature(const HSFDATA* hsf) {
+    u32 h = 2166136261u;
+    int i;
+    h = fnv(&hsf->objectNum, sizeof(hsf->objectNum), h);
+    h = fnv(&hsf->cenvNum, sizeof(hsf->cenvNum), h);
+    h = fnv(&hsf->object, sizeof(hsf->object), h);
+    h = fnv(&hsf->matrix, sizeof(hsf->matrix), h);
+    for (i = 0; i < hsf->objectNum; i++) {
+        const HSFOBJECT* o = &hsf->object[i];
+        if (o->type != 2 || !o->mesh.cenvNum) {
+            continue;
+        }
+        h = fnv(&o->mesh.vertex, sizeof(o->mesh.vertex), h);
+        h = fnv(&o->mesh.normal, sizeof(o->mesh.normal), h);
+        h = fnv(&o->mesh.cenv, sizeof(o->mesh.cenv), h);
+        h = fnv(&o->mesh.cenvNum, sizeof(o->mesh.cenvNum), h);
+        if (o->mesh.vertex) {
+            h = fnv(&o->mesh.vertex->data, sizeof(void*), h);
+            h = fnv(&o->mesh.vertex->count, sizeof(u32), h);
+        }
+    }
+    return h;
+}
+static unsigned long stat_sig_full, stat_sig_cheap;
+
 static SkinHsf* hsf_register(HSFDATA* hsf, unsigned frame) {
     SkinHsf* h = NULL;
     int i, n = 0, meshNo = 0;
-    u32 sig = hsf_signature(hsf);
+    u32 sig, csig;
     h = hsf_find(hsf);
+    if (h && !port_opt.fullskinsig && !port_opt.noskinlifetime) {
+        /* M47: EnvelopeProc runs every frame for every skinned model, and
+         * the full signature hashed its envelope tables each time (1% of
+         * m436's game thread).  The pointers every call; the tables at the
+         * first sight, when a pointer moved, and every 256th call */
+        csig = hsf_cheap_signature(hsf);
+        if (csig == h->cheap_sig && ++h->sig_calls < 256) {
+            stat_sig_cheap++;
+            return h;
+        }
+    }
+    csig = hsf_cheap_signature(hsf);
+    sig = hsf_signature(hsf);
+    stat_sig_full++;
     if (h) {
         if (h->signature == sig) {
+            h->cheap_sig = csig;
+            h->sig_calls = 0;
             return h;
         }
         hsf_free(h);
@@ -524,8 +722,10 @@ static SkinHsf* hsf_register(HSFDATA* hsf, unsigned frame) {
         stat_rebuilt++;
     }
     memset(h, 0, sizeof(*h));
+    reg_serial++;
     h->hsf = hsf;
     h->signature = sig;
+    h->cheap_sig = csig;
     h->object = hsf->object;
     h->matrix = hsf->matrix;
     h->objectNum = hsf->objectNum;
@@ -559,11 +759,20 @@ static SkinHsf* hsf_register(HSFDATA* hsf, unsigned frame) {
             h->nmesh++;
             m->hnext = mesh_hash[hash_ptr(m->vtxenv)];
             mesh_hash[hash_ptr(m->vtxenv)] = m;
+            if (m->normenv) {
+                m->nhnext = nrm_hash[hash_ptr(m->normenv)];
+                nrm_hash[hash_ptr(m->normenv)] = m;
+            }
         }
         meshNo++;
     }
     h->last_frame = frame;
     stat_registered++;
+    gx_skin_fuse_live_flag = fuse_mode();
+    h->fuse_ok = !h->cpu && h->nmesh > 0;
+    for (i = 0; i < h->nmesh; i++) {
+        h->fuse_ok &= h->mesh[i].fuse_ok;
+    }
     if (h->cpu) {
         stat_fallback_hsf++;
     }
@@ -663,6 +872,19 @@ static void hsf_mtx_sync(SkinHsf* h) {
     stat_sync_runs++;
 }
 
+/* SetEnvelopMain writes each skinned mesh's position and normal buffers:
+ * the vertex cache is told those, by their extent (M47) */
+static void hsf_arrays_written(SkinHsf* h) {
+    int k;
+    for (k = 0; k < h->nmesh; k++) {
+        SkinMesh* m = &h->mesh[k];
+        gx_vc_arrays_written(m->vtxenv, (size_t)m->nvtx * 12, &m->vmark_pos);
+        if (m->normenv) {
+            gx_vc_arrays_written(m->normenv, (size_t)m->nnrm * 12, &m->vmark_nrm);
+        }
+    }
+}
+
 /* The game's own EnvelopeProc body, on the inputs it has now: what the
  * deferred call would have computed, computed at the first read instead. */
 static void hsf_run_body(SkinHsf* h) {
@@ -685,10 +907,359 @@ static void hsf_run_body(SkinHsf* h) {
         h->mtx_dirty = 0;
     }
     SetEnvelopMain(h->hsf);
-    gx_vc_epoch++; /* M40: the arrays were rewritten; the vertex cache re-hashes them */
+    /* M40: the arrays were rewritten; the vertex cache re-hashes them -- M47:
+     * those two arrays of each mesh, not every array (gx_vc_arrays_written) */
+    hsf_arrays_written(h);
     h->skin_dirty = 0;
     stat_body_runs++;
 }
+
+
+/* ---- M47: the body, the pose, the arrays on demand (see fuse_build) ------- */
+static int fuse_mode(void) {
+    return !port_opt.noskindecode && !port_opt.dlcache && gx_skin_mode() == 1;
+}
+
+static void ent_pose(const SkinMesh* m, const SkinEnt* e, Mtx* top, u32 nobj, u32 nmesh,
+                     const Mtx inv, Mtx P, Mtx N);
+
+/* the arrays, written from the matrices of the pose built (what SetEnvelop
+ * would have written at that pose: the same multiply, the same entry per
+ * index); the unnamed indices are left alone as SetEnvelop leaves them */
+static void fuse_materialize(SkinHsf* h) {
+    int k;
+    if (h->owed != 1) {
+        return;
+    }
+    if (h->dec_valid) {
+        rt_decode_join_pos(h->dec_pos, "skin arrays");
+        h->dec_valid = 0;
+    }
+    for (k = 0; k < h->nmesh; k++) {
+        const SkinMesh* m = &h->mesh[k];
+        const GxSkinDec* d = &m->dec;
+        f32* vp = (f32*)m->vtxenv;
+        f32* np = (f32*)m->normenv;
+        u32 ix;
+        for (ix = 0; ix < d->npos; ix++) {
+            u32 e = d->pent[ix];
+            if (e == GX_SKIN_UNNAMED) {
+                continue;
+            }
+            if (e == 0) {
+                vp[3 * ix + 0] = d->rest_pos[3 * ix + 0];
+                vp[3 * ix + 1] = d->rest_pos[3 * ix + 1];
+                vp[3 * ix + 2] = d->rest_pos[3 * ix + 2];
+            } else {
+                gx_skin_mul(d->P + 12 * e, d->rest_pos + 3 * ix, vp + 3 * ix);
+            }
+        }
+        for (ix = 0; ix < d->nnrm; ix++) {
+            u32 e = d->nent[ix];
+            if (e != GX_SKIN_UNNAMED) {
+                gx_skin_mul(d->N + 12 * e, d->rest_nrm + 3 * ix, np + 3 * ix);
+            }
+        }
+    }
+    hsf_arrays_written(h); /* the arrays changed: the vertex cache re-checks them */
+    h->owed = 0;
+    stat_fuse_materialized++;
+}
+
+/* The deferred body (hsf_run_body's place in the two hooks).  Under the skin
+ * decode: SetEnvelopMain's per-mesh work up to the vertices -- the inverse it
+ * stores in MtxTop[Meshno] for every mesh object, in its order -- and each
+ * skinned mesh's entry matrices; the arrays are owed.  --skinverify: the
+ * game's body as well (the arrays the truth the decode is checked against). */
+static void hsf_body(SkinHsf* h) {
+    HSFDATA* hsf = h->hsf;
+    HSFMATRIX* mx = hsf->matrix;
+    int i, k, meshNo, inplace = 0;
+    if (!fuse_mode() || !h->fuse_ok) {
+        hsf_run_body(h);
+        h->owed = 0;
+        stat_fuse_old_bodies += fuse_mode();
+        return;
+    }
+    for (k = 0; k < h->nmesh; k++) {
+        const HSFOBJECT* o = h->mesh[k].obj;
+        if (o->mesh.writeNum != 0 || o->mesh.file[0] != (void*)h->mesh[k].dec.rest_pos ||
+            o->mesh.file[1] != (void*)h->mesh[k].dec.rest_nrm) {
+            inplace = 1; /* a cluster or shape wrote it this frame: SetEnvelop
+                          * reads its own array (or the file moved) */
+        }
+    }
+    if (inplace) {
+        hsf_run_body(h);
+        h->owed = 0;
+        stat_fuse_old_bodies++;
+        return;
+    }
+    if (port_opt.skinverify) {
+        hsf_run_body(h);
+    } else {
+        if (h->dec_valid) {
+            rt_decode_join_pos(h->dec_pos, "skin pose");
+            h->dec_valid = 0;
+        }
+        MtxTop = mx->data;
+        nObj = mx->count;
+        nMesh = mx->base_idx;
+        if (h->mtx_dirty) {
+            Mtx id;
+            PSMTXIdentity(id);
+            SetEnvelopMtx(hsf->object, hsf->root, id);
+            h->mtx_dirty = 0;
+        }
+    }
+    for (i = 0, k = 0, meshNo = 0; i < (int)hsf->objectNum; i++) {
+        if (hsf->object[i].type != 2) {
+            continue;
+        }
+        if (!port_opt.skinverify) {
+            /* SetEnvelopMain: PSMTXInverse(MtxTop[&obj[nMesh] - object], MtxTop[Meshno]) */
+            PSMTXInverse(mx->data[mx->base_idx + i], mx->data[meshNo]);
+        }
+        if (k < h->nmesh && h->mesh[k].objIdx == i) {
+            SkinMesh* m = &h->mesh[k];
+            int e;
+            for (e = 1; e < m->nent; e++) {
+                ent_pose(m, &m->ent[e], mx->data, mx->count, mx->base_idx, mx->data[meshNo],
+                         m->P[e].m, m->N[e].m);
+                if (m->dec.PV) {
+                    /* --skinvec: the columns, lane r = row r (plain copies) */
+                    f32* pv = m->PVbuf + 16 * e;
+                    f32* nv = m->NVbuf + 16 * e;
+                    int r, c;
+                    for (c = 0; c < 4; c++) {
+                        for (r = 0; r < 3; r++) {
+                            pv[4 * c + r] = m->P[e].m[r][c];
+                            nv[4 * c + r] = m->N[e].m[r][c];
+                        }
+                    }
+                }
+            }
+            m->pose_serial = 0; /* the palette's pose cache (--palette) is not this */
+            k++;
+        }
+        meshNo++;
+    }
+    h->owed = port_opt.skinverify ? 2 : 1;
+    h->skin_dirty = 0;
+    stat_fuse_poses++;
+}
+
+static SkinMesh* mesh_by_pos(const void* p) {
+    SkinMesh* m;
+    for (m = mesh_hash[hash_ptr(p)]; m; m = m->hnext) {
+        if (m->vtxenv == p) {
+            return m;
+        }
+    }
+    return NULL;
+}
+static SkinMesh* mesh_by_nrm(const void* p) {
+    SkinMesh* m;
+    for (m = nrm_hash[hash_ptr(p)]; m; m = m->nhnext) {
+        if (m->normenv == p) {
+            return m;
+        }
+    }
+    return NULL;
+}
+
+static SkinHsf* fuse_last;
+/* M47: every registered mesh's two buffers in one small open-addressed
+ * table (8 KB, in the L1 once warm): the per-primitive question "is this
+ * array a skinned mesh's?" is a probe or two, not a walk through the
+ * meshes' structures.  Rebuilt when the registry changes (reg_serial). */
+#define FTAB 1024
+static const void* ftab_key[FTAB];
+static SkinMesh* ftab_val[FTAB]; /* the key's mesh */
+static u8 ftab_kind[FTAB];       /* bit 0: a normal buffer; bit 1: shared by two */
+static unsigned ftab_serial;
+static int ftab_ok;
+static unsigned ftab_hash(const void* p) {
+    uintptr_t v = (uintptr_t)p;
+    return (unsigned)((v >> 4) ^ (v >> 14)) & (FTAB - 1);
+}
+static void ftab_put(const void* key, SkinMesh* m, u8 kind) {
+    unsigned h = ftab_hash(key), n;
+    for (n = 0; n < FTAB; n++, h = (h + 1) & (FTAB - 1)) {
+        if (!ftab_key[h]) {
+            ftab_key[h] = key;
+            ftab_val[h] = m;
+            ftab_kind[h] = kind;
+            return;
+        }
+        if (ftab_key[h] == key && (ftab_kind[h] & 1) == kind) {
+            ftab_kind[h] |= 2; /* two meshes, one buffer: the chains decide */
+            return;
+        }
+    }
+    ftab_ok = 0;
+}
+static void ftab_build(void) {
+    int i, k, n = 0;
+    memset(ftab_key, 0, sizeof(ftab_key));
+    ftab_ok = 1;
+    for (i = 0; i < nhsfs; i++) {
+        for (k = 0; hsfs[i].hsf && k < hsfs[i].nmesh; k++) {
+            n += 2;
+        }
+    }
+    if (n > FTAB / 2) {
+        ftab_ok = 0; /* too full to probe fast: the chains */
+    } else {
+        for (i = 0; i < nhsfs; i++) {
+            for (k = 0; hsfs[i].hsf && k < hsfs[i].nmesh; k++) {
+                SkinMesh* m = &hsfs[i].mesh[k];
+                ftab_put(m->vtxenv, m, 0);
+                if (m->normenv) {
+                    ftab_put(m->normenv, m, 1);
+                }
+            }
+        }
+    }
+    ftab_serial = reg_serial;
+}
+static SkinMesh* ftab_find(const void* p, u8 kind) {
+    unsigned h, n;
+    if (!ftab_ok) {
+        return kind ? mesh_by_nrm(p) : mesh_by_pos(p);
+    }
+    for (h = ftab_hash(p), n = 0; n < FTAB; n++, h = (h + 1) & (FTAB - 1)) {
+        if (!ftab_key[h]) {
+            return NULL;
+        }
+        if (ftab_key[h] == p && (ftab_kind[h] & 1) == kind) {
+            if (ftab_kind[h] & 2) {
+                /* two meshes sharing a buffer: the chains decide, as before */
+                return kind ? mesh_by_nrm(p) : mesh_by_pos(p);
+            }
+            return ftab_val[h];
+        }
+    }
+    return NULL;
+}
+
+/* M47: the lookup's one-entry memo, valid while no mesh was registered or
+ * dropped (reg_serial) */
+static const void* memo_pb;
+static const void* memo_nb;
+static SkinMesh* memo_m;
+static SkinMesh* memo_mn;
+static unsigned memo_serial;
+int gx_skin_fuse_live(void) { return nhsfs && fuse_mode(); }
+/* the same, as a flag the per-primitive test reads without a call: set at
+ * each registration (the options do not change in a run) */
+int gx_skin_fuse_live_flag;
+
+const GxSkinDec* gx_skin_fuse_for(const void* pos_base, const void* nrm_base, int can_fuse,
+                                  int nrm_ok, int* nrm_skinned) {
+    SkinMesh* m = NULL;
+    SkinMesh* mn = NULL;
+    *nrm_skinned = 0;
+    if (!nhsfs || !fuse_mode()) {
+        return NULL;
+    }
+    if (pos_base == memo_pb && nrm_base == memo_nb && memo_serial == reg_serial) {
+        /* the last primitive's arrays (a model's faces come in runs) */
+        m = memo_m;
+        mn = memo_mn;
+    } else {
+        if (ftab_serial != reg_serial) {
+            ftab_build();
+        }
+        m = pos_base ? ftab_find(pos_base, 0) : NULL;
+        mn = nrm_base ? ftab_find(nrm_base, 1) : NULL;
+        memo_pb = pos_base;
+        memo_nb = nrm_base;
+        memo_m = m;
+        memo_mn = mn;
+        memo_serial = reg_serial;
+    }
+    if (!m && !mn) {
+        return NULL;
+    }
+    if (m && m->owner->owed && can_fuse && m->fuse_ok && (!mn || (mn == m && nrm_ok))) {
+        *nrm_skinned = mn == m;
+        fuse_last = m->owner;
+        stat_fuse_prims++;
+        stat_fuse_nrm_prims += mn == m;
+        return &m->dec;
+    }
+    if (m && m->owner->owed == 1) {
+        fuse_materialize(m->owner);
+    }
+    if (mn && mn->owner->owed == 1) {
+        fuse_materialize(mn->owner);
+    }
+    return NULL;
+}
+
+void gx_skin_fuse_stamp(unsigned pos) {
+    if (fuse_last) {
+        fuse_last->dec_pos = pos;
+        fuse_last->dec_valid = 1;
+    }
+}
+
+void gx_skin_rewrite_notify(const void* p) {
+    SkinMesh* m;
+    if (!nhsfs || !p) {
+        return;
+    }
+    m = mesh_by_pos(p);
+    if (m && m->owner->owed == 1) {
+        stat_fuse_mat_rewrite++;
+        fuse_materialize(m->owner);
+    }
+}
+
+void gx_skin_rewrite_notify_all(void) {
+    int i;
+    for (i = 0; i < nhsfs; i++) {
+        if (hsfs[i].hsf && hsfs[i].owed == 1) {
+            stat_fuse_mat_rewrite++;
+            fuse_materialize(&hsfs[i]);
+        }
+    }
+}
+
+/* --skinverify: the run the decode just wrote (n vertices of `stride` at
+ * `v`), against the arrays the game's body wrote, every fused vertex */
+void gx_skin_fuse_verify(const GxSkinDec* d, const u8* list, u32 n, u32 vbytes, int pos_off,
+                         int nrm_off, const u8* v, u32 stride, int off_nrm, int nrm_skinned) {
+    u32 i;
+    for (i = 0; i < n; i++, list += vbytes, v += stride) {
+        u32 ix = ((u32)list[pos_off] << 8) | list[pos_off + 1];
+        if (ix < d->npos && d->pent[ix] == GX_SKIN_UNNAMED) {
+            stat_verify_unnamed++;
+        }
+        stat_verify_pos++;
+        if (memcmp(v, d->live_pos + (size_t)ix * 12, 12) != 0) {
+            stat_verify_pos_bad++;
+            if (stat_verify_pos_bad <= 8) {
+                port_log("port> skinverify: position %u (entry %u) differs at frame %u\n", ix,
+                         ix < d->npos ? d->pent[ix] : 0xFFFFu, gl13_frame_number());
+            }
+        }
+        if (nrm_skinned && off_nrm >= 0) {
+            u32 nx = ((u32)list[nrm_off] << 8) | list[nrm_off + 1];
+            stat_verify_nrm++;
+            if (memcmp(v + off_nrm, d->live_nrm + (size_t)nx * 12, 12) != 0) {
+                stat_verify_nrm_bad++;
+                if (stat_verify_nrm_bad <= 8) {
+                    port_log("port> skinverify: normal %u (entry %u) differs at frame %u\n", nx,
+                             nx < d->nnrm ? d->nent[nx] : 0xFFFFu, gl13_frame_number());
+                }
+            }
+        }
+    }
+}
+
+void gx_skin_fuse_count(unsigned long verts) { stat_fuse_verts += verts; }
 
 /* objMesh, before its read of hsf->matrix->data[mesh]. */
 void port_envelope_sync(HSFDATA* hsf) {
@@ -726,7 +1297,7 @@ void port_envelope_sync(HSFDATA* hsf) {
         return;
     }
     if (gx_skin_mode() == 1) {
-        hsf_run_body(h);
+        hsf_body(h);
     } else {
         hsf_mtx_sync(h);
     }
@@ -788,7 +1359,7 @@ void gx_skin_array_bound(const void* p) {
                     }
                 }
                 if (m->obj->mesh.vertex && m->obj->mesh.vertex->data == p) {
-                    hsf_run_body(h);
+                    hsf_body(h);
                     stat_body_at_bind++;
                 }
                 return;
@@ -806,7 +1377,7 @@ void gx_skin_array_bound(const void* p) {
                 return;
             }
             if (v->data == p) {
-                hsf_run_body(h);
+                hsf_body(h);
                 stat_body_at_bind++;
             }
             return;
@@ -997,12 +1568,36 @@ void gx_skin_report(void) {
              stat_rebuilt, stat_body_runs, stat_body_at_bind, stat_sync_skipped_consumed,
              stat_sync_runs, stat_pose_builds);
     port_log("port> skin: lifetime: %u entries dropped by the game's frees, %u guard hits "
-             "(must be 0)\n",
-             stat_freed_drops, stat_guard_hits);
+             "(must be 0); signatures: %lu full, %lu by the pointers alone (M47%s)\n",
+             stat_freed_drops, stat_guard_hits, stat_sig_full, stat_sig_cheap,
+             port_opt.fullskinsig ? ", --fullskinsig" : "");
     if (port_opt.noskinlifetime) {
         port_log("port> skin: --noskinlifetime: %u entries left behind by frees (%u of them "
                  "dirty), %u binds read through a stale entry\n",
                  stat_lever_stale_left, stat_lever_stale_dirty, stat_lever_stale_reads);
+    }
+    if (fuse_mode() || port_opt.skinverify) {
+        port_log("port> skin: M47 skin at the decode%s: %u meshes can (%u cannot: %u arrays, %u "
+                 "ranges, %u multi); %lu poses built, %lu old bodies (in place or not fusable), "
+                 "%lu arrays written on demand (%lu for a rewriter); %lu primitives skinned at "
+                 "the decode (%lu with their normals), %lu vertices\n",
+                 port_opt.skinverify ? " (--skinverify)" : "", stat_fuse_meshes_ok,
+                 stat_fuse_meshes_no[1] + stat_fuse_meshes_no[2] + stat_fuse_meshes_no[3],
+                 stat_fuse_meshes_no[1], stat_fuse_meshes_no[2], stat_fuse_meshes_no[3],
+                 stat_fuse_poses, stat_fuse_old_bodies, stat_fuse_materialized,
+                 stat_fuse_mat_rewrite, stat_fuse_prims, stat_fuse_nrm_prims, stat_fuse_verts);
+    }
+    if (port_opt.skinvec) {
+        extern unsigned long gx_skinvec_calls, gx_skinvec_nj_set;
+        port_log("port> skin: --skinvec: %lu AltiVec runs, %lu of them found the vector unit "
+                 "in non-Java mode and set Java mode\n",
+                 gx_skinvec_calls, gx_skinvec_nj_set);
+    }
+    if (port_opt.skinverify) {
+        port_log("port> skinverify: %lu positions compared, %lu differ (%lu of them unnamed "
+                 "indices); %lu normals compared, %lu differ\n",
+                 stat_verify_pos, stat_verify_pos_bad, stat_verify_unnamed, stat_verify_nrm,
+                 stat_verify_nrm_bad);
     }
     tot = stat_verts_single + stat_verts_dual + stat_verts_multi + stat_verts_copy;
     if (tot) {

@@ -350,6 +350,12 @@ $(BUILD)/port/src/os/psmtx_c.o: src/os/psmtx_c.c $(MIRROR_STAMP)
 	@mkdir -p $(dir $@)
 	$(CC) $(PORT_CFLAGS) $(PSMTX_CFLAGS) $(PGO_CFLAGS) -MMD -MP -c -o $@ $<
 
+# M47 (PLAN.md 62): the skin decode's AltiVec loop (--skinvec), in its own
+# object for the same reason as psmtx_c.c: only the intrinsics are vector.
+$(BUILD)/port/src/gx/gx_skinvec.o: src/gx/gx_skinvec.c $(MIRROR_STAMP)
+	@mkdir -p $(dir $@)
+	$(CC) $(PORT_CFLAGS) $(PSMTX_CFLAGS) $(PGO_CFLAGS) -MMD -MP -c -o $@ $<
+
 $(RTI_NAMES): $(patsubst src/gx/%.c,$(BUILD)/port/src/gx/%.o,$(RTI_SRCS)) tools/gen_rti_names.py
 	@mkdir -p $(dir $@)
 	$(NM) -g $(patsubst src/gx/%.c,$(BUILD)/port/src/gx/%.o,$(RTI_SRCS)) | $(PYTHON) tools/gen_rti_names.py > $@

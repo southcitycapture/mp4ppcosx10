@@ -1,0 +1,2 @@
+port> status f14940   m441dll      board 0 turn 1/1  mg 441 (m441dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.17 ms  speed 100%  23.9 fps presented  tex 235/18378 KB  rss 217 MB  res 112/256 MB  cpu 2  rt 22.2 ms dec 7.9+0.0  machine ok  ur 20
+port> status f16260   m441dll      board 0 turn 1/1  mg 441 (m441dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.45 ms  speed 100%  14.0 fps presented  tex 238/18506 KB  rss 217 MB  res 112/256 MB  cpu 2  rt 24.6 ms dec 10.5+0.0  machine ok  ur 300

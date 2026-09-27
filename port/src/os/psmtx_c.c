@@ -703,15 +703,39 @@ void PSMTXROMultVecArray(const ROMtx m, const Vec* srcBase, Vec* dstBase, u32 co
         }
         return;
     }
+    if (!port_opt.noskindcbz && count >= 8) {
+        /* M47 (PLAN.md 62): the skinning's vertex pass (SetEnvelop, posNum >
+         * 6).  Its stores miss: every destination line is read from memory
+         * only to be overwritten.  `dcbz` establishes a line zeroed without
+         * reading it -- only lines wholly inside the destination, and only
+         * when the source does not share a byte with it (the in-place
+         * cluster case reads what it writes), so every byte of such a line
+         * is written below with the very value the loop computes.  And the
+         * source read ahead (dcbt), a line at a time. */
+        const u8* s0 = (const u8*)srcBase;
+        const u8* s1 = s0 + (size_t)count * sizeof(Vec);
+        u8* d0 = (u8*)dstBase;
+        u8* d1 = d0 + (size_t)count * sizeof(Vec);
+        if (s1 <= d0 || d1 <= s0) {
+            u8* l = (u8*)(((uintptr_t)d0 + 31) & ~(uintptr_t)31);
+            for (; l + 32 <= d1; l += 32) {
+                __asm__ volatile("dcbz 0,%0" : : "r"(l) : "memory");
+            }
+        }
+    }
     {
         /* M41: the matrix in registers for the whole array (as
          * C_MTXMultVecArray above); the expressions are the loop's own */
         const f32 m00 = m[0][0], m10 = m[1][0], m20 = m[2][0], m30 = m[3][0];
         const f32 m01 = m[0][1], m11 = m[1][1], m21 = m[2][1], m31 = m[3][1];
         const f32 m02 = m[0][2], m12 = m[1][2], m22 = m[2][2], m32 = m[3][2];
+        const int pf = !port_opt.noskindcbz;
         for (i = 0; i < count; i++) {
             f32 x = srcBase[i].x, y = srcBase[i].y, z = srcBase[i].z;
             f32 ox = m00 * x + m10 * y + m20 * z + m30;
+            if (pf && (i & 7) == 0) {
+                __builtin_prefetch((const u8*)&srcBase[i] + 128);
+            }
             f32 oy = m01 * x + m11 * y + m21 * z + m31;
             f32 oz = m02 * x + m12 * y + m22 * z + m32;
             dstBase[i].x = ox;
