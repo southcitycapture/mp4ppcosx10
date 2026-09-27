@@ -1,0 +1,195 @@
+run	frame	verdict	sim	>8%	ref L/R	new L/R
+front	frame-00800.ppm	identical	100	0		
+front	frame-03000.ppm	identical	100	0		
+front	frame-07000.ppm	identical	100	0		
+m401	frame-14778.ppm	identical	100	0		
+m401	frame-15678.ppm	identical	100	0		
+m401~2	frame-14778.ppm	identical	100	0		
+m401~2	frame-15678.ppm	identical	100	0		
+m401~3	frame-14778.ppm	identical	100	0		
+m401~3	frame-15678.ppm	identical	100	0		
+m402	frame-14778.ppm	identical	100	0		
+m402	frame-15678.ppm	identical	100	0		
+m403	frame-14777.ppm	identical	100	0		
+m403	frame-15677.ppm	identical	100	0		
+m403	frame-15725.ppm	identical	100	0		
+m404	frame-14777.ppm	identical	100	0		
+m404	frame-15677.ppm	identical	100	0		
+m405	frame-14777.ppm	identical	100	0		
+m405	frame-15677.ppm	identical	100	0		
+m406	frame-14777.ppm	identical	100	0		
+m406	frame-15677.ppm	identical	100	0		
+m407	frame-14777.ppm	identical	100	0		
+m407	frame-15677.ppm	identical	100	0		
+m407~2	frame-14777.ppm	identical	100	0		
+m407~2	frame-15677.ppm	identical	100	0		
+m407~3	frame-14777.ppm	identical	100	0		
+m407~3	frame-15677.ppm	identical	100	0		
+m408	frame-14777.ppm	identical	100	0		
+m408	frame-15677.ppm	identical	100	0		
+m409	frame-14778.ppm	identical	100	0		
+m409	frame-15678.ppm	identical	100	0		
+m409~2	frame-14778.ppm	identical	100	0		
+m409~2	frame-15678.ppm	identical	100	0		
+m409~3	frame-14778.ppm	identical	100	0		
+m409~3	frame-15678.ppm	identical	100	0		
+m410	frame-14777.ppm	identical	100	0		
+m410	frame-15677.ppm	identical	100	0		
+m410~2	frame-14777.ppm	identical	100	0		
+m410~2	frame-15677.ppm	identical	100	0		
+m410~3	frame-14777.ppm	identical	100	0		
+m410~3	frame-15677.ppm	identical	100	0		
+m411	frame-14777.ppm	identical	100	0		
+m411	frame-15677.ppm	identical	100	0		
+m412	frame-14777.ppm	identical	100	0		
+m412	frame-15677.ppm	identical	100	0		
+m413	frame-14777.ppm	identical	100	0		
+m413	frame-15677.ppm	identical	100	0		
+m414	frame-14777.ppm	identical	100	0		
+m414	frame-15677.ppm	identical	100	0		
+m414~2	frame-14777.ppm	identical	100	0		
+m414~2	frame-15677.ppm	identical	100	0		
+m414~3	frame-14777.ppm	identical	100	0		
+m414~3	frame-15677.ppm	identical	100	0		
+m415	frame-14777.ppm	differs	100.0	0.1	194.9/189.6	194.9/189.6
+m415	frame-15677.ppm	differs	100.0	0.1	191.6/171.0	191.6/171.0
+m416	frame-14777.ppm	differs	99.7	0.4	14.7/11.8	13.9/11.1
+m416	frame-15677.ppm	differs	99.9	1.2	2.1/4.7	2.2/4.7
+m417	frame-14777.ppm	identical	100	0		
+m417	frame-15677.ppm	identical	100	0		
+m418	frame-14777.ppm	identical	100	0		
+m418	frame-15677.ppm	identical	100	0		
+m418~2	frame-14777.ppm	identical	100	0		
+m418~2	frame-15677.ppm	identical	100	0		
+m418~3	frame-14777.ppm	identical	100	0		
+m418~3	frame-15677.ppm	identical	100	0		
+m419	frame-14778.ppm	identical	100	0		
+m419	frame-15678.ppm	identical	100	0		
+m420	frame-14777.ppm	identical	100	0		
+m420	frame-15677.ppm	identical	100	0		
+m421	frame-14777.ppm	identical	100	0		
+m421	frame-15677.ppm	identical	100	0		
+m422	frame-14777.ppm	identical	100	0		
+m422	frame-15677.ppm	identical	100	0		
+m423	frame-14777.ppm	differs	100.0	0.0	102.9/96.0	102.9/96.0
+m423	frame-15677.ppm	identical	100	0		
+m424	frame-14777.ppm	identical	100	0		
+m424	frame-15677.ppm	identical	100	0		
+m424~2	frame-14777.ppm	identical	100	0		
+m424~2	frame-15677.ppm	identical	100	0		
+m424~3	frame-14777.ppm	identical	100	0		
+m424~3	frame-15677.ppm	identical	100	0		
+m425	frame-14777.ppm	identical	100	0		
+m425	frame-15677.ppm	identical	100	0		
+m426	frame-14777.ppm	identical	100	0		
+m426	frame-15677.ppm	identical	100	0		
+m427	frame-14777.ppm	identical	100	0		
+m427	frame-15677.ppm	identical	100	0		
+m428	frame-14777.ppm	identical	100	0		
+m428	frame-15677.ppm	identical	100	0		
+m429	frame-14777.ppm	identical	100	0		
+m429	frame-15677.ppm	identical	100	0		
+m430	frame-14777.ppm	identical	100	0		
+m430	frame-15677.ppm	identical	100	0		
+m430~2	frame-14777.ppm	identical	100	0		
+m430~2	frame-15677.ppm	identical	100	0		
+m430~3	frame-14777.ppm	identical	100	0		
+m430~3	frame-15677.ppm	identical	100	0		
+m431	frame-14777.ppm	identical	100	0		
+m431	frame-15677.ppm	identical	100	0		
+m431~2	frame-14777.ppm	identical	100	0		
+m431~2	frame-15677.ppm	identical	100	0		
+m431~3	frame-14777.ppm	identical	100	0		
+m431~3	frame-15677.ppm	identical	100	0		
+m432	frame-14777.ppm	identical	100	0		
+m432	frame-15677.ppm	identical	100	0		
+m432~2	frame-14777.ppm	identical	100	0		
+m432~2	frame-15677.ppm	identical	100	0		
+m432~3	frame-14777.ppm	identical	100	0		
+m432~3	frame-15677.ppm	identical	100	0		
+m433	frame-14777.ppm	identical	100	0		
+m433	frame-15677.ppm	identical	100	0		
+m433~2	frame-14777.ppm	identical	100	0		
+m433~2	frame-15677.ppm	identical	100	0		
+m433~3	frame-14777.ppm	identical	100	0		
+m433~3	frame-15677.ppm	identical	100	0		
+m434	frame-14777.ppm	identical	100	0		
+m434	frame-15677.ppm	identical	100	0		
+m434~2	frame-14777.ppm	no reference				
+m434~2	frame-15677.ppm	no reference				
+m434~3	frame-14777.ppm	no reference				
+m434~3	frame-15677.ppm	no reference				
+m435	frame-14444.ppm	differs	99.8	2.7	59.7/60.2	59.3/59.8
+m435	frame-15344.ppm	identical	100	0		
+m435~2	frame-14444.ppm	differs	99.8	2.7	59.7/60.2	59.3/59.8
+m435~2	frame-15344.ppm	differs	99.8	1.6	50.0/69.0	50.9/69.1
+m435~3	frame-14444.ppm	identical	100	0		
+m435~3	frame-15344.ppm	differs	99.8	1.6	50.0/69.0	50.9/69.1
+m436	frame-14444.ppm	differs	99.8	2.7	59.5/60.0	59.1/59.7
+m436	frame-15344.ppm	differs	99.8	1.5	69.0/70.9	69.2/71.2
+m436~2	frame-14444.ppm	identical	100	0		
+m436~2	frame-15344.ppm	identical	100	0		
+m436~3	frame-14444.ppm	identical	100	0		
+m436~3	frame-15344.ppm	differs	99.8	1.5	69.0/70.9	69.2/71.2
+m437	frame-14443.ppm	differs	99.8	2.7	59.7/60.2	59.3/59.8
+m437	frame-15343.ppm	differs	99.9	1.1	54.2/53.3	54.2/53.4
+m438	frame-14778.ppm	identical	100	0		
+m438	frame-15678.ppm	identical	100	0		
+m439	frame-14778.ppm	identical	100	0		
+m439	frame-15678.ppm	identical	100	0		
+m440	frame-14777.ppm	identical	100	0		
+m440	frame-15677.ppm	identical	100	0		
+m441	frame-14777.ppm	identical	100	0		
+m441	frame-15677.ppm	identical	100	0		
+m442	frame-14777.ppm	identical	100	0		
+m442	frame-15677.ppm	identical	100	0		
+m443	frame-14777.ppm	identical	100	0		
+m443	frame-15677.ppm	identical	100	0		
+m444	frame-14443.ppm	identical	100	0		
+m444	frame-15343.ppm	identical	100	0		
+m444~2	frame-14443.ppm	identical	100	0		
+m444~2	frame-15343.ppm	identical	100	0		
+m444~3	frame-14443.ppm	identical	100	0		
+m444~3	frame-15343.ppm	identical	100	0		
+m445	frame-14443.ppm	identical	100	0		
+m445	frame-15343.ppm	identical	100	0		
+m446	frame-14443.ppm	identical	100	0		
+m446	frame-15343.ppm	identical	100	0		
+m447	frame-14443.ppm	identical	100	0		
+m447	frame-15343.ppm	identical	100	0		
+m448	frame-14443.ppm	identical	100	0		
+m448	frame-15343.ppm	identical	100	0		
+m449	frame-14443.ppm	identical	100	0		
+m449	frame-15343.ppm	identical	100	0		
+m450	frame-14444.ppm	identical	100	0		
+m450	frame-15344.ppm	identical	100	0		
+m451	frame-14777.ppm	identical	100	0		
+m451	frame-15677.ppm	identical	100	0		
+m453	frame-14777.ppm	identical	100	0		
+m453	frame-15677.ppm	identical	100	0		
+m455	frame-14777.ppm	identical	100	0		
+m455	frame-15677.ppm	identical	100	0		
+m455	frame-15688.ppm	identical	100	0		
+m456	frame-14777.ppm	identical	100	0		
+m456	frame-15677.ppm	identical	100	0		
+m456	frame-16089.ppm	identical	100	0		
+m457	frame-14444.ppm	identical	100	0		
+m457	frame-15344.ppm	identical	100	0		
+m458	frame-14444.ppm	identical	100	0		
+m458	frame-15344.ppm	identical	100	0		
+m459	frame-14777.ppm	identical	100	0		
+m459	frame-15677.ppm	identical	100	0		
+m460	frame-14777.ppm	identical	100	0		
+m460	frame-15420.ppm	identical	100	0		
+m460	frame-15677.ppm	identical	100	0		
+m461	frame-14777.ppm	identical	100	0		
+m461	frame-15677.ppm	identical	100	0		
+m461	frame-15774.ppm	identical	100	0		
+m462	frame-14777.ppm	identical	100	0		
+m462	frame-15677.ppm	identical	100	0		
+m463	frame-14777.ppm	identical	100	0		
+m463	frame-15677.ppm	identical	100	0		
+m463~2	frame-14777.ppm	identical	100	0		
+m463~2	frame-15677.ppm	identical	100	0		
+m463~3	frame-14777.ppm	identical	100	0		
+m463~3	frame-15677.ppm	identical	100	0		
