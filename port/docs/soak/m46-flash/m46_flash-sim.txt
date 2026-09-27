@@ -1,0 +1,33 @@
+SF-fdA 141 143 144 145 144 144 143 142 141 140 140 139 139 138 138 138 138 138 138 157 149 141 132 126 119 113 106 99 91 84 76 68 61 52 45 37 30 22 15 8 0 0 0 0 0 0 7 14 22 29 36 43 51 59 66 73 80 87 94 101 108 115 122 129 136 143 151 151 148 145 143 141 137 135 132
+  every 1: M45 rule fires at 0/1 phases, M46 rule at 0/1
+  every 2: M45 rule fires at 0/2 phases, M46 rule at 0/2
+  every 3: M45 rule fires at 0/3 phases, M46 rule at 0/3
+  every 4: M45 rule fires at 1/4 phases, M46 rule at 0/4
+  every 5: M45 rule fires at 0/5 phases, M46 rule at 0/5
+  every 6: M45 rule fires at 2/6 phases, M46 rule at 0/6
+  every 7: M45 rule fires at 0/7 phases, M46 rule at 0/7
+  every 8: M45 rule fires at 1/8 phases, M46 rule at 0/8
+  every 9: M45 rule fires at 2/9 phases, M46 rule at 0/9
+  irregular (every 4-12, like the soak presented checks): M45 rule 389/2000, M46 rule 0/2000
+SF-fdB 130 130 130 130 130 130 130 130 131 131 131 131 153 146 139 132 125 118 111 103 96 89 82 74 67 60 52 45 37 30 22 15 8 0 0 0 0 0 0 5 10 16 21 27 32 38 43 49 54 59 65 70 76 81 86 92 97 102 107 113 113 112 112 113 112 112 111 111 110 109 107 106 105 104 103 103 102 102 102 101
+  every 1: M45 rule fires at 0/1 phases, M46 rule at 0/1
+  every 2: M45 rule fires at 0/2 phases, M46 rule at 0/2
+  every 3: M45 rule fires at 0/3 phases, M46 rule at 0/3
+  every 4: M45 rule fires at 0/4 phases, M46 rule at 0/4
+  every 5: M45 rule fires at 0/5 phases, M46 rule at 0/5
+  every 6: M45 rule fires at 1/6 phases, M46 rule at 0/6
+  every 7: M45 rule fires at 0/7 phases, M46 rule at 0/7
+  every 8: M45 rule fires at 0/8 phases, M46 rule at 0/8
+  every 9: M45 rule fires at 1/9 phases, M46 rule at 0/9
+  irregular (every 4-12, like the soak presented checks): M45 rule 214/2000, M46 rule 0/2000
+T-megad 84 86 89 92 95 97 100 103 105 108 111 114 117 119 122 9 12 14 17 20 124 125 125 125 125 125 125 125 126 126 126 126 126 126 126
+  every 1: M45 rule fires at 1/1 phases, M46 rule at 1/1
+  every 2: M45 rule fires at 2/2 phases, M46 rule at 2/2
+  every 3: M45 rule fires at 3/3 phases, M46 rule at 3/3
+  every 4: M45 rule fires at 4/4 phases, M46 rule at 4/4
+  every 5: M45 rule fires at 5/5 phases, M46 rule at 5/5
+  every 6: M45 rule fires at 5/6 phases, M46 rule at 5/6
+  every 7: M45 rule fires at 5/7 phases, M46 rule at 5/7
+  every 8: M45 rule fires at 5/8 phases, M46 rule at 4/8
+  every 9: M45 rule fires at 5/9 phases, M46 rule at 2/9
+  irregular (every 4-12, like the soak presented checks): M45 rule 1284/2000, M46 rule 1049/2000
