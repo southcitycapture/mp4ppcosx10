@@ -422,6 +422,9 @@ typedef struct PortOptions {
     const char* presentdump; /* --presentdump A-B  M46: write the frames presented in A..B */
     int motlog;             /* --motlog N  M46: every Nth frame, each animated model's motion */
     int nolights;           /* --nolights  M46: the pillar lights as the frame drew them (gx_lights.c) */
+    int nopendlast;         /* --nopendlast  M46: the run's last vertex decoded whole for `pending` */
+    int dcbtdist;           /* --dcbtdist N  M46: the decode loops prefetch N vertices ahead (1) */
+    const char* keytest;    /* --keytest K,K  M46: each key through the keyboard's poll, logged */
     int nodcbz;             /* --nodcbz  M44: no dcbz ahead of the render stream's and the
                              *   vertex ring's writes (a store miss reads the line first) */
     int novpgen;            /* --novpgen  M44: the vertex program's parameters compared value by

@@ -254,6 +254,12 @@ for r in ${M46_RUNS:-N}; do
             case $k in SF) md=--lockstep ;; *) md="" ;; esac
             run "$k-$n-$a" 5400 - --soak --com4 --rtc dolphin --freshcard --status --perf --stuckwatch 200 \
                 --ovllog $md ${M46_TDUMP:+--dumpframe $M46_TDUMP} ${M46_SFEXTRA} $(arm $a) ;;
+        X:*)
+            # M46: X:NAME:ARM -- the arm's flags alone: no --noconfig, no
+            # --play (a run that reads the config and PowerPCube's controls
+            # file, as a player's does)
+            n=$(echo $r | cut -d: -f2); a=$(echo $r | cut -d: -f3)
+            run "X-$n-$a" 900 - $(arm $a) ;;
         SX:*)
             # M45: a realtime soak of MIN minutes with an arm (its flags, e.g.
             # --minigame,m427 to deal one game every turn) and --halfwatch

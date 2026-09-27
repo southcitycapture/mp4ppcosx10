@@ -66,6 +66,7 @@ int pad_sdl_count(void);              /* SDL pads open (the keyboard is not one)
 const char* pad_sdl_name(int i);      /* the i-th pad's name */
 void pad_sdl_poll_pad(int i, PortPadRaw* out);
 void pad_sdl_poll_keys(PortPadRaw* out); /* the keyboard alone */
+void pad_sdl_keytest(const char* names); /* M46: --keytest */
 int pad_sdl_rumble_supported(int i);
 void pad_sdl_rumble(int i, int on);
 

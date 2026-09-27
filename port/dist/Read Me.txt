@@ -157,6 +157,17 @@ moment, and only where they come from is different.
     (any number of megabytes) sets it by hand.  Both decisions are on the
     log's "machine:" lines and in --defaults.
 
+Both can be set in the config file too (see WHERE YOUR THINGS LIVE), which
+is where the PowerPCube launcher keeps them:
+
+    prefetch = 0          no read-ahead (1, the default: on)
+    resident = 128        the resident set's size: auto (the machine
+                          check's choice, the default), 0, 64, 128 or 256
+
+The game only reads these two lines, it never writes them; a switch on the
+command line (--noprefetch or --prefetch, --resident N or --resident auto)
+wins for the run it is given to.
+
 On the machine this was built on -- a dual 1 GHz Power Mac with 1.5 GB --
 the two together turn a twenty-turn board's 319 MB of disc reading into
 about 110 MB held in memory and one read from the disk, and a cold walk
@@ -188,7 +199,9 @@ movies (which play behind the menu's own 3D) 23 to 28.  On one processor
 the same G4 shows about 29 and 23 to 26, and the sound does not break up
 during any of them.
 
---nomovies skips every movie, as versions before 0.9.7 did.
+--nomovies skips every movie, as versions before 0.9.7 did.  The config
+file's `movies = 0' does the same for every run (the PowerPCube launcher's
+Movies switch writes it); --movies plays them for one run anyway.
 
 
 CONTROLS
@@ -231,6 +244,35 @@ switch is not remembered: it is for the run it is given to.)
 
 Rumble works on a pad that has it.
 
+Changing the buttons.  The PowerPCube launcher's controls page writes a
+plain text file the game reads at start (with no file, everything above is
+exactly as it is):
+
+    ~/Library/Application Support/PowerPCube/controls/mp4.txt
+
+    player1 = keyboard        who plays on each port: auto (the order
+    player2 = pad:1           above), keyboard, pad:N (the Nth pad in that
+    player3 = none            order, 1 = the first) or none (a computer
+                              player); this replaces --kbport
+    key.a = Space             keys, by their SDL names, comma-separated
+    key.start = Return,P
+    pad.z = rightshoulder     pad buttons and axes, by SDL's names: a b x
+    pad.a = a,righty-         y back start leftshoulder rightshoulder dpup
+                              dpdown dpleft dpright, and the axes leftx
+                              lefty rightx righty lefttrigger righttrigger
+                              (with + or - for one direction: righty- is
+                              the right stick pushed up)
+    pad.stick = left          which stick is the control stick (left, right
+    pad.cstick = right        or none), and the C stick
+
+The names of the buttons are a b x y z l r start dup ddown dleft dright,
+and for keys also stick_up stick_down stick_left stick_right and
+cstick_up ... cstick_right.  A line not in the file keeps the mapping
+above.  L and R stay analogue on a pad's triggers.  PowerPCube's pad
+set-up also writes ~/Library/Application Support/PowerPCube/
+gamecontrollerdb.txt, SDL mappings for pads SDL does not know; the game
+loads it when it is there.  The log's "controls:" lines show the table the
+game settled on.
 Quitting -- Esc, Cmd-Q or the window's close button -- goes through the
 game's own reset, as the console's Reset button does: the game fades, the
 memory card is written, and the application leaves.  There is no separate
@@ -249,7 +291,8 @@ WHERE YOUR THINGS LIVE
                               same layout Dolphin uses, so a save moves
                               either way)
         config                the disc image's path, the fullscreen and
-                              water choices (level, look, the pond)
+                              water choices (level, look, the pond), and
+                              movies / prefetch / resident if set
         MarioParty4.log       the log of the last run
 
 Deleting the folder loses your save file, so that is the folder to back up.

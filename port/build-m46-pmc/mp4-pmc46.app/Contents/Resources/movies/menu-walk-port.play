@@ -1,0 +1,73 @@
+# menu-walk-port -- the Dolphin reference walk, on the port's own clock.
+#
+# ref/movies/menu-walk.play is the reference schedule converted directly, and
+# it does not replay here: its frame numbers are the console's, and the two
+# sides do not agree on absolute frames.  The console spends 186 frames on the
+# cold-boot logos (a *wall-clock* wait -- ref/notes.md 2) and then 4,195 frames
+# on the opening THP movie; the port skips the movie outright (M8) and loads
+# off a local disc image, so it arrives at the title around frame 700 with the
+# console's START pulses at 380/430/480 long spent.
+#
+# So this is the same walk with the same shape -- accept the title, then A
+# every 90 frames through the file select, the new-file scene and the Party
+# Mode prompts -- rebased on where the port actually is.  The START pulses are
+# repeated rather than pinned for the same reason ref/movies/menu-walk.txt
+# repeats its three: the exact frame the title starts taking input is not
+# worth pinning down, and an extra START on the title screen is harmless.
+
+# Accept the title.
+at 700 6 START
+at 750 6 START
+at 800 6 START
+at 850 6 START
+at 900 6 START
+at 950 6 START
+at 1000 6 START
+at 1050 6 START
+at 1100 6 START
+
+# Walk forward with A: file select, the new-file scene, the Party Mode prompts,
+# character select and the board settings.
+at 1160 6 A
+at 1250 6 A
+at 1340 6 A
+at 1430 6 A
+at 1520 6 A
+at 1610 6 A
+at 1700 6 A
+at 1790 6 A
+at 1880 6 A
+at 1970 6 A
+at 2060 6 A
+at 2150 6 A
+at 2240 6 A
+at 2330 6 A
+at 2420 6 A
+at 2510 6 A
+at 2600 6 A
+at 2690 6 A
+at 2780 6 A
+at 2870 6 A
+at 2960 6 A
+at 3050 6 A
+at 3140 6 A
+at 3230 6 A
+at 3320 6 A
+at 3410 6 A
+at 3500 6 A
+at 3590 6 A
+at 3680 6 A
+at 3770 6 A
+at 3860 6 A
+at 3950 6 A
+at 4040 6 A
+at 4130 6 A
+at 4220 6 A
+at 4310 6 A
+at 4400 6 A
+at 4490 6 A
+at 4580 6 A
+at 4670 6 A
+at 4760 6 A
+at 4850 6 A
+at 4940 6 A

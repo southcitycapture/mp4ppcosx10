@@ -1,0 +1,3 @@
+ARAlloc
+ARFree
+GXSetZTexture

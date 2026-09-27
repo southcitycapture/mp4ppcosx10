@@ -358,6 +358,12 @@ static void usage(const char* argv0) {
             "                    (exact; measured level on m463, so off by default)\n"
             "  --nowaterpt       M45: the water's CPU-path positions as M44 (view space, identity)\n"
             "  --affinetex       M45: the CPU path's projected texcoords divided at the vertex\n"
+            "  --keytest K,K     M46: each SDL key name held alone through the keyboard's\n"
+            "                    poll (the controls file's table or the built-in one), logged\n"
+            "  --dcbtdist N      M46: the decode loops prefetch the array entries N\n"
+            "                    vertices ahead (default 1, the next vertex)\n"
+            "  --nopendlast      M46: each run's last vertex decoded whole for the next\n"
+            "                    primitive's fill (the A/B; only the kept steps now)\n"
             "  --nolights        M46: the Bowser arena's pillar lights not drawn between two frames\n"
             "                    at 30 fps (the four-frame shimmer then strobes: PLAN.md 61)\n"
             "  --presentdump A-B M46: write every frame presented in A..B as it is shown\n"
@@ -781,6 +787,7 @@ int port_parse_args(int argc, char** argv) {
     port_opt.resample4 = 0;
     port_opt.vcache = 3;    /* M40: the static-geometry cache, auto (PLAN.md 55) */
     port_opt.vcache_fit = 28.0;
+    port_opt.dcbtdist = 1;    /* M46: the decode loops prefetch the next vertex (--dcbtdist) */
     port_opt.rtgx = 0;       /* M43: the render thread's translation: measured, off (PLAN.md 58.2) */
     port_opt.wbpart = 1;     /* M43: the barrier on the partial end pages too (PLAN.md 58.4, 58.10) */
     port_opt.water = -1;     /* M44: auto (PLAN.md 59) */
@@ -1356,6 +1363,15 @@ int port_parse_args(int argc, char** argv) {
             port_opt.nowaterpt = 1;
         } else if (!strcmp(a, "--affinetex")) {
             port_opt.affinetex = 1;
+        } else if (!strcmp(a, "--keytest") && i + 1 < argc) {
+            port_opt.keytest = argv[++i];
+        } else if (!strcmp(a, "--dcbtdist") && i + 1 < argc) {
+            port_opt.dcbtdist = atoi(argv[++i]);
+            if (port_opt.dcbtdist < 1) {
+                port_opt.dcbtdist = 1;
+            }
+        } else if (!strcmp(a, "--nopendlast")) {
+            port_opt.nopendlast = 1;
         } else if (!strcmp(a, "--nolights")) {
             port_opt.nolights = 1;
         } else if (!strcmp(a, "--motlog") && i + 1 < argc) {

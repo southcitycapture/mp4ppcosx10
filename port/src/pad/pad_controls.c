@@ -235,7 +235,6 @@ void pad_controls_init(void) {
     }
     active = 1;
     port_log("port> controls: %s (%d lines)\n", path, nlines);
-    port_log("port> controls: players %s\n", "");
     for (i = 0; i < PAD_CHANMAX; i++) {
         char pn[16];
         int p = player[i];

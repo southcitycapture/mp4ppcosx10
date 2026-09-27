@@ -1,0 +1,4 @@
+# M46 test (PLAN.md 61): A on the space bar, Z kept for B
+key.a = Space
+key.b = Z,X
+player1 = keyboard

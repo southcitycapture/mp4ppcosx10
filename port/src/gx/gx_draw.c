@@ -5262,7 +5262,7 @@ DECODE_RUN(decode_run_tracked, 1)
  * stored it).  TEX: 0 none, 1 f32 s/t into slot 0.  Every step GX_INDEX16. */
 #define DECODE_FAST(NAME, NRM, CLR, TEX, SKIN)                                           \
     static const u8* NAME(const u8* p, const u8* end, u32 count) {                       \
-        const int PREFETCH = !port_opt.nodcbt;                                       \
+        const int PREFETCH = port_opt.nodcbt ? 0 : port_opt.dcbtdist;                \
         const int off_skin = sl.off_skin;                                                \
         const f32 slotf = pi.slotf;                                                      \
         const f32* entf = (SKIN == 2) ? pi.skin->ent_slotf : NULL;                       \
@@ -5286,6 +5286,20 @@ DECODE_RUN(decode_run_tracked, 1)
         if (plan_clr_const) {                                                            \
             /* the register material, splatted once per vertex below */                 \
         }                                                                                \
+        if (PREFETCH > 1) { /* M46: the run's first vertices, before the loop reaches them */ \
+            int w_;                                                                      \
+            for (w_ = 1; w_ < PREFETCH && p + (w_ + 1) * per <= end; w_++) {             \
+                const u8* pn = p + w_ * per;                                             \
+                __builtin_prefetch(pb + (size_t)(((u32)pn[0] << 8) | pn[1]) * ps);       \
+                if (NRM) {                                                               \
+                    __builtin_prefetch(nb + (size_t)(((u32)pn[2] << 8) | pn[3]) * ns);   \
+                }                                                                        \
+                if (TEX == 1) {                                                          \
+                    __builtin_prefetch(tb + (size_t)(((u32)pn[per - 2] << 8) |           \
+                                                     pn[per - 1]) * ts);                 \
+                }                                                                        \
+            }                                                                            \
+        }                                                                                \
         for (i = 0; i < count && p + per <= end; i++) {                                  \
             u8* v;                                                                       \
             const u8* q;                                                                 \
@@ -5302,11 +5316,12 @@ DECODE_RUN(decode_run_tracked, 1)
             if (plan_clr_const) {                                                        \
                 *(u32*)(v + off_clr) = plan_clr.u;                                       \
             }                                                                            \
-            if (PREFETCH && p + 2 * per <= end) {                                         \
+            if (PREFETCH && p + (PREFETCH + 1) * per <= end) {                            \
                 /* the next vertex's array entries: the indices are right     \
                  * there in the list, and the arrays are the random reads     \
-                 * this loop waits on (dcbt on the 7450) */                   \
-                const u8* pn = p + per;                                                  \
+                 * this loop waits on (dcbt on the 7450); M46: --dcbtdist     \
+                 * vertices ahead (1 = the next, as before) */                 \
+                const u8* pn = p + PREFETCH * per;                                       \
                 __builtin_prefetch(pb + (size_t)(((u32)pn[0] << 8) | pn[1]) * ps);       \
                 if (NRM) {                                                               \
                     __builtin_prefetch(nb + (size_t)(((u32)pn[2] << 8) | pn[3]) * ns);   \
@@ -5533,14 +5548,28 @@ static DecodeFast pick_fast(void) {
         const int per = 2 * (1 + (NRM ? 1 : 0) + (CLR ? 1 : 0) + (TEX ? 1 : 0));         \
         u8* v = j->dst;                                                                  \
         u32 i;                                                                           \
+        if (PREFETCH > 1) { /* M46: the run's first vertices, before the loop reaches them */ \
+            int w_;                                                                      \
+            for (w_ = 1; w_ < PREFETCH && p + (w_ + 1) * per <= end; w_++) {             \
+                const u8* pn = p + w_ * per;                                             \
+                __builtin_prefetch(pb + (size_t)(((u32)pn[0] << 8) | pn[1]) * ps);       \
+                if (NRM) {                                                               \
+                    __builtin_prefetch(nb + (size_t)(((u32)pn[2] << 8) | pn[3]) * ns);   \
+                }                                                                        \
+                if (TEX == 1) {                                                          \
+                    __builtin_prefetch(tb + (size_t)(((u32)pn[per - 2] << 8) |           \
+                                                     pn[per - 1]) * ts);                 \
+                }                                                                        \
+            }                                                                            \
+        }                                                                                \
         for (i = 0; i < count && p + per <= end; i++, v += stride) {                     \
             const u8* q;                                                                 \
             u32 ix;                                                                      \
             if (clr_const) {                                                             \
                 *(u32*)(v + off_clr) = clr;                                              \
             }                                                                            \
-            if (PREFETCH && p + 2 * per <= end) {                                         \
-                const u8* pn = p + per;                                                  \
+            if (PREFETCH && p + (PREFETCH + 1) * per <= end) {                            \
+                const u8* pn = p + PREFETCH * per; /* M46: --dcbtdist vertices ahead */  \
                 __builtin_prefetch(pb + (size_t)(((u32)pn[0] << 8) | pn[1]) * ps);       \
                 if (NRM) {                                                               \
                     __builtin_prefetch(nb + (size_t)(((u32)pn[2] << 8) | pn[3]) * ns);   \
@@ -5757,6 +5786,55 @@ static u32 job_vertices(const GxDecJob* j, u32 vbytes) {
 /* The game thread's share of a deferred run: what the loops above left in
  * `pending` -- the to_pending steps' values and plan_back's texcoords, both
  * from the last vertex decoded -- from that one vertex alone. */
+/* M46 (PLAN.md 61): only the steps whose values survive -- the to_pending
+ * steps and the texcoords plan_back copies into `pending` -- are read; a
+ * position, or a normal or colour with a slot in the vertex, went into the
+ * scratch vertex and was thrown away, each one an array gather (on m441 the
+ * pass was 0.8 M cycles a drawn frame at an IPC of 0.42).  The index bytes of
+ * the skipped steps are stepped over as the full walk does, so `pending` is
+ * the same bytes.  `--nopendlast` the whole vertex, as before. */
+static void decode_pending_kept(const GxDecJob* j, const u8* p, u8* v) {
+    const DecStep* st = j->plan;
+    int k;
+    for (k = j->nplan; k > 0; k--, st++) {
+        const u8* q;
+        u8* d;
+        f32* dp;
+        f32 sc;
+        const f32* tb;
+        if (st->idx == 2) {
+            u32 ix = ((u32)p[0] << 8) | p[1];
+            q = st->base + (size_t)ix * st->stride;
+            p += 2;
+        } else if (st->idx == 1) {
+            u32 ix = p[0];
+            q = st->base + (size_t)ix * st->stride;
+            p += 1;
+        } else {
+            q = p;
+            p += st->advance;
+        }
+        if (!st->to_pending && !(st->attr >= GX_VA_TEX0 && st->attr <= GX_VA_TEX7)) {
+            continue; /* into the vertex alone: not kept */
+        }
+        d = st->to_pending ? (u8*)&pending + st->dstoff : v + st->dstoff;
+        dp = (f32*)d;
+        sc = st->scale;
+        tb = st->tbl;
+        switch (st->op) {
+            DEC_CASE_F32
+            DEC_CASE_TYPE(S16, DEC_S16)
+            DEC_CASE_TYPE(U16, DEC_U16)
+            DEC_CASE_TYPE(S8, DEC_S8)
+            DEC_CASE_TYPE(U8, DEC_U8)
+            DEC_CASE_TBL(TS8)
+            DEC_CASE_TBL(TU8)
+            DEC_CASE_COLOUR
+            default: break;
+        }
+    }
+}
+
 static void decode_pending_last(const GxDecJob* j, u32 n, u32 vbytes) {
     u8 scratch[SRC_MAX_STRIDE] __attribute__((aligned(16)));
     const u8* pl;
@@ -5765,7 +5843,11 @@ static void decode_pending_last(const GxDecJob* j, u32 n, u32 vbytes) {
         return;
     }
     pl = j->p + (size_t)(n - 1) * vbytes;
-    decode_job_vertex(j, pl, scratch, &pending);
+    if (port_opt.nopendlast) {
+        decode_job_vertex(j, pl, scratch, &pending);
+    } else {
+        decode_pending_kept(j, pl, scratch);
+    }
     for (i = 0; i < plan_nback; i++) {
         const f32* t = (const f32*)(scratch + plan_back[i].dstoff);
         pending.tex[plan_back[i].k][0] = t[0];
@@ -5793,7 +5875,7 @@ static int rtdec_build(GxDecJob* j, const u8* p, const u8* end, u32 count) {
     j->off_tex = sl.off_tex;
     j->clr_const = plan_clr_const;
     j->clr = plan_clr.u;
-    j->prefetch = !port_opt.nodcbt;
+    j->prefetch = port_opt.nodcbt ? 0 : port_opt.dcbtdist;
     j->fast = plan_fast_idx;
     /* M43: why a run is the general walker's, by vertices (the report's) */
     dec_why_verts[j->fast >= 0 ? 15 : plan_fast ? 14 : pick_why] += count;
@@ -6420,7 +6502,7 @@ static void job_fill(GxDecJob* j, const u8* p, const u8* end, u32 count) {
     j->off_tex = sl.off_tex;
     j->clr_const = plan_clr_const;
     j->clr = plan_clr.u;
-    j->prefetch = !port_opt.nodcbt;
+    j->prefetch = port_opt.nodcbt ? 0 : port_opt.dcbtdist;
     j->fast = plan_fast_idx;
     j->nplan = nplan;
     memcpy(j->plan, plan, (size_t)nplan * sizeof(DecStep));

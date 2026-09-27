@@ -176,8 +176,10 @@ static void map_stick(int ax, int ay, s8* x, s8* y) {
 
 void (*pad_stick_map)(int ax, int ay, s8* x, s8* y) = map_stick;
 
+static const Uint8* keytest_state; /* M46: --keytest's synthesized keyboard */
+
 void pad_sdl_poll_keys(PortPadRaw* out) {
-    const Uint8* k = SDL_GetKeyboardState(NULL);
+    const Uint8* k = keytest_state ? keytest_state : SDL_GetKeyboardState(NULL);
     u16 b = 0;
 
     if (pad_controls_active()) { /* M46: PowerPCube's controls file */
@@ -230,6 +232,41 @@ void pad_sdl_poll_keys(PortPadRaw* out) {
     out->substickX = axis_key(k, SDL_SCANCODE_J, SDL_SCANCODE_L, SDL_SCANCODE_J, SDL_SCANCODE_L);
     out->substickY = axis_key(k, SDL_SCANCODE_K, SDL_SCANCODE_I, SDL_SCANCODE_K, SDL_SCANCODE_I);
     out->button = b;
+}
+
+/* M46 (PLAN.md 61): --keytest "Space,Z,Return" -- each named key held alone
+ * through the keyboard's own poll (the controls file's table when there is
+ * one, the built-in mapping otherwise), and the GameCube buttons that come
+ * out, logged: the proof that a remap took without a hand on the keys (the
+ * G4's System Events taps are shorter than a frame and never reach SDL's
+ * polled state). */
+void pad_sdl_keytest(const char* names) {
+    static Uint8 st[SDL_NUM_SCANCODES];
+    char buf[256], *tok, *save = NULL;
+    snprintf(buf, sizeof(buf), "%s", names);
+    for (tok = strtok_r(buf, ",", &save); tok; tok = strtok_r(NULL, ",", &save)) {
+        SDL_Scancode sc = SDL_GetScancodeFromName(tok);
+        PortPadRaw r;
+        if (sc == SDL_SCANCODE_UNKNOWN) {
+            port_log("port> keytest: \"%s\" is not an SDL key name\n", tok);
+            continue;
+        }
+        memset(st, 0, sizeof(st));
+        st[sc] = 1;
+        keytest_state = st;
+        pad_sdl_poll_keys(&r);
+        keytest_state = NULL;
+        port_log("port> keytest: %-12s -> buttons %04x%s%s%s%s%s%s%s%s%s%s%s%s  stick %d,%d  c %d,%d  L/R %u/%u\n",
+                 tok, (unsigned)r.button,
+                 (r.button & PAD_BUTTON_A) ? " A" : "", (r.button & PAD_BUTTON_B) ? " B" : "",
+                 (r.button & PAD_BUTTON_X) ? " X" : "", (r.button & PAD_BUTTON_Y) ? " Y" : "",
+                 (r.button & PAD_TRIGGER_Z) ? " Z" : "", (r.button & PAD_TRIGGER_L) ? " L" : "",
+                 (r.button & PAD_TRIGGER_R) ? " R" : "", (r.button & PAD_BUTTON_START) ? " Start" : "",
+                 (r.button & PAD_BUTTON_UP) ? " Up" : "", (r.button & PAD_BUTTON_DOWN) ? " Down" : "",
+                 (r.button & PAD_BUTTON_LEFT) ? " Left" : "", (r.button & PAD_BUTTON_RIGHT) ? " Right" : "",
+                 (int)r.stickX, (int)r.stickY, (int)r.substickX, (int)r.substickY,
+                 (unsigned)r.triggerL, (unsigned)r.triggerR);
+    }
 }
 
 /* The i-th SDL pad alone (pad.c merges it with the keyboard for port 1). */
@@ -361,6 +398,7 @@ int pad_sdl_count(void) { return 0; }
 const char* pad_sdl_name(int i) { (void)i; return "(no SDL)"; }
 void pad_sdl_poll_pad(int i, PortPadRaw* out) { (void)i; memset(out, 0, sizeof(*out)); }
 void pad_sdl_poll_keys(PortPadRaw* out) { memset(out, 0, sizeof(*out)); }
+void pad_sdl_keytest(const char* names) { (void)names; }
 int pad_sdl_rumble_supported(int i) { (void)i; return 0; }
 void pad_sdl_rumble(int i, int on) { (void)i; (void)on; }
 static void map_none(int ax, int ay, s8* x, s8* y) { (void)ax; (void)ay; *x = *y = 0; }

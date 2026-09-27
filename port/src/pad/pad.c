@@ -201,6 +201,9 @@ BOOL PADInit(void) {
         }
     }
 
+    if (port_opt.keytest) {
+        pad_sdl_keytest(port_opt.keytest); /* M46: the keyboard's table, proved */
+    }
     pad_play_init(port_opt.pad_play, port_opt.pad_record);
 
     memset(motor_cmd, 0, sizeof(motor_cmd));
