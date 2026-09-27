@@ -12,6 +12,11 @@ pooled median lies where the two clusters meet, so it moves with how many lines 
 run collects: M45's pooled reading was 29.2 on the same kind of run.  The rule stays the
 user's to set.
 
+**m415 on the shipped build**: the shipped build carries one fix the scoreboard's did not
+(PLAN.md 61.10: the scissor test after a copy read-back, which only m415 makes), so m415
+was timed again on it (`FB_GAMES=415`, 13:11 G4 time): **30.0**, its drawn frame 17.4 ms
+(the table's run 17.1).
+
 Bar: median presented fps >= 29.5 at >= 99% game speed. Logs: 113 (m46, `docs/soak/m46-board/`).
 
 **75 of 82 screens pass.**

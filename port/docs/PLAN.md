@@ -23985,3 +23985,530 @@ refresh for skinned lists), and the user's call on w01's rule.  **Rule
 learnt**: nothing polls the G4 more often than every few minutes while it
 times anything (60.9).  If the G4 ever locks up again: `--nofixbase` first,
 then `--nodcbz` and `--norastermemo`, `PROOF:120` the run to repeat (59.9).
+
+## 61. M46 log: the last nine, the Bowser lights, PowerPCube's hooks *(2026-09-26/27, littlejelly)*
+
+M45 shipped 0.9.14 (73 of 82) and the user, watching it on the G4, found the
+Bowser room wrong: "those light things on the poles, they're flashing weird,
+it's not correct".  The brief: read the leave-behind soak (item 0); the
+pillar lights (item 1); the last nine screens with M44's named levers (item
+2); the picture checks' flash rule (item 3); PowerPCube's hooks -- the config
+keys, the manifest in the bundle, the controls file (item 4); the scoreboard
+after (item 5); 0.9.15 after a two-hour soak.
+
+**The short answer.**  **The lights** (61.2): the sphere was never missing
+on 0.9.14 -- M34 had drawn it -- and in lockstep the port's pillar tops are
+the console's frame for frame, pulse and halo included (54 pairs at three
+moments of all three games, six consecutive frames each).  What the user saw
+is the console's 60 Hz shimmer (a four-frame big, medium, small, medium
+cycle keyed in the pillars' motion) presented at 30 frames a second: one
+parity shows a steady medium ball, the other a big/small strobe with the
+flare's dark halo on every big frame, and the pacing flips between them
+whenever it slips a frame.  The fix is the presentation's: on a drawn frame
+after a consumed one, the pillar objects whose world transform changed are
+drawn at the midpoint of the two game frames -- the same gentle 15 Hz pulse
+either parity, lockstep untouched.  **The flash rule** (61.3): a fall out of
+a picture not already falling, back to a steady one; M45's soak fades never
+fire it at any sampling, the Mega Mushroom's blip (the old store put back)
+still does, and a picture-check blip is a FAIL only where the previous
+release has none.  **The last nine** (61.4): the pending pass cut to the
+steps it keeps (exact; m409 29.9 against 28.9 in its A/B, the others level
+within their spread), the prefetch distance measured level, and the
+counters read for every class -- m436's drawn frame is its skinning and
+shadow pass, m463's the game's own object and bone walks.  **The hooks**
+(61.5): the config's `movies`, `prefetch`, `resident` read (a flag wins for
+its run), `PowerPCube.plist` in the bundle, the controls file and
+`gamecontrollerdb.txt` read by interactive runs only; tested on the G4 with
+no files, with the keys, with a remap (`--keytest`: Space -> A).  **The
+scoreboard** (61.8): **75 of 82** (M45: 73), none lost, m409 29.8 and w01 29.6 pooled crossed (w01 board-only 30.0).  **The soak** (61.11): two hours on the shipped build, 100.0%, 0 faults, no lock-up, 0 blips, no black half; 0.9.15's dmg `cfcf8681`.
+
+### 61.1 The soak, read
+
+M45's leave-behind (`isle --soak --com4 --rtc dolphin --freshcard --status
+--perf` on 0.9.14, `isle` `f13d9b21`, pid 79534) had been started at 23:33
+G4 time, sixteen minutes before this milestone began; read and stopped by
+pid at 23:49 (one SIGINT, the game's reset path, `EXITCODE=0`;
+`docs/soak/m46-soak-m45-leave.log.gz`): **63,065 retraces at 100.0% speed**
+(game 1,052.14 s against wall 1,052.25 s), turns 1-7 of a board and the
+minigames m415, m410, m411, m412, m420, m422; **0 faults, 0 STUCK lines, no
+lock-up**.  Too short to say more; M45's own two-hour soak on the same
+binary (60.11) is the long reading.
+
+### 61.2 The Bowser room's pillar lights
+
+**What the brief said, and what was there.**  The brief (from the Mac
+session's comparison, `m35-m436-f15344-old-new-console.jpg`) read the port
+as drawing only the star flare.  M34 had found the sphere's real cause --
+the IA8 texel's byte order (49.3) -- and 0.9.14's scoreboard dumps of m435,
+m436 and m437 all show both spheres.  So the question was the moving
+picture, not a missing draw.
+
+**Lockstep against the console.**  Dolphin on littlejelly captured the three
+games (the sweep rig, `~/mp4-sweep-work/capture.py m43N --tag m46`,
+`docs/soak/m46-lights/console-captures.jsonl`); the port's lockstep frames
+of entry +300..+305, +700..+705 and +1,200..+1,205 (`T:bNNN` of
+`tools/m46_chain.sh`) were matched to the console's by picture: one offset
+per game (m435 3,446, m436 3,208, m437 2,040 frames) holds through all three
+moments, and at every one of the 54 pairs the pillar top is the same
+picture -- the same size in the four-frame cycle, the flare's black octagon
+on the same frames (`docs/screenshots/m46-bowser-lights-lockstep.jpg`; the
+crops' mean difference 3.2-5.2 levels, the console's frames scaled from 528
+lines, `docs/soak/m46-lights/lockstep-vs-console-diff.txt`).  The console
+cycles big, medium, small, medium every four frames; the port does too.
+
+**The cause.**  `--motlog` (new, scenelog.c: each animated model's motion)
+puts the pillars at models `cyl3` and `cyl6` with a 60-frame looped motion
+(the Hu3DJointMotionFile of m436 data 26/27, main.c `fn_1_3BF0`); the sphere
+(`sphere1`/`sphere20`) and the flare (`sphere18`) are its objects, and the
+shimmer is keyed in that motion.  On the console it is a 60 Hz sparkle.  At
+real time the port presents one frame in two: `--presentdump A-B[=X,Y,W,H]`
+(new, rt.c: the frames the swap presents, written from the render thread,
+changing nothing about which are drawn -- `--dumpframe` makes its frames
+drawn) shows 0.9.14 presenting the medium phase, steady, until a slip moves
+the pacing a frame, then big, small, big, small with the halo on every big
+one (`docs/screenshots/m46-bowser-lights-realtime.jpg`, top row).  Which
+parity a stretch gets is chance.  That is the flashing.
+
+**The fix** (`src/gx/gx_lights.c`, hooked in `GXLoadPosMtxImm` /
+`GXLoadNrmMtxImm`; `--nolights` the old path).  In the three overlays, for
+the two pillar models only, on a drawn frame whose predecessor was consumed:
+each object whose world transform (the loaded matrix with the camera taken
+off, `W = C^-1 M`) changed between the two frames is drawn at the midpoint,
+`M' = C_N (W_N-1 + W_N) / 2`, with its normal matrix the inverse transpose
+of `M'`.  The picture then stands for the middle of the 1/30 s it covers,
+and both parities present the same pair, (big + medium)/2 and (small +
+medium)/2 -- a gentle pulse at the console's 15 Hz (middle row of the
+image).  A camera move between the two frames does not drag a light off its
+pillar (the camera is taken off before and put back after); a transform
+that did not change keeps the game's matrix to the byte; a move larger than
+a shimmer (50 units, or a matrix element by 1.0) is left alone (16-20 a run,
+the intro's cuts).  Nothing changes where no frame is consumed: lockstep,
+`--turbo`, a fast-forward -- so the md5s, the gallery and the picture checks
+are the game's own pictures.  m436's lockstep frames are byte-identical with
+and without it (`T:x436`), and the Bowser frames of the picture checks are
+0.9.14's (61.7).  Cost: one branch per matrix load outside the three games;
+inside, an inverse and two concatenations per pillar object a frame.
+
+**In the picture checks**: `PC:` now runs `B-m435`, `B-m436`, `B-m437` --
+the 18 lockstep frames above for each game -- and 0.9.14's own frames at the
+same moments are identical to the candidate's (54 of 54).
+
+### 61.3 The flash rule
+
+**The problem** (60.11): M45's blip rule compared each check with the one
+before; a fade's last steps into black, sampled every third presented frame
+in a soak, fell under 35% of the check before and came back inside the
+window -- six "blips" in two hours, all the game's own fades.
+
+**The rule now** (`rt.c` `halfwatch`): a flash is a picture much darker than
+both its neighbours, and a neighbour is a steady picture --
+* the fall: a check at most 20% as bright as the one before (which is 40 or
+  more), that one no more than 15% darker than the check before it (a
+  fade's last step comes out of a fall already under way; the Mega
+  Mushroom's comes out of the item menu's dim easing *up*);
+* the return: back to 70% of the level before within 12 frames, the darkest
+  check at most 20% of the returning one, and the check after the return
+  within 15% of it (a fade in is still climbing; the count waits a check).
+M45's rule is still counted beside it: the final line reads `N blips (M45's
+rule: M)`, and each blip line carries its three levels (`122 -> 9 -> 124`).
+
+**Proved** on every frame of the stretches (`tools/m46_flash.py`: the three
+rows the counter reads, each rule at every sampling step 1-9 and phase, and
+2,000 irregular samplings of 4-12 frames like a soak's; lockstep dumps of
+the soak's first two fades, `SF:fdA`/`SF:fdB`, and of the Mega blip on a
+build with the old wrapping store, `mp4-blipt46`;
+`docs/soak/m46-flash/m46_flash-sim.txt`):
+
+| stretch | M45's rule | M46's rule |
+|---|---|---|
+| fade 1 (51,000-51,075: 145 -> 0 over 18 frames and back) | fires at 6 of 45 regular samplings, 389 of 2,000 irregular | **0 and 0** |
+| fade 2 (92,880-92,960) | 2 of 45, 214 of 2,000 | **0 and 0** |
+| the Mega blip, old store (122 -> 9 for five frames) | 35 of 45, 1,284 of 2,000 | **32 of 45 (every sampling of 1-5 frames), 1,049 of 2,000** |
+
+On the G4: the old store with `--halfwatch 1` gives `BLIP #1 at frame 14535
+(dark for 5 frames; 122 -> 9 -> 124)`, the fixed build `0 blips (M45's
+rule: 0)` over the same 6,794 frames.
+
+**The second half -- the previous release** (`tools/m46_piccheck.py`): a
+blip counted in a new run is a FAIL only when the reference's run of the
+same name has no blip within three frames of it; otherwise it is listed as
+the game's own.  A soak's blips have no paired run; each is shot again on
+the two builds with `SF:` (60.11's method) before it counts.  m427's black
+half stays open: `--halfwatch` is on in every soak, and the picture checks'
+counter found none (61.7).
+
+### 61.4 The last nine
+
+**The counters first** (`K:` of the chain on `~/mp4-pmc46.app`, a
+`PMC_WRAP=1` build of this code before the levers; set 1, entry
++300..+1,500; `docs/soak/m46-ab/K-*.log.gz`):
+
+| screen | drawn frame, M cycles | GX front end | the largest else |
+|---|---:|---:|---|
+| m441 | 31.3 | 16.6 (430 draws, 38,700 cycles a draw) | the object walk |
+| m431 | 30.9 | 17.1 (376 draws) | |
+| m409 | 26.6 | 14.3 (399 draws) | |
+| m401 | 25.9 | 12.0 (297 draws) | |
+| m436 | 23.3 | 10.3 (106 draws) | **the object walk 8.1** (0.85 on a consumed frame: the deferred skinning), decode 2.1 |
+| m463 (+600..+1,500) | 26.4 | 11.5 (166 draws) | **the object walk 9.3**, the motion 1.7 |
+
+The front end is flat -- fifteen regions, none over 2.6 M cycles -- as 59.2
+found.  One region stood out as work thrown away: **the pending pass**
+(`decode_pending_last`, 0.82 M cycles a drawn frame on m441 at an IPC of
+0.42, 0.66 on m463) decoded the whole last vertex of every primitive,
+every array gather, to keep the few values the next primitive may read.
+
+**Levers, each exact, each with its old path:**
+* **The pending pass keeps only what it keeps** (`--nopendlast`): the steps
+  whose values reach `pending` (the to_pending steps and the texcoords
+  `plan_back` copies) are read; a position, or a normal or colour with a
+  slot in the vertex, is stepped over.  The same bytes in `pending` by
+  construction; both walks unchanged.  A/B (`A:GAME:ARM:K`, the same bundle
+  with and without the flag, three runs an arm, interleaved,
+  `docs/soak/m46-ab/pendlast.md`):
+
+  | screen | on (runs) | median | off (runs) | median | drawn work on / off |
+  |---|---|---:|---|---:|---:|
+  | m409 | 29.6 / 30.0 / 29.9 | **29.9** | 28.9 / 28.9 / 29.0 | 28.9 | 27.2 / 27.7 |
+  | m441 | 26.1 / 26.9 / 26.3 | 26.3 | 26.1 / 26.1 / 26.1 | 26.1 | 28.0 / 28.2 |
+  | m431 | 27.9 / 28.2 / 28.0 | 28.0 | 27.9 / 28.1 / 28.2 | 28.1 | 28.9 / 29.1 |
+  | m401 | 27.0 / 27.9 / 28.0 | 27.9 | 28.1 / 28.2 / 28.4 | 28.2 | 25.8 / 25.7 |
+
+  0.2-0.5 ms off the drawn frame where the pass was heavy; ships on.
+* **The decode's prefetch distance** (`--dcbtdist N`, the specialised loops
+  on both threads prefetch the array entries N vertices ahead, with the
+  run's first N-1 warmed): measured at 1, 3 and 6 on m436 and m441
+  (`docs/soak/m46-ab/dcbtdist.md`): the render thread's decode 9.5 / 9.6 /
+  9.3 ms on m436, 9.1 / 9.2 / 9.0 on m441, the presented fps level.  The
+  gathers are not what the decode waits on; ships at 1 (the old behaviour).
+* **The matrix parameters kept by their bytes** (the brief's class-1 lever):
+  already so -- `gx_vprog_bind` compares the six rows with the shadow it
+  uploaded (M21's `--envbulk`, a memcmp) and the light rows by their bytes
+  (M44); the region's 1.35 M cycles on m441 are its 2,566 L3 misses a frame,
+  not re-derivation.  Nothing to build.
+* **The list walk and the job build as one pass**: the job's own build is
+  0.5 M cycles on m441 (the plan's copy, ~480 cycles a primitive), its record
+  1.1 (5,700 L3 misses writing the stream); a fused pass would save the copy
+  at most.  Not built.
+* **Class 2, the skinned lists** (m436, m435, m444): 68% of m436's list calls
+  are the skinned characters (`V:m436`), pos f32x3 + nrm f32x3 + tex f32x2,
+  all indexed (`DS:m436`); a positions-and-normals refresh would copy the
+  texcoords alone -- a quarter of the bytes -- against the copy's cost.  The
+  real weight is elsewhere: the deferred skinning inside m436's object walk
+  (`SetEnvelopMain` 14% of the game thread in `sample`, the shadow pass 26%,
+  the motion 18%), whose inner loop is the SDK's `PSMTXROMultVecArray`,
+  register-hoisted since M41 and memory-bound.  Moving the skinning to the
+  render thread would load a thread already at 28.4 ms.  Not built.
+* **m463's phase** (the brief's (c), its own profile): the object walk 9.3 M
+  cycles a drawn frame, of which the bone walk (`port_envelope_proc` ->
+  `SetEnvelopMtx`, which must run every frame: the game reads the bones
+  through positions, gx_skin.c's note) ~10% of the game thread, the motion 1.7 M; the
+  pending pass 0.66 M, which the first lever takes.  No other exact lever
+  found.
+
+### 61.5 PowerPCube's hooks (item 4)
+
+The spec from the PowerPCube session (2026-09-26), built as written:
+
+1. **The config keys** (`main.c`): `movies = 1|0`, `prefetch = 1|0`,
+   `resident = auto|0|64|128|256` read from `~/Library/Application
+   Support/MarioParty4/config`; the game never writes them.  `--nomovies` /
+   `--movies`, `--noprefetch` / `--prefetch`, `--resident N|auto` win for
+   their run.  `image`, `fullscreen`, `water` unchanged; `force` is not a
+   game key.
+2. **The manifest** (`make_bundle.sh`): `port/resources/PowerPCube.plist` --
+   powerpcube's `resources/Manifests/mp4.plist` at commit `bbfadc3`
+   (manifestVersion 2), taken read-only from a clone of
+   github.com/southcitycapture/powerpcube -- copied into every bundle as
+   `Contents/Resources/PowerPCube.plist`; `POWERPCUBE_MANIFEST=path` takes a
+   fresher one.
+3. **The controls** (`src/pad/pad_controls.c`, the pollers of `pad_sdl.c`
+   and `pad_xone.c`, the port layout in `pad.c`): `~/Library/Application
+   Support/PowerPCube/controls/mp4.txt` -- `player1..4 = auto | keyboard |
+   pad:N | none` (replacing `--kbport`, which still wins), `pad.<id>` in SDL
+   controller names (sticks by `left`/`right`, an axis direction by `+`/`-`),
+   `key.<id>` in SDL key names -- over a table whose defaults are the old
+   mapping, and `gamecontrollerdb.txt` loaded into SDL before the pads open.
+   With no file the old poll code runs untouched.  A scripted run
+   (`--play`, `--record`, `--soak`, `--noconfig`, `--com4`, `--nopad`) reads
+   neither file.  The resolved table is logged at start.
+   CFBundleVersion stays the milestone: **46**.
+
+**Tested on the G4** (`X:NAME:ARM` of the chain, a run with the arm's flags
+alone; `docs/soak/m46-hooks/`):
+* no PowerPCube files: `controls: no .../controls/mp4.txt; the built-in
+  mapping`; movies, prefetch on, the resident set 256 by the machine check;
+* the three keys in the config: `nomovies=1 noprefetch=1 resident=64`
+  (`machine: --resident 64 given`); with `--movies --prefetch --resident
+  auto` on top: `nomovies=0 noprefetch=0`, resident 256 (the lab's config
+  restored afterwards);
+* a controls file with `key.a = Space`, `key.b = Z,X`, `player1 = keyboard`:
+  the logged table, `controller 1 = keyboard (the controls file)`, and
+  `--keytest Space,Z,X,Return,Q,W,I` (new: each key held alone through the
+  keyboard's own poll): Space -> A, Z -> B, X -> B, Return -> Start, Q -> L
+  (analogue 255), W -> the stick up, I -> the C stick up; without the file
+  Z -> A and Space nothing -- today's table.  (System Events' key taps on
+  the G4 are shorter than a frame and never reach SDL's polled keyboard
+  state, with or without the file -- `X-inj`: the reason for `--keytest`.)
+* both md5 walks with the controls file present: unchanged, and their logs
+  say `a scripted run ...: PowerPCube's controls file and
+  gamecontrollerdb.txt are not read`.
+
+### 61.6 The md5s
+
+| build (`isle`) | what it carries | `--nomovies` 800 / 3000 / 7000 | movies 800 / 3000 / 7000 |
+|---|---|---|---|
+| `cf5bfeca` (e) | the lights, the flash rule, the pending lever, `--dcbtdist`, the hooks | `0b58c5ee` / `2b99c60a` / `4a9a640c` | -- |
+| `692258c5` (c1, 0.9.15 candidate; the controls file present) | + `--keytest` | `0b58c5ee` / `2b99c60a` / `4a9a640c` | `d2d40344` / `59008ce4` / `3f98f882` |
+| `0b949266` (the first 0.9.15, soaked: 61.10) | the tier line "75 of 82 ... 0.9.15" | `0b58c5ee` / `2b99c60a` / `4a9a640c` | `d2d40344` / `59008ce4` / `3f98f882` |
+| **`16a042ad` (0.9.15, shipped)** | + the scissor test after a read-back (m427's black half), the counter's centre band, `--readbacktest` | **`0b58c5ee` / `2b99c60a` / `4a9a640c`** | **`d2d40344` / `59008ce4` / `3f98f882`** |
+
+None of M46's changes reaches a walk's frame: the lights act only in the
+three Bowser games and only on a drawn frame after a consumed one; the
+pending pass writes the same bytes; the hooks are not read by a scripted
+run.  In lockstep: m436 with the lights (`T:x436`) byte-identical to 0.9.14
+(`8afb5912` at 14,444 ...), and the 54 Bowser frames of the picture checks
+0.9.14's (61.7).
+
+### 61.7 The picture checks
+
+`PC:@c1` against M45's `pc-w12` (0.9.14's code) with `m46_piccheck.py`
+(`docs/soak/m46-pc/`): **638 frames, 584 paired and identical to the byte,
+54 without a reference** (the new `B-` runs; against 0.9.14's own frames of
+the same moments, `T:b435/6/7:@ship`, all 54 identical), **0 failures, 0
+looks**; `--halfwatch 1` over the set: **49,890 presented frames checked, 0
+half-black, 0 blips**.  The scoreboard's own frame pairs are in 61.8.
+
+### 61.8 The scoreboard after
+
+The chain (`FB:front,title,boards,mg,menus` of `tools/m46_chain.sh`, i.e.
+`tools/fps_board.sh` with `FB_THREE=auto`, `FB_APP=~/mp4-c1.app`) on the
+candidate (`isle` `692258c5`: 0.9.15's code, the tier line still 0.9.14's),
+05:07-08:08 G4 time, 113 runs, 0 faults; the lab looked at the G4 once every
+ten minutes at most.  `port/docs/fps-scoreboard.md` (M45's kept as
+`fps-scoreboard-m45-after.md`), logs `docs/soak/m46-board/` (the minigames'
+CSVs from their fast-forward's end, the boards' whole).
+
+**75 of 82 screens pass** (M45: 73). **None of M45's passes is lost**; two
+crossed: **m409 29.8** (29.0 / 29.8 / 29.9; M45 29.4) -- the pending lever's
+A/B had it at 29.9 against 28.9 -- and **w01 29.6** pooled.  All 82 at 100%
+game speed.
+
+| screen | M45 | M46 (runs) | | game thread's drawn work, ms | render thread's replay, ms | verdict |
+|---|---:|---|---:|---|---|---|
+| m441 Butterfly Blitz | 26.9 | 25.9 (1 run) | -1.0 | 27.4 -> 27.8 | 19.4 -> 19.3 | short by 3.6 |
+| m436 Fruits of Doom | 27.9 | 27.4 (28.0 / 27.1 / 27.4) | -0.5 | 28.3 -> 28.3 | 19.2 -> 19.2 | short by 2.1 |
+| m401 | 27.8 | 27.7 (27.7 / 28.0 / 27.5) | -0.1 | 24.6 -> 24.6 | 18.7 -> 18.8 | short by 1.8 |
+| m431 Order Up | 27.9 | 27.9 (27.9 / 27.9 / 27.7) | 0.0 | 28.5 -> 28.4 | 22.6 -> 22.5 | short by 1.6 |
+| m463 Panel Panic | 29.1 | 28.8 (28.8 / 29.4 / 28.8) | -0.3 | 16.6 -> 16.5 | 12.5 -> 12.4 | short by 0.7 |
+| m435 Darts of Doom | 28.8 | 28.8 (28.8 / 29.0 / 28.7) | 0.0 | 27.2 -> 27.4 | 19.3 -> 19.4 | short by 0.7 |
+| m444 | 29.1 | 29.2 (29.0 / 29.2 / 29.6) | +0.1 | 25.6 -> 25.6 | 22.4 -> 22.3 | short by 0.3 |
+| **w01 Toad's Midway Madness** | 29.2 | **29.6** (1 run) | +0.4 | 19.9 -> 19.7 | 13.8 -> 13.9 | **PASS** (board-only 30.0) |
+| **m409** | 29.4 | **29.8** (29.0 / 29.8 / 29.9) | +0.4 | 26.6 -> 26.3 | 20.7 -> 20.7 | **PASS** |
+| m433 Beach Volley Folly | 29.9 | 29.9 (29.7 / 29.9 / 29.9) | 0.0 | 25.6 -> 25.4 | 18.0 -> 17.9 | PASS |
+| the character select | 29.9 | 29.9 (1 run) | 0.0 | 26.3 -> 25.7 | 20.6 -> 20.8 | PASS |
+| m430 Pair-a-sailing | 30.0 | 29.9 (29.9 / 29.9 / 30.0) | -0.1 | | | PASS |
+
+m441 is one run (its first landed more than 2 fps under the bar, so the mode
+did not repeat it; its runs have spread 2 fps and more before, 59.4) and
+m436's three runs straddle M45's; both screens' drawn and consumed work is
+M45's to a few tenths of a millisecond -- neither moved, as none of this
+milestone's levers reaches them but the pending pass (level on m441 in its
+A/B).  **The worst ten** before (M45): m441 26.9, m401 27.8, m436 27.9, m431
+27.9, m435 28.8, m463 29.1, m444 29.1, w01 29.2, m409 29.4, m433 29.9.
+After: m441 25.9, m436 27.4, m401 27.7, m431 27.9, m463 28.8, m435 28.8, m444
+29.2, w01 29.6, m409 29.8, m433 / the character select / m430 29.9.
+**w01's two numbers** (`tools/m43_w01.py` over all 113 logs): pooled -- the
+rule's -- 218 lines, median **29.6**; board-only, less the 111 lines inside
+the first second after a teleport hands back to real time (their median
+7.0), 107 lines, median **30.0**.  The pooled median lies where the two
+clusters meet and moves with their counts (M45: 29.2 on the same kind of
+run); it passes by the rule this time, and the rule is still the user's.
+
+**The frames**: the scoreboard's dumps against M45's (`m46_piccheck.py`,
+`docs/soak/m46-pc/piccheck-scoreboard-m45-vs-m46.tsv`): 190 pairs, 176
+identical, 14 differ -- m415 and m416 (the two screen-copying games, as in
+every milestone), m423 by a hair (sim 100.0, 0.0% over 8), and the three
+Bowser games' real-time frames, whose differences lie at the two pillar
+tops alone (the lights between two frames, 61.2) -- **0 FAIL, 0 LOOK**.
+
+### 61.9 Each remaining wall
+
+Medians of the drawn frame from the scoreboard (the game thread's cycle is
+its drawn frame plus a consumed frame; the render thread's its replay plus
+its decode; 33.3 ms each at 30 fps):
+
+| screen | fps | game thread (drawn + consumed) | render thread (replay + decode) | class, and what the counters say |
+|---|---:|---:|---:|---|
+| m441 | 25.9 | 33.7 (27.8 + 5.9) | 28.0 (19.3 + 8.7) | 1: the front end (16.6 M cycles, flat) and the engine's walk; the consumed frame the game's own (59.6) |
+| m436 | 27.4 | 30.7 (28.3 + 2.4; 4.2 decode) | 28.4 (19.2 + 9.2) | 2: the deferred skinning in the object walk (8.1 M cycles drawn, 0.85 consumed), the shadow pass 26% |
+| m401 | 27.7 | 32.1 (24.6 + 7.5) | 25.8 (18.8 + 7.0) | 1: the front end 12.0 M cycles, the consumed frame 7.5 |
+| m431 | 27.9 | 36.3 (28.4 + 7.9) | 29.5 (22.5 + 7.0) | 1: 65.8 of both cores' 66.7 |
+| m463 | 28.8 | 20.1 (16.5 + 3.6) | 19.2 (12.4 + 6.8) | 3: the falling panels' phase, the object walk 9.3 M cycles there (the game's panels, the bone walk) |
+| m435 | 28.8 | 29.8 (27.4 + 2.4; 4.6 decode) | 28.5 (19.4 + 9.1) | 2: as m436 |
+| m444 | 29.2 | 30.0 (25.6 + 4.4; 3.9 decode) | 27.9 (22.3 + 5.6) | 2: decode on the game thread |
+
+The levers left, each exact and each named by a measurement: for class 2,
+the skinning's own cost (it is the game's `SetEnvelopMain` over the SDK's
+`PSMTXROMultVecArray`, memory-bound -- a port body of the skin loop that
+writes the decode's layout directly, skipping the arrays' write and the
+decode's gather, is the one structural lever and changes what runs where);
+for class 1, telling the vertex cache what the skinning has just rewritten
+instead of hashing it (the cache's keys are 1.0-1.8 M cycles a drawn frame
+on m409, m431 and m436, thousands of L3 misses), and the state setters' own
+cost (the "port GX" region, 1.6-2.6 M cycles); for m463, nothing exact was
+found beyond the pending pass.  Every finding reproduces from its teleport:
+`A:GAME:ARM:K`, `K:GAME:1:pmc46` (the counters' bundle `~/mp4-pmc46.app`),
+`SA:GAME:@BUNDLE` for a `sample`, `FB:` for the scoreboard.
+
+### 61.10 The soak on the candidate, and m427's black left half: found
+
+`SX:120:base` on the first 0.9.15 (`isle` `0b949266`: candidate c1's code
+and the tier line), 08:31-10:31 G4 time (`--halfwatch 3`,
+`docs/soak/m46-soak-c1-120.log.gz`): **431,520 retraces, game 7,199.20 s
+against wall 7,199.74 s -- 100.0%**; **0 faults, 0 skin guard hits, 0
+resyncs, no lock-up**; the worst frame 689 ms behind; 165 `stall:` lines
+(loads), 76 underruns (1.1 s); three `STUCK` lines, the soak's own
+end-of-game walk as in every soak since M40; 40 minigames entered; the
+disc 2,886 reads, none over 100 ms; the card 32 writes, 65 flushes.  The
+counters: 71,009 frames checked, **0 blips (M45's rule: 6)** -- the new
+rule on the same deterministic game where M45's soak logged its six fades
+-- and 14 half-black, all m416's dark room at 251,151-251,226 (the lit half
+92-182 samples, under a lit scene's 250), as M45's soak.
+
+**And one shot.**  The blip counter writes the frame where a fall begins;
+at 411,753 -- m427, entry +62 -- a fall began that never came back as a
+blip, and its shot is **m427 with the left view black, the right drawn**
+(`docs/screenshots/m46-m427-black-left-f411753.jpg`): M45's open finding,
+the user's photograph of 0.9.13, on this build.  At entry +60 the gallery
+has both views drawn, on the port in lockstep and on the console.  The
+half-black counter had missed it for the same reason it missed M45's whole
+hunt: m427's course strip runs down the middle (x 293-347) and lights the
+"left half" of the counter's rows, so a black left view was never a half
+with no lit pixel.  The counter now leaves the centre band x 288-351 out of
+both halves (`rt.c`).
+
+**The cause.**  Every soak's first minigame is Stamp Out! (m415, frame
+10,957), and m415 reads its shadow copy back with the CPU
+(`port_gx_copy_read`, M20/M23): `gl13_downsample_read` draws the copy at
+half size into the back buffer and reads it, and for that it turns
+`GL_SCISSOR_TEST` off -- and never on again.  The GL shadow does not track
+that enable (it is turned on in `gl13_init` and assumed on); the fullscreen
+present turns it on every frame (`fs_quad_end`), so a player in fullscreen
+never kept it off past the frame, but **in a window it stays off for the
+rest of the run**.  `GXCopyTex` with clear then clears "the copied region"
+through `glScissor` with the test off: the whole window.  m427 draws each
+view, copies its half of the EFB with clear, then draws the river from the
+copy and the boats and walls over it -- so the right view's copy-and-clear
+wiped the finished left view, every frame, from the first m427 after m415
+to the end of the run.  The soak's m427 at 199,364 (M44's, the photograph)
+and at 411,691 (this one) both came after m415.  M45's hunt could not
+meet it: its teleports were fresh processes that never ran m415, and its
+lockstep replays fast-forwarded with drawing off, so the read-back never
+happened; its real-time replay restored a snapshot into a fresh process.
+
+**The fix** (`gl13.c`, `gx_tex.c`; `--oldscissor` the old behaviour):
+`gl13_downsample_read` turns the scissor test back on, and the copy's clear
+turns it on itself before clearing.  **The proof** (`T:sc0/1/2` on one
+binary, m427 in lockstep, `--readbacktest`: one read-back through
+`gl13_downsample_read` at the first drawn frame, as m415's intro makes;
+`docs/soak/m46-m427/`, `docs/screenshots/m46-m427-black-half-cause.jpg`):
+
+| run | the left view | frames at +60 / +62 / +1,200 | `--halfwatch 1` |
+|---|---|---|---|
+| no read-back | drawn | `b1ae2524` / `e9f81384` / `36dbdf54` | 0 half-black of 1,697 |
+| a read-back, `--oldscissor` (0.9.13-0.9.15c1) | **black** | `5500dca3` / `a3cec4c7` / `da379f55` | **979 half-black** of 1,697 (the whole race) |
+| a read-back, the fix | drawn | `b1ae2524` / `e9f81384` / `36dbdf54` (the first run's, to the byte) | 0 half-black |
+
+m415 is the only game that reads a copy back, so the fix changes nothing
+for any other screen until it has been played -- and after it, in a
+window, it restores every copy's clear to its region (every shadow map's,
+every screen copy's).  m415 itself was timed again on the final build
+(61.11).
+
+### 61.11 The soak before the dmg
+
+`SX:120:base` of the chain on the shipped build (`isle` `16a042ad`),
+11:07-13:07 G4 time on 2026-09-27 (`isle --soak --com4 --rtc dolphin
+--freshcard --status --perf --stuckwatch 200 --ovllog --halfwatch 3 --frames
+431520`; `docs/soak/m46-soak-final-120.log.gz`): **431,520 retraces in
+7,199.74 s of wall, game clock 7,199.20 s -- 100.0%**; **0 faults, 0 skin
+guard hits, 0 resyncs, no lock-up**; the worst frame 666 ms behind the
+schedule, 166 `stall:` lines (loads), 76 underruns totalling 1.15 s; three
+`STUCK` lines, the soak's own end-of-game walk.  One whole 20-turn game and a
+second to turn 10: **40 minigames entered**, m427 twice after m415 (199,364
+and 411,691).  The disc: 2,886 reads, none over 100 ms.  The card: 32
+writes, 65 image flushes.  rss 177 -> 288 MB.
+
+**The counters** (`--halfwatch 3`, the centre band left out): 71,318 frames
+checked, **0 blips (M45's rule: 9)**, **9 half-black**, all m416's dark room
+at 251,154-251,226 (the lit half 87-182 samples; `m46_piccheck.py` counts a
+half-black only beside a lit scene of 250 or more, as M45's) -- and **none in
+either m427**, where the candidate's soak had a black left view: the fall
+the counter shot at m427's entry +76 (199,440) has both views drawn
+(`docs/screenshots/m46-m427-soak-before-after.jpg`: the candidate's 411,753
+beside it).
+
+**m415 again** (the only game that reads a copy back, so the only screen
+the scissor fix reaches before another game is played): `FB:mg` with
+`FB_GAMES=415` on the shipped build, **30.0** (the candidate's 30.0, M45's
+30.0), its drawn frame 17.4 ms against 17.1; its frames differ from the
+candidate's in the top-right toys only, as m415's real-time frames do from
+milestone to milestone.
+
+**The dmg**: littlejelly `~/MarioParty4-PowerPC-0.9.15.dmg` (md5
+`cfcf86815e52a1d921035719c6be90ea`, 4.4 MB; the G4 keeps `~/Mario Party 4
+PowerPC Edition 0.9.15.dmg`), mounted and read on the G4: `Mario Party
+4.app` with `isle` `16a042ad`, CFBundleShortVersionString 0.9.15,
+CFBundleVersion 46, `Contents/Resources/PowerPCube.plist`, the Read Me and
+the licences, no disc image.
+
+### 61.12 What M46 shipped
+
+| | |
+|---|---|
+| `port/src/gx/gx_lights.c`, `gx_state.c` | the pillar lights between two frames at 30 fps (`--nolights`) |
+| `port/src/gx/rt.c` | the flash rule (M45's counted beside it), the half-black counter without the centre band, `--presentdump A-B[=X,Y,W,H]` |
+| `port/src/gx/gl13.c`, `gx_tex.c` | **m427's black left half**: the scissor test back on after a read-back, and on for a copy's clear (`--oldscissor`, `--readbacktest`) |
+| `port/src/gx/gx_draw.c` | the pending pass's kept steps (`--nopendlast`), `--dcbtdist N` (1) |
+| `port/src/pad/pad_controls.c`, `pad_sdl.c`, `pad_xone.c`, `pad.c`, `pad_internal.h` | PowerPCube's controls file and gamecontrollerdb.txt, `--keytest` |
+| `port/src/platform/main.c`, `port/include/port.h`, `opt_fields.h` | the config's movies/prefetch/resident, `--movies`/`--prefetch`/`--resident auto`, the options, 0.9.15, M46 |
+| `port/src/debug/scenelog.c` | `--motlog N` |
+| `port/tools/make_bundle.sh`, `port/resources/PowerPCube.plist` | the manifest in the bundle |
+| `port/tools/m46_chain.sh`, `m46_piccheck.py`, `m46_flash.py` | the chain (M45's, `+` for `,` in an arm, `X:`, the `B-` picture runs), the checks' previous-release rule, the flash rule's simulation |
+| `port/docs/fps-scoreboard.md`, `fps-scoreboard-m45-after.md`, `release-checklist.md`, `port/dist/Read Me.txt` | the scoreboard, M45's kept, the checklist, the config keys and the controls file for players |
+| `port/docs/screenshots/m46-bowser-lights-lockstep.jpg`, `m46-bowser-lights-realtime.jpg` | the lights beside the console |
+| `port/docs/soak/m46-*` | the leave-behind's soak, the lights, the flash rule, the A/B and the counters, the hooks, the picture checks, the scoreboard, the soak |
+
+### 61.13 What is left running, and what M47 starts with
+
+On the G4, since 13:14 G4 time, on 0.9.15 (`isle` `16a042ad`, the bundle
+`~/MarioParty4.app`; exec'd by the chain's `M46_LEAVE`; runner slot
+`~/isle.app` -> `MarioParty4-chain.app`, whose executable is
+`m46_chain.sh`):
+
+```
+isle --soak --com4 --rtc dolphin --freshcard --status --perf
+```
+
+log `~/isle-log.txt`, pid 70071.  The player's card and `~/memcard-backup.raw`
+untouched (every run `--freshcard`); the lab's config restored after the
+hooks' tests; no PowerPCube files left on the G4 (the test's controls file
+is `~/m46/mp4.txt.test`).  0.9.14 stays installed as `~/MarioParty4-m45.app`;
+M46's bundles as `~/mp4-*.app` (`mp4-j.app` has the fix and both switches,
+`mp4-blipt46.app` the old wrapping store for the flash rule's proof,
+`mp4-pmc46.app` the counters' bundle); the chain settings `~/m46.env` and
+`~/fps-board.env` (`FB_DIR=$HOME/fps-board-m46-final`, `FB_GAMES=415` --
+clear it for a whole scoreboard); M46's scoreboard `~/fps-board-m46/`.
+
+M47: the user's eye on the pillar lights at 30 fps (`--nolights` the old
+picture) and on m427 in a window; the pond (sky or tint) and w01's rule
+(29.6 / 30.0 this time); the seven short screens with 61.9's levers --
+class 2 is the skinning's own cost (a port body of the skin loop writing
+the decode's layout), class 1 the vertex cache's hashing of arrays the
+skinning has just rewritten and the state setters.  PowerPCube's first real
+launch of this build (the controls file with a pad, a real key press).
+**Rule learnt**: a counter that looks for a black half must know what the
+screen draws in the middle (m427's strip hid its own finding for two
+milestones); and a GL enable the shadow does not track must be put back by
+whoever takes it away.

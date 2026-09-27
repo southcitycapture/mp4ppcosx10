@@ -174,7 +174,9 @@ between the two game frames each picture stands for.  **The flash rule** of
 the picture checks no longer counts the game's fades and still catches the
 Mega blip.  **PowerPCube's hooks**: the config's movies / prefetch /
 resident, `PowerPCube.plist` in the bundle, the controls file and
-gamecontrollerdb.txt (interactive runs only).
+gamecontrollerdb.txt (interactive runs only).  **m427's black left half**
+(M45's open line, the user's photograph of 0.9.13) found in the candidate's
+soak and fixed: a copy read-back left the scissor test off in a window.
 
 ## Done
 
@@ -245,12 +247,12 @@ none is a known fault.
    (`docs/screenshots/m45-water-m434-looks.jpg`; `--pondlook tint` or
    `pondlook = tint` in the config switches it; the default is one line in
    `gx_water.c`).
-9. **m427's black left half (M45)**: the user's photograph of 0.9.13 was
-   not reproduced -- the soak's own play in lockstep and six real-time
-   replays from a snapshot of it drew both halves (PLAN.md 60.2).  If it is
-   seen again, an F5 screenshot (the picture the game drew, written to the
-   Desktop) tells the port's frame from the display's; `--halfwatch` counts
-   it in the lab's runs.
+9. **m427's black left half (M45) -- found and fixed in M46** (PLAN.md
+   61.10): a copy read-back (Stamp Out!'s) left the scissor test off for
+   the rest of a windowed run, and the right view's copy-and-clear wiped
+   the left view in every Right Oar Left? after it.  Fullscreen play turned
+   the test back on every frame and never showed it.  `--oldscissor
+   --readbacktest` reproduces the old picture on demand.
 10. **The pillar lights at 30 fps (M46)**: the console's four-frame shimmer
    cannot be shown at thirty frames a second; 0.9.15 draws each presented
    frame's lights between its two game frames (a gentle pulse, the same on
