@@ -23383,3 +23383,495 @@ for skinned lists (class 2); the positions refresh when the cache keys
 off (m463). And the user's call on w01's verdict rule. If the G4 ever
 locks up again: `--nofixbase` first, then `--nodcbz` and `--norastermemo`,
 `PROOF:120` the run to repeat (59.9).
+
+## 60. M45 log: the user's findings, the water's tuning, the last nine *(2026-09-26, littlejelly)*
+
+M44 shipped 0.9.13 (73 of 82) after a two-hour soak, and the user and the Mac
+session then looked at it: three pictures the md5 walks never reach were wrong
+(m427's left half black at a real-time moment, m427's headlamp pool gone, a
+black blip over the board at a Mega Mushroom's use), and the water the user had
+watched on the G4 wanted tuning ("make the actual waves more pronounced and
+noticeable and the reflection [of] the sky remove"; m434 "doesn't even look like
+there's water in there"; m405's colour).  The brief: the findings first (item
+1), with picture checks added to the chain so none of them can ship again; the
+water's tuning (item 2); the last nine screens (item 3); the scoreboard after
+(item 4).
+
+**The short answer.** Two of the three findings are found, fixed and proved,
+and the third is hunted to the frame and not reproduced.  **m427's headlamp
+pool** (60.3) was lost to M44's water: the river went to the CPU path, whose
+depth is the 7455's arithmetic where the lamps' beams are the vertex
+program's, and the beams failed the depth test along the river -- the water's
+positions now go through a vertex program with the same instructions, and the
+pool is back to the byte-level brightness of 0.9.12.  **The black blip at a
+Mega Mushroom** (60.4) is as old as the port: `OSf32tou8` wraps where the
+Gekko's quantised store saturates, and the board's dimming filter stored its
+last step (-5.3) as 251 -- five black frames at the end of every item menu,
+roulette, lottery and battle since 0.9.1; the port's fast casts now saturate,
+and the console (Dolphin) is shown to have no such frame.  **m427's black left
+half** (60.2) was reproduced to the photograph's moment -- the soak's own m427
+play in lockstep and, from a snapshot of it, six times at real time -- and
+never showed: ~19,700 frames of m427 counted by a new counter, none black.
+**The picture checks** (60.5) now dump and compare 713 frames against the
+previous release's and count every presented frame of their runs for
+half-black pictures and blips (`--halfwatch`); against M45's frames, 0.9.13
+fails on the Mega frames and is flagged on m427's pool, and a build with the
+old store is caught by the blip counter at the frame.  **The water** (60.6):
+Makin' Waves' waves 2.5x the console's with no sky, Cheep Cheep Sweep's pond
+drawn as water in two looks for the user to pick, and **Mario Medley's
+colour** found (a shadow map's background tinted by the frame's clear
+colour; the pool now matches the console's to 4 levels).  **The last nine**
+(60.7): one lever built and measured level; the scoreboard after (60.9): SEE.
+
+### 60.1 The soak, read
+
+M44's leave-behind (`isle --soak --com4 --rtc dolphin --freshcard --status
+--perf` on 0.9.13, `isle` `f442b95e`, pid 85854) had run **21 minutes** when
+this milestone began (it was started at 10:56 G4 time, M44's report at 11:1x);
+read and stopped by pid at 11:18 (one SIGINT: the game's own reset path,
+`EXITCODE=0`; `docs/soak/m45-soak-m44-leave.log.gz`): **77,522 retraces at
+100.0% speed** (game 1,293.3 s against wall 1,293.4 s), 29.5 fps presented over
+everything, **0 faults, 0 STUCK lines, 0 resyncs, no lock-up**; 0 skin guard
+hits (211 entries dropped by the game's frees), 0 split-mixer mismatches;
+the worst frame 676 ms behind the schedule; the card's six image flushes
+~1.74 s behind the game, none waited for.  It played turns 1-9 of a board and
+eight minigames (m402, m410, m411, m412, m415, m419, m420, m422), the water
+drawing 190 warped draws.  Nothing to act on; too short to say more.
+
+### 60.2 m427's black left half: hunted, not reproduced
+
+**The finding** (the user's photograph during M44's final soak, 0.9.13): the
+left view of the 2-vs-2 race entirely black, the right one fine, the race
+clock at 0'17"58.  M44's final soak (`docs/soak/m44-soak-final-120.log.gz`)
+entered m427 twice, at retraces 199,364 and 411,691.
+
+**What the race draws** (map.c): each view is a camera with its own viewport
+and scissor (320 x 480); at its layer 1 a hook (`fn_1_A148`) copies the view's
+half of the EFB *with clear* and at layer 2 the river (`fn_1_A1F4`'s hook)
+draws that copy back projected onto the water, warped; the walls, the boats
+and the lamps are layer 2 and after.  A view is black when everything after
+its copy-and-clear fails to land.
+
+**The instruments.**  `--halfwatch N` (rt.c, new): every Nth presented frame,
+on the render thread before the swap, three rows of the back buffer are
+read; a half with no lit pixel while the other has 32 or more is counted as
+**half-black** and the frame written whole (`halfblack-fNNNNN.ppm`), and a
+fall of the rows' brightness under 35% of the frame before that comes back
+over 70% within 12 frames is counted as a **blip** (`blip-fNNNNN.ppm`) --
+the board's black frames of 60.3 are one.  The final line: `halfwatch: N
+frames checked (every N), N half-black, N blips`.  Cheap: three
+`glReadPixels` of a row on the thread that owns the context.
+
+**The hunt.**
+* The scoreboard's teleport at real time (`R:m427:ARM:K`, `--halfwatch 1`):
+  four runs on 0.9.13's code with the counter, 5,419 frames checked,
+  **0 half-black**.
+* **The soak's own play of m427 in lockstep** (`SF:NAME:ARM`, the soak's
+  arguments with `--ffto 199300 --lockstep`, frames 199,400-201,800 every
+  30th dumped, on 0.9.13 itself): the race clock reads 0'08"46 at 200,420,
+  0'13"46 at 200,720, 0'18"46 at 201,020 -- **0'17"58 is frame ~200,967**,
+  and both halves are drawn at every dumped frame (the left half's mean
+  14-20, the right's the same).  The game state of the photograph does not
+  make the black half: it is not a picture of the game's logic.
+* **The same moment at real time**: a snapshot of the soak at 199,300
+  (`~/m45/snaps/f199300.snap` on the G4, taken by M45's build `mp4-w8`, which
+  `--restore` needs byte for byte), restored and played at real time with
+  `--halfwatch 1` six times (`SFR:h1..h6:@w8,--frames,202400,--halfwatch,1`
+  with `M45_SFEXTRA="--restore /Users/zach/m45/snaps/f199300.snap"`): each
+  restore resumes the soak's own game at 199,300 and plays the race at real
+  time through 0'17"58 to its end; **8,840 presented frames checked, 0
+  half-black, 0 blips** (1,439-1,489 a run, 29.3-29.9 fps presented).
+* The soak before the dmg (60.11) runs with `--halfwatch 3`: m427 and every
+  other screen it reaches counted for half-black frames and blips.
+
+In all, **about 19,700 frames of m427 counted by `--halfwatch`** (the four
+teleports on 0.9.13's code 5,419, the picture checks' lockstep and real-time
+runs ~5,500, the six replays 8,840) **and the soak's own play dumped at 81
+moments in lockstep: none with a black half.**
+
+**What is ruled out, by reading.**  The transform-and-raster skip (M44's
+`--norastermemo`, the brief's first suspect) compares the GL shadow's raster
+block, which the copy's clear invalidates (`glc_invalidate` after the clear),
+so a view's viewport and scissor are re-applied after every copy; the TEV
+skip likewise (`glc_unit_gen` bumps at every bind and invalidate); a copy on
+a consumed frame with clear is skipped whole (the texture keeps the last
+drawn frame's copy), and the race's full-screen copies (`fn_1_4D7C`/`50A0`)
+are only created for the results (`fn_1_510C`).  `dcbz` ahead of the render
+stream zeroes only lines of the free region (never past the reader's
+released cursor, `rd_seen + RT_BYTES`).  None of these can blank one view.
+
+**Where it stands.**  Not reproduced, and not explained.  `--halfwatch` reads
+the back buffer the game drew, before the swap: a frame the port drew with a
+black half is counted, one the display showed that way (a window over the
+game's, the panel, the window server's composite) is not -- the photograph
+cannot tell the two apart and nothing in the logs of that soak says either.
+**The teleport to the moment**: on the G4, `~/mp4-w8.app` (the bundle the
+snapshot needs, byte for byte) with `--soak --com4 --rtc dolphin --freshcard
+--status --perf --stuckwatch 200 --ovllog --restore
+~/m45/snaps/f199300.snap --frames 202400 --halfwatch 1` (the chain's
+`SFR:NAME:@w8,--frames,202400,--halfwatch,1`); in lockstep, `SF:` with
+`--ffto 199300` on any build.  The counter stays in the picture checks and
+the soak.
+
+### 60.3 m427's headlamp pool: the river's depth was the CPU's
+
+**The finding** (the user's; `~/fps-board-m43/m427/frame-15677.ppm` has the
+pool, M44's boards' do not): M41's packed lights had made the boats' lamps
+light the river as on the console, and 0.9.13 lost it again.  The left half's
+mean brightness at entry +1,200 (lockstep, frame 15,677, 0'10"86 on the race
+clock): 0.9.12 **23.2**, 0.9.13 **19.1**.
+
+**Bisected** in lockstep (`L:m427:ARM` of `tools/m45_chain.sh`, the gallery's
+two frames): 0.9.13 with `--water off` is **byte-identical to 0.9.12**
+(`54f6806b`), so the lever is M44's water, which sends a warped batch -- the
+river is one (map.c fn_1_A1F4's hook: the half-screen copy projected, lit by
+the lamps' spot lights, a foam stage warped by a bump map) -- to the CPU path.
+And 0.9.13 `--water off --nopacklights` (the river on the vertex program, the
+six-light draws on the CPU path, as 0.9.9) is `2126b863`, M41's "CPU path
+never drew that pool" frame.  Two things the CPU path does differently, each
+tested alone:
+
+* **Its projected texture coordinates** were divided by q at each vertex and
+  then interpolated linearly (`finish_vertices`; M26 had fixed the same thing
+  in the vertex program, 41).  Fixed here -- the CPU path hands GL (s, t, 0,
+  q) and the rasteriser divides at each pixel, as the program does
+  (`OUT_TEX_W`, `glc_coord_array_n`; `--affinetex` the old divide, which
+  reproduces 0.9.13's frame to the byte, `230557e8`) -- and the pool stayed
+  gone (`79ba8ca6`): a real fix to the copy's projection on the river, not
+  this one.
+* **Its depth.** With `--nospot` the packed program and the CPU path give the
+  *same* frame (`60b93b55` both): the difference is only where the spot light
+  is -- the lamps' beams.  The beams (`cone0`-`cone3`, `--drawlog`) are drawn
+  after the river with `GX_LEQUAL` and no z write, and meet the river where
+  the pool is.  The river on the CPU path is transformed by the 7455
+  (view-space positions under an identity modelview); the beams by the
+  vertex program on the Radeon.  Two surfaces at the same place computed by
+  two different arithmetics disagree in the last bits, and the beams fail
+  the depth test along the whole river.  **Fix** (`gx_vprog.c`
+  `gx_vprog_passthrough_*`, `--nowaterpt` the old path): a water draw's
+  CPU path keeps its lighting, texgens and warp, but hands GL the
+  *object-space* position, and a small vertex program transforms it with the
+  vertex program's own instructions and parameters (`DP4` by the position
+  matrix's rows, `DP4` by the projection, the fog coordinate as `vp_gen`
+  writes it) and passes the colour and the coordinates through each unit's
+  texture matrix (the NPOT fold).  Same instructions, same inputs: the same
+  depth as every other draw.  **The pool is back**: the left half 23.2
+  (0.9.12's 23.2), `docs/screenshots/m45-m427-lamps.jpg` (0.9.12 | 0.9.13 |
+  M45 | the console at the same moment of the race).  The fog of a water draw
+  is now the program's (M30's offset coordinate) where the CPU path's was the
+  fixed function's `|z_eye|`.
+
+### 60.4 The board's black blip: a store that wraps where the Gekko's clamps
+
+**The finding** (the user's): a black flash over the board for about a
+second when a character used a Mega Mushroom.
+
+**Reproduced** two ways.  (1) `--giveitem 1` (new, `selfplay.c`: on a board,
+each player whose first slot is empty is handed the item; `--giveitem log`
+names every slot change instead, giving nothing): the first use at frame
+8,234 of `--board 1`, and at 8,326 the whole 3D scene black under the HUD and
+the mushroom, 8,329 dim, 8,332 normal.  (2) **A natural use**: `--giveitem
+log` in a `--nodraw` run of the deterministic board game found player 0
+buying a Mega Mushroom at frame 8,638 and **using it at 14,443** (turn 2) --
+the same game on every build, so 0.9.12, 0.9.13 and the fix could be shot at
+the same frames in lockstep (`T:mega:@r12/@r13/@w4`, 14,500-14,600).  **0.9.12
+and 0.9.13 are byte-identical there, both black for five frames (14,535-
+14,539)**; M45's has no black frame.  It is not an M44 lever (every M44 flag
+off at once: the same black frames) and not a new bug: it is as old as the
+port.
+
+**Cause.** The board dims the scene while a player picks an item (board/main.c
+`BoardFilterFadeInit(30, 0xA0)`, ui.c:1086: a full-screen black quad at
+layer 1) and fades it out (`BoardFilterFadeOut(30)`).  `UpdateFilter` adds the
+fade's step (-160/30 = -5.33) to the alpha once more after the fade has
+reached zero, before the filter is killed, and stores it with
+`OSf32tou8`.  On the console that is `psq_st` into a u8 quantised register,
+which **saturates**: -5.3 stores 0 (Dolphin's `ScaleAndClamp`,
+SaturatingCast).  The port's `OSFastCast.h` (its own header since M1,
+`port/include/override`) was `(u8)f`: -5.3 wraps to 251 -- an opaque black
+quad for the frames before the kill.  The same fade ends every item menu, the
+lottery, the battle, the Bowser and the minigame roulette's dim (mg_setup.c)
+-- a blip at the end of every one of them since 0.9.1.  **Fix**: the four
+quantised stores (u8, s8, u16, s16) clamp to their type as `psq_st` does,
+then truncate; NaN stores 0.  **The console** (Dolphin, the board with the
+COMs' first slot poked to the Mega Mushroom from GC 7,000,
+`~/mp4-sweep-work/capture_board.py`): the same fade ramps 59 -> 132 over
+7,398-7,424 and holds -- no dark frame (and the second, 9,533-9,559, the
+same).  `docs/screenshots/m45-board-mega-blip.jpg`.  Both md5 walks unchanged
+by it (`0b58c5ee` / `2b99c60a` / `4a9a640c`, `d2d40344` / `59008ce4` /
+`3f98f882`: neither walk's frame is a fade's last).
+
+### 60.5 The picture checks: what the chain now looks at
+
+The three findings shipped because nothing automatic looked at those
+pictures: the md5 walks stop at the board, the scoreboard's minigame frames
+were compared with the previous release's by hand in the milestone's text,
+and nothing at all looked at a real-time frame for a black half or a black
+flash.  Now (`tools/m45_chain.sh` `PC:ARM[:old]`, `tools/m45_piccheck.py`,
+`--halfwatch`, `--giveitem`):
+
+| run | what | frames dumped | also |
+|---|---|---:|---|
+| `L-m427` | the 2-vs-2 split screen in lockstep, entry +60/+300/+600/+900/+1,200/+1,500/+2,100 | 7 | `--halfwatch 1`: every drawn frame (~2,870) |
+| `R-m427-1`, `-2` | the same at real time (the scoreboard's teleport), +300/+1,200 | 2 each | every presented frame (~1,300 each) |
+| `L-m414`, `R-m414-1/-2` | the four-view game the same way | 7 + 2 + 2 | as above |
+| `T-mega` | the board's natural Mega Mushroom (turn 2 of `--board 1`: bought at 8,638, used at 14,443), lockstep, 14,530-14,545 every frame | 16 | 6,794 frames |
+| `T-item0` .. `T-item13` | each item kind handed to the COMs (`--giveitem N`), lockstep, 8,240-9,800 every 40th | 40 each (560) | 1,989 frames each |
+| the scoreboard's own dumps (`fps_board.sh`) | every minigame at +300 and +1,200, the front walk's three | 129 | -- |
+
+**713 frames compared picture for picture** with the previous release's
+(584 of the `PC:` set, 129 of the scoreboard's), **and ~43,000 presented
+frames counted for half-black pictures and blips** (the `PC:` runs'
+`--halfwatch 1`; 60.11's soak adds its two hours at every third presented
+frame).  The comparison (`m45_piccheck.py REF NEW`): identical (md5), or how it
+differs (sim, pixels over 8 levels, each half's mean brightness).  **FAIL**: a
+half at most 40% as bright as the reference's, a half-black frame or a blip
+counted, a fault or a run over its ceiling.  **LOOK**: a half 15% darker or
+more (a pool of light lost is 18%).  Exit status 1 on a FAIL.
+
+**Proved on the three findings.**
+* Against M45's frames as the reference, 0.9.13's `PC:` set (`PC:@r13:old`)
+  gives **FAIL** on `T-mega` 14,535-14,539 (the board black: 111/122 ->
+  17-25) and **LOOK** on all nine m427 frames from +300 on (the lamp pool:
+  the halves 18-23% darker), and passes m414 (identical to the byte).
+* `--halfwatch` on a build with the old wrapping store (`mp4-blipt`, the
+  one-line revert of 60.3's fix): **`BLIP #1 at frame 14535 (dark for 5
+  frames)`** and its `blip-f14535.ppm`; on M45's build 0 blips.
+* The half-black counter has never fired on the port (60.4); it is the one
+  the brief's (a) needs, and it counts in every `PC:` run and in the soak.
+
+**M45 against 0.9.13** (`PC:@w12` against `PC:@r13:old`, 21 runs): 584
+frames, 22 identical, 16 differ (the m427 river with its pool back: brighter,
+not darker; the Mega frames no longer black), 546 without a reference (the
+item runs: 0.9.13 has no `--giveitem`; M45's are the next release's
+reference), **0 failures, 0 half-black frames, 0 blips** in 43,000 checked.
+
+**For the next release** (the checklist's release line): `PC:@<previous
+bundle>` and `PC:@<candidate>` in the chain, the scoreboard as always, then
+`m45_piccheck.py` on the two `pc-` directories and on the two scoreboards'
+directories; a FAIL stops the release, a LOOK is looked at.
+
+### 60.6 The water, the user's tuning (item 2)
+
+The user watched m417 on the G4 at the three levels on M44's candidate 10
+and said "full looks great, even cheap looks great surprisingly", then:
+"make the actual waves more pronounced and noticeable and the reflection [of]
+the sky remove".  M45's water has a *look* -- the port's, not the console's --
+on by default and switchable (`--waterlook port|console`, the config's
+`waterlook =`, remembered like the level): `gx_water.c` `look_gain_pct`,
+`gx_water_look_begin/_end`, applied around the water batch's apply
+(`water_submit`) and put back after, so the game's GX state is always what it
+set.
+
+**(a) The ripple, stronger.** The warp's matrix (the offset in the direct
+map's texels per unit of the bump map) is multiplied by a gain: 2.5 on m417
+(`GX_WATER_GAIN_M417`), cheap and full alike; `--wavegain PCT` sets it for
+every warped screen (100 = the console's).  Chosen by eye from three
+lockstep frames at entry +1,200 (x1, x2.5, x4): x4 tears the refraction at
+the pool's rim and through the rock; x2.5 reads as a clearly moving
+surface from across a room and keeps the rim.  The console's own amplitude
+elsewhere (m405, m410, m423, m427, the refused three) is unchanged.
+
+**(b) No sky on m417.** Its water is five TEV stages (water.c fn_1_604C): the
+floor through the screen copy (warped), **+ a sky map projected at 70
+degrees times A0 (0x4C, stage 1): the reflection**, + the caustic times A1,
+and a blend to C1 by the highlight.  For the draw, REG0's alpha (read by
+stage 1 alone) is 0: the sky is gone, the refraction, caustics and
+highlights stay.
+
+**(c) m434's pond, and the conflict.** 59.7 read the console's pond as the
+sky's reflection over the floor and the port's as the bright floor; the user
+said it "doesn't even look like there's water in there", *and* asked m417's
+sky away.  The pond (map.c fn_1_2978) is two stages: the floor through the
+refraction pass's copy (warped by a sprite's bump, drawn), and a blend to the
+reflection pass's copy by A0 = 0x40, whose warp reads a rendered ripple map
+the CPU has no bytes for (refused).  The reflection pass renders correctly
+on the port (`--dumpcopy`: the sky, the clouds, the trees); a quarter of it
+over the bright sand floor is what reads as "no water".  Two looks, **the
+user's to pick** (`--pondlook sky|tint`, the config's `pondlook =`):
+
+* **sky** (the default): the floor seen through the water darkened and blued
+  (stage 0 becomes TEXC x C1, C1 = (150, 172, 188) for the draw) and the
+  reflection's weight raised to 42% (`--pondmix`) -- deep water with the sky
+  and the trees on it, the console's reading;
+* **tint**: the same floor under a flat water colour ((30, 105, 145) at 40%)
+  and no sky -- water, as m417's without its reflection.
+
+`docs/screenshots/m45-water-m434-looks.jpg` lays both out (0.9.13 | sky |
+tint | full sky | full tint | the console).
+
+**(d) m405's colour: a shadow map's background.** The pool's water is the
+refraction copy of the floor (`--dumptex`: the floor's texture is bright cyan,
+(88, 179, 189) on average), so the grey-green was the floor drawn wrong
+before the water.  `--drawlog` of the floor ("cube1"): two stages, the
+texture and then the projected shadow map, CPREV x (1 - TEXC).  The shadow
+map is a `GX_CTF_R8` copy (hsfman.c:2002, every game's): the console keeps
+the EFB's red and samples it as I8 -- the same byte in all channels.  The
+port copies RGBA.  The shadow pass draws its casters over whatever the
+frame's clear left in the region, and m405 sets the copy-clear colour to the
+pool's blue (30, 102, 162) before its own copies, so the next frame is
+cleared blue: the port's shadow map had a blue background and took (0.12,
+0.40, 0.64) off the cyan floor where the console takes 0.12 -- cyan x (0.88,
+0.60, 0.36) is the grey-green.  **Fix** (`gl13.c` `gl13_note_r8_region`,
+`--rgbcopy` the old path): the region the last R8 copies read is cleared, at
+the frame's clear, to the clear colour's red in all three channels, when the
+clear colour is not grey -- the byte the console's copy holds.  The shadow
+copy clears the region again (to black, hsfman's copy clear) before the scene
+is drawn over it, so no visible pixel moves.  The first fix copied into an
+`GL_INTENSITY8` texture (GL's I = R) and was right, and cost ~5 ms a drawn
+frame: the md5 walk took 248 s against 199 (the ATI driver converts a copy
+to a one-channel format on the CPU); measured and replaced.  **m405's water,
+the pool region's mean colour at entry +1,200: 0.9.13 (115, 140, 102), M45
+(115, 161, 147), the console (111, 156, 143)**; `docs/screenshots/m45-water-
+m405.jpg`.  Every other game whose frame clear is not grey had the same tint
+in its shadows.
+
+### 60.7 The last nine (item 3)
+
+The brief's levers (59.11), and what was done with each in the time left
+after items 1 and 2:
+
+* **The positions refresh on the frames the cache keys off (m463)** --
+  built (`gx_draw.c` `vc_refresh_only`, `--vcposoff`): on a frame the auto
+  keys off, a list one of whose primitives was refreshed is still looked up,
+  refresh-only (a refresh or a hit is served; a miss goes to the ring and
+  nothing is keyed, stored or evicted); idle 600 frames after the last
+  refresh.  **Exact** (lockstep m463 `53a69456` / `2e423125` with and
+  without, M44's references) and it engages (13,173 refreshes on off frames
+  in the lockstep run, against 5,458 in all without it).  **The A/B**
+  (`A:m463:ARM:K`, three runs an arm, interleaved, `tools/m44_ab.py`):
+
+  | arm | presented fps, each run | median | drawn work | consumed | rt replay / decode |
+  |---|---|---:|---:|---:|---:|
+  | on (`--vcposoff`) | 29.0 / 29.5 / 29.7 | 29.5 | 26.7 | 5.6 | 18.4 / 10.8 |
+  | off | 29.1 / 29.8 / 29.9 | 29.8 | 26.6 | 5.5 | 18.4 / 10.7 |
+
+  Level (the render thread's decode 10.8 against 10.7: the refresh saves the
+  render thread work it had room for, and the game thread is m463's pole,
+  59.5).  **Ships off**, behind `--vcposoff`.  (m463 itself measured 29.5-29.8
+  in both arms on M45's build where M44's scoreboard had 28.9: the
+  scoreboard, 60.9, is the reading.)
+* **The list walk and the job build as one pass per primitive**, **the
+  matrix parameters kept by their bytes**, **a positions-and-normals refresh
+  for skinned lists**: not started.  Item 1's three findings, the picture
+  checks and item 2's water took the day; each is still the next lever for
+  its class (59.11), and the walls (60.10) say which screen each would serve.
+
+### 60.8 The md5s
+
+Byte for byte, both walks (`N`/`M` of the chain, `NA:`/`MA:` on the
+candidates; `docs/soak/m45-md5/`):
+
+| build (`isle`) | what it carries | `--nomovies` 800 / 3000 / 7000 | movies 800 / 3000 / 7000 |
+|---|---|---|---|
+| `e0dcc3d1` (w4) | `--halfwatch`, `--giveitem`, the projected texcoords, the water's positions on the card, the water's look, OSFastCast saturating | `0b58c5ee` / `2b99c60a` / `4a9a640c` | `d2d40344` / `59008ce4` / `3f98f882` |
+| `9ce284e4` (w11) | + the refresh on off frames, the pond looks, the R8 copies as INTENSITY8 (248 s a walk against 199: 60.6d) | the same | the same |
+| `71f7e147` (w12) | the R8 region cleared grey in place of INTENSITY8 (199 s) | the same | the same |
+| `1acb5ab5` (the scoreboard's) | w12's code with `--vcposoff` off by default, 0.9.14 | the same | the same |
+| **`f13d9b21` (0.9.14, shipped)** | the tier line "73 of 82 ... 0.9.14" | **`0b58c5ee` / `2b99c60a` / `4a9a640c`** | **SEE_M** |
+
+None of M45's changes reaches a walk's frame: the water is not on the walks'
+screens and no walk frame is a board fade's last or a shadow over a coloured
+clear.
+In lockstep: m463 `53a69456` / `2e423125` with and without `--vcposoff`
+(M44's); m427 0.9.13 with `--water off` = 0.9.12 (`54f6806b`); the
+projected coordinates' build with `--affinetex` = 0.9.13 (`230557e8`); the
+positions program's build with `--nowaterpt` = the projected coordinates'
+(`79ba8ca6`) -- each of the old paths reproduces the old frame to the byte.
+
+### 60.9 The scoreboard after
+
+The chain (`FB:front,title,boards,mg,menus` of `tools/m45_chain.sh`, i.e.
+`tools/fps_board.sh` with `FB_THREE=auto`) on the scoreboard's build (`isle`
+`1acb5ab5`: 0.9.14's code, the tier line still 0.9.13's), 17:10-20:40 G4 time,
+131 runs (and 9 again, below), 0 faults, every exit 0 but `goto-mstorydll`'s 2 (as in every chain
+since M40); the `front` walk's frames `0b58c5ee` / `2b99c60a` / `4a9a640c`.
+`port/docs/fps-scoreboard.md` (M44's kept as `fps-scoreboard-m44-after.md`),
+logs `docs/soak/m45-board/` (the minigames' CSVs trimmed to the rows from
+their fast-forward's end; the boards' whole; re-made from the trimmed set the
+table is the same but for w01's work columns, which pool the teleports'
+fast-forward rows).
+
+**The first pass had m414 at 29.1 (29.0 / 29.1 / 29.1), m409 29.0, m401
+27.1**, with the same work in every column as M44's (m414: the drawn frame
+23.6 against 23.5, the consumed 6.8 against 6.7, the render thread 18.5
+against 18.5) and a p10 lower almost everywhere (1-4 fps).  The lab's
+`m45wait` had polled the G4 over ssh every 15 seconds through the first two
+hours, and a login costs the G4 a burst of `sshd` and `DirectoryService`
+(`ps`: 24% and 21% of a CPU at the moment of a poll) -- frames lost where a
+screen has no slack.  The poll went to 150 s (and then to none: the lab
+waited on its own clock), and m414, m409 and m401 were measured again,
+20:45-21:00, the first pass kept on the G4 (`~/fps-board-m45/first-pass/`):
+**m414 29.9 (29.9 / 29.9 / 29.9), m409 29.4, m401 27.8.**  Rule for the
+next milestone: nothing polls the G4 more often than every few minutes while
+it times anything.
+
+**73 of 82 screens pass** (M44: 73). **None of M44's passes is lost**; none
+crossed.  All 82 at 100% game speed.
+
+| screen | M44 | M45 (runs) | | game thread's drawn work, ms | render thread's replay, ms | verdict |
+|---|---:|---|---:|---|---|---|
+| m441 Butterfly Blitz | 26.3 | 26.9 (1 run) | +0.6 | 27.6 -> 27.4 | 19.4 -> 19.4 | short by 2.6 |
+| m401 | 28.1 | 27.8 (27.9 / 27.4 / 27.8) | -0.3 | 24.5 -> 24.6 | 18.7 -> 18.7 | short by 1.7 |
+| m436 | 27.8 | 27.9 (28.0 / 27.8 / 27.9) | +0.1 | 28.3 -> 28.3 | 19.4 -> 19.2 | short by 1.6 |
+| m431 Order Up | 27.9 | 27.9 (27.9 / 28.0 / 27.7) | 0.0 | 28.5 -> 28.5 | 22.4 -> 22.6 | short by 1.6 |
+| m435 | 28.8 | 28.8 (29.2 / 28.2 / 28.8) | 0.0 | 27.4 -> 27.2 | 19.3 -> 19.3 | short by 0.7 |
+| m463 Panel Panic | 28.9 | 29.1 (29.1 / 29.4 / 28.6) | +0.2 | 16.6 -> 16.6 | 12.4 -> 12.5 | short by 0.4 |
+| m444 | 29.2 | 29.1 (28.8 / 29.1 / 29.2) | -0.1 | 25.7 -> 25.6 | 22.3 -> 22.4 | short by 0.4 |
+| w01 Toad's Midway Madness | 29.4 | 29.2 (1 run) | -0.2 | 19.8 -> 19.9 | 13.9 -> 13.8 | short by 0.3 (board-only 30.0) |
+| m409 | 29.4 | 29.4 (29.3 / 29.4 / 29.5) | 0.0 | 26.4 -> 26.6 | 20.7 -> 20.7 | short by 0.1 |
+| m433 Beach Volley Folly | 29.8 | 29.9 (29.9 / 29.8 / 29.9) | +0.1 | 25.5 -> 25.6 | 17.9 -> 18.0 | PASS |
+| m414 | 29.9 | 29.9 (29.9 / 29.9 / 29.9) | 0.0 | 23.5 -> 23.3 | 18.5 -> 18.4 | PASS |
+| m438 | 29.9 | 29.9 (29.2 / 29.9 / 29.9) | 0.0 | 20.1 -> 20.9 | 16.8 -> 16.5 | PASS |
+| w04 Boo's Haunted Bash | 29.9 | 29.9 (30.0 / 29.9 / 29.9) | 0.0 | 24.4 -> 24.8 | 19.7 -> 19.8 | PASS |
+| the character select | 30.0 | 29.9 (1 run) | -0.1 | 26.1 -> 26.3 | 20.9 -> 20.6 | PASS |
+
+Every one of the nine is within its runs' spread of M44's number: M45 moved
+none of them, as 60.7 says it would not.  **The worst ten** before (M44):
+m441 26.3, m436 27.8, m431 27.9, m401 28.1, m435 28.8, m463 28.9, m444 29.2,
+m409 29.4, w01 29.4, m433 29.8.  After: m441 26.9, m401 27.8, m436 27.9, m431
+27.9, m435 28.8, m463 29.1, m444 29.1, w01 29.2, m409 29.4, m433 / m414 /
+m438 / w04 / the character select 29.9.  **w01's two numbers**
+(`tools/m43_w01.py`): pooled -- the rule's -- 216 lines, median **29.2**;
+board-only, less the 109 lines inside the first second after a teleport
+hands back to real time (their median 6.9), 107 lines, median **30.0**.
+The rule is still the user's; w01 is counted short.
+
+**The water screens** at their levels: m405, m417 and m434 at 30.0 (cheap,
+the new look), m427 30.0 (cheap, its river through the position program),
+m423 30.0 (full), m410, m442, m455, m456 30.0, m430 30.0 (off).  The
+water's cost (60.6's runs, `tools/m44_water_cost.py` against M43's
+scoreboard as M44 did; lockstep, the drawn frame's medians entry
++300..+1,500, `docs/soak/m45-water/`):
+
+| game | cheap: game / render thread | full: game / render thread | M44 cheap / full (game) |
+|---|---|---|---|
+| m417 | +2.9 / -2.0 | +16.9 / +9.1 | +2.0 / +12.6 |
+| m405 | +2.6 / -3.1 | +14.7 / +5.2 | +2.3 / +9.3 |
+| m434 | +3.3 / -0.4 | +17.9 / +8.5 | +3.3 / +12.0 |
+| m427 | +5.9 / -0.0 | +13.3 / +6.0 | +5.4 / +10.9 |
+
+Cheap costs what it did (+0.0 to +0.9 ms); full costs 2-6 ms more than
+M44's, the projected coordinates' four floats a vertex (60.3) in every
+subdivided vertex -- full is not the reference's level on any of the four
+and the per-screen table (`gx_water.c`) is unchanged.  **The frames**:
+the scoreboard's dumps against M44's scoreboard's (`m45_piccheck.py`): 178
+pairs, 167 identical, 11 differ -- m405, m417, m434 (the water's tuning),
+m427 (the pool), m415 and m416 (the two screen-copying games, as always);
+**0 FAIL, 0 LOOK** (`docs/soak/m45-pc/piccheck-scoreboard-m44g-vs-m45.tsv`).
+
+### 60.10 Each remaining wall
+
+M44's table (59.11) stands, every column within a few tenths of a
+millisecond: the game thread over its budget on the drawn frame's heavy
+stretches (m441 33.2, m431 36.4, m409 32.9, m401 31.9 ms a cycle), decode
+on the game thread (m436, m435, m444: 4.0-4.7 ms of each drawn frame), m463
+short on its falling panels' phase and w01 by the pooled rule.  The levers
+are M44's, untried here but for the positions refresh on off frames (level,
+60.7): **the list walk and the job build as one pass per primitive and the
+matrix parameters kept by their bytes** (class 1: m441, m431, m409, m401),
+**a positions-and-normals refresh for skinned lists** (class 2: m436, m435,
+m444), and for m463 the phase's own game thread (the object walk rewriting
+the panels, 7.9 of 23.2 M cycles, 59.5).  Every finding reproduces from its
+teleport: `A:GAME:ARM:K`, `K:GAME:1` (M44's counters' bundle), `FB:` for the
+scoreboard.

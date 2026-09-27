@@ -143,6 +143,25 @@ m431 27.9, m409 29.4 and m401 28.1 on the game thread's drawn frame; m436
 thread; m463 28.9 on a phase of vertex-animated geometry; w01 29.4 by the
 pooled rule (30.0 on its own board frames). All 82 at 100% game speed.
 
+**Where M45 left it** (0.9.14, `docs/fps-scoreboard.md`; M44's kept as
+`docs/fps-scoreboard-m44-after.md`; PLAN.md 60): **73 of 82 screens pass**,
+none of M44's passes lost, none crossed; the nine short within their runs'
+spread of M44's numbers (m441 26.9, m401 27.8, m436 27.9, m431 27.9, m435
+28.8, m463 29.1, m444 29.1, w01 29.2 pooled / 30.0 board-only, m409 29.4).
+The milestone was the user's findings on 0.9.13: **m427's headlamp pool
+restored** (M44's water had put the river on the CPU path, whose depth
+disagreed with the beams' -- the water's positions now go through a vertex
+program), **the board's black blip fixed** (the port's `OSf32tou8` wrapped
+where the Gekko's quantised store saturates: five black frames at the end of
+every board dimming since 0.9.1), **m427's black left half** hunted to the
+photograph's moment in lockstep and six times at real time from a snapshot,
+not reproduced (PLAN.md 60.2 has the teleport); **picture checks** in the
+chain (`PC:`, `tools/m45_piccheck.py`, `--halfwatch`, `--giveitem`: 584
+frames and ~45,700 counted presented frames, plus the scoreboard's 178 frame
+pairs, against the previous release); the water tuned to the user's notes
+(Makin' Waves' waves x2.5 and no sky, Cheep Cheep Sweep's pond in two looks
+for the user to pick, Mario Medley's colour found: a shadow map's background).
+
 ## Done
 
 | area | the claim | the evidence |
@@ -162,7 +181,7 @@ pooled rule (30.0 on its own board frames). All 82 at 100% game speed.
 
 | item | what a player sees | why it ships |
 |---|---|---|
-| the pools' ripple (m405 Mario Medley, m417 Makin' Waves, m434 Cheep Cheep Sweep) | since 0.9.13 the ripple is drawn at the water's vertices (`--water`, PLAN.md 59.7): close to the console on Makin' Waves, fainter on Mario Medley and Cheep Cheep Sweep, whose second warp bends a copy of the picture itself (the port keeps those copies on the card); m405's water grey-green, m434's pond clear where the console's reflects the sky | GX's indirect warp per pixel is beyond the Radeon 9000's fixed pipeline, and the fragment-shader path (`--tfs`) samples wrong on the Leopard ATI driver (§50.14, §52.8); the vertex warp is the approximation that fits; the user watched m417 on the G4 at each level (full "looks great", cheap "looks great surprisingly"); the comparison images are `docs/screenshots/m44-water-*.jpg`. The tuning notes (stronger waves, no sky reflection, m434's pond surface, m405's colour) are M45's |
+| the pools' ripple (m405 Mario Medley, m417 Makin' Waves, m434 Cheep Cheep Sweep) | the ripple drawn at the water's vertices (`--water`, PLAN.md 59.7); since 0.9.14 the port's own look (PLAN.md 60.6): Makin' Waves' waves x2.5 and no sky; Cheep Cheep Sweep's pond deep water with the sky on it ("sky") or without ("tint"), its reflection unrippled; Mario Medley's colour the console's, its second ripple fainter | GX's indirect warp per pixel is beyond the Radeon 9000's fixed pipeline (§50.14, §52.8); the looks are the user's notes from watching m417 on the G4; `--waterlook console` is the console's amplitude and sky; **the pond's two looks are the user's to pick** (`docs/screenshots/m45-water-m434-looks.jpg`) |
 | controllers 3 and 4 | untested | wired the same way as 2 (§49.8: every Xbox One pad claimed, every SDL joystick opened, ports in order); there is one pad in the house |
 | one memory card | slot A only; slot B is always empty | the game needs one card; a second would be a second image file and nobody has asked |
 | one-CPU Macs and the movies | on one processor, Stamp Out! (m415) falls to about 13 frames a second and 94% of the console's speed, with one-second catch-ups and the sound breaking up (285 underruns in its minigame) | Stamp Out! reads its own picture back to paint with (§20's canvas copy reads), and on one CPU the game thread also replays the render thread's work. The same minigame on two CPUs: 20 fps, 100.6%, 0 underruns. It is **not** the movies: §54.2's A/B found 0 underruns in every movie on one CPU; the extra underruns M38 blamed on them were this minigame, which the movies' schedule deals where `--nomovies` deals m412. The reference machine has two CPUs; the Read Me says what one gets |
@@ -206,4 +225,15 @@ none is a known fault.
    string (`PORT_VERSION_STRING` in `include/port.h`, which the bundle's
    plist and the dmg's name are read from) and the Read Me's first lines,
    and a rebuild — nothing else.
-
+8. **Cheep Cheep Sweep's pond (M45)**: two looks built, "sky" (the default:
+   deep water with the sky and the trees on it, the console's reading) and
+   "tint" (the same water, no sky, as Makin' Waves); the user's pick
+   (`docs/screenshots/m45-water-m434-looks.jpg`; `--pondlook tint` or
+   `pondlook = tint` in the config switches it; the default is one line in
+   `gx_water.c`).
+9. **m427's black left half (M45)**: the user's photograph of 0.9.13 was
+   not reproduced -- the soak's own play in lockstep and six real-time
+   replays from a snapshot of it drew both halves (PLAN.md 60.2).  If it is
+   seen again, an F5 screenshot (the picture the game drew, written to the
+   Desktop) tells the port's frame from the display's; `--halfwatch` counts
+   it in the lab's runs.

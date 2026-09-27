@@ -292,8 +292,14 @@ Not every screen reaches 30 frames a second yet on the reference machine:
 73 of the 82 screens measured do; Toad's board is just under 30 by the
 scoreboard's strict count (its own frames are 30), and 8 of the 63
 minigames run between 26 and 29.5 (Butterfly Blitz the slowest, at about
-26).  The game's own speed is the console's everywhere; only the picture
-is slower there.  0.9.13 took the character select, Boo's board, Beach
+27).  The game's own speed is the console's everywhere; only the picture
+is slower there.  0.9.14 fixed three pictures instead: Right Oar Left?'s
+boat lamps light the water in front of the boats again (0.9.13 had lost
+that), a black flash of about a tenth of a second at the end of every
+dimming of the board (the item menu, the minigame roulette, the lottery,
+Bowser's and the battle's) that every version before had, and Mario
+Medley's water colour; and the water has its own look (THE WATER).
+0.9.13 took the character select, Boo's board, Beach
 Volley Folly and two more minigames to 30 and every slower screen up, by
 as much as two frames a second: the port's graphics layer was rewritten
 for the G4 -- it no longer re-derives a drawing state that has not changed
