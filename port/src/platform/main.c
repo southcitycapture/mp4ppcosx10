@@ -375,6 +375,10 @@ static void usage(const char* argv0) {
             "                    EnvelopeProc (M18..M46), not only when a pointer moved\n"
             "  --noskindcbz      M47: the skin loop (PSMTXROMultVecArray) without dcbz of\n"
             "                    its whole destination lines and read-ahead of its source\n"
+            "  --skinfree        M47 (measurement only): the skin decode copies the rest\n"
+            "                    pose -- what a card-side skin leaves the CPU; WRONG picture\n"
+            "  --oldwake         M47: the render thread and the workers signalled with the\n"
+            "                    mutex held (M29..M46), not after the unlock\n"
             "  --skinvec         M47: the skin decode's commonest shape in AltiVec (Java\n"
             "                    mode), bit for bit the scalar loop's, for the A/B\n"
             "  --nopendlast      M46: each run's last vertex decoded whole for the next\n"
@@ -1399,6 +1403,10 @@ int port_parse_args(int argc, char** argv) {
             port_opt.fullskinsig = 1;
         } else if (!strcmp(a, "--noskindcbz")) {
             port_opt.noskindcbz = 1;
+        } else if (!strcmp(a, "--skinfree")) {
+            port_opt.skinfree = 1;
+        } else if (!strcmp(a, "--oldwake")) {
+            port_opt.oldwake = 1;
         } else if (!strcmp(a, "--skinvec")) {
             port_opt.skinvec = 1;
         } else if (!strcmp(a, "--nopendlast")) {

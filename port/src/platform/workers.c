@@ -232,8 +232,18 @@ int port_worker_submit(PortWorker* w, PortJob* j) {
     w->q[w->qtail % QMAX] = j;
     w->qtail++;
     w->jobs++;
-    pthread_cond_signal(&w->cv_job);
+    if (port_opt.oldwake) {
+        pthread_cond_signal(&w->cv_job);
+        pthread_mutex_unlock(&w->mu);
+        return 1;
+    }
     pthread_mutex_unlock(&w->mu);
+    /* M47 (PLAN.md 62): the worker is woken after the unlock -- woken with
+     * the mutex held (and above the game thread's priority) it blocked on the
+     * mutex at once and the unlock trapped again.  The queue was changed
+     * under the mutex and the worker tests it under the mutex before it
+     * waits: no job is missed.  --oldwake: inside, as before. */
+    pthread_cond_signal(&w->cv_job);
     return 1;
 }
 

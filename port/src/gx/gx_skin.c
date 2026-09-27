@@ -413,7 +413,10 @@ static int mesh_build(SkinHsf* h, SkinMesh* m, HSFOBJECT* o, int objIdx, int mes
                 return -1;
             }
             range_set(m->pos_ent, m->nvtx, s->pos, s->posNum, e, &m->overlap);
-            range_set(m->nrm_ent, m->nnrm, s->normal, s->normalNum, e, &m->overlap);
+            /* M47: SetEnvelop multiplies ONE normal for a single of one
+             * position (PSMTXMultVec), whatever its normalNum */
+            range_set(m->nrm_ent, m->nnrm, s->normal, s->posNum == 1 ? 1 : s->normalNum, e,
+                      &m->overlap);
             m->n_single++;
             m->v_single += s->posNum;
         }
@@ -438,8 +441,10 @@ static int mesh_build(SkinHsf* h, SkinMesh* m, HSFOBJECT* o, int objIdx, int mes
             if (e < 0) {
                 return -1;
             }
-            range_set(m->pos_ent, m->nvtx, mu->pos, mu->posNum, e, &m->overlap);
-            range_set(m->nrm_ent, m->nnrm, mu->normal, mu->normalNum, e, &m->overlap);
+            /* M47: a multi entry writes one vertex and one normal (SetEnvelop's
+             * multi loop), whatever its posNum/normalNum */
+            range_set(m->pos_ent, m->nvtx, mu->pos, 1, e, &m->overlap);
+            range_set(m->nrm_ent, m->nnrm, mu->normal, 1, e, &m->overlap);
             m->n_multi++;
             m->v_multi += mu->posNum;
             if ((int)mu->weightNum > m->multi_max_w) {

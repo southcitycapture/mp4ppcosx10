@@ -31,8 +31,8 @@ extern "C" {
 /* ---- settings, from argv ------------------------------------------------- */
 /* M32: the shipped version (the dmg's name, the plist, the --defaults header)
  * and the milestone that built it. */
-#define PORT_VERSION_STRING "0.9.15"
-#define PORT_MILESTONE "M46"
+#define PORT_VERSION_STRING "0.9.16"
+#define PORT_MILESTONE "M47"
 
 typedef struct PortOptions {
     const char* image;      /* --image  disc image or extracted files/ tree   */
@@ -434,6 +434,11 @@ typedef struct PortOptions {
                              *   envelope tables at every EnvelopeProc, as M18..M46 */
     int noskindcbz;         /* --noskindcbz  M47: no dcbz of the skin loop's whole
                              *   destination lines, no read-ahead of its source */
+    int skinfree;           /* --skinfree  M47 item 4's measurement: the skin decode
+                             *   copies the rest pose (the CPU work a card-side skin
+                             *   would leave); the picture is WRONG, never shipped */
+    int oldwake;            /* --oldwake  M47: the render thread and the workers woken
+                             *   with the mutex held, as M29..M46 */
     int skinvec;            /* --skinvec  M47: the skin decode's pos/nrm/tex0 shape in
                              *   AltiVec (gx_skinvec.c), for the A/B */
     int dcbtdist;           /* --dcbtdist N  M46: the decode loops prefetch N vertices ahead (1) */

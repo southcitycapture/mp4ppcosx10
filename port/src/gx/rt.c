@@ -359,12 +359,25 @@ static double now(void) { return port_now_seconds(); }
 
 static void reader_wake(void) {
     if (reader_asleep) {
+        int sig = 0;
         pthread_mutex_lock(&mu);
         if (reader_asleep) { /* still: it has not woken and cleared the flag */
-            pthread_cond_signal(&cv_work);
+            if (port_opt.oldwake) {
+                pthread_cond_signal(&cv_work);
+            }
+            sig = 1;
             st_writer_wakes++;
         }
         pthread_mutex_unlock(&mu);
+        /* M47 (PLAN.md 62): signalled after the unlock -- the reader, woken
+         * with the mutex still held, blocked on it at once and the unlock
+         * trapped into the kernel a second time (the game thread's
+         * semaphore_signal_trap in m463's sample).  The flag was read under
+         * the mutex and the reader re-checks the stream under it before it
+         * waits, so no wake is lost.  --oldwake: inside, as before. */
+        if (sig && !port_opt.oldwake) {
+            pthread_cond_signal(&cv_work);
+        }
     }
 }
 

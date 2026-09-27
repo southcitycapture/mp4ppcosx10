@@ -1,0 +1,2 @@
+port> status f15000   m463dll      board 0 turn 1/1  mg 463 (m463dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.26 ms  speed 100%  30.0 fps presented  tex 246/20877 KB  rss 217 MB  res 112/256 MB  cpu 2  rt 9.6 ms dec 5.4+0.0  machine ok  ur 19
+port> status f16260   m463dll      board 0 turn 1/1  mg 463 (m463dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.41 ms  speed 100%  29.0 fps presented  tex 332/22878 KB  rss 221 MB  res 112/256 MB  cpu 2  rt 19.3 ms dec 7.8+0.0  machine ok  ur 39
