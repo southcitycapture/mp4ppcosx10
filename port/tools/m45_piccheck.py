@@ -50,22 +50,35 @@ def runs(d):
     return out
 
 
+LIT_MIN = 250  # the lit half's samples (of 960) for a half-black to count
+
+
 def halfwatch(log):
-    hb = bl = None
+    """The run's half-black frames and blips.  The counter in the port is
+    sensitive (a half with no lit sample while the other has 32); a half-black
+    counts here only when the other half is a lit scene (LIT_MIN samples of
+    its 960): m416's dark room, lit by one moving lamp, has one half empty and
+    the other at 70-180 (the soak before 0.9.14's dmg, PLAN.md 60.11), where
+    m427's views have 325-660 each."""
+    seen = False
+    hb = bl = 0
     fault = 0
     exitbad = False
     if not os.path.exists(log):
-        return hb, bl, fault, True
+        return None, None, fault, True
     for line in open(log, errors="replace"):
-        m = re.search(r"halfwatch: \d+ frames checked \(every \d+\), (\d+) half-black(?:, (\d+) blips)?", line)
-        if m:
-            hb = int(m.group(1))
-            bl = int(m.group(2) or 0)
+        if re.search(r"halfwatch: \d+ frames checked", line):
+            seen = True
+        m = re.search(r"halfwatch: HALF BLACK #\d+ at frame \d+ \(the \w+ half; lit (\d+) / (\d+)\)", line)
+        if m and max(int(m.group(1)), int(m.group(2))) >= LIT_MIN:
+            hb += 1
+        if re.search(r"halfwatch: BLIP #\d+", line):
+            bl += 1
         if line.startswith("*** port"):
             fault += 1
         if "over the" in line and "ceiling" in line:
             exitbad = True
-    return hb, bl, fault, exitbad
+    return (hb if seen else None), (bl if seen else None), fault, exitbad
 
 
 def halves(im):

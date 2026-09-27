@@ -23412,16 +23412,21 @@ and the console (Dolphin) is shown to have no such frame.  **m427's black left
 half** (60.2) was reproduced to the photograph's moment -- the soak's own m427
 play in lockstep and, from a snapshot of it, six times at real time -- and
 never showed: ~19,700 frames of m427 counted by a new counter, none black.
-**The picture checks** (60.5) now dump and compare 713 frames against the
-previous release's and count every presented frame of their runs for
-half-black pictures and blips (`--halfwatch`); against M45's frames, 0.9.13
+**The picture checks** (60.5) now dump 584 frames of their own runs and
+pair the scoreboard's 178 with the previous release's, and count every
+presented frame of their runs for half-black pictures and blips
+(`--halfwatch`, ~45,700 frames); against M45's frames, 0.9.13
 fails on the Mega frames and is flagged on m427's pool, and a build with the
 old store is caught by the blip counter at the frame.  **The water** (60.6):
 Makin' Waves' waves 2.5x the console's with no sky, Cheep Cheep Sweep's pond
 drawn as water in two looks for the user to pick, and **Mario Medley's
 colour** found (a shadow map's background tinted by the frame's clear
 colour; the pool now matches the console's to 4 levels).  **The last nine**
-(60.7): one lever built and measured level; the scoreboard after (60.9): SEE.
+(60.7): one lever built and measured level; the scoreboard after (60.9):
+**73 of 82, none of M44's passes lost, none crossed** (the nine within their
+runs' spread), w01 29.2 pooled / 30.0 board-only.  The two-hour soak on the
+shipped build: 100.0% speed, 0 faults, no lock-up (60.11); 0.9.14's dmg
+(60.13).
 
 ### 60.1 The soak, read
 
@@ -23617,10 +23622,10 @@ flash.  Now (`tools/m45_chain.sh` `PC:ARM[:old]`, `tools/m45_piccheck.py`,
 | `L-m414`, `R-m414-1/-2` | the four-view game the same way | 7 + 2 + 2 | as above |
 | `T-mega` | the board's natural Mega Mushroom (turn 2 of `--board 1`: bought at 8,638, used at 14,443), lockstep, 14,530-14,545 every frame | 16 | 6,794 frames |
 | `T-item0` .. `T-item13` | each item kind handed to the COMs (`--giveitem N`), lockstep, 8,240-9,800 every 40th | 40 each (560) | 1,989 frames each |
-| the scoreboard's own dumps (`fps_board.sh`) | every minigame at +300 and +1,200, the front walk's three | 129 | -- |
+| the scoreboard's own dumps (`fps_board.sh`) | every minigame at +300 and +1,200 (and each three-run repeat), the front walk's three | 226 (178 paired with M44's) | -- |
 
-**713 frames compared picture for picture** with the previous release's
-(584 of the `PC:` set, 129 of the scoreboard's), **and ~43,000 presented
+**584 frames of the `PC:` set and the scoreboard's 178 frame pairs compared
+picture for picture** with the previous release's, **and ~45,700 presented
 frames counted for half-black pictures and blips** (the `PC:` runs'
 `--halfwatch 1`; 60.11's soak adds its two hours at every third presented
 frame).  The comparison (`m45_piccheck.py REF NEW`): identical (md5), or how it
@@ -23635,16 +23640,22 @@ more (a pool of light lost is 18%).  Exit status 1 on a FAIL.
   17-25) and **LOOK** on all nine m427 frames from +300 on (the lamp pool:
   the halves 18-23% darker), and passes m414 (identical to the byte).
 * `--halfwatch` on a build with the old wrapping store (`mp4-blipt`, the
-  one-line revert of 60.3's fix): **`BLIP #1 at frame 14535 (dark for 5
+  one-line revert of 60.4's fix): **`BLIP #1 at frame 14535 (dark for 5
   frames)`** and its `blip-f14535.ppm`; on M45's build 0 blips.
-* The half-black counter has never fired on the port (60.4); it is the one
-  the brief's (a) needs, and it counts in every `PC:` run and in the soak.
+* The half-black counter never fired on m427 (60.2); in the soak (60.11) it
+  fired on m416's dark room, whose lit half has 77-174 of its 960 samples --
+  so `m45_piccheck.py` counts a half-black only when the other half is a lit
+  scene (250 or more; m427's views have 325-660).
 
 **M45 against 0.9.13** (`PC:@w12` against `PC:@r13:old`, 21 runs): 584
 frames, 22 identical, 16 differ (the m427 river with its pool back: brighter,
 not darker; the Mega frames no longer black), 546 without a reference (the
 item runs: 0.9.13 has no `--giveitem`; M45's are the next release's
-reference), **0 failures, 0 half-black frames, 0 blips** in 43,000 checked.
+reference), **0 failures, 0 half-black frames, 0 blips** in ~45,700 checked.
+The soak (60.11) adds 72,980 frames at one in three: 9 half-black (m416's
+dark room, not counted by the lit-scene rule) and 6 blips (the game's own
+fades through black, byte-identical on 0.9.13; the rule's steepness is
+M46's).
 
 **For the next release** (the checklist's release line): `PC:@<previous
 bundle>` and `PC:@<candidate>` in the chain, the scoreboard as always, then
@@ -23768,7 +23779,7 @@ candidates; `docs/soak/m45-md5/`):
 | `9ce284e4` (w11) | + the refresh on off frames, the pond looks, the R8 copies as INTENSITY8 (248 s a walk against 199: 60.6d) | the same | the same |
 | `71f7e147` (w12) | the R8 region cleared grey in place of INTENSITY8 (199 s) | the same | the same |
 | `1acb5ab5` (the scoreboard's) | w12's code with `--vcposoff` off by default, 0.9.14 | the same | the same |
-| **`f13d9b21` (0.9.14, shipped)** | the tier line "73 of 82 ... 0.9.14" | **`0b58c5ee` / `2b99c60a` / `4a9a640c`** | **SEE_M** |
+| **`f13d9b21` (0.9.14, shipped)** | the tier line "73 of 82 ... 0.9.14" | **`0b58c5ee` / `2b99c60a` / `4a9a640c`** | **`d2d40344` / `59008ce4` / `3f98f882`** |
 
 None of M45's changes reaches a walk's frame: the water is not on the walks'
 screens and no walk frame is a board fade's last or a shadow over a coloured
@@ -23875,3 +23886,102 @@ m444), and for m463 the phase's own game thread (the object walk rewriting
 the panels, 7.9 of 23.2 M cycles, 59.5).  Every finding reproduces from its
 teleport: `A:GAME:ARM:K`, `K:GAME:1` (M44's counters' bundle), `FB:` for the
 scoreboard.
+
+### 60.11 The soak before the dmg
+
+`SX:120:base` of the chain on the shipped build (`isle` `f13d9b21`), 21:12-
+23:13 G4 time on 2026-09-26 (`isle --soak --com4 --rtc dolphin --freshcard
+--status --perf --stuckwatch 200 --ovllog --halfwatch 3 --frames 431520`;
+`docs/soak/m45-soak-final-120.log.gz`): **431,520 retraces in 7,199.7 s of
+wall, game clock 7,199.2 s -- 100.0%**; 205,303 frames presented (28.5 fps
+over everything, the boot, the movies and the loads included); **0 faults,
+0 skin guard hits, 0 resyncs, no lock-up**; the worst frame 665 ms behind
+the schedule, 168 `stall:` lines (loads), 76 underruns totalling 1.1 s; three
+`STUCK` lines, all the soak's own end-of-game walk (the mode select and the
+character select after turn 20, as in every soak since M40).  One whole 20-turn game and a second
+to turn 10: **40 minigames entered**.  The water drew 27,743 warped draws
+(10.4 M vertices; 474 refused as a copy of the picture, 473 as a coordinate
+a plain stage reads too).  The card: 32 writes, 65 image flushes, none waited
+for.  The disc: 2,886 reads, none over 100 ms.  rss 177 -> 287 MB.  The
+render stream: 519 M records, never full; the decode cursor ahead of every
+run (0 late).
+
+**The counters** (`--halfwatch 3`: 72,980 presented frames checked): **9
+half-black** and **6 blips**, each looked at.
+* The nine half-black frames are one stretch of m416 (251,154-251,226, the
+  frames written whole): its dark room, lit by one moving lamp, with the lamp
+  on the left -- the right half has no sample over 12 on the three rows and
+  the left 77-174 of its 960.  The console's own frames of m416
+  (`port/ref/frames/m416-console-*.png`) are as dark in play (110-120 lit
+  samples a half).  A lit scene's half has 250 or more (m427's views
+  325-660): `m45_piccheck.py` counts a half-black only then (`LIT_MIN`),
+  and none of the nine does.
+* The six blips are all "dark for 12 frames", the counter's window's edge.
+  The first (51,039, turn 6 of the board) shot in lockstep on the shipped
+  build and on 0.9.13 (`SF:bl1:@ship/@r13`, 51,000-51,066 every third
+  frame): **byte-identical on both builds**, and a fade: the scene's mean
+  111 -> 0 over 18 frames and back over 18 (the star space's scene to the
+  next player's turn).  The rule compares each check with the one before,
+  so a fade's last steps into black (6 -> 0 against a floor of 40) look like
+  a fall; at one check in three presented frames a fade through black fits
+  its window.  The Mega blip was 115 -> 17 in one frame.  **Next**: a blip
+  is a fall of at least 80% in one check from a lit frame -- a one-line
+  change to `rt.c`'s rule, left out of this build because the soaked binary
+  is the shipped one.
+
+### 60.12 What M45 shipped
+
+| | |
+|---|---|
+| `port/include/override/dolphin/os/OSFastCast.h` | the quantised stores saturate (60.4) |
+| `port/src/gx/gx_draw.c` | the projected coordinates as (s, t, 0, q) (`OUT_TEX_W`, `--affinetex`), the water's object-space positions (`water_pt`), the water look around the apply, the positions refresh on off frames (`vc_refresh_only`, `--vcposoff`, off) |
+| `port/src/gx/gx_vprog.c` | the water's position program (`gx_vprog_passthrough_ready/_bind`, `--nowaterpt`) |
+| `port/src/gx/gx_water.c`, `gx_internal.h` | the look: m417's gain and sky, m434's two ponds (`--waterlook`, `--wavegain`, `--pondlook`, `--pondmix`); the offsets on projected coordinates |
+| `port/src/gx/gl13.c`, `gl13_state.c`, `gx_tex.c` | the R8 shadow region cleared grey (`gl13_note_r8_region`, `--rgbcopy`); `glc_coord_array_n` (the coordinate array's size in the shadow) |
+| `port/src/gx/rt.c` | `--halfwatch N`: half-black frames and blips counted and shot |
+| `port/src/debug/selfplay.c` | `--giveitem N[,N..]` and `--giveitem log` |
+| `port/src/platform/main.c`, `machine.c`, `opt_fields.h`, `port/include/port.h` | the options, the config's `waterlook =` / `pondlook =`, 0.9.14, M45, the tier line's "73 of 82 ... 0.9.14" |
+| `port/tools/m45_chain.sh`, `m45_piccheck.py`, `m45_water.py` | the chain (M44's plus `R:`, `T:`/`TR:`, `SF:`/`SFR:`, `SX:`, `PC:`), the picture checks' comparison, the water's images |
+| `port/docs/fps-scoreboard.md`, `fps-scoreboard-m44-after.md`, `release-checklist.md`, `port/dist/Read Me.txt` | the scoreboard, M44's kept, the checklist's M45 state and two open lines, THE WATER's looks and 0.9.14's three pictures |
+| `port/docs/screenshots/m45-m427-lamps.jpg`, `m45-board-mega-blip.jpg`, `m45-water-m417.jpg`, `-m405.jpg`, `-m434.jpg`, `-m434-looks.jpg` | the findings and the water beside the console |
+| `port/docs/soak/m45-*` | the leave-behind's soak read, the black-half hunt (`m45-hunt/`), the Mega runs (`m45-mega/`), the picture checks (`m45-pc/`), the m463 A/B (`m45-ab/`), the water's runs (`m45-water/`), the walks (`m45-md5/`), the scoreboard (`m45-board/`), the soak |
+
+Off the repository: `~/mp4-sweep-work/capture_board.py` (the board with
+items poked, Dolphin) and `capture_efb.py` (an EFB-dump capture that dumped
+nothing on this Flatpak build: `GFX.Settings.DumpEFBTarget` wrote no file;
+not pursued).
+
+### 60.13 What is left running, and what M46 starts with
+
+On the G4, since 23:33 G4 time, on 0.9.14 (`isle` `f13d9b21`, the bundle
+`~/MarioParty4.app`; exec'd by the chain's `M45_LEAVE`; runner slot
+`~/isle.app` -> `MarioParty4-chain.app`, whose executable is
+`m45_chain.sh`):
+
+```
+isle --soak --com4 --rtc dolphin --freshcard --status --perf
+```
+
+log `~/isle-log.txt`, pid 79534.  The player's card and
+`~/memcard-backup.raw` untouched (every run `--freshcard`).  0.9.13 stays
+installed as `~/MarioParty4-m44.app` (and `~/mp4-r13.app`), 0.9.12 as
+`~/MarioParty4-m43.app` (`~/mp4-r12.app`); M45's bundles as `~/mp4-*.app`
+(`mp4-w8.app` the snapshot's -- keep it: `~/m45/snaps/f199300.snap` restores
+only into it --, `mp4-blipt.app` the old store for proving the blip counter,
+`mp4-m45sb.app` the scoreboard's, `mp4-ship.app` a link to the shipped); the
+chain settings `~/m45.env` and `~/fps-board.env` (`FB_DIR=$HOME/fps-board-m45`,
+`FB_THREE=auto`); the scoreboard's first pass of m414/m409/m401 in
+`~/fps-board-m45/first-pass/`.  The dmg: littlejelly
+`~/MarioParty4-PowerPC-0.9.14.dmg` (md5 `508a75c8cc15b8c9313f40d6ff852420`,
+4.4 MB; the G4 keeps `~/Mario Party 4 PowerPC Edition 0.9.14.dmg`), its
+`isle` the shipped `f13d9b21`.
+
+M46: the user's pick of the pond (sky or tint) and their word on the water's
+look; the blip rule's steepness (60.11); m427's black half if it is ever
+seen again (an F5 screenshot tells the port's frame from the display's);
+then 59.11's levers for the nine (class 1: the list walk and the job build as
+one pass, the parameters kept by their bytes; class 2: a positions-and-normals
+refresh for skinned lists), and the user's call on w01's rule.  **Rule
+learnt**: nothing polls the G4 more often than every few minutes while it
+times anything (60.9).  If the G4 ever locks up again: `--nofixbase` first,
+then `--nodcbz` and `--norastermemo`, `PROOF:120` the run to repeat (59.9).
