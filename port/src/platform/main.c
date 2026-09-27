@@ -352,6 +352,10 @@ static void usage(const char* argv0) {
             "                    (exact; measured level on m463, so off by default)\n"
             "  --nowaterpt       M45: the water's CPU-path positions as M44 (view space, identity)\n"
             "  --affinetex       M45: the CPU path's projected texcoords divided at the vertex\n"
+            "  --nolights        M46: the Bowser arena's pillar lights not drawn between two frames\n"
+            "                    at 30 fps (the four-frame shimmer then strobes: PLAN.md 61)\n"
+            "  --presentdump A-B M46: write every frame presented in A..B as it is shown\n"
+            "                    (present-fNNNNN.ppm; draws nothing extra, unlike --dumpframe)\n"
             "  --halfwatch N     M45: every Nth presented frame, count a half-black picture\n"
             "  --nodcbz          M44: no dcbz ahead of the render stream's / vertex ring's writes\n"
             "  --novpgen         M44: vertex-program parameters compared every draw (no generations)\n"
@@ -1335,6 +1339,12 @@ int port_parse_args(int argc, char** argv) {
             port_opt.nowaterpt = 1;
         } else if (!strcmp(a, "--affinetex")) {
             port_opt.affinetex = 1;
+        } else if (!strcmp(a, "--nolights")) {
+            port_opt.nolights = 1;
+        } else if (!strcmp(a, "--motlog") && i + 1 < argc) {
+            port_opt.motlog = atoi(argv[++i]);
+        } else if (!strcmp(a, "--presentdump") && i + 1 < argc) {
+            port_opt.presentdump = argv[++i];
         } else if (!strcmp(a, "--halfwatch") && i + 1 < argc) {
             port_opt.halfwatch = atoi(argv[++i]);
         } else if (!strcmp(a, "--nodcbz")) {

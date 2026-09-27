@@ -628,4 +628,7 @@ void gx_log_call(const char* name, const char* fmt, ...);
 extern int gx_force_flags;
 const char* port_drawobj_name(const void* mtx, int* model_index);
 
+/* M46 (PLAN.md 61): the Bowser arena's pillar lights at 30 fps (gx_lights.c) */
+void gx_lights_report(void);
+
 #endif

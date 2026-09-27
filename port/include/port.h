@@ -419,6 +419,9 @@ typedef struct PortOptions {
     int nowaterpt;          /* --nowaterpt  M45: the water's positions from the CPU (M44) */
     int affinetex;          /* --affinetex  M45: the CPU path divides by q at the vertex */
     int halfwatch;          /* --halfwatch N  M45: count half-black presented frames */
+    const char* presentdump; /* --presentdump A-B  M46: write the frames presented in A..B */
+    int motlog;             /* --motlog N  M46: every Nth frame, each animated model's motion */
+    int nolights;           /* --nolights  M46: the pillar lights as the frame drew them (gx_lights.c) */
     int nodcbz;             /* --nodcbz  M44: no dcbz ahead of the render stream's and the
                              *   vertex ring's writes (a store miss reads the line first) */
     int novpgen;            /* --novpgen  M44: the vertex program's parameters compared value by

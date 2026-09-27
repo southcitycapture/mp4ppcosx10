@@ -261,7 +261,15 @@ void GXSetArray(GXAttr attr, const void* data, u8 stride) {
 const void* gx_last_posmtx_caller;
 const void* gx_last_posmtx_arg;
 
+int gx_lights_posmtx(const void* mtx, u32 slot, f32 out[3][4]); /* M46: gx_lights.c */
+const void* gx_lights_nrmmtx(const void* mtx);
 void GXLoadPosMtxImm(const void* mtx, u32 id) {
+    /* M46 (PLAN.md 61): the Bowser arena's pillar lights, drawn between the
+     * game's two frames on a drawn frame after a consumed one (gx_lights.c) */
+    static f32 lights_mtx[3][4];
+    if (__builtin_expect(gx_lights_posmtx(mtx, id / 3, lights_mtx), 0)) {
+        mtx = lights_mtx;
+    }
     /* M22 (PLAN.md 37): with the pre-transform on, a new matrix ends no
      * batch here; batch_prepare decides, per primitive, whether the object
      * is transformed into the pending batch or the batch is flushed under
@@ -294,6 +302,7 @@ void GXLoadPosMtxImm(const void* mtx, u32 id) {
 void GXLoadNrmMtxImm(const void* mtx, u32 id) {
     /* the SDK takes a 3x3 written as the top-left of a 3x4 */
     u32 slot = id / 3;
+    mtx = gx_lights_nrmmtx(mtx); /* M46: the replaced position matrix's own */
     if (slot < 10) {
         const f32* m = (const f32*)mtx;
         int r;

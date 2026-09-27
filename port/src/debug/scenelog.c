@@ -108,6 +108,29 @@ void port_ovllog(void) {
              (int)omcurovl, (int)omnextovl, (int)omovlevtno);
 }
 
+/* M46 (PLAN.md 61): --motlog N -- every Nth frame, each model with a motion:
+ * its index, the motion's attributes and time window, and the HSF's first
+ * object (the pillar lights of the Bowser arena: which motion makes them
+ * pulse, and how long its loop is). */
+static void port_motlog(unsigned f) {
+    int i;
+    if (!port_opt.motlog || f % (unsigned)port_opt.motlog != 0) {
+        return;
+    }
+    for (i = 0; i < HU3D_MODEL_MAX; i++) {
+        const HU3DMODEL* m = &Hu3DData[i];
+        if (!m->hsf || m->motId < 0 || (m->attr & HU3D_ATTR_HOOKFUNC)) {
+            continue;
+        }
+        port_log("port> motlog f%u: model %d mot %d shift %d attr %08x motattr %08x time %.2f "
+                 "speed %.2f window %.2f..%.2f  (%s, %d objects)\n",
+                 f, i, (int)m->motId, (int)m->motIdShift, (unsigned)m->attr, (unsigned)m->motAttr,
+                 m->motWork.time, m->motWork.speed, m->motWork.start, m->motWork.end,
+                 m->hsf->object && m->hsf->objectNum > 0 && m->hsf->object[0].name
+                     ? m->hsf->object[0].name : "?", (int)m->hsf->objectNum);
+    }
+}
+
 void port_scenelog(void) {
     int i;
     int shown;
@@ -115,6 +138,7 @@ void port_scenelog(void) {
     unsigned f = gl13_frame_number();
     const char* p;
     int wanted = 0;
+    port_motlog(f);
     if (!port_opt.scenelog) {
         return;
     }

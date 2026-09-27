@@ -1541,10 +1541,27 @@ static void halfwatch_shot(const char* what, unsigned frame) {
         fclose(f);
     }
 }
+/* M46 (PLAN.md 61): the blip rule tightened -- a flash is a picture much
+ * darker than both its neighbours, and a neighbour is a steady picture:
+ *   * the fall: a check at most 20% as bright as the one before it (40 or
+ *     more), which was itself within 15% of the check before it (a fade's
+ *     last step comes out of a fall already under way);
+ *   * the return: back to 70% of the level before within 12 frames, the
+ *     darkest check at most 20% of the returning one, and the check after
+ *     the return within 15% of it (steady again -- a fade in is still
+ *     climbing; the count waits one check for it).
+ * The Mega Mushroom's frames (115 -> 17 in one frame and back) pass all
+ * three; the six fades of M45's soak fail the first.  M45's rule is still
+ * counted beside it (hw_blips45) so a run says what the old rule would have
+ * called.  Whether a blip is the game's own is the picture checks' question
+ * (tools/m46_flash.py: the previous release at the same moment). */
+static volatile unsigned hw_blips45, hw_blip_lum[3];
 static void halfwatch(unsigned frame) {
     static unsigned char row[640 * 4];
-    static unsigned lum_before, dark_from, dark_shot;
-    static int in_dark;
+    static unsigned lum_before, lum_before2, dark_from, dark_min;
+    static unsigned pend_frame, pend_len, pend_lum, pend_min, pend_before;
+    static unsigned lb45, df45;
+    static int in_dark, in45, pending;
     unsigned lit[2] = {0, 0}, lum = 0;
     int y, x;
     if (!port_opt.halfwatch || frame % (unsigned)port_opt.halfwatch != 0 || gl13_fullscreen()) {
@@ -1574,31 +1591,113 @@ static void halfwatch(unsigned frame) {
         }
         hw_black++;
     }
+    /* M45's rule, counted only */
+    if (!in45) {
+        if (lb45 >= 40 && lum * 100 < lb45 * 35) {
+            in45 = 1;
+            df45 = frame;
+        } else {
+            lb45 = lum;
+        }
+    } else if (lum * 100 >= lb45 * 70 || frame - df45 > 12) {
+        if (lum * 100 >= lb45 * 70 && frame - df45 <= 12) {
+            hw_blips45++;
+        }
+        in45 = 0;
+        lb45 = lum;
+    }
+    /* a return waiting for the check after it */
+    if (pending) {
+        pending = 0;
+        if (lum * 100 >= pend_lum * 85 && lum * 100 <= pend_lum * 115) {
+            hw_blip_frame = pend_frame;
+            hw_blip_len = pend_len;
+            hw_blip_lum[0] = pend_before;
+            hw_blip_lum[1] = pend_min;
+            hw_blip_lum[2] = pend_lum;
+            hw_blips++;
+        }
+    }
     if (!in_dark) {
-        if (lum_before >= 40 && lum * 100 < lum_before * 35) {
+        if (lum_before >= 40 && lum * 100 <= lum_before * 20 &&
+            lum_before * 100 >= lum_before2 * 85 && lum_before * 100 <= lum_before2 * 115) {
             in_dark = 1;
             dark_from = frame;
-            dark_shot = 0;
+            dark_min = lum;
             if (hw_blips < 8) {
                 halfwatch_shot("blip", frame);
-                dark_shot = 1;
             }
         } else {
+            lum_before2 = lum_before;
             lum_before = lum;
         }
     } else if (lum * 100 >= lum_before * 70) {
-        if (frame - dark_from <= 12) {
-            hw_blip_frame = dark_from;
-            hw_blip_len = frame - dark_from;
-            hw_blips++;
+        if (frame - dark_from <= 12 && dark_min * 100 <= lum * 20) {
+            pending = 1;
+            pend_frame = dark_from;
+            pend_len = frame - dark_from;
+            pend_lum = lum;
+            pend_min = dark_min;
+            pend_before = lum_before;
         }
         in_dark = 0;
-        lum_before = lum;
+        lum_before2 = lum_before = lum;
     } else if (frame - dark_from > 12) {
         in_dark = 0; /* a fade or a wipe: slower than a blip */
-        lum_before = lum;
+        lum_before2 = lum_before = lum;
+    } else {
+        if (lum < dark_min) {
+            dark_min = lum;
+        }
     }
 }
+/* M46 (PLAN.md 61): --presentdump A-B -- every frame presented in A..B
+ * written as it is shown, from the thread that swaps: unlike --dumpframe,
+ * which makes the frame mode draw the frames it wants, this changes nothing
+ * about which frames are drawn (the pillar lights at 30 presented frames a
+ * second).  A diagnostic: a whole frame costs the render thread ~10 ms,
+ * so `A-B:X,Y,W,H` (or `=`) writes a box (from the top left) instead. */
+static void presentdump(unsigned frame) {
+    static unsigned lo, hi;
+    static int parsed, bx, by, bw = 640, bh = 480;
+    static unsigned char px[640 * 480 * 3];
+    const char* c;
+    char path[1024];
+    FILE* f;
+    int y;
+    if (!port_opt.presentdump) {
+        return;
+    }
+    if (!parsed) {
+        parsed = 1;
+        if (sscanf(port_opt.presentdump, "%u-%u", &lo, &hi) != 2) {
+            lo = hi = (unsigned)atoi(port_opt.presentdump);
+        }
+        c = strpbrk(port_opt.presentdump, ":="); /* A-B:X,Y,W,H -- a box (from the top left) */
+        if (c && sscanf(c + 1, "%d,%d,%d,%d", &bx, &by, &bw, &bh) == 4 && bx >= 0 && by >= 0 &&
+            bw > 0 && bh > 0 && bx + bw <= 640 && by + bh <= 480) {
+        } else {
+            bx = by = 0;
+            bw = 640;
+            bh = 480;
+        }
+    }
+    if (frame < lo || frame > hi || gl13_fullscreen()) {
+        return;
+    }
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glReadPixels(bx, 480 - by - bh, bw, bh, GL_RGB, GL_UNSIGNED_BYTE, px);
+    snprintf(path, sizeof(path), "%s/present-f%05u.ppm", port_opt.shotdir ? port_opt.shotdir : ".", frame);
+    f = fopen(path, "wb");
+    if (f) {
+        fprintf(f, "P6\n%d %d\n255\n", bw, bh);
+        for (y = bh - 1; y >= 0; y--) {
+            fwrite(px + (size_t)y * bw * 3, 1, (size_t)bw * 3, f);
+        }
+        fclose(f);
+    }
+}
+
 /* the game thread's side: one line per new half-black frame or blip seen */
 void rt_halfwatch_report(int final) {
     static unsigned told, told_blips;
@@ -1612,18 +1711,19 @@ void rt_halfwatch_report(int final) {
     }
     if (hw_blips != told_blips) {
         told_blips = hw_blips;
-        port_log("port> halfwatch: BLIP #%u at frame %u (dark for %u frames)\n", told_blips,
-                 hw_blip_frame, hw_blip_len);
+        port_log("port> halfwatch: BLIP #%u at frame %u (dark for %u frames; %u -> %u -> %u)\n",
+                 told_blips, hw_blip_frame, hw_blip_len, hw_blip_lum[0], hw_blip_lum[1], hw_blip_lum[2]);
     }
     if (final) {
-        port_log("port> halfwatch: %u frames checked (every %d), %u half-black, %u blips\n",
-                 hw_checked, port_opt.halfwatch, hw_black, hw_blips);
+        port_log("port> halfwatch: %u frames checked (every %d), %u half-black, %u blips (M45's rule: %u)\n",
+                 hw_checked, port_opt.halfwatch, hw_black, hw_blips, hw_blips45);
     }
 }
 
 void rt_present(unsigned frame) {
     if (!rt_recording) {
         halfwatch(frame);
+        presentdump(frame);
         SDL_GL_SwapWindow(win);
         return;
     }
@@ -1887,6 +1987,7 @@ static void replay_one(const Hdr* h) {
             double t = now();
             double tail = t - a->t_rec;
             halfwatch(a->frame);
+            presentdump(a->frame);
             SDL_GL_SwapWindow(win);
             gx_rtgx_rt_present(); /* M43: the translation's time this frame, published */
             st_tail_s += tail;

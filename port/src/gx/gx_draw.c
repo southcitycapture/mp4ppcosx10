@@ -477,6 +477,7 @@ void gx_draw_report(void) {
         }
     }
     vc_report();
+    gx_lights_report(); /* M46 */
     if (!stat_prims) {
         return;
     }
