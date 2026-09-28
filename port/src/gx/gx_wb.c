@@ -258,7 +258,9 @@ void port_wb_ends(const void* ptr, size_t n, const u8** h, size_t* hn, const u8*
 }
 
 /* a kernel write (or a free) is coming to [ptr, ptr+n): unprotect its pages */
+void port_skinwatch_open(const void* ptr, size_t n); /* M48: gx_skin.c (--skinreadwatch) */
 void port_wb_disarm(const void* ptr, size_t n) {
+    port_skinwatch_open(ptr, n);
     uintptr_t s = (uintptr_t)ptr & ~(uintptr_t)(WB_PAGE - 1), e = (uintptr_t)ptr + n;
     unsigned long a, b, p, run = 0;
     if (wb_on != 1 || !n || e <= wb_lo || s >= wb_hi) {

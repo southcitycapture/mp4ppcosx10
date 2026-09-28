@@ -482,11 +482,20 @@ typedef struct PortOptions {
                              *   thread's cycle is over this (29 ms) */
     int vcarr_from, vcarr_to; /* --vcarr A,B  M43: the vertex cache's reasons per display
                              *   list, frames A..B from the minigame's entry (PLAN.md 58.5) */
+    int drawhash_from, drawhash_to; /* --drawhash A,B  M48: every batch of frames A..B hashed
+                             *   (its vertices) and named, a diagnostic (PLAN.md 63) */
+    int nofreemat;          /* --nofreemat  M48: the skin decode's owed arrays not written
+                             *   before the game frees them (M47's --skindecode) */
+    int texmtxlog;          /* --texmtxlog ID  M48: every GXLoadTexMtxImm of that id logged */
+    int maxbatchverts;      /* --maxbatchverts N  M48: a batch flushed before it would pass N
+                             *   vertices, a diagnostic (PLAN.md 63) */
     int skinreadwatch;      /* --skinreadwatch  M48: a diagnostic -- under --skindecode, the owed
                              *   skin arrays' pages unreadable, the code that touches them named
                              *   (src/gx/gx_skin.c; PLAN.md 63) */
     int nocompiled;         /* --nocompiled  M48: every draw's translation derived again (the
                              *   compiled draw's record blocks off; src/gx/gx_draw.c, PLAN.md 63) */
+    int compiled_mode;      /* --compiled auto|on  M48: 1 = auto (the gate, the default), 2 = on */
+    int nocompiledpf;       /* --nocompiledpf  M48: the compiled draw's blocks not prefetched */
     int compiled_mb;        /* --compiledmb N  M48: the blocks' memory (default 8) */
     int glists;             /* --glists  M48: a draw wholly in the vertex cache's region is
                              *   compiled into a GL display list on its second sight and

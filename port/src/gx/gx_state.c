@@ -324,6 +324,14 @@ void GXLoadNrmMtxImm(const void* mtx, u32 id) {
 }
 
 void GXLoadTexMtxImm(const void* mtx, u32 id, GXTexMtxType type) {
+    if (__builtin_expect(port_opt.texmtxlog != 0, 0) && id == (u32)port_opt.texmtxlog) {
+        /* M48 (PLAN.md 63.7): --texmtxlog ID, every load of one texture
+         * matrix with its frame (m427's river hook counted) */
+        const f32* m = (const f32*)mtx;
+        unsigned gl13_frame_number(void);
+        port_log("texmtx> f%u id %u %g %g %g %g / %g %g %g %g\n", gl13_frame_number(), id, m[0],
+                 m[1], m[2], m[3], m[4], m[5], m[6], m[7]);
+    }
     u32 slot;
     if (id >= GX_PTTEXMTX0) {
         slot = (id - GX_PTTEXMTX0) / 3 + 10;

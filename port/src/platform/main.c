@@ -365,11 +365,11 @@ static void usage(const char* argv0) {
             "                    poll (the controls file's table or the built-in one), logged\n"
             "  --dcbtdist N      M46: the decode loops prefetch the array entries N\n"
             "                    vertices ahead (default 1, the next vertex)\n"
-            "  --skindecode      M47 (opt-in): skinned meshes skinned at the decode from the\n"
-            "                    rest pose, their arrays left unwritten -- exact where only\n"
-            "                    the draw reads them; m427 shows a reader that is not\n"
-            "                    (PLAN.md 62.10), so off by default\n"
-            "  --noskindecode    the default: the deferred body writes the arrays (M18..M46)\n"
+            "  --skindecode      M47, the default since M48: skinned meshes skinned at the\n"
+            "                    decode from the rest pose, their arrays written only for a\n"
+            "                    reader that is not the draw -- and as the game frees them\n"
+            "                    (--nofreemat: not; PLAN.md 63.7)\n"
+            "  --noskindecode    the deferred body writes the arrays (M18..M47)\n"
             "  --skinverify      M47: both -- the arrays written and the skin at the\n"
             "                    decode, every fused position/normal compared bit for bit\n"
             "  --vcskinnotice    M47 (opt-in): the skin body names its two arrays to the\n"
@@ -412,7 +412,9 @@ static void usage(const char* argv0) {
             "  --rtgxfit MS      M43: --rtgx auto only while the game thread's cycle is over MS\n"
             "  --vcarr A,B       M43: the vertex cache's served/missed vertices per display\n"
             "                    list, frames A..B from the minigame's entry, at exit\n"
-            "  --nocompiled      M48: no compiled draws (every draw's translation derived again)\n"
+            "  --compiled auto|on|off  M48: the compiled draws, off by default (auto: where a\n"
+            "                    replay is measured cheaper than the full path; PLAN.md 63)\n"
+            "  --nocompiled      M48: no compiled draws (the default)\n"
             "  --compiledmb N    M48: the compiled draws' memory, MB (default 8)\n"
             "  --glists          M48: draws of the vertex cache's region compiled into GL\n"
             "                    display lists (--glistsmb N: their bytes, default 8)\n"
@@ -805,12 +807,14 @@ int port_parse_args(int argc, char** argv) {
     port_opt.rtdecode = -1; /* M29: the decode on the render thread when there is one */
     port_opt.rtauto_fit_ms = 30.0; /* M33: auto's dead band, two retraces less a margin */
     port_opt.rtauto_max = 0.75;
-    /* M47 (PLAN.md 62.10): the skin at the decode is opt-in (--skindecode): with
-     * the arrays left unwritten m427's river differs from 0.9.15 in the picture
-     * checks although every skinned vertex it decodes is exact -- some reader
-     * other than the draw sees the arrays (not identified; the teleport
-     * L:m427 with --skindecode reproduces it) */
-    port_opt.noskindecode = 1;
+    /* M47 (PLAN.md 62.10) made the skin at the decode opt-in: with the arrays
+     * left unwritten m427's river differed from 0.9.15.  M48 (PLAN.md 63.7)
+     * found the reader: m427's river hook never sets its ripple phase and
+     * reads the model heap's leftover bytes -- freed skin arrays among them;
+     * the owed arrays are now written as the game frees them (--nofreemat the
+     * M47 behaviour), and the skin decode is the default (--noskindecode the
+     * deferred body, M18..M46) */
+    port_opt.noskindecode = 0;
     /* M47 (PLAN.md 62.11): the skin body's precise notice to the vertex cache is
      * opt-in (--vcskinnotice): on m433 it cost 0.6 ms of the drawn frame and
      * the screen's pass (29.0 against 30.0 with the epoch, three runs each) */
@@ -831,6 +835,8 @@ int port_parse_args(int argc, char** argv) {
     port_opt.dcbtdist = 1;    /* M46: the decode loops prefetch the next vertex (--dcbtdist) */
     port_opt.glists_mb = 8; /* M48 */
     port_opt.compiled_mb = 8; /* M48 */
+    port_opt.compiled_mode = 1; /* M48: auto when asked for */
+    port_opt.nocompiled = 1;    /* M48: measured, no screen gained (PLAN.md 63.5): opt-in */
     port_opt.rtgx = 0;       /* M43: the render thread's translation: measured, off (PLAN.md 58.2) */
     port_opt.wbpart = 1;     /* M43: the barrier on the partial end pages too (PLAN.md 58.4, 58.10) */
     port_opt.water = -1;     /* M44: auto (PLAN.md 59) */
@@ -1488,12 +1494,26 @@ int port_parse_args(int argc, char** argv) {
             if (sscanf(argv[++i], "%d,%d", &port_opt.vcarr_from, &port_opt.vcarr_to) != 2) {
                 port_opt.vcarr_from = port_opt.vcarr_to = 0;
             }
+        } else if (!strcmp(a, "--drawhash") && i + 1 < argc) {
+            if (sscanf(argv[++i], "%d,%d", &port_opt.drawhash_from, &port_opt.drawhash_to) != 2) {
+                port_opt.drawhash_from = port_opt.drawhash_to = 0;
+            }
+        } else if (!strcmp(a, "--nofreemat")) {
+            port_opt.nofreemat = 1;
+        } else if (!strcmp(a, "--texmtxlog") && i + 1 < argc) {
+            port_opt.texmtxlog = (int)strtol(argv[++i], NULL, 0);
+        } else if (!strcmp(a, "--maxbatchverts") && i + 1 < argc) {
+            port_opt.maxbatchverts = atoi(argv[++i]);
         } else if (!strcmp(a, "--skinreadwatch")) {
             port_opt.skinreadwatch = 1;
         } else if (!strcmp(a, "--nocompiled")) {
             port_opt.nocompiled = 1;
-        } else if (!strcmp(a, "--compiled")) {
-            port_opt.nocompiled = 0;
+        } else if (!strcmp(a, "--nocompiledpf")) {
+            port_opt.nocompiledpf = 1;
+        } else if (!strcmp(a, "--compiled") && i + 1 < argc) {
+            const char* v = argv[++i];
+            port_opt.nocompiled = !strcmp(v, "off") || !strcmp(v, "0");
+            port_opt.compiled_mode = !strcmp(v, "on") || !strcmp(v, "2") ? 2 : 1;
         } else if (!strcmp(a, "--compiledmb") && i + 1 < argc) {
             port_opt.compiled_mb = atoi(argv[++i]);
         } else if (!strcmp(a, "--glists")) {

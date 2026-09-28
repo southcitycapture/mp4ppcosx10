@@ -1,0 +1,1813 @@
+Mario Party 4 -- native port, PowerPC Edition 0.9.16 (milestone M47)
+port> machine: model PowerMac3,5, 2 CPUs at 1000 MHz, 7450 (G4), AltiVec yes, 1536 MB RAM, Mac OS X 10.5.4
+port> machine: GL ATI Technologies Inc. / ATI Radeon 9000 OpenGL Engine / 1.3 ATI-1.5.28, VRAM 64 MB, 6 texture units, max texture 2048
+port> machine:   GL_ARB_multitexture                  present  required
+port> machine:   GL_ARB_texture_env_combine           present  required
+port> machine:   GL_ARB_texture_env_crossbar          present  required
+port> machine:   GL_ATI_texture_env_combine3          present  required
+port> machine:   GL_EXT_secondary_color               present  required
+port> machine:   GL_ARB_vertex_program                present  degraded without
+port> machine:   GL_APPLE_vertex_array_range          present  degraded without
+port> machine:   GL_APPLE_fence                       present  degraded without
+port> machine:   GL_EXT_multi_draw_arrays             present  degraded without
+port> machine:   GL_EXT_blend_subtract                present  degraded without
+port> machine:   GL_EXT_gpu_program_parameters        present  optional
+port> machine:   GL_EXT_fog_coord                     present  optional
+port> machine:   GL_EXT_texture_compression_s3tc      present  optional
+port> machine:   GL_ARB_depth_texture                 MISSING  optional
+port> machine:   GL_ATI_text_fragment_shader          present  not used
+port> machine: verdict ok
+port> machine:   - every probe within the G4's envelope
+port> machine: tier: the reference class (dual 1 GHz G4, 64 MB Radeon 9000 or better), whose promise is 30 fps everywhere: 75 of 82 screens there today (0.9.16, docs/fps-scoreboard.md)
+port> machine: applying --resident 256 (1536 MB of RAM; 0 under 768 MB, 128 at 1 GB, 256 at 1.5 GB+, 584 MB kept for the OS and the game)
+port> machine: the roulette prefetch is on (every machine; --noprefetch)
+port> machine: coroutine stacks x2 over the game's sizes (the default since M31; --stackmul N)
+port> DVD: disc image /Users/zach/MarioParty4/mp4.nkit.iso, 357 files in the FST
+port> GL: ATI Radeon 9000 OpenGL Engine / 1.3 ATI-1.5.28, 6 texture units
+port> GL feature set used: combine3 1, crossbar 1, s3tc 1, blend_subtract 1, depth_texture 0, text_fragment_shader 1, 6 units
+---- vprog probe ----
+GL_ARB_vertex_program                     present
+MAX_PROGRAM_INSTRUCTIONS            262144
+MAX_PROGRAM_NATIVE_INSTRUCTIONS        128
+MAX_PROGRAM_PARAMETERS                1024
+MAX_PROGRAM_NATIVE_PARAMETERS          192
+MAX_PROGRAM_TEMPORARIES              65535
+MAX_PROGRAM_NATIVE_TEMPORARIES          12
+MAX_PROGRAM_ATTRIBS                     32
+MAX_PROGRAM_NATIVE_ATTRIBS              16
+MAX_PROGRAM_ADDRESS_REGISTERS            2
+MAX_PROGRAM_ENV_PARAMETERS             256
+MAX_PROGRAM_LOCAL_PARAMETERS          1024
+GL_EXT_gpu_program_parameters       present (one call per palette upload)
+trivial program            loaded, 6 instructions (6 native), under native limits: YES
+palette program (ARL)      loaded, 10 instructions (15 native), under native limits: YES
+matrix palette             18 slots of 6 params from env[82]
+---- end vprog probe ----
+port> cpu: 2 cores (hw.ncpu); workers ON
+port> loader: prefetch on (a thread); resident set 256 MB: 73 of the list's 73 files fit (103.1 of 103.1 MB), filling on the thread
+port> vertex ring: 8192 KB in 4 chunks (+8192 KB static-geometry cache), vertex_array_range on, multi_draw_arrays yes
+port> render thread: on, overlapped (the join at the gate) (--renderthread 3); stream 16384 KB
+port> render thread: the display-list decode split per drawn frame between the two threads (auto, M33) (--rtdecode 3)
+port> options: Mario Party 4 PowerPC Edition 0.9.16 (M47), the effective options
+port> options: machine       ok: PowerMac3,5, 2 x 1000 MHz 7450 (G4), 1536 MB RAM, ATI Radeon 9000 OpenGL Engine, 64 MB VRAM, 6 units, OS 10.5.4
+port> options: disc image    /Users/zach/MarioParty4/mp4.nkit.iso
+port> options: data folder   /Users/zach/Library/Application Support/MarioParty4  (card image, config, log)
+port> options: log           (stdout only)
+port> options: fullscreen    0  (--noconfig: not remembered)
+port> options: cores         2; workers on (--threads -1); render thread mode 3 (--renderthread -1: 0 direct, 1 inline twin, 2 joined, 3 overlapped); decode on it 3 (--rtdecode; 3 = auto)
+port> options: pacing        lockstep (deterministic clock); stack multiplier x2; texture budget 40 MB; resampler linear, depop on
+port> options: loading       roulette prefetch on (--noprefetch); resident set 256 MB (--resident MB; the machine check's rule by the installed RAM)
+port> options: every field of PortOptions (0/NULL = off or unset):
+port> options:   image=/Users/zach/MarioParty4/mp4.nkit.iso  log=NULL  gxlog=0  deterministic=1  
+port> options:   stub_trace=0  max_frames=20000  turbo=0  watchdog=0  verbose=0  reldir=NULL  gxdemo=0  
+port> options:   reltest=0  memmap=0  guardtest=NULL  relzerobss=0  nodatareset=0  noaudio=0  glcheck=0  
+port> options:   glinfo=0  seed=3838914000000000  perf=1  gxsplit=0  drawlog=0  dumptex=0  texhash_full=0  
+port> options:   gxwarn=0  headless=0  dumpframe=NULL  
+port> options:   shotdir=/Users/zach/m48/L-m427-@m48f,--drawhash,14776+14777  scale=0  drawlog_frame=0  
+port> options:   nocard=0  reldlclose=0  nopad=0  pad_debug=0  kbport=0  pad_play=board-start-com4.play  
+port> options:   pad_record=NULL  scenelog=NULL  ovllog=1  nanwatch=0  wav=NULL  mute=0  audiolog=0  
+port> options:   rtc=1041472800  rtc_set=1  rtc_seen=1  rtc_offset=0  card=NULL  freshcard=1  
+port> options:   minigame=m427  com4=1  cast=NULL  dvdheap=0  turns=1  status=1  stuckwatch=0  soak=0  
+port> options:   depop=1  resample4=0  clickstat=0  dlcache=0  vcache=3  vcache_mb=8  vcache_fit=28  
+port> options:   vcache_vbo=0  cardwait=0  synclog=0  noaicb=0  olddecode=0  perfwin=NULL  nodraw=1  
+port> options:   ffto=14000  ffto_warm=1  snap_every=0  snap_keep=3  snap_dir=NULL  restore=NULL  
+port> options:   snap_now=0  snapdiff=0  vprobe=0  cpuxf=0  vprogstats=0  vproglog=0  oldtev=0  
+port> options:   tevstats=0  oldnulltev=0  tlutlog=0  oldsubmit=0  novar=0  batchmax=0  segrebase=0  
+port> options:   gltrace=0  endlog=NULL  nomerge=0  nomultidraw=0  noindexed=1  nohilite=0  noenvbulk=0  
+port> options:   nofixbase=0  submitstats=0  nohilitetex=0  nocopyhalf=0  copylog=0  noefbflip=0  
+port> options:   oldfirsthash=0  norekey=0  dumpcopy=0  notint=0  tintlog=0  texdecodelog=0  threads=-1  
+port> options:   nomixthread=0  renderthread=-1  rtsplit=0  rtgate_ms=4  stackmul=2  rtdecode=-1  
+port> options:   rtauto_fit_ms=30  rtauto_max=0.75  fake_machine=NULL  machinecheck=0  force=0  
+port> options:   mgdump=300,1200  mgend=1300  viewtexgen=0  nrmfrac0=0  vtxdivide=0  mghold=0  
+port> options:   fullscreen=0  fullscreen_set=0  noconfig=1  print_defaults=0  print_keys=0  
+port> options:   texbudget_set=0  predecode=0  predecodelog=0  regfix2dbg=0  lazyflush=0  premerge_max=0  
+port> options:   cmpmask=8191  oldkonst=0  tfs=0  tfsprobe=0  tfslog=0  tfsdbg=0  tfsnorebind=0  
+port> options:   tfscopycpu=0  tfssqcopy=0  tfsmtx=0  tfsforcebind=0  tfsenvreset=0  tfsdump=0  tfsall=0  
+port> options:   oldspec0=0  nolitalpha=0  oldczero=0  clrasclr=0  nohoistmtx=0  nofastconcat=0  
+port> options:   nostripes=0  nounitmemo=0  norotmemo=0  nopacklights=0  nofastsin=0  nomtxmemo=0  
+port> options:   norotl=0  nowb=0  notexskip=0  nostripepool=0  giveitem=NULL  waterlook=1  pondlook=0  
+port> options:   pondmix=0  wavegain=0  rgbcopy=0  novcposoff=1  nowaterpt=0  affinetex=0  halfwatch=0  
+port> options:   presentdump=NULL  motlog=0  nolights=0  nopendlast=0  noskindecode=1  skinverify=0  
+port> options:   oldvcskin=1  fullskinsig=0  noskindcbz=0  skinfree=0  oldwake=0  skinround=0  skinvec=0  
+port> options:   dcbtdist=1  keytest=NULL  oldscissor=0  readbacktest=0  nodcbz=0  novpgen=0  
+port> options:   notevdirty=0  noattrmemo=0  nowordhash=0  water=-1  watergrid=1  norastermemo=0  
+port> options:   novcpos=0  wbpart=1  oldvtxjoin=0  rtgx=0  rtgx_fit=29  maxbatchverts=0  skinreadwatch=0  
+port> options:   nocompiled=1  compiled_mode=1  nocompiledpf=0  compiled_mb=8  glists=0  glists_mb=8  
+port> options:   pmc=0  nomotionexec=0  nodirtyfilter=0  nodirty=0  oldakonst=0  mdposonly=0  mdmax=0  
+port> options:   nospot=0  oldfog=0  noregchain=0  nocarry=0  forceobj=NULL  forceobj_flags=0  
+port> options:   skipobj=NULL  zprepass=1  probeverts=0  skipverts=0  probeobj=NULL  nolinewidth=0  
+port> options:   noregfix=0  realtime=0  lockstep=1  maxskip=0  
+port> options:   perfdump=/Users/zach/m48/L-m427-@m48f,--drawhash,14776+14777.csv  mpgl=0  olddecode2=0  
+port> options:   altivec=0  nodcbt=0  olddecode3=0  decodestats=0  audiolead_set=0  audiolead=100  
+port> options:   cpuskin=0  palette=0  nopalette=0  skinstats=0  palsize=0  palnoarl=0  palnofog=0  
+port> options:   noskinlifetime=0  restore_lax=0  skindeferall=0  mixtrace=NULL  mixcheck=0  nosincos=0  
+port> options:   snapsync=0  nomatwalk=0  nocurvememo=1  nosparsemtx=0  nofastsqrt=1  nodraw_user=0  
+port> options:   noprefetch=0  resident=256  dvdlog=0  nomovies=1  thpyuv=0  gotoovl=NULL  board=0  
+port> options:   boardcycle=0  boarddump=NULL  foldxbar=0  foldcap=0  thplog=0  nothpslice=0  
+port> options:   thpguard_set=0  thpguard=60  
+port> audio: 32000 Hz, 2 ch, 512-frame buffer, 256 KB ring (2048 ms)
+port> --minigame m427: parking the roulette on m427dll (mg 427, type 2)
+port> --com4: all four players are CPU; instDll will dismiss its own instruction screen (src/REL/instDll/main.c:294)
+port> --nodraw: the GX command streams are consumed and nothing is drawn
+port> --ffto 14000: drawing is off until frame 14000 (warm-up 1)
+port> frame mode: lockstep (--lockstep)
+port> entering the game's own main()
+
+port> OSInit: MEM1 24 MB [0x3970000, 0x5170000), ARAM 16 MB, bus 162 MHz
+port> OSInit: RTC pinned to 1041472800 (2003-01-02T02:00:00Z), OSGetTime origin 3838914000000000 ticks
+port> DVDInit
+port> VIInit
+port> controls: a scripted run (--play/--record/--soak/--noconfig/--com4/--nopad): PowerPCube's controls file and gamecontrollerdb.txt are not read
+port> PADInit: controller 1 = keyboard
+port> PADInit: rumble not available on controller 1
+port> PADInit: controllers 2-4 unplugged (reference config: CPU players)
+port> pad: --play: board-start-com4.play -> /Users/zach/mp4-m48f.app/Contents/Resources/movies/board-start-com4.play
+port> pad: --play board-start-com4.play: 460 directives, 0 marks
+port> OSCreateHeap 0: 0x3a9c000..0x5170000 (23375 KB)
+port> VIConfigure: 640x480 xfb, 640x480 efb, tv mode 0
+port> GXInit: FIFO 0x3a9c00c, 1048576 bytes (the port keeps no FIFO; the write-gather writers are ordinary calls under TARGET_PC)
+port> frame 1: overlay 0 (next 0) event 0
+port> loader: list sound/mpgcsnd.msm 36823392 bytes in 485 ms, resident (asked at frame 0, done at 1)
+port> loader: list sound/mpgcstr.pdt 11375928 bytes in 108 ms, resident (asked at frame 0, done at 1)
+port> roulette: frame 1 dealt mg 401 (m401dll, type 0)  -- overridden by --minigame
+port> OSCreateThread 0x259448 func 0x41bfc (the soft-reset watcher; polled once per retrace, not run on a thread)
+HuMem> left memory space 2383KB(2441120)
+port> ARInit: 16 MB of ARAM
+port> MusyX SAL: 32000 Hz, 4 x 640-byte AI buffers (20 ms), 32-sample sub-frame
+port> musyx_mix: CPU mixer up, 50 voices, 1 studios, 32000 Hz
+port> MusyX SAL: mixing started
+port> musyx_aram: region [0x000000, 0x800000) zero_buf [0x000000, 0x000500) sample heap starts at 0x000500
+port> AI: DMA callback registered (one call per 160-sample DSP frame)
+port> CARD: --freshcard with no --card: using the scratch image /Users/zach/Library/Application Support/MarioParty4/scratch-slot-a.raw
+            rather than formatting the save file next to it
+port> CARD: slot A = /Users/zach/Library/Application Support/MarioParty4/scratch-slot-a.raw (--freshcard: formatted, 59 free blocks)
+port> workers: the game thread's FPSCR control bits are 0x00 at job 0 (NI 0, RN 0)
+DLL DBG OUT
+objman>Call New Ovl 1(1)
+port> frame 2: overlay -1 (next 1) event 0
+++++++++++++++++++++ Start New OVL 1 (EVT:0 STAT:0x00000000) ++++++++++++++++++
+======== HuMem heap dump 03b9c018 ========
+MCB-----+Size----+MG+FL+Prev----+Next----+UNum----+Body----+Call----
+03b9c018 0000a020 a5 01 03baa1f8 03ba6038 ffffff00 03b9c038 000083b4
+03ba6038 000041c0 a5 01 03b9c018 03baa1f8 ffffff00 03ba6058 0003c048
+03baa1f8 00231e20 cd 00 03ba6038 03b9c018 00000000 03baa218 0003c048
+MCB:3(2/1) MEM:00240000(0000e1e0/00231e20)
+======== HuMem heap dump 03b9c018 end =====
+======== HuMem heap dump 03f1c030 ========
+MCB-----+Size----+MG+FL+Prev----+Next----+UNum----+Body----+Call----
+03f1c030 00a80000 cd 00 03f1c030 03f1c030 ffffff00 03f1c050 cdcdcdcd
+MCB:1(0/1) MEM:00a80000(00000000/00a80000)
+======== HuMem heap dump 03f1c030 end =====
+======== HuMem heap dump 0499c03c ========
+MCB-----+Size----+MG+FL+Prev----+Next----+UNum----+Body----+Call----
+0499c03c 00580000 cd 00 0499c03c 0499c03c ffffff00 0499c05c cdcdcdcd
+MCB:1(0/1) MEM:00580000(00000000/00580000)
+======== HuMem heap dump 0499c03c end =====
+objman>Used Memory Size:0000e1e0
+objman>Used Memory Cnt:2
+objman>Init esp
+objman>Call objectsetup
+DLLStart 1 0
+Search:dll/bootdll.rel
+objdll>Link DLL:dll/bootdll.rel
+Rest Memory 580000
+port> REL bundles: 99 in /Users/zach/mp4-m48f.app/Contents/MacOS/rels
+===== DLL Module Info dump ====
+                   ID:0x00000001
+             LinkPrev:0x00000000
+             LinkNext:0x00000000
+          Section num:14
+Section info tbl ofst:0x00000048
+           nameOffset:0x00000000
+             nameSize:47
+              version:0x00000002
+===============================
+==== DLL Module Header dump ====
+          bss Size:0x0000005c
+        rel Offset:0x00005c9d
+        imp Offset:0x00007a4d
+    prolog Section:1
+    epilog Section:1
+unresolved Section:0
+       prolog func:0x00000000
+       epilog func:0x00000054
+   unresolved func:0x00000000
+================================
+objdll>LinkOK 03baa578 30100000
+objdll> dll/bootdll.rel prolog start
+******* Boot ObjectSetup *********
+objman>InitObjMan start
+objman>InitObjMan end
+objdll> dll/bootdll.rel prolog end
+objman>ObjectSetup end
+port> frame 3: overlay 1 (next -1) event 0
+DLL DBG OUT
+Rest Memory 57d540
+ARAM Trans 808000
+Rest Memory 55d020
+ARAM Trans 80aaa0
+Rest Memory 506400
+ARAM Trans 82da60
+Rest Memory 564f40
+ARAM Trans 8a7640
+Rest Memory 5395a0
+data num 74000b
+port> dvdheap: 3733270 bytes mode 1 num 10000000  caller 0x10a98  caller2 0xe63c
+Rest Memory 1f08c0
+port> status f60      bootdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.01 ms  0.0 fps
+port> status f120     bootdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.01 ms  1671.3 fps
+port> status f180     bootdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.01 ms  1969.8 fps
+port> status f240     bootdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.01 ms  1836.1 fps
+port> status f300     bootdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.01 ms  1761.4 fps
+port> status f360     bootdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.01 ms  738.8 fps
+port> status f420     bootdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.01 ms  2490.7 fps
+port> status f480     bootdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.01 ms  3071.9 fps
+port> status f540     bootdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.01 ms  3740.9 fps
+0
+GroupSet 0
+***********GroupSet Error 0
+port> status f600     bootdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.01 ms  1754.6 fps
+port> THP: movie/opmov_a00.thp skipped (--nomovies)
+port> HuSprBegin: group 3 slot 0 names sprite 7, which is not a live sprite (data 0x0, attr 0010, data NULL) -- dropped [1/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x42764d0 fails counts -- drawn anyway [1/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x42764d0 fails counts -- drawn anyway [2/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x42764d0 fails counts -- drawn anyway [3/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x42764d0 fails counts -- drawn anyway [4/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x42764d0 fails counts -- drawn anyway [5/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x42764d0 fails counts -- drawn anyway [6/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x42764d0 fails counts -- drawn anyway [7/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x42764d0 fails counts -- drawn anyway [8/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x42764d0 fails counts -- drawn anyway [9/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x42764d0 fails counts -- drawn anyway [10/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x42764d0 fails counts -- drawn anyway [11/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x42764d0 fails counts -- drawn anyway [12/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x42764d0 fails counts -- drawn anyway [13/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x42764d0 fails counts -- drawn anyway [14/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x42764d0 fails counts -- drawn anyway [15/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x42764d0 fails counts -- drawn anyway [16/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x42764d0 fails counts -- drawn anyway [17/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x42764d0 fails counts -- drawn anyway [18/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x42764d0 fails counts -- drawn anyway [19/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x42764d0 fails counts -- drawn anyway [20/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x42764d0 fails counts -- drawn anyway [21/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x42764d0 fails counts -- drawn anyway [22/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x42764d0 fails counts -- drawn anyway [23/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x42764d0 fails counts -- drawn anyway [24/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x42764d0 fails counts -- drawn anyway [25/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x42764d0 fails counts -- drawn anyway [26/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x42764d0 fails counts -- drawn anyway [27/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x42764d0 fails counts -- drawn anyway [28/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x42764d0 fails counts -- drawn anyway [29/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x42764d0 fails counts -- drawn anyway [30/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x42764d0 fails counts -- drawn anyway [31/32]
+port> HuSprBegin: audit: group 4 slot 0 sprite 8 bg 0x42764d0 fails counts -- drawn anyway [32/32]
+port> status f660     bootdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.00 ms  1891.9 fps
+port> status f720     bootdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.00 ms  2115.7 fps
+>>>>>>>>MSM_SE_SEL_01 0
+>>>>>>>>SE Num 0
+port> audio: first non-silent sample at retrace 726 (12.03 s of mixed audio)
+port> status f780     bootdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.04 ms  1010.1 fps
+port> status f840     bootdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.04 ms  1004.2 fps
+objman>Call New Ovl 74(1)
+OvlKill 1
+objdll>omDLLNumEnd 1 1
+Search:dll/bootdll.rel
++++++++++++ Find0: dll/bootdll.rel
+objdll>omDLLEnd 0 1
+objdll>End DLL:dll/bootdll.rel
+odjdll>Unlink DLL:dll/bootdll.rel
+objdll>Unlink DLL epilog
+objdll>Unlink DLL epilog finish
+objdll>End DLL finish
+port> frame 877: overlay -1 (next 74) event 0
+objman>Destory ObjMan
+++++++++++++++++++++ Start New OVL 74 (EVT:0 STAT:0x00000000) ++++++++++++++++++
+======== HuMem heap dump 03b9c018 ========
+MCB-----+Size----+MG+FL+Prev----+Next----+UNum----+Body----+Call----
+03b9c018 0000a020 a5 01 03bc21d8 03ba6038 ffffff00 03b9c038 000083b4
+03ba6038 000041c0 a5 01 03b9c018 03baa1f8 ffffff00 03ba6058 0003c048
+03baa1f8 00017640 cd 00 03ba6038 03bc1838 ffffff00 03baa218 0003c97c
+03bc1838 00000100 a5 01 03baa1f8 03bc1938 ffffff00 03bc1858 000370cc
+03bc1938 00000400 a5 01 03bc1838 03bc1d38 ffffff00 03bc1958 0003711c
+03bc1d38 00000400 a5 01 03bc1938 03bc2138 ffffff00 03bc1d58 00037168
+03bc2138 00000060 a5 01 03bc1d38 03bc2198 ffffff00 03bc2158 000371b4
+03bc2198 00000040 a5 01 03bc2138 03bc21d8 ffffff00 03bc21b8 00037200
+03bc21d8 00219e40 cd 00 03bc2198 03b9c018 ffffff00 03bc21f8 0003c97c
+MCB:9(7/2) MEM:00240000(0000eb80/00231480)
+======== HuMem heap dump 03b9c018 end =====
+======== HuMem heap dump 03f1c030 ========
+MCB-----+Size----+MG+FL+Prev----+Next----+UNum----+Body----+Call----
+03f1c030 00a80000 cd 00 03f1c030 03f1c030 ffffff00 03f1c050 0003fb54
+MCB:1(0/1) MEM:00a80000(00000000/00a80000)
+======== HuMem heap dump 03f1c030 end =====
+======== HuMem heap dump 0499c03c ========
+MCB-----+Size----+MG+FL+Prev----+Next----+UNum----+Body----+Call----
+0499c03c 00580000 cd 00 0499c03c 0499c03c 10000000 0499c05c 0000fa04
+MCB:1(0/1) MEM:00580000(00000000/00580000)
+======== HuMem heap dump 0499c03c end =====
+objman>Used Memory Size:0000eb80
+objman>Used Memory Cnt:7
+objman>Init esp
+objman>Call objectsetup
+############CharGrpSet
+Del Group OK
+SOUND ##########################
+500
+Timed Out! Mus 0:SE 1
+GroupSet 0
+***********GroupSet Error 0
+Change AUX 0,1
+##########################
+DLLStart 74 0
+Search:dll/modeseldll.rel
+objdll>Link DLL:dll/modeseldll.rel
+Rest Memory 580000
+===== DLL Module Info dump ====
+                   ID:0x00000001
+             LinkPrev:0x00000000
+             LinkNext:0x00000000
+          Section num:15
+Section info tbl ofst:0x00000048
+           nameOffset:0x00000000
+             nameSize:53
+              version:0x00000002
+===============================
+==== DLL Module Header dump ====
+          bss Size:0x000001ca
+        rel Offset:0x0000d154
+        imp Offset:0x0001664c
+    prolog Section:1
+    epilog Section:1
+unresolved Section:0
+       prolog func:0x00000000
+       epilog func:0x00000054
+   unresolved func:0x00000000
+================================
+objdll>LinkOK 03baa578 34700000
+objdll> dll/modeseldll.rel prolog start
+******* MS ObjectSetup *********
+objman>InitObjMan start
+objman>InitObjMan end
+Rest Memory 5395a0
+objdll> dll/modeseldll.rel prolog end
+objman>ObjectSetup end
+port> frame 879: overlay 74 (next -1) event 0
+DLL DBG OUT
+data num 630000
+port> dvdheap: 1303268 bytes mode 1 num 10000000  caller 0x10a98  caller2 0xe63c
+Rest Memory 441ce0
+port> status f900     modeseldll   board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.10 ms  386.8 fps
+port> status f960     modeseldll   board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.13 ms  1015.9 fps
+port> status f1020    modeseldll   board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.18 ms  722.8 fps
+port> status f1080    modeseldll   board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.20 ms  686.9 fps
+port> status f1140    modeseldll   board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.21 ms  641.8 fps
+port> status f1200    modeseldll   board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.22 ms  629.3 fps
+Init
+port> status f1260    modeseldll   board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.20 ms  637.8 fps
+ARAM data num 86001f
+port> status f1320    modeseldll   board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.31 ms  455.3 fps
+port> CARD: created "MARIPA4BOX0", 16384 bytes (2 blocks)
+port> status f1380    modeseldll   board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.24 ms  493.3 fps
+port> THP: movie/opmov_s00.thp skipped (--nomovies)
+port> HuSprBegin: group 1 slot 0 names sprite 12, which is not a live sprite (data 0x0, attr 0010, data NULL) -- dropped [2/32]
+port> status f1440    modeseldll   board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.19 ms  666.7 fps
+port> status f1500    modeseldll   board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.23 ms  573.1 fps
+port> status f1560    modeseldll   board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.19 ms  686.2 fps
+port> status f1620    modeseldll   board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.25 ms  529.5 fps
+port> status f1680    modeseldll   board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.22 ms  559.5 fps
+port> status f1740    modeseldll   board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.22 ms  542.2 fps
+port> THP: movie/opmov_c00.thp skipped (--nomovies)
+port> HuSprBegin: group 2 slot 0 names sprite 14, which is not a live sprite (data 0x0, attr 0010, data NULL) -- dropped [3/32]
+port> status f1800    modeseldll   board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.20 ms  580.5 fps
+port> status f1860    modeseldll   board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.01 ms  1095.7 fps
+port> status f1920    modeseldll   board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.01 ms  1146.7 fps
+objman>Call New Ovl 70(1)
+OvlKill 1
+objdll>omDLLNumEnd 74 1
+Search:dll/modeseldll.rel
++++++++++++ Find0: dll/modeseldll.rel
+objdll>omDLLEnd 0 1
+objdll>End DLL:dll/modeseldll.rel
+odjdll>Unlink DLL:dll/modeseldll.rel
+objdll>Unlink DLL epilog
+objdll>Unlink DLL epilog finish
+objdll>End DLL finish
+port> frame 1960: overlay -1 (next 70) event 0
+objman>Destory ObjMan
+++++++++++++++++++++ Start New OVL 70 (EVT:0 STAT:0x00000000) ++++++++++++++++++
+======== HuMem heap dump 03b9c018 ========
+MCB-----+Size----+MG+FL+Prev----+Next----+UNum----+Body----+Call----
+03b9c018 0000a020 a5 01 03bc21d8 03ba6038 ffffff00 03b9c038 000083b4
+03ba6038 000041c0 a5 01 03b9c018 03baa1f8 ffffff00 03ba6058 0003c048
+03baa1f8 00017640 cd 00 03ba6038 03bc1838 ffffff00 03baa218 0003828c
+03bc1838 00000100 a5 01 03baa1f8 03bc1938 ffffff00 03bc1858 000370cc
+03bc1938 00000400 a5 01 03bc1838 03bc1d38 ffffff00 03bc1958 0003711c
+03bc1d38 00000400 a5 01 03bc1938 03bc2138 ffffff00 03bc1d58 00037168
+03bc2138 00000060 a5 01 03bc1d38 03bc2198 ffffff00 03bc2158 000371b4
+03bc2198 00000040 a5 01 03bc2138 03bc21d8 ffffff00 03bc21b8 00037200
+03bc21d8 00219e40 cd 00 03bc2198 03b9c018 ffffff00 03bc21f8 0003c97c
+MCB:9(7/2) MEM:00240000(0000eb80/00231480)
+======== HuMem heap dump 03b9c018 end =====
+======== HuMem heap dump 03f1c030 ========
+MCB-----+Size----+MG+FL+Prev----+Next----+UNum----+Body----+Call----
+03f1c030 00a80000 cd 00 03f1c030 03f1c030 ffffff00 03f1c050 00038d38
+MCB:1(0/1) MEM:00a80000(00000000/00a80000)
+======== HuMem heap dump 03f1c030 end =====
+======== HuMem heap dump 0499c03c ========
+MCB-----+Size----+MG+FL+Prev----+Next----+UNum----+Body----+Call----
+0499c03c 00580000 cd 00 0499c03c 0499c03c 10000000 0499c05c 0000fa04
+MCB:1(0/1) MEM:00580000(00000000/00580000)
+======== HuMem heap dump 0499c03c end =====
+objman>Used Memory Size:0000eb80
+objman>Used Memory Cnt:7
+objman>Init esp
+objman>Call objectsetup
+DLLStart 70 0
+Search:dll/mentdll.rel
+objdll>Link DLL:dll/mentdll.rel
+Rest Memory 580000
+===== DLL Module Info dump ====
+                   ID:0x00000001
+             LinkPrev:0x00000000
+             LinkNext:0x00000000
+          Section num:15
+Section info tbl ofst:0x00000048
+           nameOffset:0x00000000
+             nameSize:47
+              version:0x00000002
+===============================
+==== DLL Module Header dump ====
+          bss Size:0x000036c4
+        rel Offset:0x000246f8
+        imp Offset:0x00036a90
+    prolog Section:1
+    epilog Section:1
+unresolved Section:0
+       prolog func:0x000000a4
+       epilog func:0x000000f8
+   unresolved func:0x00000000
+================================
+objdll>LinkOK 03bc21f8 34300000
+objdll> dll/mentdll.rel prolog start
+objman>InitObjMan start
+objman>InitObjMan end
+Rest Memory 5395a0
+0
+GroupSet 7
+***********GroupSet Error 0
+objdll> dll/mentdll.rel prolog end
+objman>ObjectSetup end
+port> frame 1961: overlay 70 (next -1) event 0
+DLL DBG OUT
+data num 600008
+port> dvdheap: 4008196 bytes mode 1 num 10000000  caller 0x10a98  caller2 0xe63c
+Rest Memory 1ad6c0
+ARAM data num 120006
+port> status f1980    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.01 ms  295.1 fps
+########### ME_MainProcFunc000
+port> status f2040    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.01 ms  382.8 fps
+port> status f2100    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.05 ms  346.9 fps
+port> status f2160    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.05 ms  287.4 fps
+port> status f2220    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.05 ms  279.7 fps
+port> status f2280    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.05 ms  292.8 fps
+port> status f2340    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.05 ms  347.2 fps
+port> status f2400    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.05 ms  329.5 fps
+port> status f2460    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.12 ms  306.0 fps
+port> status f2520    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.35 ms  281.3 fps
+port> status f2580    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.26 ms  275.6 fps
+port> status f2640    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.37 ms  271.2 fps
+port> status f2700    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.14 ms  302.4 fps
+port> status f2760    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.29 ms  269.0 fps
+port> status f2820    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.16 ms  253.0 fps
+port> status f2880    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.20 ms  298.6 fps
+port> status f2940    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.17 ms  302.1 fps
+port> status f3000    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.32 ms  277.3 fps
+port> status f3060    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.32 ms  258.2 fps
+port> status f3120    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.25 ms  278.6 fps
+port> status f3180    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.29 ms  264.2 fps
+port> status f3240    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.31 ms  249.3 fps
+port> status f3300    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.34 ms  253.5 fps
+port> status f3360    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.18 ms  258.5 fps
+port> status f3420    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.32 ms  247.6 fps
+port> status f3480    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.37 ms  244.2 fps
+port> status f3540    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.30 ms  241.2 fps
+port> status f3600    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.25 ms  275.6 fps
+port> status f3660    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.18 ms  285.0 fps
+port> status f3720    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.29 ms  273.0 fps
+port> status f3780    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.29 ms  242.5 fps
+port> status f3840    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.37 ms  267.1 fps
+port> status f3900    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.21 ms  308.7 fps
+port> status f3960    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.22 ms  287.0 fps
+port> status f4020    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.24 ms  277.4 fps
+port> status f4080    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.14 ms  289.5 fps
+port> status f4140    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.18 ms  292.5 fps
+port> status f4200    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.26 ms  265.5 fps
+port> status f4260    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.34 ms  244.8 fps
+port> status f4320    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.24 ms  240.6 fps
+port> status f4380    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.29 ms  242.0 fps
+port> status f4440    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.28 ms  252.2 fps
+port> status f4500    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.36 ms  237.2 fps
+port> status f4560    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.23 ms  260.4 fps
+port> status f4620    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.26 ms  292.5 fps
+port> status f4680    mentdll      board 0 turn 0/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.36 ms  255.9 fps
+port> status f4740    mentdll      board 0 turn 1/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.32 ms  278.8 fps
+port> dvdheap: 1615946 bytes mode 0 num 0  caller 0xed14  caller2 0x34303aa0
+Rest Memory 3f5780
+port> dvdheap: 1438648 bytes mode 0 num 0  caller 0xed14  caller2 0x34303b68
+Rest Memory 420c20
+port> status f4800    mentdll      board 0 turn 1/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.23 ms  298.4 fps
+port> status f4860    mentdll      board 0 turn 1/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.20 ms  313.0 fps
+port> status f4920    mentdll      board 0 turn 1/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.25 ms  318.6 fps
+port> status f4980    mentdll      board 0 turn 1/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.35 ms  306.2 fps
+port> status f5040    mentdll      board 0 turn 1/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.35 ms  296.9 fps
+port> status f5100    mentdll      board 0 turn 1/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.20 ms  333.9 fps
+port> dvdheap: 1301598 bytes mode 0 num 0  caller 0x10a00  caller2 0xea60
+Rest Memory 2e2fa0
+ARAM Trans a4cf40
+port> dvdheap: 1336948 bytes mode 0 num 0  caller 0x10a00  caller2 0xea60
+Rest Memory 2da580
+ARAM Trans b8aba0
+port> dvdheap: 1260022 bytes mode 0 num 0  caller 0x10a00  caller2 0xea60
+Rest Memory 2ed200
+ARAM Trans cd1220
+port> dvdheap: 1413496 bytes mode 0 num 0  caller 0x10a00  caller2 0xea60
+Rest Memory 2c7a80
+ARAM Trans e04c20
+objman>Call New Ovl 89(1)
+OvlKill 1
+objdll>omDLLNumEnd 70 1
+Search:dll/mentdll.rel
++++++++++++ Find0: dll/mentdll.rel
+objdll>omDLLEnd 0 1
+objdll>End DLL:dll/mentdll.rel
+odjdll>Unlink DLL:dll/mentdll.rel
+objdll>Unlink DLL epilog
+objdll>Unlink DLL epilog finish
+objdll>End DLL finish
+port> frame 5101: overlay -1 (next 89) event 0
+objman>Destory ObjMan
+++++++++++++++++++++ Start New OVL 89 (EVT:0 STAT:0x00000000) ++++++++++++++++++
+======== HuMem heap dump 03b9c018 ========
+MCB-----+Size----+MG+FL+Prev----+Next----+UNum----+Body----+Call----
+03b9c018 0000a020 a5 01 03c8f178 03ba6038 ffffff00 03b9c038 000083b4
+03ba6038 000041c0 a5 01 03b9c018 03baa1f8 ffffff00 03ba6058 0003c048
+03baa1f8 00016c80 cd 00 03ba6038 03bc0e78 ffffff00 03baa218 0003c97c
+03bc0e78 00000260 a5 01 03baa1f8 03bc10d8 ffffff00 03bc0e98 00008bc8
+03bc10d8 00000260 a5 01 03bc0e78 03bc1338 ffffff00 03bc10f8 00008bc8
+03bc1338 000002c0 a5 01 03bc10d8 03bc15f8 ffffff00 03bc1358 00008bc8
+03bc15f8 00000240 cd 00 03bc1338 03bc1838 10000000 03bc1618 00038d18
+03bc1838 00000100 a5 01 03bc15f8 03bc1938 ffffff00 03bc1858 000370cc
+03bc1938 00000400 a5 01 03bc1838 03bc1d38 ffffff00 03bc1958 0003711c
+03bc1d38 00000400 a5 01 03bc1938 03bc2138 ffffff00 03bc1d58 00037168
+03bc2138 00000060 a5 01 03bc1d38 03bc2198 ffffff00 03bc2158 000371b4
+03bc2198 00000040 a5 01 03bc2138 03bc21d8 ffffff00 03bc21b8 00037200
+03bc21d8 000befc0 cd 00 03bc2198 03c81198 ffffff00 03bc21f8 0003c97c
+03c81198 00002100 a5 01 03bc21d8 03c83298 ffffff00 03c811b8 00008bc8
+03c83298 00000f80 a5 01 03c81198 03c84218 ffffff00 03c832b8 00008bc8
+03c84218 000041c0 a5 01 03c83298 03c883d8 ffffff00 03c84238 00008bc8
+03c883d8 000041c0 a5 01 03c84218 03c8c598 ffffff00 03c883f8 00008bc8
+03c8c598 00002be0 a5 01 03c883d8 03c8f178 ffffff00 03c8c5b8 00008bc8
+03c8f178 0014cea0 cd 00 03c8c598 03b9c018 ffffff00 03c8f198 0003c97c
+MCB:19(15/4) MEM:00240000(0001d2e0/00222d20)
+======== HuMem heap dump 03b9c018 end =====
+======== HuMem heap dump 03f1c030 ========
+MCB-----+Size----+MG+FL+Prev----+Next----+UNum----+Body----+Call----
+03f1c030 00a80000 cd 00 03f1c030 03f1c030 ffffff00 03f1c050 0003fb54
+MCB:1(0/1) MEM:00a80000(00000000/00a80000)
+======== HuMem heap dump 03f1c030 end =====
+======== HuMem heap dump 0499c03c ========
+MCB-----+Size----+MG+FL+Prev----+Next----+UNum----+Body----+Call----
+0499c03c 0015f3e0 a5 01 04afb41c 04afb41c ffffff00 0499c05c 0001060c
+04afb41c 00420c20 cd 00 0499c03c 0499c03c ffffff00 04afb43c 0000fa04
+MCB:2(1/1) MEM:00580000(0015f3e0/00420c20)
+======== HuMem heap dump 0499c03c end =====
+objman>Used Memory Size:0001d2e0
+objman>Used Memory Cnt:15
+objman>Init esp
+objman>Call objectsetup
+SOUND ##########################
+0
+GroupSet 9
+***********GroupSet Error 0
+##########################
+DLLStart 89 0
+Search:dll/w01dll.rel
+objdll>Link DLL:dll/w01dll.rel
+Rest Memory 420c20
+===== DLL Module Info dump ====
+                   ID:0x00000001
+             LinkPrev:0x00000000
+             LinkNext:0x00000000
+          Section num:16
+Section info tbl ofst:0x00000048
+           nameOffset:0x00000000
+             nameSize:45
+              version:0x00000002
+===============================
+==== DLL Module Header dump ====
+          bss Size:0x0000081c
+        rel Offset:0x00012e34
+        imp Offset:0x0001f174
+    prolog Section:1
+    epilog Section:1
+unresolved Section:0
+       prolog func:0x00000030
+       epilog func:0x00000094
+   unresolved func:0x00000000
+================================
+objdll>LinkOK 03bc21f8 35600000
+objdll> dll/w01dll.rel prolog start
+objman>InitObjMan start
+objman>InitObjMan end
+objdll> dll/w01dll.rel prolog end
+objman>ObjectSetup end
+port> frame 5102: overlay 89 (next -1) event 0
+DLL DBG OUT
+Rest Memory 37b3c0
+Rest Memory 334960
+data num 5e0000
+Rest Memory 31dea0
+ARAM data num 120006
+data num 190000
+Rest Memory 322ae0
+data num 6c0000
+Rest Memory 302e20
+data num 890000
+Rest Memory 31a860
+ARAM data num 7001d
+data num 50000
+Rest Memory 136ce0
+data num 90000
+Rest Memory 1424a0
+port> loader: mg_next dealt mg 427 (m427dll) at frame 5105 -- prefetching its module and data
+port> status f5160    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.05 ms  98.1 fps
+port> status f5220    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.07 ms  255.7 fps
+port> status f5280    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.07 ms  248.1 fps
+port> status f5340    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.07 ms  242.3 fps
+port> status f5400    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.06 ms  250.2 fps
+port> status f5460    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.05 ms  255.6 fps
+port> status f5520    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.05 ms  248.3 fps
+port> status f5580    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.05 ms  277.2 fps
+port> status f5640    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.05 ms  309.6 fps
+port> status f5700    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.05 ms  326.2 fps
+port> status f5760    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.06 ms  348.5 fps
+port> status f5820    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.06 ms  349.2 fps
+port> status f5880    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.20 ms  219.1 fps
+port> status f5940    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.31 ms  198.6 fps
+port> status f6000    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.29 ms  185.8 fps
+port> status f6060    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.28 ms  183.3 fps
+port> status f6120    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.28 ms  201.3 fps
+port> status f6180    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.28 ms  195.4 fps
+port> status f6240    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.27 ms  204.1 fps
+#########SE Entry Error<SE 770:ErrorNo -33>
+#########SE Entry Error<SE 770:ErrorNo -33>
+#########SE Entry Error<SE 770:ErrorNo -33>
+port> status f6300    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.29 ms  187.7 fps
+#########SE Entry Error<SE 771:ErrorNo -33>
+port> status f6360    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.36 ms  177.8 fps
+port> status f6420    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.30 ms  175.1 fps
+port> status f6480    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.25 ms  180.9 fps
+port> status f6540    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.21 ms  201.9 fps
+port> status f6600    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.26 ms  196.0 fps
+port> status f6660    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.31 ms  191.0 fps
+port> status f6720    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.29 ms  193.3 fps
+port> status f6780    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.27 ms  200.7 fps
+port> status f6840    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.30 ms  201.0 fps
+port> status f6900    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.33 ms  191.6 fps
+port> status f6960    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.28 ms  198.0 fps
+port> status f7020    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.29 ms  193.1 fps
+port> status f7080    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.31 ms  185.0 fps
+port> status f7140    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.31 ms  187.9 fps
+port> status f7200    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.23 ms  197.3 fps
+port> status f7260    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 0/0c 0/0c 0/0c 0/0c  aud 0.25 ms  201.5 fps
+port> status f7320    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 9/0c 9/0c 9/0c 9/0c  aud 0.32 ms  200.2 fps
+port> status f7380    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.33 ms  185.4 fps
+port> status f7440    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.27 ms  197.6 fps
+port> status f7500    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.27 ms  192.2 fps
+port> status f7560    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.27 ms  200.0 fps
+port> status f7620    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.28 ms  196.9 fps
+port> status f7680    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.28 ms  198.8 fps
+port> status f7740    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.31 ms  196.7 fps
+port> status f7800    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.27 ms  196.3 fps
+port> status f7860    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.28 ms  196.1 fps
+port> status f7920    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.29 ms  191.6 fps
+port> status f7980    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.25 ms  190.7 fps
+port> status f8040    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.27 ms  185.0 fps
+data num 60017
+Rest Memory 1960c0
+port> status f8100    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.21 ms  221.5 fps
+port> status f8160    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.31 ms  242.9 fps
+port> status f8220    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.31 ms  232.5 fps
+port> status f8280    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.26 ms  248.7 fps
+port> status f8340    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.24 ms  252.6 fps
+port> status f8400    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.22 ms  262.9 fps
+port> status f8460    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.22 ms  284.5 fps
+port> status f8520    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.22 ms  257.2 fps
+port> status f8580    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.26 ms  249.5 fps
+port> status f8640    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.26 ms  244.3 fps
+port> status f8700    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.21 ms  259.4 fps
+port> status f8760    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.18 ms  264.7 fps
+port> status f8820    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.19 ms  252.7 fps
+port> status f8880    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.18 ms  263.5 fps
+port> status f8940    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.16 ms  239.9 fps
+port> status f9000    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.16 ms  267.0 fps
+port> status f9060    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.22 ms  234.8 fps
+port> status f9120    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.27 ms  228.9 fps
+port> status f9180    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.22 ms  257.0 fps
+port> status f9240    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.25 ms  240.1 fps
+port> status f9300    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.23 ms  234.3 fps
+port> status f9360    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.16 ms  246.6 fps
+port> status f9420    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.23 ms  232.1 fps
+port> status f9480    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.24 ms  255.5 fps
+port> status f9540    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.26 ms  233.0 fps
+port> status f9600    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.25 ms  263.0 fps
+port> status f9660    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.23 ms  241.8 fps
+port> status f9720    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.03 ms  239.5 fps
+port> status f9780    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.21 ms  218.5 fps
+port> status f9840    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.26 ms  209.3 fps
+port> status f9900    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.21 ms  209.3 fps
+port> status f9960    w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.23 ms  181.8 fps
+port> status f10020   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.26 ms  196.4 fps
+port> status f10080   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.29 ms  195.3 fps
+port> status f10140   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.33 ms  195.7 fps
+port> status f10200   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.26 ms  199.9 fps
+port> status f10260   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.27 ms  194.5 fps
+port> status f10320   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.33 ms  192.1 fps
+port> status f10380   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.26 ms  195.5 fps
+port> status f10440   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.23 ms  203.0 fps
+port> status f10500   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.23 ms  185.7 fps
+port> status f10560   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 10/0c 10/0c 10/0c 10/0c  aud 0.25 ms  193.2 fps
+port> status f10620   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.27 ms  194.3 fps
+port> status f10680   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.21 ms  203.3 fps
+port> status f10740   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.13 ms  214.3 fps
+port> status f10800   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.16 ms  200.0 fps
+port> status f10860   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.22 ms  203.8 fps
+port> status f10920   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.20 ms  211.2 fps
+port> status f10980   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.22 ms  190.3 fps
+port> status f11040   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.20 ms  204.2 fps
+port> status f11100   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.22 ms  204.6 fps
+port> status f11160   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.30 ms  203.2 fps
+port> status f11220   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.23 ms  200.9 fps
+port> status f11280   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.23 ms  192.0 fps
+port> status f11340   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.33 ms  183.2 fps
+port> status f11400   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.36 ms  186.3 fps
+port> status f11460   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.32 ms  193.8 fps
+port> status f11520   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.22 ms  203.3 fps
+port> status f11580   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.29 ms  191.9 fps
+port> status f11640   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.21 ms  205.7 fps
+port> status f11700   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.31 ms  195.8 fps
+port> status f11760   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.24 ms  182.0 fps
+port> status f11820   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.28 ms  175.2 fps
+port> status f11880   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.31 ms  204.2 fps
+port> status f11940   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.25 ms  198.8 fps
+port> status f12000   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.32 ms  194.8 fps
+port> status f12060   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.27 ms  201.3 fps
+port> status f12120   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.27 ms  200.1 fps
+port> status f12180   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.25 ms  203.6 fps
+port> status f12240   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.24 ms  207.5 fps
+port> status f12300   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.27 ms  188.7 fps
+port> status f12360   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.30 ms  188.9 fps
+port> status f12420   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.23 ms  210.3 fps
+port> status f12480   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.34 ms  181.2 fps
+port> status f12540   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.36 ms  187.8 fps
+port> status f12600   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.26 ms  196.8 fps
+port> status f12660   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.29 ms  200.9 fps
+port> status f12720   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.27 ms  195.6 fps
+port> status f12780   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.26 ms  189.6 fps
+port> status f12840   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.29 ms  190.6 fps
+port> status f12900   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.27 ms  197.5 fps
+port> status f12960   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.26 ms  190.1 fps
+port> status f13020   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.27 ms  188.6 fps
+port> status f13080   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.31 ms  187.6 fps
+port> status f13140   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.21 ms  203.1 fps
+port> status f13200   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.18 ms  228.0 fps
+port> status f13260   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.26 ms  193.8 fps
+port> status f13320   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.30 ms  198.1 fps
+port> status f13380   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.27 ms  204.1 fps
+port> status f13440   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 10/0c  aud 0.30 ms  189.4 fps
+port> status f13500   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.31 ms  198.8 fps
+port> status f13560   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.23 ms  210.4 fps
+port> status f13620   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.24 ms  198.6 fps
+port> status f13680   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.26 ms  204.0 fps
+port> status f13740   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.33 ms  187.0 fps
+port> status f13800   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.30 ms  194.7 fps
+port> status f13860   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.34 ms  192.8 fps
+port> status f13920   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.29 ms  188.2 fps
+port> loader: roulette dealt mg 422 (m422dll) at frame 13953 -- prefetching its module and data
+port> status f13980   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.26 ms  199.2 fps
+port> ffto: reached frame 14000 in 57.4 s (13997 frames, 243.9 fps, drawing back on at frame 13999)
+port> lazy flush: off; premerge: off (max 0 vertices an object) -- both measured and off by default, PLAN.md 37
+port> matrix palette: off (opt-in: --palette; PLAN.md 33.2)
+port> status f14040   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.32 ms  43.5 fps
+port> status f14100   w01dll       board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.31 ms  45.9 fps
+port> dvdheap: 1529578 bytes mode 0 num 0  caller 0xed14  caller2 0x70a68
+Rest Memory 40a8e0
+port> roulette: frame 14140 dealt mg 422 (m422dll, type 1)  -- overridden by --minigame
+objman>Call New Ovl 3(1)
+OvlKill 1
+objdll>omDLLNumEnd 89 1
+Search:dll/w01dll.rel
++++++++++++ Find0: dll/w01dll.rel
+objdll>omDLLEnd 0 1
+objdll>End DLL:dll/w01dll.rel
+odjdll>Unlink DLL:dll/w01dll.rel
+objdll>Unlink DLL epilog
+objdll>Unlink DLL epilog finish
+objdll>End DLL finish
+port> frame 14135: overlay -1 (next 3) event 0
+objman>Destory ObjMan
+++++++++++++++++++++ Start New OVL 3 (EVT:0 STAT:0x00000000) ++++++++++++++++++
+======== HuMem heap dump 03b9c018 ========
+MCB-----+Size----+MG+FL+Prev----+Next----+UNum----+Body----+Call----
+03b9c018 0000a020 a5 01 03c8f178 03ba6038 ffffff00 03b9c038 000083b4
+03ba6038 000041c0 a5 01 03b9c018 03baa1f8 ffffff00 03ba6058 0003c048
+03baa1f8 00016c80 cd 00 03ba6038 03bc0e78 ffffff00 03baa218 0003c97c
+03bc0e78 00000260 a5 01 03baa1f8 03bc10d8 ffffff00 03bc0e98 00008bc8
+03bc10d8 00000260 a5 01 03bc0e78 03bc1338 ffffff00 03bc10f8 00008bc8
+03bc1338 000002c0 a5 01 03bc10d8 03bc15f8 ffffff00 03bc1358 00008bc8
+03bc15f8 00000240 cd 00 03bc1338 03bc1838 10000000 03bc1618 0007d824
+03bc1838 00000100 a5 01 03bc15f8 03bc1938 ffffff00 03bc1858 000370cc
+03bc1938 00000400 a5 01 03bc1838 03bc1d38 ffffff00 03bc1958 0003711c
+03bc1d38 00000400 a5 01 03bc1938 03bc2138 ffffff00 03bc1d58 00037168
+03bc2138 00000060 a5 01 03bc1d38 03bc2198 ffffff00 03bc2158 000371b4
+03bc2198 00000040 a5 01 03bc2138 03bc21d8 ffffff00 03bc21b8 00037200
+03bc21d8 000befc0 cd 00 03bc2198 03c81198 ffffff00 03bc21f8 0003c97c
+03c81198 00002100 a5 01 03bc21d8 03c83298 ffffff00 03c811b8 00008bc8
+03c83298 00000f80 a5 01 03c81198 03c84218 ffffff00 03c832b8 00008bc8
+03c84218 000041c0 a5 01 03c83298 03c883d8 ffffff00 03c84238 00008bc8
+03c883d8 000041c0 a5 01 03c84218 03c8c598 ffffff00 03c883f8 00008bc8
+03c8c598 00002be0 a5 01 03c883d8 03c8f178 ffffff00 03c8c5b8 00008bc8
+03c8f178 0014cea0 cd 00 03c8c598 03b9c018 ffffff00 03c8f198 0003c97c
+MCB:19(15/4) MEM:00240000(0001d2e0/00222d20)
+======== HuMem heap dump 03b9c018 end =====
+======== HuMem heap dump 03f1c030 ========
+MCB-----+Size----+MG+FL+Prev----+Next----+UNum----+Body----+Call----
+03f1c030 00a80000 cd 00 03f1c030 03f1c030 10000000 03f1c050 00027b60
+MCB:1(0/1) MEM:00a80000(00000000/00a80000)
+======== HuMem heap dump 03f1c030 end =====
+======== HuMem heap dump 0499c03c ========
+MCB-----+Size----+MG+FL+Prev----+Next----+UNum----+Body----+Call----
+0499c03c 00175720 a5 01 04b1175c 04b1175c ffffff00 0499c05c 0001060c
+04b1175c 0040a8e0 cd 00 0499c03c 0499c03c bdbe92cf 04b1177c 0001060c
+MCB:2(1/1) MEM:00580000(00175720/0040a8e0)
+======== HuMem heap dump 0499c03c end =====
+objman>Used Memory Size:0001d2e0
+objman>Used Memory Cnt:15
+objman>Init esp
+objman>Call objectsetup
+DLLStart 3 0
+Search:dll/instdll.rel
+objdll>Link DLL:dll/instdll.rel
+Rest Memory 40a8e0
+===== DLL Module Info dump ====
+                   ID:0x00000001
+             LinkPrev:0x00000000
+             LinkNext:0x00000000
+          Section num:15
+Section info tbl ofst:0x00000048
+           nameOffset:0x00000000
+             nameSize:47
+              version:0x00000002
+===============================
+==== DLL Module Header dump ====
+          bss Size:0x00000064
+        rel Offset:0x00006aa8
+        imp Offset:0x0000ad98
+    prolog Section:1
+    epilog Section:1
+unresolved Section:0
+       prolog func:0x00000000
+       epilog func:0x00000054
+   unresolved func:0x00000000
+================================
+objdll>LinkOK 03baa578 30200000
+objdll> dll/instdll.rel prolog start
+******* INST ObjectSetup *********
+objman>InitObjMan start
+objman>InitObjMan end
+0
+GroupSet 44
+***********GroupSet Error 0
+Rest Memory 3c3e80
+objdll> dll/instdll.rel prolog end
+objman>ObjectSetup end
+port> frame 14136: overlay 3 (next -1) event 0
+DLL DBG OUT
+data num 190000
+Rest Memory 3b2000
+ARAM data num 120006
+data num 890000
+Rest Memory 3a9d80
+data num 5e0000
+Rest Memory 3ad3c0
+data num 6c0000
+Rest Memory 392340
+port> status f14160   instdll      board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.22 ms  45.0 fps
+port> status f14220   instdll      board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.23 ms  82.9 fps
+port> status f14280   instdll      board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.28 ms  64.7 fps
+port> dvdheap: 1951614 bytes mode 0 num 0  caller 0xed14  caller2 0x30203508
+Rest Memory 3a3860
+port> status f14340   instdll      board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.26 ms  68.4 fps
+port> status f14400   instdll      board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.32 ms  70.0 fps
+port> status f14460   instdll      board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.32 ms  75.6 fps
+objman>Call New Ovl 35(1)
+OvlKill 1
+objdll>omDLLNumEnd 3 1
+Search:dll/instdll.rel
++++++++++++ Find0: dll/instdll.rel
+objdll>omDLLEnd 0 1
+objdll>End DLL:dll/instdll.rel
+odjdll>Unlink DLL:dll/instdll.rel
+objdll>Unlink DLL epilog
+objdll>Unlink DLL epilog finish
+objdll>End DLL finish
+port> frame 14470: overlay -1 (next 35) event 0
+objman>Destory ObjMan
+++++++++++++++++++++ Start New OVL 35 (EVT:0 STAT:0x00000000) ++++++++++++++++++
+======== HuMem heap dump 03b9c018 ========
+MCB-----+Size----+MG+FL+Prev----+Next----+UNum----+Body----+Call----
+03b9c018 0000a020 a5 01 03c8f178 03ba6038 ffffff00 03b9c038 000083b4
+03ba6038 000041c0 a5 01 03b9c018 03baa1f8 ffffff00 03ba6058 0003c048
+03baa1f8 00016c80 cd 00 03ba6038 03bc0e78 ffffff00 03baa218 0003c97c
+03bc0e78 00000260 a5 01 03baa1f8 03bc10d8 ffffff00 03bc0e98 00008bc8
+03bc10d8 00000260 a5 01 03bc0e78 03bc1338 ffffff00 03bc10f8 00008bc8
+03bc1338 000002c0 a5 01 03bc10d8 03bc15f8 ffffff00 03bc1358 00008bc8
+03bc15f8 00000240 cd 00 03bc1338 03bc1838 10000000 03bc1618 0004414c
+03bc1838 00000100 a5 01 03bc15f8 03bc1938 ffffff00 03bc1858 000370cc
+03bc1938 00000400 a5 01 03bc1838 03bc1d38 ffffff00 03bc1958 0003711c
+03bc1d38 00000400 a5 01 03bc1938 03bc2138 ffffff00 03bc1d58 00037168
+03bc2138 00000060 a5 01 03bc1d38 03bc2198 ffffff00 03bc2158 000371b4
+03bc2198 00000040 a5 01 03bc2138 03bc21d8 ffffff00 03bc21b8 00037200
+03bc21d8 000befc0 cd 00 03bc2198 03c81198 ffffff00 03bc21f8 0003c97c
+03c81198 00002100 a5 01 03bc21d8 03c83298 ffffff00 03c811b8 00008bc8
+03c83298 00000f80 a5 01 03c81198 03c84218 ffffff00 03c832b8 00008bc8
+03c84218 000041c0 a5 01 03c83298 03c883d8 ffffff00 03c84238 00008bc8
+03c883d8 000041c0 a5 01 03c84218 03c8c598 ffffff00 03c883f8 00008bc8
+03c8c598 00002be0 a5 01 03c883d8 03c8f178 ffffff00 03c8c5b8 00008bc8
+03c8f178 0014cea0 cd 00 03c8c598 03b9c018 ffffff00 03c8f198 00044118
+MCB:19(15/4) MEM:00240000(0001d2e0/00222d20)
+======== HuMem heap dump 03b9c018 end =====
+======== HuMem heap dump 03f1c030 ========
+MCB-----+Size----+MG+FL+Prev----+Next----+UNum----+Body----+Call----
+03f1c030 00a80000 cd 00 03f1c030 03f1c030 10000000 03f1c050 00038d38
+MCB:1(0/1) MEM:00a80000(00000000/00a80000)
+======== HuMem heap dump 03f1c030 end =====
+======== HuMem heap dump 0499c03c ========
+MCB-----+Size----+MG+FL+Prev----+Next----+UNum----+Body----+Call----
+0499c03c 001dc7a0 a5 01 04b787dc 04b787dc ffffff00 0499c05c 0001060c
+04b787dc 003a3860 cd 00 0499c03c 0499c03c d3bbbe91 04b787fc 0001060c
+MCB:2(1/1) MEM:00580000(001dc7a0/003a3860)
+======== HuMem heap dump 0499c03c end =====
+objman>Used Memory Size:0001d2e0
+objman>Used Memory Cnt:15
+objman>Init esp
+objman>Call objectsetup
+SOUND ##########################
+##########################
+DLLStart 35 0
+Search:dll/m427dll.rel
+objdll>Link DLL:dll/m427dll.rel
+Rest Memory 3a3860
+===== DLL Module Info dump ====
+                   ID:0x00000001
+             LinkPrev:0x00000000
+             LinkNext:0x00000000
+          Section num:15
+Section info tbl ofst:0x00000048
+           nameOffset:0x00000000
+             nameSize:47
+              version:0x00000002
+===============================
+==== DLL Module Header dump ====
+          bss Size:0x00000598
+        rel Offset:0x00018094
+        imp Offset:0x0002275c
+    prolog Section:1
+    epilog Section:1
+unresolved Section:0
+       prolog func:0x00000000
+       epilog func:0x00000054
+   unresolved func:0x00000000
+================================
+objdll>LinkOK 03bc21f8 32000000
+objdll> dll/m427dll.rel prolog start
+******* M426ObjectSetup *********
+objman>InitObjMan start
+objman>InitObjMan end
+objdll> dll/m427dll.rel prolog end
+objman>ObjectSetup end
+port> frame 14471: overlay 35 (next -1) event 0
+port> mgdump: entered minigame m427dll (mg 427) at frame 14477; dumping 14777,15677; the run ends at 15777
+DLL DBG OUT
+Init Player 
+ARAM data num 610037
+data num 5e0001
+Rest Memory 32b280
+ARAM data num 120006
+data num 6c0001
+Rest Memory 2b2ce0
+data num 190001
+Rest Memory 25a400
+data num 890001
+Rest Memory 1f98a0
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+port> status f14520   m427dll      board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.30 ms  32.2 fps
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+port> status f14580   m427dll      board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.17 ms  31.6 fps
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+port> status f14640   m427dll      board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.19 ms  39.8 fps
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+port> status f14700   m427dll      board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.20 ms  41.0 fps
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+port> status f14760   m427dll      board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.14 ms  40.6 fps
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+drawhash> f14776 b0 obj=? mdl=-1 verts=4 stride=32 h=4a03b1e8 mtx=46095caa state=4939d492
+drawhash> f14776 b1 obj=? mdl=-1 verts=676 stride=36 h=7bfc210a mtx=5062db5b state=c45887ea
+drawhash> f14776 b2 obj=? mdl=-1 verts=42 stride=36 h=629f025a mtx=5062db5b state=4adef645
+drawhash> f14776 b3 obj=? mdl=-1 verts=489 stride=36 h=49bcc503 mtx=5062db5b state=f2a8ce53
+drawhash> f14776 b4 obj=? mdl=-1 verts=63 stride=36 h=3b8e26cb mtx=5062db5b state=c45887ea
+drawhash> f14776 b5 obj=? mdl=-1 verts=180 stride=36 h=a4203c49 mtx=dcfeba43 state=4b1e6680
+drawhash> f14776 b6 obj=? mdl=-1 verts=20 stride=36 h=930ec7c9 mtx=b54f6024 state=62837cec
+drawhash> f14776 b7 obj=? mdl=-1 verts=16 stride=36 h=42c6e1e9 mtx=f9f3a393 state=62837cec
+drawhash> f14776 b8 obj=? mdl=-1 verts=72 stride=36 h=8ee482f1 mtx=0374a1b0 state=62837cec
+drawhash> f14776 b9 obj=? mdl=-1 verts=72 stride=36 h=bf12e3cd mtx=785cfd3c state=62837cec
+drawhash> f14776 b10 obj=? mdl=-1 verts=168 stride=36 h=9c8e5f88 mtx=94c2f112 state=7bb88314
+drawhash> f14776 b11 obj=? mdl=-1 verts=82 stride=36 h=3ade3dc1 mtx=5bbd9b42 state=1413fc0f
+drawhash> f14776 b12 obj=? mdl=-1 verts=82 stride=36 h=cc23b79d mtx=6c5ac449 state=26a4e066
+drawhash> f14776 b13 obj=? mdl=-1 verts=82 stride=36 h=4683a05f mtx=60d925cb state=cb008109
+drawhash> f14776 b14 obj=? mdl=-1 verts=82 stride=36 h=b3103ac3 mtx=d3a54fd3 state=a32bb880
+drawhash> f14776 b15 obj=? mdl=-1 verts=96 stride=36 h=eeb349d6 mtx=e4ca47aa state=c029ebaf
+drawhash> f14776 b16 obj=? mdl=-1 verts=110 stride=36 h=59189900 mtx=cb1f7f39 state=fbaba1b0
+drawhash> f14776 b17 obj=? mdl=-1 verts=110 stride=36 h=b13bb630 mtx=2a3b9126 state=fbaba1b0
+drawhash> f14776 b18 obj=? mdl=-1 verts=268 stride=36 h=d74840e4 mtx=386950a4 state=f6d5b162
+drawhash> f14776 b19 obj=? mdl=-1 verts=128 stride=36 h=4b2a1b4d mtx=8ccd53f3 state=2039c787
+drawhash> f14776 b20 obj=? mdl=-1 verts=108 stride=36 h=cfbe6d2f mtx=6af261c4 state=45e6a3fb
+drawhash> f14776 b21 obj=? mdl=-1 verts=51 stride=36 h=ebffd1db mtx=f547fd63 state=45e6a3fb
+drawhash> f14776 b22 obj=? mdl=-1 verts=266 stride=36 h=426c1b36 mtx=31698cef state=f6d5b162
+drawhash> f14776 b23 obj=? mdl=-1 verts=128 stride=36 h=d272c613 mtx=24da5121 state=2039c787
+drawhash> f14776 b24 obj=? mdl=-1 verts=108 stride=36 h=853c7898 mtx=e748bedd state=45e6a3fb
+drawhash> f14776 b25 obj=? mdl=-1 verts=51 stride=36 h=5fb2dacb mtx=5ea73bb4 state=45e6a3fb
+drawhash> f14776 b26 obj=? mdl=-1 verts=234 stride=36 h=cf031274 mtx=0a176594 state=f6d5b162
+drawhash> f14776 b27 obj=? mdl=-1 verts=112 stride=36 h=bddeb4c6 mtx=fcf3280b state=2039c787
+drawhash> f14776 b28 obj=? mdl=-1 verts=138 stride=36 h=fe021d52 mtx=2b72497c state=0b56688b
+drawhash> f14776 b29 obj=? mdl=-1 verts=128 stride=36 h=4b5ae519 mtx=f1464512 state=26aba9f0
+drawhash> f14776 b30 obj=? mdl=-1 verts=128 stride=36 h=d4bbf1f0 mtx=2b72497c state=0b56688b
+drawhash> f14776 b31 obj=? mdl=-1 verts=108 stride=36 h=853c7898 mtx=3565b156 state=bf1d93d8
+drawhash> f14776 b32 obj=? mdl=-1 verts=51 stride=36 h=5fb2dacb mtx=4fb32f46 state=bf1d93d8
+drawhash> f14776 b33 obj=? mdl=-1 verts=266 stride=36 h=393e67e5 mtx=77129afb state=8375a279
+drawhash> f14776 b34 obj=? mdl=-1 verts=128 stride=36 h=b3e025e1 mtx=78e2641a state=0645d60a
+drawhash> f14776 b35 obj=? mdl=-1 verts=108 stride=36 h=5c878621 mtx=afa3c289 state=2da30c17
+drawhash> f14776 b36 obj=? mdl=-1 verts=51 stride=36 h=3e9b301f mtx=b25bfced state=2da30c17
+drawhash> f14776 b37 obj=? mdl=-1 verts=138 stride=36 h=781584b0 mtx=aea14949 state=b90031f2
+drawhash> f14776 b38 obj=? mdl=-1 verts=128 stride=36 h=930d3d6a mtx=c7480b39 state=e20da7c5
+drawhash> f14776 b39 obj=? mdl=-1 verts=128 stride=36 h=bbf2f6ba mtx=aea14949 state=b90031f2
+drawhash> f14776 b40 obj=? mdl=-1 verts=108 stride=36 h=853c7898 mtx=2e3f5844 state=7d12f2f1
+drawhash> f14776 b41 obj=? mdl=-1 verts=51 stride=36 h=5fb2dacb mtx=9025d1aa state=7d12f2f1
+drawhash> f14776 b42 obj=? mdl=-1 verts=266 stride=36 h=db0d5efa mtx=e3cd43f1 state=f458e7f7
+drawhash> f14776 b43 obj=? mdl=-1 verts=128 stride=36 h=1ce22dc5 mtx=51eed948 state=f9a5fdb7
+drawhash> f14776 b44 obj=? mdl=-1 verts=108 stride=36 h=49c27b7c mtx=81482bef state=2ec92606
+drawhash> f14776 b45 obj=? mdl=-1 verts=51 stride=36 h=432f1b3d mtx=6317296a state=2ec92606
+drawhash> f14776 b46 obj=? mdl=-1 verts=140 stride=36 h=909c5b1e mtx=c7d15dd9 state=d0ab5f7a
+drawhash> f14776 b47 obj=? mdl=-1 verts=128 stride=36 h=7519f176 mtx=14c2a4da state=d0ab5f7a
+drawhash> f14776 b48 obj=? mdl=-1 verts=128 stride=36 h=b6ac9a3b mtx=7c4c8b15 state=71426c1d
+drawhash> f14776 b49 obj=? mdl=-1 verts=108 stride=36 h=853c7898 mtx=a553b0db state=ed3e4e60
+drawhash> f14776 b50 obj=? mdl=-1 verts=51 stride=36 h=5fb2dacb mtx=751ce8c9 state=ed3e4e60
+drawhash> f14776 b51 obj=? mdl=-1 verts=268 stride=36 h=fa945fbd mtx=aa9dab50 state=a1207115
+drawhash> f14776 b52 obj=? mdl=-1 verts=128 stride=36 h=e1c6453e mtx=8e9744f2 state=4d4ffd0e
+drawhash> f14776 b53 obj=? mdl=-1 verts=108 stride=36 h=1bbf6c39 mtx=70baf172 state=cb5d2af3
+drawhash> f14776 b54 obj=? mdl=-1 verts=51 stride=36 h=7253f337 mtx=380e7f0e state=cb5d2af3
+drawhash> f14776 b55 obj=? mdl=-1 verts=140 stride=36 h=1c1d86c7 mtx=38231629 state=e7793f54
+drawhash> f14776 b56 obj=? mdl=-1 verts=128 stride=36 h=12bd2a6b mtx=1f92e438 state=bb71e32c
+drawhash> f14776 b57 obj=? mdl=-1 verts=128 stride=36 h=31b0094e mtx=38231629 state=e7793f54
+drawhash> f14776 b58 obj=? mdl=-1 verts=108 stride=36 h=853c7898 mtx=24e8978f state=394a2f4a
+drawhash> f14776 b59 obj=? mdl=-1 verts=51 stride=36 h=5fb2dacb mtx=cd2e7434 state=394a2f4a
+drawhash> f14776 b60 obj=? mdl=-1 verts=268 stride=36 h=36294d1c mtx=639d0ee6 state=8a6e75f0
+drawhash> f14776 b61 obj=? mdl=-1 verts=128 stride=36 h=48c700cd mtx=abf85a6f state=f46b686d
+drawhash> f14776 b62 obj=? mdl=-1 verts=108 stride=36 h=45c30f93 mtx=bae6e99b state=75ff9b34
+drawhash> f14776 b63 obj=? mdl=-1 verts=51 stride=36 h=67f81b7a mtx=94d10ee0 state=75ff9b34
+drawhash> f14776 b64 obj=? mdl=-1 verts=268 stride=36 h=3b362f18 mtx=e72fb553 state=10dbd8e9
+drawhash> f14776 b65 obj=? mdl=-1 verts=128 stride=36 h=48c700cd mtx=6f37dff1 state=0531c9cc
+drawhash> f14776 b66 obj=? mdl=-1 verts=108 stride=36 h=853c7898 mtx=5cda6b15 state=dbbd3394
+drawhash> f14776 b67 obj=? mdl=-1 verts=51 stride=36 h=5fb2dacb mtx=6865e06b state=dbbd3394
+drawhash> f14776 b68 obj=? mdl=-1 verts=3171 stride=36 h=2e2dd657 mtx=339ecbdf state=6f9eb85e
+drawhash> f14776 b69 obj=? mdl=-1 verts=32 stride=36 h=885ce466 mtx=339ecbdf state=bab7af0f
+drawhash> f14776 b70 obj=? mdl=-1 verts=32 stride=36 h=5e6ca78f mtx=339ecbdf state=bab7af0f
+drawhash> f14776 b71 obj=? mdl=-1 verts=52 stride=36 h=d09b54b5 mtx=52407fc7 state=3cee7a84
+drawhash> f14776 b72 obj=? mdl=-1 verts=52 stride=36 h=636d3811 mtx=95465113 state=3cee7a84
+drawhash> f14776 b73 obj=? mdl=-1 verts=132 stride=36 h=33346f4c mtx=b11ccb7a state=8f8671db
+drawhash> f14776 b74 obj=? mdl=-1 verts=96 stride=36 h=37465d24 mtx=98ea2c9b state=aa4e74bf
+drawhash> f14776 b75 obj=? mdl=-1 verts=3524 stride=36 h=4d88a540 mtx=98ea2c9b state=2b8a49a3
+drawhash> f14776 b76 obj=? mdl=-1 verts=35 stride=36 h=78675817 mtx=98ea2c9b state=389ebaa0
+drawhash> f14776 b77 obj=? mdl=-1 verts=35 stride=36 h=7d7a4048 mtx=98ea2c9b state=d8e2dc9b
+drawhash> f14776 b78 obj=? mdl=-1 verts=320 stride=36 h=18b4bdda mtx=98ea2c9b state=a063793b
+drawhash> f14776 b79 obj=? mdl=-1 verts=16 stride=36 h=afe9c5cb mtx=177d3c0a state=16e29956
+drawhash> f14776 b80 obj=? mdl=-1 verts=16 stride=36 h=743e6f7e mtx=56cef0fd state=a1087e3c
+drawhash> f14776 b81 obj=? mdl=-1 verts=16 stride=36 h=f55e13b4 mtx=87015e66 state=4f395df2
+drawhash> f14776 b82 obj=? mdl=-1 verts=16 stride=36 h=4fb42e9a mtx=ca830bd8 state=37c3eda9
+drawhash> f14776 b83 obj=? mdl=-1 verts=16 stride=36 h=27e3a37e mtx=5f845c54 state=b6b0438d
+drawhash> f14776 b84 obj=? mdl=-1 verts=16 stride=36 h=5d1e843f mtx=6e08938f state=231f12b8
+drawhash> f14776 b85 obj=? mdl=-1 verts=16 stride=36 h=cb4ef65a mtx=383bd1fb state=7ca0295a
+drawhash> f14776 b86 obj=? mdl=-1 verts=16 stride=36 h=3a85e8ad mtx=23e67353 state=758a7adf
+drawhash> f14776 b87 obj=? mdl=-1 verts=16 stride=36 h=9e0a66ca mtx=7bc3b3a6 state=05cf41ca
+drawhash> f14776 b88 obj=? mdl=-1 verts=16 stride=36 h=eb2a49ea mtx=453a3fdd state=3988b6c0
+drawhash> f14776 b89 obj=? mdl=-1 verts=16 stride=36 h=999bd1e7 mtx=31698cef state=3988b6c0
+drawhash> f14776 b90 obj=? mdl=-1 verts=20 stride=36 h=41432adc mtx=fd623ef9 state=2a3e5c39
+drawhash> f14776 b91 obj=? mdl=-1 verts=20 stride=36 h=41432adc mtx=f49097e0 state=9299e53a
+drawhash> f14776 b92 obj=? mdl=-1 verts=20 stride=36 h=41432adc mtx=f022730f state=f24e007e
+drawhash> f14776 b93 obj=? mdl=-1 verts=20 stride=36 h=41432adc mtx=abc0be9a state=e957e096
+drawhash> f14776 b94 obj=? mdl=-1 verts=287 stride=36 h=b5ac4833 mtx=dafc4617 state=f588dbe3
+drawhash> f14776 b95 obj=? mdl=-1 verts=107 stride=36 h=2cb31894 mtx=6dba94d1 state=8976995b
+drawhash> f14776 b96 obj=? mdl=-1 verts=12 stride=36 h=c8a2f895 mtx=093557c3 state=69d0bd7d
+drawhash> f14776 b97 obj=? mdl=-1 verts=1200 stride=36 h=286f9b90 mtx=152272ef state=188ff94e
+drawhash> f14776 b98 obj=? mdl=-1 verts=48 stride=36 h=4b318abd mtx=a8e67542 state=9f5a25db
+drawhash> f14776 b99 obj=? mdl=-1 verts=48 stride=36 h=03a3a999 mtx=e16954d7 state=68658229
+drawhash> f14776 b100 obj=? mdl=-1 verts=48 stride=36 h=a69666e8 mtx=6f693634 state=b4c45272
+drawhash> f14776 b101 obj=? mdl=-1 verts=2048 stride=24 h=d5ca1dc5 mtx=09cfbfdd state=14c16241
+drawhash> f14776 b102 obj=? mdl=-1 verts=16 stride=24 h=cb3625cc mtx=09cfbfdd state=7c9ffe87
+drawhash> f14776 b103 obj=? mdl=-1 verts=4 stride=32 h=4a03b1e8 mtx=a91263aa state=cecec9ca
+drawhash> f14776 b104 obj=? mdl=-1 verts=676 stride=36 h=7bfc210a mtx=5062db5b state=029a4b04
+drawhash> f14776 b105 obj=? mdl=-1 verts=42 stride=36 h=629f025a mtx=5062db5b state=f150ba9a
+drawhash> f14776 b106 obj=? mdl=-1 verts=489 stride=36 h=49bcc503 mtx=5062db5b state=f44d745e
+drawhash> f14776 b107 obj=? mdl=-1 verts=63 stride=36 h=3b8e26cb mtx=5062db5b state=029a4b04
+drawhash> f14776 b108 obj=? mdl=-1 verts=180 stride=36 h=a4203c49 mtx=dcfeba43 state=c8dab8e7
+drawhash> f14776 b109 obj=? mdl=-1 verts=20 stride=36 h=930ec7c9 mtx=b54f6024 state=5a301c08
+drawhash> f14776 b110 obj=? mdl=-1 verts=16 stride=36 h=42c6e1e9 mtx=f9f3a393 state=5a301c08
+drawhash> f14776 b111 obj=? mdl=-1 verts=72 stride=36 h=8ee482f1 mtx=0374a1b0 state=5a301c08
+drawhash> f14776 b112 obj=? mdl=-1 verts=72 stride=36 h=bf12e3cd mtx=785cfd3c state=5a301c08
+drawhash> f14776 b113 obj=? mdl=-1 verts=168 stride=36 h=9c8e5f88 mtx=94c2f112 state=1ec0d575
+drawhash> f14776 b114 obj=? mdl=-1 verts=82 stride=36 h=3ade3dc1 mtx=a81980f9 state=063e1443
+drawhash> f14776 b115 obj=? mdl=-1 verts=82 stride=36 h=cc23b79d mtx=ae45a4ad state=b443b1fa
+drawhash> f14776 b116 obj=? mdl=-1 verts=82 stride=36 h=4683a05f mtx=1e5f230c state=9e1fe2e4
+drawhash> f14776 b117 obj=? mdl=-1 verts=82 stride=36 h=b3103ac3 mtx=56d7a7e3 state=19f4b2ad
+drawhash> f14776 b118 obj=? mdl=-1 verts=96 stride=36 h=eeb349d6 mtx=e4ca47aa state=bfc0180f
+drawhash> f14776 b119 obj=? mdl=-1 verts=110 stride=36 h=59189900 mtx=cb1f7f39 state=a3cbe6ef
+drawhash> f14776 b120 obj=? mdl=-1 verts=110 stride=36 h=b13bb630 mtx=2a3b9126 state=a3cbe6ef
+drawhash> f14776 b121 obj=? mdl=-1 verts=268 stride=36 h=d74840e4 mtx=386950a4 state=af13f967
+drawhash> f14776 b122 obj=? mdl=-1 verts=128 stride=36 h=4b2a1b4d mtx=8ccd53f3 state=ba9a1802
+drawhash> f14776 b123 obj=? mdl=-1 verts=108 stride=36 h=cfbe6d2f mtx=6af261c4 state=109f8cfb
+drawhash> f14776 b124 obj=? mdl=-1 verts=51 stride=36 h=ebffd1db mtx=f547fd63 state=109f8cfb
+drawhash> f14776 b125 obj=? mdl=-1 verts=266 stride=36 h=426c1b36 mtx=31698cef state=af13f967
+drawhash> f14776 b126 obj=? mdl=-1 verts=128 stride=36 h=d272c613 mtx=24da5121 state=ba9a1802
+drawhash> f14776 b127 obj=? mdl=-1 verts=108 stride=36 h=853c7898 mtx=e748bedd state=109f8cfb
+drawhash> f14776 b128 obj=? mdl=-1 verts=51 stride=36 h=5fb2dacb mtx=5ea73bb4 state=109f8cfb
+drawhash> f14776 b129 obj=? mdl=-1 verts=234 stride=36 h=cf031274 mtx=0a176594 state=af13f967
+drawhash> f14776 b130 obj=? mdl=-1 verts=112 stride=36 h=bddeb4c6 mtx=fcf3280b state=ba9a1802
+drawhash> f14776 b131 obj=? mdl=-1 verts=138 stride=36 h=fe021d52 mtx=2b72497c state=7081ac51
+drawhash> f14776 b132 obj=? mdl=-1 verts=128 stride=36 h=4b5ae519 mtx=f1464512 state=f0f93bde
+drawhash> f14776 b133 obj=? mdl=-1 verts=128 stride=36 h=d4bbf1f0 mtx=2b72497c state=7081ac51
+drawhash> f14776 b134 obj=? mdl=-1 verts=108 stride=36 h=853c7898 mtx=3565b156 state=a04e2848
+drawhash> f14776 b135 obj=? mdl=-1 verts=51 stride=36 h=5fb2dacb mtx=4fb32f46 state=a04e2848
+drawhash> f14776 b136 obj=? mdl=-1 verts=266 stride=36 h=393e67e5 mtx=77129afb state=d3bd66e3
+drawhash> f14776 b137 obj=? mdl=-1 verts=128 stride=36 h=b3e025e1 mtx=78e2641a state=d6e6b111
+drawhash> f14776 b138 obj=? mdl=-1 verts=108 stride=36 h=5c878621 mtx=afa3c289 state=d7ec7c1c
+drawhash> f14776 b139 obj=? mdl=-1 verts=51 stride=36 h=3e9b301f mtx=b25bfced state=d7ec7c1c
+drawhash> f14776 b140 obj=? mdl=-1 verts=138 stride=36 h=781584b0 mtx=aea14949 state=621d28ab
+drawhash> f14776 b141 obj=? mdl=-1 verts=128 stride=36 h=930d3d6a mtx=c7480b39 state=d3651668
+drawhash> f14776 b142 obj=? mdl=-1 verts=128 stride=36 h=bbf2f6ba mtx=aea14949 state=621d28ab
+drawhash> f14776 b143 obj=? mdl=-1 verts=108 stride=36 h=853c7898 mtx=2e3f5844 state=bb0269f2
+drawhash> f14776 b144 obj=? mdl=-1 verts=51 stride=36 h=5fb2dacb mtx=9025d1aa state=bb0269f2
+drawhash> f14776 b145 obj=? mdl=-1 verts=266 stride=36 h=db0d5efa mtx=e3cd43f1 state=16fe6b7e
+drawhash> f14776 b146 obj=? mdl=-1 verts=128 stride=36 h=1ce22dc5 mtx=51eed948 state=40d47670
+drawhash> f14776 b147 obj=? mdl=-1 verts=108 stride=36 h=49c27b7c mtx=81482bef state=f2a3dec1
+drawhash> f14776 b148 obj=? mdl=-1 verts=51 stride=36 h=432f1b3d mtx=6317296a state=f2a3dec1
+drawhash> f14776 b149 obj=? mdl=-1 verts=140 stride=36 h=909c5b1e mtx=c7d15dd9 state=75c0ed05
+drawhash> f14776 b150 obj=? mdl=-1 verts=128 stride=36 h=7519f176 mtx=14c2a4da state=75c0ed05
+drawhash> f14776 b151 obj=? mdl=-1 verts=128 stride=36 h=b6ac9a3b mtx=7c4c8b15 state=27d0f301
+drawhash> f14776 b152 obj=? mdl=-1 verts=108 stride=36 h=853c7898 mtx=a553b0db state=5273e0e4
+drawhash> f14776 b153 obj=? mdl=-1 verts=51 stride=36 h=5fb2dacb mtx=751ce8c9 state=5273e0e4
+drawhash> f14776 b154 obj=? mdl=-1 verts=268 stride=36 h=fa945fbd mtx=aa9dab50 state=285b69ba
+drawhash> f14776 b155 obj=? mdl=-1 verts=128 stride=36 h=e1c6453e mtx=8e9744f2 state=52a3527f
+drawhash> f14776 b156 obj=? mdl=-1 verts=108 stride=36 h=1bbf6c39 mtx=70baf172 state=8a3c84fa
+drawhash> f14776 b157 obj=? mdl=-1 verts=51 stride=36 h=7253f337 mtx=380e7f0e state=8a3c84fa
+drawhash> f14776 b158 obj=? mdl=-1 verts=140 stride=36 h=1c1d86c7 mtx=38231629 state=6c29977f
+drawhash> f14776 b159 obj=? mdl=-1 verts=128 stride=36 h=12bd2a6b mtx=1f92e438 state=ba728b27
+drawhash> f14776 b160 obj=? mdl=-1 verts=128 stride=36 h=31b0094e mtx=38231629 state=6c29977f
+drawhash> f14776 b161 obj=? mdl=-1 verts=108 stride=36 h=853c7898 mtx=24e8978f state=1f8e606b
+drawhash> f14776 b162 obj=? mdl=-1 verts=51 stride=36 h=5fb2dacb mtx=cd2e7434 state=1f8e606b
+drawhash> f14776 b163 obj=? mdl=-1 verts=268 stride=36 h=36294d1c mtx=639d0ee6 state=76bca504
+drawhash> f14776 b164 obj=? mdl=-1 verts=128 stride=36 h=48c700cd mtx=abf85a6f state=0c7a7941
+drawhash> f14776 b165 obj=? mdl=-1 verts=108 stride=36 h=45c30f93 mtx=bae6e99b state=ba1a8b58
+drawhash> f14776 b166 obj=? mdl=-1 verts=51 stride=36 h=67f81b7a mtx=94d10ee0 state=ba1a8b58
+drawhash> f14776 b167 obj=? mdl=-1 verts=268 stride=36 h=3b362f18 mtx=e72fb553 state=66c75bf8
+drawhash> f14776 b168 obj=? mdl=-1 verts=128 stride=36 h=48c700cd mtx=6f37dff1 state=c2589137
+drawhash> f14776 b169 obj=? mdl=-1 verts=108 stride=36 h=853c7898 mtx=5cda6b15 state=291b75a3
+drawhash> f14776 b170 obj=? mdl=-1 verts=51 stride=36 h=5fb2dacb mtx=6865e06b state=291b75a3
+drawhash> f14776 b171 obj=? mdl=-1 verts=3156 stride=36 h=5b9ceaf6 mtx=a3b21bf2 state=fd169266
+drawhash> f14776 b172 obj=? mdl=-1 verts=16 stride=28 h=49de3e7b mtx=a3b21bf2 state=292642eb
+drawhash> f14776 b173 obj=? mdl=-1 verts=264 stride=36 h=8d0feb1c mtx=a3b21bf2 state=5f86dbca
+drawhash> f14776 b174 obj=? mdl=-1 verts=80 stride=36 h=0a2a44fd mtx=a3b21bf2 state=a10ece44
+drawhash> f14776 b175 obj=? mdl=-1 verts=52 stride=36 h=723bfd56 mtx=5f0419e2 state=758b5ea7
+drawhash> f14776 b176 obj=? mdl=-1 verts=52 stride=36 h=e0e86ee6 mtx=172f6b02 state=758b5ea7
+drawhash> f14776 b177 obj=? mdl=-1 verts=4360 stride=36 h=6b963bad mtx=c0797871 state=494aa88c
+drawhash> f14776 b178 obj=? mdl=-1 verts=98 stride=36 h=cb9d0b8d mtx=f4069ff2 state=494aa88c
+drawhash> f14776 b179 obj=? mdl=-1 verts=96 stride=36 h=14774889 mtx=cdade4c7 state=494aa88c
+drawhash> f14776 b180 obj=? mdl=-1 verts=16 stride=36 h=afe9c5cb mtx=177d3c0a state=3d3d6186
+drawhash> f14776 b181 obj=? mdl=-1 verts=16 stride=36 h=743e6f7e mtx=56cef0fd state=cf051a2d
+drawhash> f14776 b182 obj=? mdl=-1 verts=16 stride=36 h=f55e13b4 mtx=87015e66 state=03f15e03
+drawhash> f14776 b183 obj=? mdl=-1 verts=16 stride=36 h=4fb42e9a mtx=ca830bd8 state=4ae98ac9
+drawhash> f14776 b184 obj=? mdl=-1 verts=16 stride=36 h=27e3a37e mtx=5f845c54 state=1d7a4b0a
+drawhash> f14776 b185 obj=? mdl=-1 verts=16 stride=36 h=5d1e843f mtx=6e08938f state=d8ca104b
+drawhash> f14776 b186 obj=? mdl=-1 verts=16 stride=36 h=cb4ef65a mtx=383bd1fb state=ae84fc31
+drawhash> f14776 b187 obj=? mdl=-1 verts=16 stride=36 h=3a85e8ad mtx=23e67353 state=4913ba5c
+drawhash> f14776 b188 obj=? mdl=-1 verts=16 stride=36 h=9e0a66ca mtx=7bc3b3a6 state=933dd4a5
+drawhash> f14776 b189 obj=? mdl=-1 verts=16 stride=36 h=eb2a49ea mtx=453a3fdd state=d452cef2
+drawhash> f14776 b190 obj=? mdl=-1 verts=16 stride=36 h=999bd1e7 mtx=31698cef state=d452cef2
+drawhash> f14776 b191 obj=? mdl=-1 verts=20 stride=36 h=41432adc mtx=fd623ef9 state=a391ba0f
+drawhash> f14776 b192 obj=? mdl=-1 verts=20 stride=36 h=41432adc mtx=f49097e0 state=d8bb8c54
+drawhash> f14776 b193 obj=? mdl=-1 verts=20 stride=36 h=41432adc mtx=f022730f state=d0cbaadc
+drawhash> f14776 b194 obj=? mdl=-1 verts=20 stride=36 h=41432adc mtx=abc0be9a state=bb40d4f8
+drawhash> f14776 b195 obj=? mdl=-1 verts=287 stride=36 h=b5ac4833 mtx=dafc4617 state=db072f5e
+drawhash> f14776 b196 obj=? mdl=-1 verts=107 stride=36 h=2cb31894 mtx=6dba94d1 state=c9d22da6
+drawhash> f14776 b197 obj=? mdl=-1 verts=12 stride=36 h=c8a2f895 mtx=093557c3 state=22f1d9ec
+drawhash> f14776 b198 obj=? mdl=-1 verts=1200 stride=36 h=286f9b90 mtx=152272ef state=c9be6bd2
+drawhash> f14776 b199 obj=? mdl=-1 verts=48 stride=36 h=4b318abd mtx=a8e67542 state=164d5558
+drawhash> f14776 b200 obj=? mdl=-1 verts=48 stride=36 h=03a3a999 mtx=e16954d7 state=d4b659db
+drawhash> f14776 b201 obj=? mdl=-1 verts=48 stride=36 h=a69666e8 mtx=6f693634 state=64dab244
+drawhash> f14776 b202 obj=? mdl=-1 verts=2048 stride=24 h=d5ca1dc5 mtx=09cfbfdd state=33ffccbb
+drawhash> f14776 b203 obj=? mdl=-1 verts=16 stride=24 h=cb3625cc mtx=09cfbfdd state=90791d41
+drawhash> f14776 b204 obj=? mdl=-1 verts=4 stride=24 h=f8d020e5 mtx=8863d092 state=82117309
+drawhash> f14776 b205 obj=? mdl=-1 verts=4 stride=24 h=78157d45 mtx=95e11efe state=4bf17b0a
+drawhash> f14776 b206 obj=? mdl=-1 verts=4 stride=24 h=78157d45 mtx=f8091344 state=e1f9e16f
+drawhash> f14776 b207 obj=? mdl=-1 verts=4 stride=24 h=4019cc05 mtx=5200da5a state=640e4fe0
+drawhash> f14776 b208 obj=? mdl=-1 verts=4 stride=24 h=646be345 mtx=df698454 state=7419c18b
+drawhash> f14776 b209 obj=? mdl=-1 verts=4 stride=24 h=bd9acb15 mtx=4ed6bb06 state=da9d2e3d
+drawhash> f14776 b210 obj=? mdl=-1 verts=4 stride=24 h=40f3d799 mtx=cbbadd12 state=da9d2e3d
+drawhash> f14776 b211 obj=? mdl=-1 verts=4 stride=24 h=3eb88415 mtx=bf89737a state=da9d2e3d
+drawhash> f14776 b212 obj=? mdl=-1 verts=4 stride=24 h=3eb88415 mtx=d3f30062 state=da9d2e3d
+drawhash> f14776 b213 obj=? mdl=-1 verts=4 stride=24 h=c628b1d9 mtx=e2cbdb4a state=da9d2e3d
+drawhash> f14776 b214 obj=? mdl=-1 verts=4 stride=24 h=3eb88415 mtx=f25794b2 state=da9d2e3d
+drawhash> f14776 b215 obj=? mdl=-1 verts=4 stride=24 h=3eb88415 mtx=11b6c91a state=da9d2e3d
+drawhash> f14776 b216 obj=? mdl=-1 verts=4 stride=24 h=3eb88415 mtx=14ed786e state=a816fba7
+drawhash> f14776 b217 obj=? mdl=-1 verts=4 stride=24 h=40f3d799 mtx=499b59ea state=a816fba7
+drawhash> f14776 b218 obj=? mdl=-1 verts=4 stride=24 h=3eb88415 mtx=0d1aaa62 state=a816fba7
+drawhash> f14776 b219 obj=? mdl=-1 verts=4 stride=24 h=3eb88415 mtx=8661c97a state=a816fba7
+drawhash> f14776 b220 obj=? mdl=-1 verts=4 stride=24 h=c628b1d9 mtx=55eced72 state=a816fba7
+drawhash> f14776 b221 obj=? mdl=-1 verts=4 stride=24 h=3eb88415 mtx=83dc848a state=a816fba7
+drawhash> f14776 b222 obj=? mdl=-1 verts=4 stride=24 h=3eb88415 mtx=54109d82 state=a816fba7
+port> --dumpframe: wrote /Users/zach/m48/L-m427-@m48f,--drawhash,14776+14777/frame-14777.ppm
+drawhash> f14777 b0 obj=? mdl=-1 verts=4 stride=32 h=fbff7ca4 mtx=38efbe5b state=8352cfcb
+drawhash> f14777 b1 obj=? mdl=-1 verts=676 stride=36 h=7bfc210a mtx=bcf9c03b state=efcc90d3
+drawhash> f14777 b2 obj=? mdl=-1 verts=42 stride=36 h=629f025a mtx=bcf9c03b state=3f526960
+drawhash> f14777 b3 obj=? mdl=-1 verts=489 stride=36 h=49bcc503 mtx=bcf9c03b state=958b3a9e
+drawhash> f14777 b4 obj=? mdl=-1 verts=63 stride=36 h=3b8e26cb mtx=bcf9c03b state=efcc90d3
+drawhash> f14777 b5 obj=? mdl=-1 verts=60 stride=36 h=a2e47698 mtx=553081c9 state=a11861ad
+drawhash> f14777 b6 obj=? mdl=-1 verts=120 stride=36 h=c5c97bac mtx=553081c9 state=a11861ad
+drawhash> f14777 b7 obj=? mdl=-1 verts=20 stride=36 h=930ec7c9 mtx=4b1feed3 state=0c08c231
+drawhash> f14777 b8 obj=? mdl=-1 verts=16 stride=36 h=42c6e1e9 mtx=fc1c18a3 state=0c08c231
+drawhash> f14777 b9 obj=? mdl=-1 verts=72 stride=36 h=8ee482f1 mtx=e27dcbdb state=0c08c231
+drawhash> f14777 b10 obj=? mdl=-1 verts=72 stride=36 h=bf12e3cd mtx=37d97b70 state=0c08c231
+drawhash> f14777 b11 obj=? mdl=-1 verts=36 stride=36 h=5f010dd4 mtx=e8e54cab state=7abbce51
+drawhash> f14777 b12 obj=? mdl=-1 verts=132 stride=36 h=3a7c20a9 mtx=e8e54cab state=7abbce51
+drawhash> f14777 b13 obj=? mdl=-1 verts=18 stride=36 h=f24fad25 mtx=b42a376f state=3b97bbba
+drawhash> f14777 b14 obj=? mdl=-1 verts=64 stride=36 h=bcc8a961 mtx=b42a376f state=3b97bbba
+drawhash> f14777 b15 obj=? mdl=-1 verts=18 stride=36 h=32747265 mtx=29ac645b state=31890a23
+drawhash> f14777 b16 obj=? mdl=-1 verts=64 stride=36 h=803824fd mtx=29ac645b state=31890a23
+drawhash> f14777 b17 obj=? mdl=-1 verts=18 stride=36 h=6506ed67 mtx=857de9bf state=924b54ec
+drawhash> f14777 b18 obj=? mdl=-1 verts=64 stride=36 h=7fa52a75 mtx=857de9bf state=924b54ec
+drawhash> f14777 b19 obj=? mdl=-1 verts=18 stride=36 h=d8c8df5f mtx=0124f85e state=4eb0bfd5
+drawhash> f14777 b20 obj=? mdl=-1 verts=64 stride=36 h=2a1079b1 mtx=0124f85e state=4eb0bfd5
+drawhash> f14777 b21 obj=? mdl=-1 verts=24 stride=36 h=9b918201 mtx=59b2c07c state=c029ebaf
+drawhash> f14777 b22 obj=? mdl=-1 verts=72 stride=36 h=9d36c6fa mtx=59b2c07c state=c029ebaf
+drawhash> f14777 b23 obj=? mdl=-1 verts=6 stride=36 h=8e4f51c0 mtx=f7b2fb76 state=fbaba1b0
+drawhash> f14777 b24 obj=? mdl=-1 verts=104 stride=36 h=166a0aed mtx=f7b2fb76 state=fbaba1b0
+drawhash> f14777 b25 obj=? mdl=-1 verts=6 stride=36 h=c3b75ccc mtx=38fa1313 state=fbaba1b0
+drawhash> f14777 b26 obj=? mdl=-1 verts=104 stride=36 h=7845bd79 mtx=38fa1313 state=fbaba1b0
+drawhash> f14777 b27 obj=? mdl=-1 verts=24 stride=36 h=25504dcc mtx=7f7e24fd state=1c99f2c4
+drawhash> f14777 b28 obj=? mdl=-1 verts=244 stride=36 h=be01d17d mtx=7f7e24fd state=1c99f2c4
+drawhash> f14777 b29 obj=? mdl=-1 verts=128 stride=36 h=4b2a1b4d mtx=9b5bc4c9 state=afee0e01
+drawhash> f14777 b30 obj=? mdl=-1 verts=108 stride=36 h=cfbe6d2f mtx=b120a436 state=1c6cf665
+drawhash> f14777 b31 obj=? mdl=-1 verts=3 stride=36 h=4d023983 mtx=dfaad159 state=1c6cf665
+drawhash> f14777 b32 obj=? mdl=-1 verts=48 stride=36 h=57dd67c9 mtx=dfaad159 state=1c6cf665
+drawhash> f14777 b33 obj=? mdl=-1 verts=18 stride=36 h=cbffb121 mtx=ec43985a state=1c99f2c4
+drawhash> f14777 b34 obj=? mdl=-1 verts=248 stride=36 h=59532b7a mtx=ec43985a state=1c99f2c4
+drawhash> f14777 b35 obj=? mdl=-1 verts=128 stride=36 h=d272c613 mtx=e2b7b71b state=afee0e01
+drawhash> f14777 b36 obj=? mdl=-1 verts=108 stride=36 h=853c7898 mtx=238f5959 state=1c6cf665
+drawhash> f14777 b37 obj=? mdl=-1 verts=3 stride=36 h=55e37cf2 mtx=eb11d1c8 state=1c6cf665
+drawhash> f14777 b38 obj=? mdl=-1 verts=48 stride=36 h=47555a40 mtx=eb11d1c8 state=1c6cf665
+drawhash> f14777 b39 obj=? mdl=-1 verts=18 stride=36 h=56b1b86d mtx=21c23b19 state=1c99f2c4
+drawhash> f14777 b40 obj=? mdl=-1 verts=216 stride=36 h=c58d9d4c mtx=21c23b19 state=1c99f2c4
+drawhash> f14777 b41 obj=? mdl=-1 verts=112 stride=36 h=bddeb4c6 mtx=626920f9 state=afee0e01
+drawhash> f14777 b42 obj=? mdl=-1 verts=18 stride=36 h=08626a7d mtx=7790cf3a state=d37b5ecb
+drawhash> f14777 b43 obj=? mdl=-1 verts=120 stride=36 h=b7ffedea mtx=7790cf3a state=d37b5ecb
+drawhash> f14777 b44 obj=? mdl=-1 verts=128 stride=36 h=4b5ae519 mtx=840b9c4b state=60297f30
+drawhash> f14777 b45 obj=? mdl=-1 verts=128 stride=36 h=d4bbf1f0 mtx=7790cf3a state=d37b5ecb
+drawhash> f14777 b46 obj=? mdl=-1 verts=108 stride=36 h=853c7898 mtx=45605415 state=1fbc62d8
+drawhash> f14777 b47 obj=? mdl=-1 verts=3 stride=36 h=55e37cf2 mtx=985c063f state=1fbc62d8
+drawhash> f14777 b48 obj=? mdl=-1 verts=48 stride=36 h=47555a40 mtx=985c063f state=1fbc62d8
+drawhash> f14777 b49 obj=? mdl=-1 verts=18 stride=36 h=847716d5 mtx=6a302576 state=11589cd3
+drawhash> f14777 b50 obj=? mdl=-1 verts=248 stride=36 h=97e37515 mtx=6a302576 state=11589cd3
+drawhash> f14777 b51 obj=? mdl=-1 verts=128 stride=36 h=b3e025e1 mtx=c85097b5 state=b18f0604
+drawhash> f14777 b52 obj=? mdl=-1 verts=108 stride=36 h=5c878621 mtx=ae0d657e state=cbc364a1
+drawhash> f14777 b53 obj=? mdl=-1 verts=3 stride=36 h=3e8a5e27 mtx=f90968c8 state=cbc364a1
+drawhash> f14777 b54 obj=? mdl=-1 verts=48 stride=36 h=46f9e2d9 mtx=f90968c8 state=cbc364a1
+drawhash> f14777 b55 obj=? mdl=-1 verts=18 stride=36 h=834cf735 mtx=c6a45419 state=89766d23
+drawhash> f14777 b56 obj=? mdl=-1 verts=120 stride=36 h=3e924ee0 mtx=c6a45419 state=89766d23
+drawhash> f14777 b57 obj=? mdl=-1 verts=128 stride=36 h=930d3d6a mtx=59c97094 state=be2a0c00
+drawhash> f14777 b58 obj=? mdl=-1 verts=128 stride=36 h=bbf2f6ba mtx=c6a45419 state=89766d23
+drawhash> f14777 b59 obj=? mdl=-1 verts=108 stride=36 h=853c7898 mtx=9c025386 state=d685d760
+drawhash> f14777 b60 obj=? mdl=-1 verts=3 stride=36 h=55e37cf2 mtx=9671a702 state=d685d760
+drawhash> f14777 b61 obj=? mdl=-1 verts=48 stride=36 h=47555a40 mtx=9671a702 state=d685d760
+drawhash> f14777 b62 obj=? mdl=-1 verts=18 stride=36 h=a34dd689 mtx=90e2bffe state=d58998da
+drawhash> f14777 b63 obj=? mdl=-1 verts=248 stride=36 h=c57b17de mtx=90e2bffe state=d58998da
+drawhash> f14777 b64 obj=? mdl=-1 verts=128 stride=36 h=1ce22dc5 mtx=5ec79040 state=fdca709a
+drawhash> f14777 b65 obj=? mdl=-1 verts=108 stride=36 h=49c27b7c mtx=216fc94e state=0d6c3097
+drawhash> f14777 b66 obj=? mdl=-1 verts=3 stride=36 h=1512d1c1 mtx=2e0fbb9a state=0d6c3097
+drawhash> f14777 b67 obj=? mdl=-1 verts=48 stride=36 h=32af34e1 mtx=2e0fbb9a state=0d6c3097
+drawhash> f14777 b68 obj=? mdl=-1 verts=24 stride=36 h=c066c5ec mtx=f3bf9c7a state=1994f31b
+drawhash> f14777 b69 obj=? mdl=-1 verts=116 stride=36 h=a45360b7 mtx=f3bf9c7a state=1994f31b
+drawhash> f14777 b70 obj=? mdl=-1 verts=128 stride=36 h=7519f176 mtx=837647b2 state=1994f31b
+drawhash> f14777 b71 obj=? mdl=-1 verts=128 stride=36 h=b6ac9a3b mtx=20cb21db state=ddb1b22c
+drawhash> f14777 b72 obj=? mdl=-1 verts=108 stride=36 h=853c7898 mtx=dd71146b state=e0a6bffd
+drawhash> f14777 b73 obj=? mdl=-1 verts=3 stride=36 h=55e37cf2 mtx=793428ff state=e0a6bffd
+drawhash> f14777 b74 obj=? mdl=-1 verts=48 stride=36 h=47555a40 mtx=793428ff state=e0a6bffd
+drawhash> f14777 b75 obj=? mdl=-1 verts=24 stride=36 h=4f97f5fa mtx=8391181b state=9377c09c
+drawhash> f14777 b76 obj=? mdl=-1 verts=244 stride=36 h=565dee1e mtx=8391181b state=9377c09c
+drawhash> f14777 b77 obj=? mdl=-1 verts=128 stride=36 h=e1c6453e mtx=3def8ef3 state=13fb499f
+drawhash> f14777 b78 obj=? mdl=-1 verts=108 stride=36 h=1bbf6c39 mtx=0454ac1c state=258e122e
+drawhash> f14777 b79 obj=? mdl=-1 verts=3 stride=36 h=8bf1bda0 mtx=5b4be898 state=258e122e
+drawhash> f14777 b80 obj=? mdl=-1 verts=48 stride=36 h=fec3e946 mtx=5b4be898 state=258e122e
+drawhash> f14777 b81 obj=? mdl=-1 verts=24 stride=36 h=27e3cd88 mtx=309cc088 state=fba529c9
+drawhash> f14777 b82 obj=? mdl=-1 verts=116 stride=36 h=31b497d6 mtx=309cc088 state=fba529c9
+drawhash> f14777 b83 obj=? mdl=-1 verts=128 stride=36 h=12bd2a6b mtx=e58706d5 state=09f34851
+drawhash> f14777 b84 obj=? mdl=-1 verts=128 stride=36 h=31b0094e mtx=309cc088 state=fba529c9
+drawhash> f14777 b85 obj=? mdl=-1 verts=108 stride=36 h=853c7898 mtx=4191486e state=d6b286a3
+drawhash> f14777 b86 obj=? mdl=-1 verts=3 stride=36 h=55e37cf2 mtx=2c585634 state=d6b286a3
+drawhash> f14777 b87 obj=? mdl=-1 verts=48 stride=36 h=47555a40 mtx=2c585634 state=d6b286a3
+drawhash> f14777 b88 obj=? mdl=-1 verts=24 stride=36 h=2c1e9da2 mtx=c1bc4d58 state=ac336d95
+drawhash> f14777 b89 obj=? mdl=-1 verts=244 stride=36 h=e428abef mtx=c1bc4d58 state=ac336d95
+drawhash> f14777 b90 obj=? mdl=-1 verts=128 stride=36 h=48c700cd mtx=26b40c4e state=09163ab8
+drawhash> f14777 b91 obj=? mdl=-1 verts=108 stride=36 h=45c30f93 mtx=ac651e65 state=f395604d
+drawhash> f14777 b92 obj=? mdl=-1 verts=3 stride=36 h=57f7e7d6 mtx=bea84350 state=f395604d
+drawhash> f14777 b93 obj=? mdl=-1 verts=48 stride=36 h=2561804d mtx=bea84350 state=f395604d
+drawhash> f14777 b94 obj=? mdl=-1 verts=24 stride=36 h=7842a482 mtx=579b13e2 state=2cfd9348
+drawhash> f14777 b95 obj=? mdl=-1 verts=244 stride=36 h=547004c3 mtx=579b13e2 state=2cfd9348
+drawhash> f14777 b96 obj=? mdl=-1 verts=128 stride=36 h=48c700cd mtx=2300e6cf state=52ee7ee5
+drawhash> f14777 b97 obj=? mdl=-1 verts=108 stride=36 h=853c7898 mtx=6f94d413 state=89925589
+drawhash> f14777 b98 obj=? mdl=-1 verts=3 stride=36 h=55e37cf2 mtx=21d0815a state=89925589
+drawhash> f14777 b99 obj=? mdl=-1 verts=48 stride=36 h=47555a40 mtx=21d0815a state=89925589
+drawhash> f14777 b100 obj=? mdl=-1 verts=3171 stride=36 h=a6afc8c8 mtx=f57c75e4 state=76cba853
+drawhash> f14777 b101 obj=? mdl=-1 verts=32 stride=36 h=fd61d11f mtx=f57c75e4 state=9c29faec
+drawhash> f14777 b102 obj=? mdl=-1 verts=32 stride=36 h=e646559a mtx=f57c75e4 state=9c29faec
+drawhash> f14777 b103 obj=? mdl=-1 verts=12 stride=36 h=b11ba32a mtx=111978c0 state=b2163b59
+drawhash> f14777 b104 obj=? mdl=-1 verts=40 stride=36 h=baffc15e mtx=111978c0 state=b2163b59
+drawhash> f14777 b105 obj=? mdl=-1 verts=12 stride=36 h=56a4d903 mtx=b1bafde6 state=b2163b59
+drawhash> f14777 b106 obj=? mdl=-1 verts=40 stride=36 h=454cc267 mtx=b1bafde6 state=b2163b59
+drawhash> f14777 b107 obj=? mdl=-1 verts=36 stride=36 h=d82744a1 mtx=ed5f8412 state=481c4b92
+drawhash> f14777 b108 obj=? mdl=-1 verts=96 stride=36 h=60fc6988 mtx=ed5f8412 state=481c4b92
+drawhash> f14777 b109 obj=? mdl=-1 verts=96 stride=36 h=3ea447b8 mtx=8798b0ad state=a7c0a67a
+drawhash> f14777 b110 obj=? mdl=-1 verts=3524 stride=36 h=4b9afa07 mtx=8798b0ad state=43b81aa6
+drawhash> f14777 b111 obj=? mdl=-1 verts=35 stride=36 h=3e5560d7 mtx=8798b0ad state=e5370b0b
+drawhash> f14777 b112 obj=? mdl=-1 verts=35 stride=36 h=538a4f6e mtx=8798b0ad state=6e216dd4
+drawhash> f14777 b113 obj=? mdl=-1 verts=320 stride=36 h=344a82c5 mtx=8798b0ad state=1290a19a
+drawhash> f14777 b114 obj=? mdl=-1 verts=16 stride=36 h=afe9c5cb mtx=a562a8eb state=32622f47
+drawhash> f14777 b115 obj=? mdl=-1 verts=16 stride=36 h=743e6f7e mtx=fea72761 state=233dc769
+drawhash> f14777 b116 obj=? mdl=-1 verts=16 stride=36 h=f55e13b4 mtx=1a250c07 state=ecb996fb
+drawhash> f14777 b117 obj=? mdl=-1 verts=16 stride=36 h=4fb42e9a mtx=8c51dbfc state=6bd8c308
+drawhash> f14777 b118 obj=? mdl=-1 verts=16 stride=36 h=27e3a37e mtx=11446df5 state=6038ef5c
+drawhash> f14777 b119 obj=? mdl=-1 verts=16 stride=36 h=5d1e843f mtx=0f669d3f state=ef69d521
+drawhash> f14777 b120 obj=? mdl=-1 verts=16 stride=36 h=cb4ef65a mtx=ce8f9c2a state=373c6843
+drawhash> f14777 b121 obj=? mdl=-1 verts=16 stride=36 h=3a85e8ad mtx=59100e30 state=2af296d1
+drawhash> f14777 b122 obj=? mdl=-1 verts=16 stride=36 h=9e0a66ca mtx=564c8133 state=7cfd48ca
+drawhash> f14777 b123 obj=? mdl=-1 verts=16 stride=36 h=eb2a49ea mtx=3c0af6f6 state=0a22985a
+drawhash> f14777 b124 obj=? mdl=-1 verts=16 stride=36 h=999bd1e7 mtx=ec43985a state=0a22985a
+drawhash> f14777 b125 obj=? mdl=-1 verts=20 stride=36 h=41432adc mtx=15e25f1b state=1d8f8883
+drawhash> f14777 b126 obj=? mdl=-1 verts=20 stride=36 h=41432adc mtx=c5bdcebd state=aaab1d7c
+drawhash> f14777 b127 obj=? mdl=-1 verts=20 stride=36 h=41432adc mtx=163d0fef state=fea302e8
+drawhash> f14777 b128 obj=? mdl=-1 verts=20 stride=36 h=41432adc mtx=6cb16a0c state=0fa8b130
+drawhash> f14777 b129 obj=? mdl=-1 verts=66 stride=36 h=7f53c0ad mtx=09ee7ecd state=a8a43fbe
+drawhash> f14777 b130 obj=? mdl=-1 verts=84 stride=36 h=376a0707 mtx=09ee7ecd state=a8a43fbe
+drawhash> f14777 b131 obj=? mdl=-1 verts=69 stride=36 h=6be3eaf8 mtx=09ee7ecd state=a8a43fbe
+drawhash> f14777 b132 obj=? mdl=-1 verts=68 stride=36 h=ac5a67ac mtx=09ee7ecd state=a8a43fbe
+drawhash> f14777 b133 obj=? mdl=-1 verts=27 stride=36 h=c5dd250e mtx=90e79f57 state=81782406
+drawhash> f14777 b134 obj=? mdl=-1 verts=80 stride=36 h=d0c46413 mtx=90e79f57 state=81782406
+drawhash> f14777 b135 obj=? mdl=-1 verts=12 stride=36 h=c8a2f895 mtx=49cb073b state=b819ece0
+drawhash> f14777 b136 obj=? mdl=-1 verts=1200 stride=36 h=d73c7dd8 mtx=ebe19a9b state=a8dd86a3
+drawhash> f14777 b137 obj=? mdl=-1 verts=48 stride=36 h=03a3a999 mtx=dbb5e887 state=52dd28a6
+drawhash> f14777 b138 obj=? mdl=-1 verts=48 stride=36 h=4b318abd mtx=ed593be1 state=34930987
+drawhash> f14777 b139 obj=? mdl=-1 verts=48 stride=36 h=a69666e8 mtx=3d8145fd state=189456e8
+drawhash> f14777 b140 obj=? mdl=-1 verts=2048 stride=24 h=d5ca1dc5 mtx=7d7ad6dd state=94734b83
+drawhash> f14777 b141 obj=? mdl=-1 verts=16 stride=24 h=b1bee4c2 mtx=7d7ad6dd state=55b2df35
+drawhash> f14777 b142 obj=? mdl=-1 verts=4 stride=32 h=fbff7ca4 mtx=4a1c0815 state=09814a3e
+drawhash> f14777 b143 obj=? mdl=-1 verts=676 stride=36 h=7bfc210a mtx=bcf9c03b state=17b8528d
+drawhash> f14777 b144 obj=? mdl=-1 verts=42 stride=36 h=629f025a mtx=bcf9c03b state=8b714c8f
+drawhash> f14777 b145 obj=? mdl=-1 verts=489 stride=36 h=49bcc503 mtx=bcf9c03b state=54a88717
+drawhash> f14777 b146 obj=? mdl=-1 verts=63 stride=36 h=3b8e26cb mtx=bcf9c03b state=17b8528d
+drawhash> f14777 b147 obj=? mdl=-1 verts=60 stride=36 h=a2e47698 mtx=553081c9 state=4fedf95a
+drawhash> f14777 b148 obj=? mdl=-1 verts=120 stride=36 h=c5c97bac mtx=553081c9 state=4fedf95a
+drawhash> f14777 b149 obj=? mdl=-1 verts=20 stride=36 h=930ec7c9 mtx=4b1feed3 state=9f1c4445
+drawhash> f14777 b150 obj=? mdl=-1 verts=16 stride=36 h=42c6e1e9 mtx=fc1c18a3 state=9f1c4445
+drawhash> f14777 b151 obj=? mdl=-1 verts=72 stride=36 h=8ee482f1 mtx=e27dcbdb state=9f1c4445
+drawhash> f14777 b152 obj=? mdl=-1 verts=72 stride=36 h=bf12e3cd mtx=37d97b70 state=9f1c4445
+drawhash> f14777 b153 obj=? mdl=-1 verts=36 stride=36 h=5f010dd4 mtx=e8e54cab state=6126d93c
+drawhash> f14777 b154 obj=? mdl=-1 verts=132 stride=36 h=3a7c20a9 mtx=e8e54cab state=6126d93c
+drawhash> f14777 b155 obj=? mdl=-1 verts=18 stride=36 h=f24fad25 mtx=f94f57be state=7fd14fca
+drawhash> f14777 b156 obj=? mdl=-1 verts=64 stride=36 h=bcc8a961 mtx=f94f57be state=7fd14fca
+drawhash> f14777 b157 obj=? mdl=-1 verts=18 stride=36 h=32747265 mtx=0b478ee5 state=d2e8fd13
+drawhash> f14777 b158 obj=? mdl=-1 verts=64 stride=36 h=803824fd mtx=0b478ee5 state=d2e8fd13
+drawhash> f14777 b159 obj=? mdl=-1 verts=18 stride=36 h=6506ed67 mtx=1cbdbd6d state=03ba1cfd
+drawhash> f14777 b160 obj=? mdl=-1 verts=64 stride=36 h=7fa52a75 mtx=1cbdbd6d state=03ba1cfd
+drawhash> f14777 b161 obj=? mdl=-1 verts=18 stride=36 h=d8c8df5f mtx=99baaa4a state=664b63f4
+drawhash> f14777 b162 obj=? mdl=-1 verts=64 stride=36 h=2a1079b1 mtx=99baaa4a state=664b63f4
+drawhash> f14777 b163 obj=? mdl=-1 verts=24 stride=36 h=9b918201 mtx=59b2c07c state=bfc0180f
+drawhash> f14777 b164 obj=? mdl=-1 verts=72 stride=36 h=9d36c6fa mtx=59b2c07c state=bfc0180f
+drawhash> f14777 b165 obj=? mdl=-1 verts=6 stride=36 h=8e4f51c0 mtx=f7b2fb76 state=a3cbe6ef
+drawhash> f14777 b166 obj=? mdl=-1 verts=104 stride=36 h=166a0aed mtx=f7b2fb76 state=a3cbe6ef
+drawhash> f14777 b167 obj=? mdl=-1 verts=6 stride=36 h=c3b75ccc mtx=38fa1313 state=a3cbe6ef
+drawhash> f14777 b168 obj=? mdl=-1 verts=104 stride=36 h=7845bd79 mtx=38fa1313 state=a3cbe6ef
+drawhash> f14777 b169 obj=? mdl=-1 verts=24 stride=36 h=25504dcc mtx=7f7e24fd state=9c12b16d
+drawhash> f14777 b170 obj=? mdl=-1 verts=244 stride=36 h=be01d17d mtx=7f7e24fd state=9c12b16d
+drawhash> f14777 b171 obj=? mdl=-1 verts=128 stride=36 h=4b2a1b4d mtx=9b5bc4c9 state=1d4a2eb0
+drawhash> f14777 b172 obj=? mdl=-1 verts=108 stride=36 h=cfbe6d2f mtx=b120a436 state=67360c45
+drawhash> f14777 b173 obj=? mdl=-1 verts=3 stride=36 h=4d023983 mtx=dfaad159 state=67360c45
+drawhash> f14777 b174 obj=? mdl=-1 verts=48 stride=36 h=57dd67c9 mtx=dfaad159 state=67360c45
+drawhash> f14777 b175 obj=? mdl=-1 verts=18 stride=36 h=cbffb121 mtx=ec43985a state=9c12b16d
+drawhash> f14777 b176 obj=? mdl=-1 verts=248 stride=36 h=59532b7a mtx=ec43985a state=9c12b16d
+drawhash> f14777 b177 obj=? mdl=-1 verts=128 stride=36 h=d272c613 mtx=e2b7b71b state=1d4a2eb0
+drawhash> f14777 b178 obj=? mdl=-1 verts=108 stride=36 h=853c7898 mtx=238f5959 state=67360c45
+drawhash> f14777 b179 obj=? mdl=-1 verts=3 stride=36 h=55e37cf2 mtx=eb11d1c8 state=67360c45
+drawhash> f14777 b180 obj=? mdl=-1 verts=48 stride=36 h=47555a40 mtx=eb11d1c8 state=67360c45
+drawhash> f14777 b181 obj=? mdl=-1 verts=18 stride=36 h=56b1b86d mtx=21c23b19 state=9c12b16d
+drawhash> f14777 b182 obj=? mdl=-1 verts=216 stride=36 h=c58d9d4c mtx=21c23b19 state=9c12b16d
+drawhash> f14777 b183 obj=? mdl=-1 verts=112 stride=36 h=bddeb4c6 mtx=626920f9 state=1d4a2eb0
+drawhash> f14777 b184 obj=? mdl=-1 verts=18 stride=36 h=08626a7d mtx=7790cf3a state=0ad3058d
+drawhash> f14777 b185 obj=? mdl=-1 verts=120 stride=36 h=b7ffedea mtx=7790cf3a state=0ad3058d
+drawhash> f14777 b186 obj=? mdl=-1 verts=128 stride=36 h=4b5ae519 mtx=840b9c4b state=b66a549a
+drawhash> f14777 b187 obj=? mdl=-1 verts=128 stride=36 h=d4bbf1f0 mtx=7790cf3a state=0ad3058d
+drawhash> f14777 b188 obj=? mdl=-1 verts=108 stride=36 h=853c7898 mtx=45605415 state=7620c79c
+drawhash> f14777 b189 obj=? mdl=-1 verts=3 stride=36 h=55e37cf2 mtx=985c063f state=7620c79c
+drawhash> f14777 b190 obj=? mdl=-1 verts=48 stride=36 h=47555a40 mtx=985c063f state=7620c79c
+drawhash> f14777 b191 obj=? mdl=-1 verts=18 stride=36 h=847716d5 mtx=6a302576 state=8bafa451
+drawhash> f14777 b192 obj=? mdl=-1 verts=248 stride=36 h=97e37515 mtx=6a302576 state=8bafa451
+drawhash> f14777 b193 obj=? mdl=-1 verts=128 stride=36 h=b3e025e1 mtx=c85097b5 state=37a25eb7
+drawhash> f14777 b194 obj=? mdl=-1 verts=108 stride=36 h=5c878621 mtx=ae0d657e state=f317d5f2
+drawhash> f14777 b195 obj=? mdl=-1 verts=3 stride=36 h=3e8a5e27 mtx=f90968c8 state=f317d5f2
+drawhash> f14777 b196 obj=? mdl=-1 verts=48 stride=36 h=46f9e2d9 mtx=f90968c8 state=f317d5f2
+drawhash> f14777 b197 obj=? mdl=-1 verts=18 stride=36 h=834cf735 mtx=c6a45419 state=f47502d6
+drawhash> f14777 b198 obj=? mdl=-1 verts=120 stride=36 h=3e924ee0 mtx=c6a45419 state=f47502d6
+drawhash> f14777 b199 obj=? mdl=-1 verts=128 stride=36 h=930d3d6a mtx=59c97094 state=fcfb7169
+drawhash> f14777 b200 obj=? mdl=-1 verts=128 stride=36 h=bbf2f6ba mtx=c6a45419 state=f47502d6
+drawhash> f14777 b201 obj=? mdl=-1 verts=108 stride=36 h=853c7898 mtx=9c025386 state=2cefbe57
+drawhash> f14777 b202 obj=? mdl=-1 verts=3 stride=36 h=55e37cf2 mtx=9671a702 state=2cefbe57
+drawhash> f14777 b203 obj=? mdl=-1 verts=48 stride=36 h=47555a40 mtx=9671a702 state=2cefbe57
+drawhash> f14777 b204 obj=? mdl=-1 verts=18 stride=36 h=a34dd689 mtx=90e2bffe state=f5c4d59f
+drawhash> f14777 b205 obj=? mdl=-1 verts=248 stride=36 h=c57b17de mtx=90e2bffe state=f5c4d59f
+drawhash> f14777 b206 obj=? mdl=-1 verts=128 stride=36 h=1ce22dc5 mtx=5ec79040 state=dcbc1691
+drawhash> f14777 b207 obj=? mdl=-1 verts=108 stride=36 h=49c27b7c mtx=216fc94e state=1b06556c
+drawhash> f14777 b208 obj=? mdl=-1 verts=3 stride=36 h=1512d1c1 mtx=2e0fbb9a state=1b06556c
+drawhash> f14777 b209 obj=? mdl=-1 verts=48 stride=36 h=32af34e1 mtx=2e0fbb9a state=1b06556c
+drawhash> f14777 b210 obj=? mdl=-1 verts=24 stride=36 h=c066c5ec mtx=f3bf9c7a state=668b106c
+drawhash> f14777 b211 obj=? mdl=-1 verts=116 stride=36 h=a45360b7 mtx=f3bf9c7a state=668b106c
+drawhash> f14777 b212 obj=? mdl=-1 verts=128 stride=36 h=7519f176 mtx=837647b2 state=668b106c
+drawhash> f14777 b213 obj=? mdl=-1 verts=128 stride=36 h=b6ac9a3b mtx=20cb21db state=e008f474
+drawhash> f14777 b214 obj=? mdl=-1 verts=108 stride=36 h=853c7898 mtx=dd71146b state=e9d532a5
+drawhash> f14777 b215 obj=? mdl=-1 verts=3 stride=36 h=55e37cf2 mtx=793428ff state=e9d532a5
+drawhash> f14777 b216 obj=? mdl=-1 verts=48 stride=36 h=47555a40 mtx=793428ff state=e9d532a5
+drawhash> f14777 b217 obj=? mdl=-1 verts=24 stride=36 h=4f97f5fa mtx=8391181b state=029518ef
+drawhash> f14777 b218 obj=? mdl=-1 verts=244 stride=36 h=565dee1e mtx=8391181b state=029518ef
+drawhash> f14777 b219 obj=? mdl=-1 verts=128 stride=36 h=e1c6453e mtx=3def8ef3 state=0dbb012a
+drawhash> f14777 b220 obj=? mdl=-1 verts=108 stride=36 h=1bbf6c39 mtx=0454ac1c state=f9aa2bbb
+drawhash> f14777 b221 obj=? mdl=-1 verts=3 stride=36 h=8bf1bda0 mtx=5b4be898 state=f9aa2bbb
+drawhash> f14777 b222 obj=? mdl=-1 verts=48 stride=36 h=fec3e946 mtx=5b4be898 state=f9aa2bbb
+drawhash> f14777 b223 obj=? mdl=-1 verts=24 stride=36 h=27e3cd88 mtx=309cc088 state=9f262dc6
+drawhash> f14777 b224 obj=? mdl=-1 verts=116 stride=36 h=31b497d6 mtx=309cc088 state=9f262dc6
+drawhash> f14777 b225 obj=? mdl=-1 verts=128 stride=36 h=12bd2a6b mtx=e58706d5 state=71c2197e
+drawhash> f14777 b226 obj=? mdl=-1 verts=128 stride=36 h=31b0094e mtx=309cc088 state=9f262dc6
+drawhash> f14777 b227 obj=? mdl=-1 verts=108 stride=36 h=853c7898 mtx=4191486e state=4ac7936e
+drawhash> f14777 b228 obj=? mdl=-1 verts=3 stride=36 h=55e37cf2 mtx=2c585634 state=4ac7936e
+drawhash> f14777 b229 obj=? mdl=-1 verts=48 stride=36 h=47555a40 mtx=2c585634 state=4ac7936e
+drawhash> f14777 b230 obj=? mdl=-1 verts=24 stride=36 h=2c1e9da2 mtx=c1bc4d58 state=3fc2d885
+drawhash> f14777 b231 obj=? mdl=-1 verts=244 stride=36 h=e428abef mtx=c1bc4d58 state=3fc2d885
+drawhash> f14777 b232 obj=? mdl=-1 verts=128 stride=36 h=48c700cd mtx=26b40c4e state=c6ad5668
+drawhash> f14777 b233 obj=? mdl=-1 verts=108 stride=36 h=45c30f93 mtx=ac651e65 state=77fd80d5
+drawhash> f14777 b234 obj=? mdl=-1 verts=3 stride=36 h=57f7e7d6 mtx=bea84350 state=77fd80d5
+drawhash> f14777 b235 obj=? mdl=-1 verts=48 stride=36 h=2561804d mtx=bea84350 state=77fd80d5
+drawhash> f14777 b236 obj=? mdl=-1 verts=24 stride=36 h=7842a482 mtx=579b13e2 state=62f12155
+drawhash> f14777 b237 obj=? mdl=-1 verts=244 stride=36 h=547004c3 mtx=579b13e2 state=62f12155
+drawhash> f14777 b238 obj=? mdl=-1 verts=128 stride=36 h=48c700cd mtx=2300e6cf state=506ff4f2
+drawhash> f14777 b239 obj=? mdl=-1 verts=108 stride=36 h=853c7898 mtx=6f94d413 state=abc21d92
+drawhash> f14777 b240 obj=? mdl=-1 verts=3 stride=36 h=55e37cf2 mtx=21d0815a state=abc21d92
+drawhash> f14777 b241 obj=? mdl=-1 verts=48 stride=36 h=47555a40 mtx=21d0815a state=abc21d92
+drawhash> f14777 b242 obj=? mdl=-1 verts=3156 stride=36 h=f2b42d34 mtx=c83b6b48 state=93a09683
+drawhash> f14777 b243 obj=? mdl=-1 verts=16 stride=28 h=892a1841 mtx=c83b6b48 state=38bb08ac
+drawhash> f14777 b244 obj=? mdl=-1 verts=264 stride=36 h=949e82e4 mtx=c83b6b48 state=23b97e6b
+drawhash> f14777 b245 obj=? mdl=-1 verts=80 stride=36 h=dd6881d1 mtx=c83b6b48 state=2a185a4f
+drawhash> f14777 b246 obj=? mdl=-1 verts=12 stride=36 h=7b75b916 mtx=1ea08405 state=3fe2b91a
+drawhash> f14777 b247 obj=? mdl=-1 verts=40 stride=36 h=3d0ce26d mtx=1ea08405 state=3fe2b91a
+drawhash> f14777 b248 obj=? mdl=-1 verts=12 stride=36 h=c309528a mtx=1e3f6ee0 state=3fe2b91a
+drawhash> f14777 b249 obj=? mdl=-1 verts=40 stride=36 h=b6803af9 mtx=1e3f6ee0 state=3fe2b91a
+drawhash> f14777 b250 obj=? mdl=-1 verts=4360 stride=36 h=89604e58 mtx=34924ae1 state=c9eba761
+drawhash> f14777 b251 obj=? mdl=-1 verts=6 stride=36 h=6ba89803 mtx=0be93eb1 state=c9eba761
+drawhash> f14777 b252 obj=? mdl=-1 verts=92 stride=36 h=8d2ff85f mtx=0be93eb1 state=c9eba761
+drawhash> f14777 b253 obj=? mdl=-1 verts=96 stride=36 h=14774889 mtx=a0b348d3 state=c9eba761
+drawhash> f14777 b254 obj=? mdl=-1 verts=16 stride=36 h=afe9c5cb mtx=a562a8eb state=ccf9a1bb
+drawhash> f14777 b255 obj=? mdl=-1 verts=16 stride=36 h=743e6f7e mtx=fea72761 state=28115a7c
+drawhash> f14777 b256 obj=? mdl=-1 verts=16 stride=36 h=f55e13b4 mtx=1a250c07 state=0e61fa9e
+drawhash> f14777 b257 obj=? mdl=-1 verts=16 stride=36 h=4fb42e9a mtx=8c51dbfc state=479a696c
+drawhash> f14777 b258 obj=? mdl=-1 verts=16 stride=36 h=27e3a37e mtx=11446df5 state=dc4e6cc7
+drawhash> f14777 b259 obj=? mdl=-1 verts=16 stride=36 h=5d1e843f mtx=0f669d3f state=6f28fd46
+drawhash> f14777 b260 obj=? mdl=-1 verts=16 stride=36 h=cb4ef65a mtx=ce8f9c2a state=cf597374
+drawhash> f14777 b261 obj=? mdl=-1 verts=16 stride=36 h=3a85e8ad mtx=59100e30 state=9d80e502
+drawhash> f14777 b262 obj=? mdl=-1 verts=16 stride=36 h=9e0a66ca mtx=564c8133 state=09919dc1
+drawhash> f14777 b263 obj=? mdl=-1 verts=16 stride=36 h=eb2a49ea mtx=3c0af6f6 state=cc5b55b4
+drawhash> f14777 b264 obj=? mdl=-1 verts=16 stride=36 h=999bd1e7 mtx=ec43985a state=cc5b55b4
+drawhash> f14777 b265 obj=? mdl=-1 verts=20 stride=36 h=41432adc mtx=15e25f1b state=69fb0071
+drawhash> f14777 b266 obj=? mdl=-1 verts=20 stride=36 h=41432adc mtx=c5bdcebd state=921618e2
+drawhash> f14777 b267 obj=? mdl=-1 verts=20 stride=36 h=41432adc mtx=163d0fef state=d02447ba
+drawhash> f14777 b268 obj=? mdl=-1 verts=20 stride=36 h=41432adc mtx=6cb16a0c state=0ef2eace
+drawhash> f14777 b269 obj=? mdl=-1 verts=66 stride=36 h=7f53c0ad mtx=09ee7ecd state=382be40f
+drawhash> f14777 b270 obj=? mdl=-1 verts=84 stride=36 h=376a0707 mtx=09ee7ecd state=382be40f
+drawhash> f14777 b271 obj=? mdl=-1 verts=69 stride=36 h=6be3eaf8 mtx=09ee7ecd state=382be40f
+drawhash> f14777 b272 obj=? mdl=-1 verts=68 stride=36 h=ac5a67ac mtx=09ee7ecd state=382be40f
+drawhash> f14777 b273 obj=? mdl=-1 verts=27 stride=36 h=c5dd250e mtx=90e79f57 state=cc41b1f7
+drawhash> f14777 b274 obj=? mdl=-1 verts=80 stride=36 h=d0c46413 mtx=90e79f57 state=cc41b1f7
+drawhash> f14777 b275 obj=? mdl=-1 verts=12 stride=36 h=c8a2f895 mtx=49cb073b state=573da875
+drawhash> f14777 b276 obj=? mdl=-1 verts=1200 stride=36 h=d73c7dd8 mtx=ebe19a9b state=9457b94e
+drawhash> f14777 b277 obj=? mdl=-1 verts=48 stride=36 h=03a3a999 mtx=dbb5e887 state=0dcf77c4
+drawhash> f14777 b278 obj=? mdl=-1 verts=48 stride=36 h=4b318abd mtx=ed593be1 state=a6eb4bbc
+drawhash> f14777 b279 obj=? mdl=-1 verts=48 stride=36 h=a69666e8 mtx=3d8145fd state=a61aef2e
+drawhash> f14777 b280 obj=? mdl=-1 verts=2048 stride=24 h=d5ca1dc5 mtx=7d7ad6dd state=d3a7a719
+drawhash> f14777 b281 obj=? mdl=-1 verts=16 stride=24 h=b1bee4c2 mtx=7d7ad6dd state=102b0683
+drawhash> f14777 b282 obj=? mdl=-1 verts=4 stride=24 h=f8d020e5 mtx=65a7f288 state=4aef5ab6
+drawhash> f14777 b283 obj=? mdl=-1 verts=4 stride=24 h=78157d45 mtx=99b7c9a4 state=89450b3d
+drawhash> f14777 b284 obj=? mdl=-1 verts=4 stride=24 h=78157d45 mtx=76cf61c6 state=09c2e0fc
+drawhash> f14777 b285 obj=? mdl=-1 verts=4 stride=24 h=4019cc05 mtx=32b67130 state=1b95c49d
+drawhash> f14777 b286 obj=? mdl=-1 verts=4 stride=24 h=646be345 mtx=0f7b48b6 state=23af495a
+drawhash> f14777 b287 obj=? mdl=-1 verts=4 stride=24 h=bd9acb15 mtx=4c11ce4c state=7a7ac4dc
+drawhash> f14777 b288 obj=? mdl=-1 verts=4 stride=24 h=40f3d799 mtx=32121e08 state=7a7ac4dc
+drawhash> f14777 b289 obj=? mdl=-1 verts=4 stride=24 h=3eb88415 mtx=529dc110 state=7a7ac4dc
+drawhash> f14777 b290 obj=? mdl=-1 verts=4 stride=24 h=3eb88415 mtx=75c19f38 state=7a7ac4dc
+drawhash> f14777 b291 obj=? mdl=-1 verts=4 stride=24 h=c628b1d9 mtx=7a69c400 state=7a7ac4dc
+drawhash> f14777 b292 obj=? mdl=-1 verts=4 stride=24 h=3eb88415 mtx=db2deb68 state=7a7ac4dc
+drawhash> f14777 b293 obj=? mdl=-1 verts=4 stride=24 h=3eb88415 mtx=41e871f0 state=7a7ac4dc
+drawhash> f14777 b294 obj=? mdl=-1 verts=4 stride=24 h=3eb88415 mtx=97b8cb74 state=355d0a4a
+drawhash> f14777 b295 obj=? mdl=-1 verts=4 stride=24 h=40f3d799 mtx=eea22f60 state=355d0a4a
+drawhash> f14777 b296 obj=? mdl=-1 verts=4 stride=24 h=3eb88415 mtx=aee94938 state=355d0a4a
+drawhash> f14777 b297 obj=? mdl=-1 verts=4 stride=24 h=3eb88415 mtx=19761710 state=355d0a4a
+drawhash> f14777 b298 obj=? mdl=-1 verts=4 stride=24 h=c628b1d9 mtx=0c083a28 state=355d0a4a
+drawhash> f14777 b299 obj=? mdl=-1 verts=4 stride=24 h=3eb88415 mtx=98276640 state=355d0a4a
+drawhash> f14777 b300 obj=? mdl=-1 verts=4 stride=24 h=3eb88415 mtx=72bd0418 state=355d0a4a
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+port> status f14820   m427dll      board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.11 ms  35.7 fps
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+port> status f14880   m427dll      board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.11 ms  41.0 fps
+port> status f14940   m427dll      board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.20 ms  41.4 fps
+port> status f15000   m427dll      board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.24 ms  39.1 fps
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+port> status f15060   m427dll      board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.29 ms  40.4 fps
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+port> status f15120   m427dll      board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.30 ms  40.4 fps
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+port> status f15180   m427dll      board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.26 ms  39.5 fps
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+port> status f15240   m427dll      board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.23 ms  39.8 fps
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+port> status f15300   m427dll      board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.30 ms  40.4 fps
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+port> status f15360   m427dll      board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.28 ms  39.7 fps
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+port> status f15420   m427dll      board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.28 ms  38.6 fps
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+port> status f15480   m427dll      board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.26 ms  35.0 fps
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+port> status f15540   m427dll      board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.31 ms  32.9 fps
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+port> status f15600   m427dll      board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.29 ms  38.8 fps
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+port> status f15660   m427dll      board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.32 ms  38.3 fps
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+port> --dumpframe: wrote /Users/zach/m48/L-m427-@m48f,--drawhash,14776+14777/frame-15677.ppm
+#########SE Entry Error<SE 1622:ErrorNo -33>
+#########SE Entry Error<SE 1621:ErrorNo -33>
+port> status f15720   m427dll      board 0 turn 1/1  mg 427 (m427dll)  coins/stars 13/0c 10/0c 10/0c 13/0c  aud 0.38 ms  36.3 fps
+#########SE Entry Error<SE 1621:ErrorNo -33>
+#########SE Entry Error<SE 1622:ErrorNo -33>
+
+port> --frames 15777 reached: 15777 retraces in 99.79 s wall (game clock 263.21 s)
+port> tev: konst collision (two constants in one stage): 0 of 365098 draws carry one, in 0 distinct configs (PLAN.md 31.4)
+port> tev: 1755 hilite stage emissions folded into the specular colour sum (PLAN.md 36)
+port> tev: 7782 unit emissions of the M30 lamp shape (T*RAS -> REG, T.a*K -> REG, C*RAS + C; PLAN.md 45)
+port> tev: register chains (M30, PLAN.md 45): 2839 configs with a chain, 2839 stage emissions read the previous unit for a register, 2839 dead register writes passed PREV through, 0 reads unexpressible (drawn as the constant)
+port> tev: 23364 unit emissions through the register rewrite (PLAN.md 31.3), 0 stage emissions still folding a register write to PREV
+port> water (M44): 5433 warped draws, 3124156 vertices, 5433 stage warps; refused: shape 0, no texture 0, map not on the CPU 0, coordinate shared 0, read unwarped too 0 (--water auto)
+port> --perfdump: 15776 frames written to /Users/zach/m48/L-m427-@m48f,--drawhash,14776+14777.csv
+
+---- --perf: 15776 frames ----
+  game     mean   4.56  median   4.22  p95  10.79  worst 340.28 ms
+  gx       mean   1.49  median   0.08  p95  13.34  worst 350.74 ms
+  present  mean   0.06  median   0.00  p95   0.34  worst  89.99 ms
+  aud      mean   0.23  median   0.23  p95   0.40  worst   1.49 ms
+  frame    mean   6.33  median   4.54  p95  24.66  worst 367.52 ms
+  budget   16.68 ms/frame at 59.94 Hz; 1471 of 15776 frames over it (9.3%)
+  clocks   game 263.20 s vs wall 100.17 s -- ratio 0.381  (keeping up)
+  fps      157.5 effective
+
+port> MusyX: 52629 frames of 160 samples mixed (263.14 s of audio) over 15773 retraces
+port> audio: first sound at retrace 726; Dolphin's own DSP dump of the same boot starts at 10.95 s = retrace ~656
+port> musyx_mix: 52629 frames mixed, 11680 voices started, 8303 voices ended, peak |sample| 32767 (near full scale), 0 clamped ARAM reads, 27 max concurrent voices (of 50 allocated)
+port> musyx_mix: resampler linear, depop on; 4670 voice(s) cut mid-frame
+port> musyx_mix: 790 start(s) refused by start_voice_init (a zero-length one-shot, an envelope done at once, an unreadable sample); the slot's entry cleared on both halves (M25)
+port> musyx_mix: --perf: mean 351.3 us/frame, worst 2633.2 us/frame, over 52629 timed frames
+port> musyx_mix: split frames: 52629 control halves on the game thread, 52629 value halves (18486 ms), 15785 joins, 0 position mismatches
+port> audio: M24 mixer job: 15773 ticks split (157887 steps), 0 ticks fused for a MEM1/vsample voice, 0 poisoned mid-tick, 0 out of pool, 0 jobs run at submit, 22 jobs finished mid-tick (ARAM writes)
+port> musyx_aram: samples stored 692 (10678 KB), removed 188, refused 0
+port> musyx_aram: region=[0x000000,0x800000) (8388608 bytes) zero_buf=[0x000000,0x000500) initialized=1
+port> musyx_aram: sample heap write=0x66bcc0 high_water=0x6de860 (7201632 bytes at peak), stream cursor=0x7ee200
+port> musyx_aram: stream buffers active=2 peak=2 of 64 slots
+port> musyx_aram: bytes uploaded=11967584 -- rejected: store=0 stream=0 upload=0, remove mismatches=0
+port> audio out: 88.58 s queued, 6264 callbacks, peak L 32767 R 32767 (of 32767)
+port> audio out: 1424 underrun(s) totalling 11659.0 ms, 174560.0 ms dropped to overrun
+port> audio out: (the ring tracks the frame rate: audio is paced by the
+port>             retrace, so under 60 fps it starves and under --turbo it
+port>             overruns.  --wav is written before the ring and is whole.)
+port> OS clock: 10649475000 ticks in 100.62 s = 105.834 MHz (console 40.500)  *** WRONG
+port> decode jobs (M43): 64261270 vertices; specialised 100.0%, the walker's by pick_fast's first failed test:
+port> vcache (M40, auto): 12109 list calls (1191 left to the ring as animated), 10918 primitives, 796448 vertices; 7957 hits (537303 vertices, 67.5%; per drawn frame 71.1% over 26 frames)
+port> vcache (M44): 105 positions refreshes (2112 vertices): stored runs whose position array alone had moved, copied and their positions decoded again
+port> vcache (M45): on the frames the auto keyed off, 0 lists looked up refresh-only, 0 refreshes served there (--novcposoff)
+port> vcache: misses -- new 1303 (103161 v), plan changed 101 (4125 v), arrays changed 1452 (149747 v), list bytes changed 0 lists; ineligible 0 (0 v, skinned/palette/premerge); not stored (region full this frame) 0 (0 v); stored 192666 v
+port> vcache: auto keyed 26 drawn frame(s), left 1739 to the decode (fit 28.0 ms); 701 list hash(es) memoised, 231721 memo end(s) leaving module code
+port> vcache (M47): the skin body named its arrays 0 times (0 scans), 0 array memos ended by them (--oldvcskin: every memo, the epoch)
+port> vcache: hashed 1.2 MB of lists and 10.6 MB of arrays (1.0 KB a list call); 319 ms keying on the game thread (sampled 1 in 8: lists 235, hits 28, misses 57); region 8192 KB, peak 6589 KB, 0 reset(s), 0 cooldown(s); 427 entries, 1052 arrays live, 0 clear(s)
+port> GX draw: 1934169 primitives, 75952309 vertices, 529800 glDrawArrays, 1688159 display lists replayed
+port> GX draw: M44 layout memo: 438488 primitives kept the last one's, 1495681 settled anew
+port> GX draw: 67518242 vertices through the specialised decode loops (88.9%)
+port> GX draw: M29: 703675 display-list runs (64261270 vertices, 84.6%) handed to the render thread's decode, 0 runs decoded here instead, 8226 kept here by --rtdecode auto (M33)
+port> GX draw: 8990 primitive(s) off-world (|position matrix translation| over 10000)
+port> skin: deferred CPU skinning; EnvelopeProc 87101 calls: 87101 deferred, 0 run by the game; 27 HSFs registered (0 rebuilt); 7933 deferred bodies run at the draw (0 of them at the array bind), 635688 syncs skipped on consumed frames; palette: 87101 bone syncs, 0 pose builds
+port> skin: lifetime: 23 entries dropped by the game's frees, 0 guard hits (must be 0); signatures: 361 full, 86740 by the pointers alone (M47)
+port> GL state: 1411842 calls emitted, 8398667 elided (85.6% of 9810509)
+port> texture cache: 298545 hits, 438 misses, 0 re-uploads, 438 entries, 21863 KB decoded, 80 padded to a power of two, 29839 KB held by GL
+port> texture budget: 40 MB; 0 evictions (0 KB) to stay under it
+port> texture decode (M23): 435 decodes, 293 ms decoding, 74 ms uploading, 1147 ms hashing; 3 frames over 20 ms of it; 10 re-keyed by content (1244 KB not decoded again)
+port> texture dirty ranges (M35): 348006 DC store/flush calls, 187 entries marked, 0 hashed clean, 0 decoded again; 299492 calls touched no texture page (M41)
+port> texture hash: 117802 KB hashed in full, 161120 KB sampled, 232316 revalidations (of 298983 binds)
+port> EFB copies: 2927 colour copies into the cache (on consumed frames from the front buffer: 0 whole-screen, 0 region; 0 clear-after copies kept from the last drawn frame, M21; 333 half-scale copies kept at source size, M23)
+port> indirect tiling: 9 composed backgrounds, 1527 cache hits
+
+---- GX features the backend degraded (2 distinct) ----
+  GXSetTevIndWarp: the warp needs GL_ATI_text_fragment_shader and --tfs (M35); the direct stage is drawn unwarped     5433
+  indirect texturing: the fixed-function path draws the direct stage only (PLAN.md 3.4 case 3)     5434
+
+port> render thread: mode 3 (thread, overlapped)
+  stream   3839959 records, 394324 KB (105 B/record); 1774 frames presented, peak 283 KB a frame; 194993 KB of payload copies; 447 names handed out; 447 owned uploads freed
+  replay   24332 ms in all; per presented frame mean 13.72 ms, worst 345.9 ms (1774 frames); present tail (swap executed - swap recorded) mean 5.3 ms, worst 80.9 ms
+  decode   703675 runs recorded, 703675 decoded ahead by the decode cursor, 0 by the replay (late); 64261270 vertices; 9943 ms in all, per presented frame mean 5.60 ms, worst 30.5 ms (--rtdecode 3)
+  auto     1774 drawn frames planned, 18 split (share mean 0.51, max 0.75); 3268256 vertices decoded on the game thread (521 ms) vs 64261270 on the render thread; last plan: game 25.8 + consumed 5.2 vs replay 12.8 + decode 6.0 -> 0.0 ms moved (--rtdecode auto, fit 30 ms, max share 0.75)
+  gate     0 drained, 0 waited (0 ms, worst 0.0 ms), 0 busy (the frame was consumed instead)
+  ring     2 reuse waits for the issue, 14 for the GPU (60 ms, worst 11.1 ms); stream full 0 times (0 ms); reader slept 6217 times, woken 16147
+  join     retrace                  15777 (315 ms, worst 10.9 ms)
+  join     ClusterProc range        513 (0 ms, worst 0.0 ms)
+  join     call                     38 (502 ms, worst 78.5 ms)
+  join     skin body                7099 (0 ms, worst 0.0 ms)
+  join     skin free                7 (0 ms, worst 0.0 ms)
+  join     drawhash                 524 (31 ms, worst 7.5 ms)
+  join     glReadPixels             2 (92 ms, worst 62.7 ms)
+  join     shutdown                 1 (0 ms, worst 0.0 ms)
+  rewrite  513 buffer range(s) named by ClusterProc/ShapeProc (M43): 0 free at once, 513 waited for their pages' records; 62 record array(s) outside MEM1
+  fences   the ring's chunks by epoch: the writer waited 14 time(s) for the GPU (the `ring' line above); the reader tests pending fences after every present, every 256 records and while idle
+port> DVD: 159 reads, 43785861 bytes, 57 ms in reads, 0 over 100 ms
+
+port> loader (M36): prefetch on, 99 jobs, 94 files read ahead (5 skipped as resident), 113.9 MB in 1476 ms off the game thread (worst 485 ms); 0 inline slices on one CPU (0 ms)
+port> loader: disk reads after a prefetch of the same file: 1, 0 of them over 100 ms
+port> loader: resident set 256 MB: 85 files held (113 MB, 73 of them from the list), 153 reads (37.4 MB) served from memory, 6 (4.3 MB, 57 ms) from the disk, 5 adopted from the game's own reads, 0 evicted (0.0 MB); mlock allowed (113 MB locked)
+port> THP: 3 movie(s) skipped, first movie/opmov_a00.thp
+port> CARD: 0 reads, 1 writes, 1 files created, 0 deleted, 3 image flushes, 57 of 59 blocks free
+port> CARD: flushes on a thread (M29): 8 ms on the game thread in all, 72 ms behind it (worst 49 ms); 0 flush(es) waited for the previous one (0 ms)
+port> CARD: M40: 2 flush(es) found the writer busy and left their image for it (1 replaced by a newer one before it started)
+port> REL bundles: 6 loads, 5 unloads, 0 re-entries, 0 modules dlclose would not unload
+
+port> cpu 2: workers on
+port> workers: the game thread's FPSCR adopted 14031 time(s) (the GL driver's FPU mode, for the reverb's floats)
+port> worker mixer   15763 jobs: 15751 finished by the worker, 12 late (run inline by the game thread, 2 ms), 783 waited for (370 ms, worst 5.4 ms); 19393 ms of work on the second core
+port> sincos memo: 8309585 hits, 2794206 misses (74.8% hit)
+port> fast sin/cos (M42): 2792048 pairs without libm, 2158 through libm
+port> rotation memo (M42): mtxRot 119321 hits / 32821 misses, mtxRotCat 806548 hits / 236357 misses
+port> motion exec (M42): 294291 calls through the port's body
+port> vertex rewriters (M43): 513 ClusterProc, 0 ShapeProc calls, 513 ranges named; the joins are the render thread's report (precise)
+port> write barrier (M42, --wbpart: the ends' partial pages too): 963 pages armed in 600 calls, 556 faults (221 pages hot), 256 disarmed by kernel writes/frees; arrays clean 17347 (8124 by their ends' hash) / written 80, 8.5 MB of hashing skipped
+port> material walk on consumed frames: skipped; 9620472 faces skipped, 1998320 material changes (1702800 Hu3DLightSet, 2655 Hu3DAnimSet kept)
+port> sparse concats (bone walk): 15836064 sparse, 0 general
+port> sqrtf: 0 through frsqrte, 11956556 through libm (--nofastsqrt)
+port> soft-reset watcher: running, body polled 15773 times
+
+---- SDK surface hit at boot: 0 distinct stubs, in first-call order ----
+---- 0 stub calls total ----

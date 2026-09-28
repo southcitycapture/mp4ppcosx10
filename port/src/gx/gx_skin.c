@@ -146,6 +146,7 @@ static void mesh_free(SkinMesh* m) {
 
 static unsigned reg_serial = 1; /* M47: bumped when the meshes' table changes */
 static void sr_hsf(SkinHsf* h, int protect); /* M48: --skinreadwatch */
+static void fuse_materialize_free(SkinHsf* h); /* M48 */
 static void hsf_free(SkinHsf* h) {
     sr_hsf(h, 0);
     int i;
@@ -271,6 +272,17 @@ void port_mem_freed(const void* data, unsigned long size) {
                 port_log("port> skin: hsf %p freed by the game at frame %u (block %p+%lu)%s\n",
                          (void*)h->hsf, gl13_frame_number(), data, size,
                          (h->mtx_dirty || h->skin_dirty) ? " while dirty" : "");
+            }
+            if (h->owed == 1 && !port_opt.nofreemat) {
+                /* M48 (PLAN.md 63.7): the arrays the skin decode owed are
+                 * written before the game gets the memory back, from the last
+                 * pose built -- what the game's body left in them.  The game
+                 * reads freed memory as garbage in places (m427's river hook
+                 * never sets its ripple phase, unk_24, and takes whatever the
+                 * model heap held), and the garbage must be the old path's.
+                 * The first free touching the entry drops it, so the rest of
+                 * the model's memory is still the model's here. */
+                fuse_materialize_free(h);
             }
             hsf_free(h);
             stat_freed_drops++;
@@ -997,8 +1009,10 @@ static struct { unsigned long pc, lr; const void* addr; unsigned frame; int stor
 static volatile int sr_nhits;
 static volatile unsigned long sr_faults, sr_protects, sr_opens;
 static volatile u8* sr_page; /* per MEM1 page: 1 = protected by the watch */
+static volatile u8* sr_ever; /* per MEM1 page: the watch has protected it (a late fault retries) */
 static uintptr_t sr_lo, sr_hi;
 void port_wb_disarm(const void* ptr, size_t n);
+int port_wb_fault(const void* addr);
 static int sr_init(void) {
     if (sr_page) {
         return 1;
@@ -1008,12 +1022,50 @@ static int sr_init(void) {
     if (sr_hi <= sr_lo) {
         return 0;
     }
-    sr_page = (volatile u8*)calloc((sr_hi - sr_lo) / SR_PAGE, 1);
+    sr_ever = (volatile u8*)calloc((sr_hi - sr_lo) / SR_PAGE, 1);
+    sr_page = sr_ever ? (volatile u8*)calloc((sr_hi - sr_lo) / SR_PAGE, 1) : NULL;
     return sr_page != NULL;
 }
+/* the owed arrays' byte ranges: a fault on a page they share with other
+ * data counts only when it lands inside one of them (the others open the
+ * page and are counted as neighbours) */
+#define SR_RANGES 512
+static struct { uintptr_t lo, hi; } sr_rng[SR_RANGES];
+static volatile unsigned long sr_neighbours;
+static void sr_note(const void* p, size_t n, int on) {
+    int i, fr = -1;
+    for (i = 0; i < SR_RANGES; i++) {
+        if (sr_rng[i].lo == (uintptr_t)p && sr_rng[i].hi) {
+            if (!on) {
+                sr_rng[i].hi = 0;
+            }
+            return;
+        }
+        if (!sr_rng[i].hi && fr < 0) {
+            fr = i;
+        }
+    }
+    if (on && fr >= 0) {
+        sr_rng[fr].lo = (uintptr_t)p;
+        sr_rng[fr].hi = (uintptr_t)p + n;
+    }
+}
+static int sr_inside(uintptr_t a) {
+    int i;
+    for (i = 0; i < SR_RANGES; i++) {
+        if (sr_rng[i].hi && a >= sr_rng[i].lo && a < sr_rng[i].hi) {
+            return 1;
+        }
+    }
+    return 0;
+}
 static void sr_range(const void* p, size_t n, int protect) {
-    uintptr_t a = ((uintptr_t)p + SR_PAGE - 1) & ~(uintptr_t)(SR_PAGE - 1);
-    uintptr_t b = ((uintptr_t)p + n) & ~(uintptr_t)(SR_PAGE - 1);
+    /* every page the array touches, its partial end pages too */
+    uintptr_t a = (uintptr_t)p & ~(uintptr_t)(SR_PAGE - 1);
+    uintptr_t b = ((uintptr_t)p + n + SR_PAGE - 1) & ~(uintptr_t)(SR_PAGE - 1);
+    if (p && n) {
+        sr_note(p, n, protect);
+    }
     if (!p || !sr_init() || a < sr_lo || b > sr_hi || b <= a) {
         return;
     }
@@ -1021,11 +1073,36 @@ static void sr_range(const void* p, size_t n, int protect) {
         unsigned long pg = (a - sr_lo) / SR_PAGE;
         if (protect && !sr_page[pg]) {
             port_wb_disarm((const void*)a, SR_PAGE);
+            sr_ever[pg] = 1;
             if (mprotect((void*)a, SR_PAGE, PROT_NONE) == 0) {
                 sr_page[pg] = 1;
                 sr_protects++;
             }
         } else if (!protect && sr_page[pg]) {
+            mprotect((void*)a, SR_PAGE, PROT_READ | PROT_WRITE);
+            sr_page[pg] = 0;
+            sr_opens++;
+        }
+    }
+}
+/* a kernel writer's destination (gx_wb.c port_wb_disarm): every watched
+ * page in it opened first (a read(2) into a PROT_NONE page fails) */
+void port_skinwatch_open(const void* ptr, size_t n) {
+    uintptr_t a, b;
+    if (!sr_page || !ptr || !n) {
+        return;
+    }
+    a = (uintptr_t)ptr & ~(uintptr_t)(SR_PAGE - 1);
+    b = ((uintptr_t)ptr + n + SR_PAGE - 1) & ~(uintptr_t)(SR_PAGE - 1);
+    if (a < sr_lo) {
+        a = sr_lo;
+    }
+    if (b > sr_hi) {
+        b = sr_hi;
+    }
+    for (; a < b; a += SR_PAGE) {
+        unsigned long pg = (a - sr_lo) / SR_PAGE;
+        if (sr_page[pg]) {
             mprotect((void*)a, SR_PAGE, PROT_READ | PROT_WRITE);
             sr_page[pg] = 0;
             sr_opens++;
@@ -1052,10 +1129,24 @@ int port_skinwatch_fault(const void* addr, void* uap) {
     }
     pg = (a - sr_lo) / SR_PAGE;
     if (!sr_page[pg]) {
-        return 0;
+        /* another thread opened it between this access and this handler
+         * (the access retries), or the write barrier armed it since (its
+         * handler's); a page the watch never touched is not ours */
+        if (!sr_ever[pg]) {
+            return 0;
+        }
+        if (port_wb_fault(addr)) {
+            return 1;
+        }
+        mprotect((void*)a, SR_PAGE, PROT_READ | PROT_WRITE);
+        return 1;
     }
     mprotect((void*)a, SR_PAGE, PROT_READ | PROT_WRITE);
     sr_page[pg] = 0;
+    if (!sr_inside((uintptr_t)addr)) {
+        sr_neighbours++;
+        return 1; /* a neighbour of an owed array on a shared page */
+    }
     sr_faults++;
 #if defined(__APPLE__) && defined(__ppc__)
     {
@@ -1092,8 +1183,9 @@ static void sr_report(void) {
     if (!port_opt.skinreadwatch) {
         return;
     }
-    port_log("port> skinreadwatch (M48): %lu pages protected, %lu opened, %lu faults at %d places\n",
-             sr_protects, sr_opens, sr_faults, sr_nhits);
+    port_log("port> skinreadwatch (M48): %lu pages protected, %lu opened, %lu faults inside the "
+             "owed arrays at %d places, %lu faults of their neighbours on shared pages\n",
+             sr_protects, sr_opens, sr_faults, sr_nhits, sr_neighbours);
     for (i = 0; i < sr_nhits; i++) {
         const char *s1 = "?", *s2 = "?";
         unsigned long o1 = 0, o2 = 0;
@@ -1154,6 +1246,11 @@ static void fuse_materialize(SkinHsf* h) {
     hsf_arrays_written(h); /* the arrays changed: the vertex cache re-checks them */
     h->owed = 0;
     stat_fuse_materialized++;
+}
+static unsigned long stat_fuse_mat_freed;
+static void fuse_materialize_free(SkinHsf* h) {
+    stat_fuse_mat_freed++;
+    fuse_materialize(h);
 }
 
 /* The deferred body (hsf_run_body's place in the two hooks).  Under the skin
@@ -1776,13 +1873,14 @@ void gx_skin_report(void) {
                  "ranges, %u multi); %lu poses built, %lu old bodies (in place or not fusable), "
                  "%lu arrays written on demand (%lu for a rewriter); %lu primitives skinned at "
                  "the decode (%lu with their normals), %lu vertices; %lu HSF pairs sharing a "
-                 "buffer (the game's body)\n",
+                 "buffer (the game's body); %lu HSFs' arrays written as the game freed them "
+                 "(M48)\n",
                  port_opt.skinverify ? " (--skinverify)" : "", stat_fuse_meshes_ok,
                  stat_fuse_meshes_no[1] + stat_fuse_meshes_no[2] + stat_fuse_meshes_no[3],
                  stat_fuse_meshes_no[1], stat_fuse_meshes_no[2], stat_fuse_meshes_no[3],
                  stat_fuse_poses, stat_fuse_old_bodies, stat_fuse_materialized,
                  stat_fuse_mat_rewrite, stat_fuse_prims, stat_fuse_nrm_prims, stat_fuse_verts,
-                 stat_fuse_shared);
+                 stat_fuse_shared, stat_fuse_mat_freed);
     }
     if (port_opt.skinvec) {
         extern unsigned long gx_skinvec_calls, gx_skinvec_nj_set;

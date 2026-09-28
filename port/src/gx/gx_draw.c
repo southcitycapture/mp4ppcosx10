@@ -3211,6 +3211,101 @@ static void batch_flush_body(void) {
         if (RS_ON()) {
             rs_draw_done(nv, n);
         }
+        if (__builtin_expect(port_opt.drawhash_from != 0, 0)) {
+            /* M48 (PLAN.md 63.7): --drawhash A,B -- every batch of frames
+             * A..B: its object, its vertices' bytes hashed (the render
+             * thread's decode joined first), for two runs' diff */
+            unsigned f = gl13_frame_number();
+            if ((int)f >= port_opt.drawhash_from && (int)f <= port_opt.drawhash_to && src_buf) {
+                static unsigned last_f, bno;
+                int mdl = -1;
+                const char* nm = port_drawobj_name(gx_last_posmtx_arg, &mdl);
+                const u8* v = src_buf + batch_pos;
+                size_t nb = (size_t)nv * (size_t)batch_sl.stride;
+                u32 h = 2166136261u;
+                size_t q;
+                if (f != last_f) {
+                    last_f = f;
+                    bno = 0;
+                }
+                u32 hm = 2166136261u, hs = 2166136261u;
+                rt_decode_join("drawhash");
+                for (q = 0; q < nb; q++) {
+                    h = (h ^ v[q]) * 16777619u;
+                }
+                {
+                    const u8* m = (const u8*)batch_posm;
+                    for (q = 0; q < sizeof(batch_posm); q++) {
+                        hm = (hm ^ m[q]) * 16777619u;
+                    }
+                    m = (const u8*)batch_nrmm;
+                    for (q = 0; q < sizeof(batch_nrmm); q++) {
+                        hm = (hm ^ m[q]) * 16777619u;
+                    }
+                    submit_rec_capture_body(&rec_now, 1);
+                    for (q = 0; q < rec_now.len && q < SUBMIT_REC_MAX; q++) {
+                        hs = (hs ^ rec_now.bytes[q]) * 16777619u;
+                    }
+                }
+                port_log("drawhash> f%u b%u obj=%s mdl=%d verts=%u stride=%d h=%08x mtx=%08x "
+                         "state=%08x\n", f, bno++, nm ? nm : "?", mdl, (unsigned)nv,
+                         batch_sl.stride, h, hm, hs);
+                {
+                    /* the state's parts, and the channel colours and lights in full */
+                    u32 hp[6];
+                    int k2;
+#define DH(i, ptr, len) do { const u8* m_ = (const u8*)(ptr); size_t l_ = (len); hp[i] = 2166136261u; \
+                             while (l_--) { hp[i] = (hp[i] ^ *m_++) * 16777619u; } } while (0)
+                    DH(0, gx.chan, sizeof(gx.chan));
+                    DH(1, gx.light, sizeof(gx.light));
+                    DH(2, gx.texgen, sizeof(gx.texgen));
+                    DH(3, gx.tev, sizeof(gx.tev));
+                    DH(4, gx.bound, sizeof(gx.bound));
+                    DH(5, &gx.z_enable, (size_t)((const u8*)(&gx.fog_color + 1) - &gx.z_enable));
+#undef DH
+                    port_log("drawhash>   parts chan=%08x light=%08x texgen=%08x tev=%08x "
+                             "bound=%08x pixel=%08x proj=%g,%g,%g,%g vp=%g,%g,%g,%g\n", hp[0], hp[1],
+                             hp[2], hp[3], hp[4], hp[5], gx.proj[0], gx.proj[1], gx.proj[2],
+                             gx.proj[3], gx.vp[0], gx.vp[1], gx.vp[2], gx.vp[3]);
+                    for (k2 = 0; k2 < gx.num_texgens && k2 < GX_TEXCOORDS; k2++) {
+                        u32 mm = gx.texgen[k2].mtx;
+                        if (mm >= GX_TEXMTX0 && mm < GX_IDENTITY && (mm - GX_TEXMTX0) / 3 < 20) {
+                            const f32* t = gx.tex_mtx[(mm - GX_TEXMTX0) / 3];
+                            port_log("drawhash>   texgen%d func %u src %u mtx %u: %g %g %g %g / %g %g %g %g / "
+                                     "%g %g %g %g\n", k2, gx.texgen[k2].func, gx.texgen[k2].src, mm,
+                                     t[0], t[1], t[2], t[3], t[4], t[5], t[6], t[7], t[8], t[9],
+                                     t[10], t[11]);
+                        }
+                    }
+                    port_log("drawhash>   reg %08x %08x %08x %08x konst %08x %08x %08x %08x scissor "
+                             "%u %u %u %u proj %g %g %g\n",
+                             *(const u32*)&gx.tev_reg[0], *(const u32*)&gx.tev_reg[1],
+                             *(const u32*)&gx.tev_reg[2], *(const u32*)&gx.tev_reg[3],
+                             *(const u32*)&gx.kcolor[0], *(const u32*)&gx.kcolor[1],
+                             *(const u32*)&gx.kcolor[2], *(const u32*)&gx.kcolor[3],
+                             (unsigned)gx.scissor[0], (unsigned)gx.scissor[1],
+                             (unsigned)gx.scissor[2], (unsigned)gx.scissor[3], gx.proj[4],
+                             gx.proj[5], gx.proj[6]);
+                    for (k2 = 0; k2 < 2; k2++) {
+                        port_log("drawhash>   chan%d amb %02x%02x%02x%02x mat %02x%02x%02x%02x mask %x\n",
+                                 k2, gx.chan[k2].amb.r, gx.chan[k2].amb.g, gx.chan[k2].amb.b,
+                                 gx.chan[k2].amb.a, gx.chan[k2].mat.r, gx.chan[k2].mat.g,
+                                 gx.chan[k2].mat.b, gx.chan[k2].mat.a, (unsigned)gx.chan[k2].light_mask);
+                    }
+                    for (k2 = 0; k2 < 8; k2++) {
+                        if (gx.light[k2].used) {
+                            port_log("drawhash>   light%d pos %g %g %g dir %g %g %g col %02x%02x%02x "
+                                     "k %g %g %g a %g %g %g\n", k2, gx.light[k2].pos[0],
+                                     gx.light[k2].pos[1], gx.light[k2].pos[2], gx.light[k2].dir[0],
+                                     gx.light[k2].dir[1], gx.light[k2].dir[2], gx.light[k2].color.r,
+                                     gx.light[k2].color.g, gx.light[k2].color.b, gx.light[k2].k[0],
+                                     gx.light[k2].k[1], gx.light[k2].k[2], gx.light[k2].a[0],
+                                     gx.light[k2].a[1], gx.light[k2].a[2]);
+                        }
+                    }
+                }
+            }
+        }
         issue_clean = 0;
         if (endlog_armed()) {
             /* the state is still the batch's: a setter touches before it
@@ -3409,6 +3504,8 @@ static void batch_prepare(u32 count) {
         (port_opt.oldsubmit || batch_n >= BATCH_MAX ||
          (port_opt.batchmax && batch_n >= port_opt.batchmax) ||
          batch_verts + count > MAX_VERTS || memcmp(&batch_sl, &sl, sizeof(sl)) != 0 ||
+         /* M48: --maxbatchverts N, a diagnostic (m427's river split, PLAN.md 63.7) */
+         (port_opt.maxbatchverts && batch_verts + count > (u32)port_opt.maxbatchverts) ||
          /* M22: the matrices moved under the batch (the loads no longer end
           * it): transform the object in, or flush under the batch's own */
          (gx_batch_spans && !palette_on &&
@@ -3832,7 +3929,7 @@ static int blk_frame_start = 1;
  * frame is predicted to be the last frame's k-th first */
 #define BLK_SEQ 4096
 static u32 blk_seq[2][BLK_SEQ][2];
-static int blk_seq_cur, blk_seq_k, blk_seq_n[2];
+static int blk_seq_cur, blk_seq_k, blk_seq_n[2], blk_cur_k;
 static unsigned long stat_blk_hit, stat_blk_pred, stat_blk_fast, stat_blk_nokey, stat_blk_shadow,
     stat_blk_tex, stat_blk_rec, stat_blk_unstable, stat_blk_full, stat_blk_evict, stat_blk_inelig;
 extern unsigned glc_ver;
@@ -4027,6 +4124,9 @@ static int blk_eligible(void) {
 
 static void blk_prefetch(const Blk* b) {
     const u8* p = (const u8*)b;
+    if (port_opt.nocompiledpf) {
+        return;
+    }
     const u8* e = BLK_HOT(b) + b->hot_bytes;
     for (; p < e; p += 32) {
         __builtin_prefetch(p, 0, 3);
@@ -4035,6 +4135,9 @@ static void blk_prefetch(const Blk* b) {
 
 /* the draw's block is b (replayed or recorded): the chains move on */
 static void blk_prefetch_s0(const Blk* nx, const Blk* b) {
+    if (port_opt.nocompiledpf) {
+        return;
+    }
     if ((nx->link_idx[0] != b->idx || nx->link_gen[0] != b->gen) &&
         (nx->link_idx[1] != b->idx || nx->link_gen[1] != b->gen)) {
         /* its S0 will be compared byte for byte: that too */
@@ -4047,7 +4150,7 @@ static void blk_prefetch_s0(const Blk* nx, const Blk* b) {
 }
 static void blk_follow(Blk* b) {
     Blk* prev = blk_at(blk_prev_idx, blk_prev_gen);
-    int k = blk_seq_k - 1; /* this draw's place (blk_draw counted it) */
+    int k = blk_cur_k; /* this draw's place (blk_gate_draw counted it) */
     if (k >= 0 && k < BLK_SEQ) {
         blk_seq[blk_seq_cur][k][0] = b->idx;
         blk_seq[blk_seq_cur][k][1] = b->gen;
@@ -4095,7 +4198,7 @@ static struct {
     unsigned frame;
     u8 bad;
 } blk_seen[BLK_SEEN];
-static unsigned long stat_blk_first, stat_blk_badkey;
+static unsigned long stat_blk_first, stat_blk_badkey, stat_blk_churn;
 static double stat_blk_klen;
 void gx_blk_frame(void) {
     Blk* f;
@@ -4178,7 +4281,7 @@ static int blk_draw(const u8* s, int n, int in_ring, GxXfDesc* xfd, u32* bias_ou
     /* the prediction: the last frame's draw at this place in the sequence,
      * else the block that followed the last draw's last time */
     {
-        int o = blk_seq_cur ^ 1, k = blk_seq_k++;
+        int o = blk_seq_cur ^ 1, k = blk_cur_k;
         Blk* c2;
         cand = k < blk_seq_n[o] ? blk_at(blk_seq[o][k][0], blk_seq[o][k][1]) : NULL;
         if (cand && blk_key_is(cand)) {
@@ -4266,6 +4369,29 @@ static int blk_draw(const u8* s, int n, int in_ring, GxXfDesc* xfd, u32* bias_ou
         stat_blk_nokey++;
     }
     blk_hash();
+    if (found) {
+        /* a key already held over four shadows and missed again: its draws
+         * follow different draws frame to frame (a depth sort); recording a
+         * fifth would only evict one of the four (m431's churn) -- the full
+         * path, and the key not armed again for two seconds */
+        Blk* c;
+        int same = 0;
+        for (c = blk_tab[blk_h1 & (BLK_BUCKETS - 1)]; c; c = c->next) {
+            if (c->h1 == blk_h1 && c->h2 == blk_h2 && blk_key_is(c)) {
+                same++;
+            }
+        }
+        if (same >= 4) {
+            u32 si = (blk_h1 ^ (blk_h2 >> 7)) & (BLK_SEEN - 1);
+            blk_seen[si].h1 = blk_h1;
+            blk_seen[si].h2 = blk_h2;
+            blk_seen[si].frame = fr + 120u - 600u; /* "bad" for 120 frames */
+            blk_seen[si].bad = 1;
+            stat_blk_churn++;
+            blk_nofollow();
+            return 0;
+        }
+    }
     {
         u32 si = (blk_h1 ^ (blk_h2 >> 7)) & (BLK_SEEN - 1);
         if (blk_seen[si].h1 == blk_h1 && blk_seen[si].h2 == blk_h2) {
@@ -4452,6 +4578,79 @@ static void blk_record_end(int on_gpu) {
     blk_follow(b);
 }
 
+/* M48 (PLAN.md 63.5): --compiled auto, the default -- the blocks used only
+ * where a replay is measured cheaper than the full path it replaces.  The
+ * replays are timed (the key, the lookup and the replay, from blk_draw's
+ * entry), and one draw in 32 is timed on the full path whatever the gate
+ * says (not keyed, not recorded); every 120 drawn frames the gate is on
+ * while the replays' mean is under 90% of the full path's.  While it is off
+ * one draw in 32 still looks for its block (the replays' sample).  Both
+ * paths give the same records: the gate moves time, never a picture.
+ * --compiled on: always; --nocompiled: never. */
+static double blk_full_t0;
+static int blk_gate_on = 1;
+static unsigned blk_gate_frame, blk_gate_ctr, blk_gate_frames;
+static double gate_rep_s, gate_full_s;
+static unsigned long gate_rep_n, gate_full_n, stat_gate_on, stat_gate_off;
+static void blk_gate_full(double s) {
+    gate_full_s += s;
+    gate_full_n++;
+}
+static int blk_gate_draw(const u8* s, int n, int in_ring, GxXfDesc* xfd, u32* bias) {
+    int sample, r;
+    double t0;
+    if (port_opt.nocompiled) {
+        return 0;
+    }
+    if (port_opt.compiled_mode == 2) {
+        blk_cur_k = blk_seq_k++;
+        if (blk_cur_k < BLK_SEQ) {
+            blk_seq[blk_seq_cur][blk_cur_k][0] = 0xFFFFFFFFu;
+        }
+        return blk_draw(s, n, in_ring, xfd, bias);
+    }
+    {
+        unsigned fr = gl13_frame_number();
+        if (fr != blk_gate_frame) {
+            blk_gate_frame = fr;
+            if (++blk_gate_frames >= 120 && gate_rep_n >= 64 && gate_full_n >= 16) {
+                double mr = gate_rep_s / (double)gate_rep_n, mf = gate_full_s / (double)gate_full_n;
+                blk_gate_on = mr < 0.9 * mf;
+                if (blk_gate_on) {
+                    stat_gate_on++;
+                } else {
+                    stat_gate_off++;
+                }
+                blk_gate_frames = 0;
+                gate_rep_s = gate_full_s = 0.0;
+                gate_rep_n = gate_full_n = 0;
+            }
+        }
+    }
+    /* every draw that gets here has its place in the frame's sequence
+     * (the prediction's), whichever path it takes */
+    blk_cur_k = blk_seq_k++;
+    if (blk_cur_k < BLK_SEQ) {
+        blk_seq[blk_seq_cur][blk_cur_k][0] = 0xFFFFFFFFu;
+    }
+    sample = (++blk_gate_ctr & 31u) == 0;
+    if (blk_gate_on == sample) {
+        /* on and sampled, or off and not: the full path, timed on a sample */
+        if (sample || (blk_gate_ctr & 31u) == 16u) {
+            blk_full_t0 = port_now_seconds();
+        }
+        return 0;
+    }
+    t0 = port_now_seconds();
+    r = blk_draw(s, n, in_ring, xfd, bias);
+    if (r) {
+        gate_rep_s += port_now_seconds() - t0;
+        gate_rep_n++;
+    }
+    return r;
+}
+
+
 static void blk_report(void) {
     if (port_opt.nocompiled) {
         return;
@@ -4460,12 +4659,20 @@ static void blk_report(void) {
              "a proved shadow), %lu recorded (%u kept, %.1f MB); not replayed: %lu new keys, "
              "%lu over another shadow, %lu refused by a texture, %lu not plain (an upload, a "
              "compile, a movie), %lu ineligible, %lu with the table full; %lu evicted; "
-             "%lu first sights and %lu refused keys not armed; keys %.0f bytes\n",
+             "%lu first sights and %lu refused keys not armed, %lu keys over four shadows not "
+             "recorded again; keys %.0f bytes\n",
              stat_blk_hit, stat_blk_pred, stat_blk_fast, stat_blk_rec, blk_count,
              blk_mem / 1048576.0, stat_blk_nokey, stat_blk_shadow, stat_blk_tex,
              stat_blk_unstable, stat_blk_inelig, stat_blk_full, stat_blk_evict, stat_blk_first,
-             stat_blk_badkey, stat_blk_hit ? stat_blk_klen / stat_blk_hit : 0.0);
+             stat_blk_badkey, stat_blk_churn, stat_blk_hit ? stat_blk_klen / stat_blk_hit : 0.0);
+    port_log("port> compiled draws (M48): the gate (--compiled %s) decided on %lu times, off %lu "
+             "times; last window's replays %.1f us (%lu), full path %.1f us (%lu); ends %s\n",
+             port_opt.compiled_mode == 2 ? "on" : "auto", stat_gate_on, stat_gate_off,
+             gate_rep_n ? gate_rep_s * 1e6 / gate_rep_n : 0.0, gate_rep_n,
+             gate_full_n ? gate_full_s * 1e6 / gate_full_n : 0.0, gate_full_n,
+             blk_gate_on ? "on" : "off");
 }
+
 
 static int draw_apply(const u8* s, int n, int in_ring) {
     GxXfDesc* xfd = &app_xfd;
@@ -4485,7 +4692,8 @@ static int draw_apply(const u8* s, int n, int in_ring) {
     u32 bias = 0; /* M21 --fixbase: the batch's first vertex as an index from the ring's start */
     sub_posm = in_ring ? batch_posm : pi.pos_mtx;
     sub_nrmm = in_ring ? batch_nrmm : pi.nrm_mtx;
-    if (!rtgx && in_ring && !water_plan_cur && blk_draw(s, n, in_ring, xfd, &bias)) {
+    blk_full_t0 = 0.0;
+    if (!rtgx && in_ring && !water_plan_cur && blk_gate_draw(s, n, in_ring, xfd, &bias)) {
         /* M48: a compiled draw, replayed (above) */
         water_pt = 0;
         gx_force_flags = 0;
@@ -4672,6 +4880,9 @@ static int draw_apply(const u8* s, int n, int in_ring) {
     }
     if (gx_blk_rec) {
         blk_record_end(on_gpu); /* M48 */
+    }
+    if (blk_full_t0 > 0.0) {
+        blk_gate_full(port_now_seconds() - blk_full_t0); /* M48: the gate's sample */
     }
     if (RS_ON()) {
         rs_state(on_gpu);
