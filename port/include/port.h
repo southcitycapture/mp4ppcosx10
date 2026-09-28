@@ -424,8 +424,10 @@ typedef struct PortOptions {
     int nolights;           /* --nolights  M46: the pillar lights as the frame drew them (gx_lights.c) */
     int nopendlast;         /* --nopendlast  M46: the run's last vertex decoded whole for `pending` */
     /* M47 (PLAN.md 62): the skin at the decode */
-    int noskindecode;       /* --noskindecode  M47: the deferred skin body writes the
-                             *   mesh arrays and the decode gathers them (M18..M46) */
+    int noskindecode;       /* 1 by default (--noskindecode): the deferred skin body
+                             *   writes the mesh arrays and the decode gathers them
+                             *   (M18..M46); --skindecode (M47, opt-in): the decode
+                             *   skins from the rest pose, the arrays left owed */
     int skinverify;         /* --skinverify  M47: the arrays written AND the skin at the
                              *   decode, every fused vertex compared bit for bit */
     int oldvcskin;          /* --oldvcskin  M47: the skin body ends every vertex-cache
@@ -439,6 +441,9 @@ typedef struct PortOptions {
                              *   would leave); the picture is WRONG, never shipped */
     int oldwake;            /* --oldwake  M47: the render thread and the workers woken
                              *   with the mutex held, as M29..M46 */
+    int skinround;          /* --skinround  M47 item 4's measurement: the skin decode's
+                             *   dot products rounded once in double -- a card's
+                             *   rounding, not the game's bits; never shipped */
     int skinvec;            /* --skinvec  M47: the skin decode's pos/nrm/tex0 shape in
                              *   AltiVec (gx_skinvec.c), for the A/B */
     int dcbtdist;           /* --dcbtdist N  M46: the decode loops prefetch N vertices ahead (1) */

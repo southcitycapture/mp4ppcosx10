@@ -5726,7 +5726,9 @@ static const u8* decode_job_vertex(const GxDecJob* j, const u8* p, u8* v, Pendin
 #define SKIN_POS(dst, IX)                                                                \
     do {                                                                                 \
         u32 e_ = (IX) < npos ? pent[IX] : GX_SKIN_UNNAMED;                               \
-        if (e_ - 1u < (u32)(GX_SKIN_UNNAMED - 1) && !SKFREE) {                             \
+        if (e_ - 1u < (u32)(GX_SKIN_UNNAMED - 1) && SKFREE == 2) {                       \
+            gx_skin_mul_round(PM + 12 * e_, rp + 3 * (IX), (dst));                       \
+        } else if (e_ - 1u < (u32)(GX_SKIN_UNNAMED - 1) && !SKFREE) {                    \
             gx_skin_mul(PM + 12 * e_, rp + 3 * (IX), (dst));                             \
         } else if (e_ != GX_SKIN_UNNAMED) {                                                            \
             (dst)[0] = rp[3 * (IX) + 0];                                                 \
@@ -5742,7 +5744,9 @@ static const u8* decode_job_vertex(const GxDecJob* j, const u8* p, u8* v, Pendin
 #define SKIN_NRM(dst, IX)                                                                \
     do {                                                                                 \
         u32 e_ = (IX) < nnrm ? nent[IX] : GX_SKIN_UNNAMED;                               \
-        if (e_ != GX_SKIN_UNNAMED && SKFREE) {                                             \
+        if (e_ != GX_SKIN_UNNAMED && SKFREE == 2) {                                      \
+            gx_skin_mul_round(NM + 12 * e_, rn + 3 * (IX), (dst));                       \
+        } else if (e_ != GX_SKIN_UNNAMED && SKFREE) {                                    \
             (dst)[0] = rn[3 * (IX) + 0];                                                 \
             (dst)[1] = rn[3 * (IX) + 1];                                                 \
             (dst)[2] = rn[3 * (IX) + 2];                                                 \
@@ -5872,7 +5876,7 @@ static const DecodeJobFn dec_skin_job_free[14] = {
 /* one vertex of a skinned run through the plan (decode_job_vertex, with the
  * position and the skinned normal from the rest pose) */
 static const u8* decode_job_vertex_skin(const GxDecJob* j, const u8* p, u8* v, Pending* pend) {
-    const int SKFREE = port_opt.skinfree;
+    const int SKFREE = port_opt.skinround ? 2 : port_opt.skinfree;
     const GxSkinDec* sd = j->skin;
     const f32* rp = sd->rest_pos;
     const f32* rn = sd->rest_nrm;
@@ -5947,7 +5951,9 @@ static u32 gx_decode_skin_job(const GxDecJob* j) {
         return gx_skinvec_n2c0t1(j);
     }
     if (j->fast >= 0 && j->fast < 14 && dec_skin_job[j->fast]) {
-        return (port_opt.skinfree ? dec_skin_job_free : dec_skin_job)[j->fast](j);
+        if (!port_opt.skinround) {
+            return (port_opt.skinfree ? dec_skin_job_free : dec_skin_job)[j->fast](j);
+        }
     }
     {
         Pending scratch;

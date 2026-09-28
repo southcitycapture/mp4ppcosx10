@@ -634,6 +634,23 @@ static void fuse_build(SkinMesh* m, HSFOBJECT* o) {
     }
 }
 
+static unsigned long stat_fuse_shared;
+static void fuse_materialize(SkinHsf* h);
+static void fuse_share_off(SkinHsf* h, SkinHsf* other) {
+    if (other->owed == 1) {
+        fuse_materialize(other);
+    }
+    if (h->fuse_ok || other->fuse_ok) {
+        stat_fuse_shared++;
+        if (port_opt.skinstats) {
+            port_log("port> skin: hsf %p and hsf %p share a buffer: both run the game's body\n",
+                     (void*)h->hsf, (void*)other->hsf);
+        }
+    }
+    h->fuse_ok = 0;
+    other->fuse_ok = 0;
+}
+
 static SkinHsf* hsf_find(const HSFDATA* hsf) {
     int i;
     for (i = 0; i < nhsfs; i++) {
@@ -777,6 +794,27 @@ static SkinHsf* hsf_register(HSFDATA* hsf, unsigned frame) {
     h->fuse_ok = !h->cpu && h->nmesh > 0;
     for (i = 0; i < h->nmesh; i++) {
         h->fuse_ok &= h->mesh[i].fuse_ok;
+    }
+    /* M47 (PLAN.md 62.10): two registered HSFs whose meshes share a buffer
+     * (models built from one file: each body rewrites the same arrays in
+     * turn, the draw reading whichever pose went last) are not skinned at the
+     * decode -- a buffer names one mesh's matrices, not two.  Both run the
+     * game's body from here on, the other's owed arrays written first. */
+    for (i = 0; i < h->nmesh; i++) {
+        SkinMesh* m = &h->mesh[i];
+        SkinMesh* o;
+        for (o = mesh_hash[hash_ptr(m->vtxenv)]; o; o = o->hnext) {
+            if (o->owner != h && o->vtxenv == m->vtxenv) {
+                fuse_share_off(h, o->owner);
+            }
+        }
+        if (m->normenv) {
+            for (o = nrm_hash[hash_ptr(m->normenv)]; o; o = o->nhnext) {
+                if (o->owner != h && o->normenv == m->normenv) {
+                    fuse_share_off(h, o->owner);
+                }
+            }
+        }
     }
     if (h->cpu) {
         stat_fallback_hsf++;
@@ -1585,12 +1623,14 @@ void gx_skin_report(void) {
         port_log("port> skin: M47 skin at the decode%s: %u meshes can (%u cannot: %u arrays, %u "
                  "ranges, %u multi); %lu poses built, %lu old bodies (in place or not fusable), "
                  "%lu arrays written on demand (%lu for a rewriter); %lu primitives skinned at "
-                 "the decode (%lu with their normals), %lu vertices\n",
+                 "the decode (%lu with their normals), %lu vertices; %lu HSF pairs sharing a "
+                 "buffer (the game's body)\n",
                  port_opt.skinverify ? " (--skinverify)" : "", stat_fuse_meshes_ok,
                  stat_fuse_meshes_no[1] + stat_fuse_meshes_no[2] + stat_fuse_meshes_no[3],
                  stat_fuse_meshes_no[1], stat_fuse_meshes_no[2], stat_fuse_meshes_no[3],
                  stat_fuse_poses, stat_fuse_old_bodies, stat_fuse_materialized,
-                 stat_fuse_mat_rewrite, stat_fuse_prims, stat_fuse_nrm_prims, stat_fuse_verts);
+                 stat_fuse_mat_rewrite, stat_fuse_prims, stat_fuse_nrm_prims, stat_fuse_verts,
+                 stat_fuse_shared);
     }
     if (port_opt.skinvec) {
         extern unsigned long gx_skinvec_calls, gx_skinvec_nj_set;

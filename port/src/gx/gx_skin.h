@@ -165,6 +165,18 @@ static inline void gx_skin_mul(const f32* m, const f32* r, f32* o) {
     o[1] = oy;
     o[2] = oz;
 }
+/* --skinround (M47 item 4's measurement): each component as one correctly
+ * rounded dot product (in double, rounded once) -- a result a card's DP4
+ * could give; not the game's bits */
+static inline void gx_skin_mul_round(const f32* m, const f32* r, f32* o) {
+    double x = r[0], y = r[1], z = r[2];
+    f32 ox = (f32)((double)m[0] * x + (double)m[1] * y + (double)m[2] * z + (double)m[3]);
+    f32 oy = (f32)((double)m[4] * x + (double)m[5] * y + (double)m[6] * z + (double)m[7]);
+    f32 oz = (f32)((double)m[8] * x + (double)m[9] * y + (double)m[10] * z + (double)m[11]);
+    o[0] = ox;
+    o[1] = oy;
+    o[2] = oz;
+}
 void gx_skin_rewrite_notify(const void* pos_array); /* a rewriter is about to write it */
 void gx_skin_rewrite_notify_all(void);
 void gx_skin_fuse_count(unsigned long verts);
