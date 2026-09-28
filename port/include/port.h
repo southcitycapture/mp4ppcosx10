@@ -430,8 +430,9 @@ typedef struct PortOptions {
                              *   skins from the rest pose, the arrays left owed */
     int skinverify;         /* --skinverify  M47: the arrays written AND the skin at the
                              *   decode, every fused vertex compared bit for bit */
-    int oldvcskin;          /* --oldvcskin  M47: the skin body ends every vertex-cache
-                             *   array memo (the epoch), as M40..M46 */
+    int oldvcskin;          /* 1 by default (--oldvcskin): the skin body ends every
+                             *   vertex-cache array memo (the epoch, M40..M46);
+                             *   --vcskinnotice (M47, opt-in): only its two arrays' */
     int fullskinsig;        /* --fullskinsig  M47: the skin registry hashes each HSF's
                              *   envelope tables at every EnvelopeProc, as M18..M46 */
     int noskindcbz;         /* --noskindcbz  M47: no dcbz of the skin loop's whole

@@ -367,13 +367,14 @@ static void usage(const char* argv0) {
             "                    vertices ahead (default 1, the next vertex)\n"
             "  --skindecode      M47 (opt-in): skinned meshes skinned at the decode from the\n"
             "                    rest pose, their arrays left unwritten -- exact where only\n"
-            "                    the draw reads them; the game's display-list build reads\n"
-            "                    them for bump-mapped meshes (m427), so off by default\n"
+            "                    the draw reads them; m427 shows a reader that is not\n"
+            "                    (PLAN.md 62.10), so off by default\n"
             "  --noskindecode    the default: the deferred body writes the arrays (M18..M46)\n"
             "  --skinverify      M47: both -- the arrays written and the skin at the\n"
             "                    decode, every fused position/normal compared bit for bit\n"
-            "  --oldvcskin       M47: the skin body ends every vertex-cache array memo\n"
-            "                    (the epoch, M40..M46), not only its own arrays'\n"
+            "  --vcskinnotice    M47 (opt-in): the skin body names its two arrays to the\n"
+            "                    vertex cache instead of ending every memo; slower on m433\n"
+            "  --oldvcskin       the default: the skin body ends every array memo (M40..M46)\n"
             "  --fullskinsig     M47: the skin registry hashes the envelope tables at every\n"
             "                    EnvelopeProc (M18..M46), not only when a pointer moved\n"
             "  --noskindcbz      M47: the skin loop (PSMTXROMultVecArray) without dcbz of\n"
@@ -798,11 +799,16 @@ int port_parse_args(int argc, char** argv) {
     port_opt.rtdecode = -1; /* M29: the decode on the render thread when there is one */
     port_opt.rtauto_fit_ms = 30.0; /* M33: auto's dead band, two retraces less a margin */
     port_opt.rtauto_max = 0.75;
-    /* M47 (PLAN.md 62.10): the skin at the decode is opt-in (--skindecode): the
-     * game reads skinned buffers when it builds a display list (hsfdraw.c
-     * MakeCalcNBT bakes a bump-mapped mesh's normals from them), so arrays left
-     * owed change what it bakes -- m427's river in the picture checks */
+    /* M47 (PLAN.md 62.10): the skin at the decode is opt-in (--skindecode): with
+     * the arrays left unwritten m427's river differs from 0.9.15 in the picture
+     * checks although every skinned vertex it decodes is exact -- some reader
+     * other than the draw sees the arrays (not identified; the teleport
+     * L:m427 with --skindecode reproduces it) */
     port_opt.noskindecode = 1;
+    /* M47 (PLAN.md 62.11): the skin body's precise notice to the vertex cache is
+     * opt-in (--vcskinnotice): on m433 it cost 0.6 ms of the drawn frame and
+     * the screen's pass (29.0 against 30.0 with the epoch, three runs each) */
+    port_opt.oldvcskin = 1;
     port_opt.stackmul = PORT_PRC_STACK_MUL;
     port_opt.zprepass = 1; /* M34: the ZCompLoc gate, the hardware's rule (PLAN.md 49.2) */
     port_opt.tfs = 0; /* M35: the indirect warp as a fragment program is built and OFF (PLAN.md 50.13:
@@ -1412,6 +1418,8 @@ int port_parse_args(int argc, char** argv) {
             port_opt.noskindecode = 0;
         } else if (!strcmp(a, "--oldvcskin")) {
             port_opt.oldvcskin = 1;
+        } else if (!strcmp(a, "--vcskinnotice")) {
+            port_opt.oldvcskin = 0;
         } else if (!strcmp(a, "--fullskinsig")) {
             port_opt.fullskinsig = 1;
         } else if (!strcmp(a, "--noskindcbz")) {
