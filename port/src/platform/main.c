@@ -1488,6 +1488,8 @@ int port_parse_args(int argc, char** argv) {
             if (sscanf(argv[++i], "%d,%d", &port_opt.vcarr_from, &port_opt.vcarr_to) != 2) {
                 port_opt.vcarr_from = port_opt.vcarr_to = 0;
             }
+        } else if (!strcmp(a, "--skinreadwatch")) {
+            port_opt.skinreadwatch = 1;
         } else if (!strcmp(a, "--nocompiled")) {
             port_opt.nocompiled = 1;
         } else if (!strcmp(a, "--compiled")) {

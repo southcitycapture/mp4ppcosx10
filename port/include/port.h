@@ -482,6 +482,9 @@ typedef struct PortOptions {
                              *   thread's cycle is over this (29 ms) */
     int vcarr_from, vcarr_to; /* --vcarr A,B  M43: the vertex cache's reasons per display
                              *   list, frames A..B from the minigame's entry (PLAN.md 58.5) */
+    int skinreadwatch;      /* --skinreadwatch  M48: a diagnostic -- under --skindecode, the owed
+                             *   skin arrays' pages unreadable, the code that touches them named
+                             *   (src/gx/gx_skin.c; PLAN.md 63) */
     int nocompiled;         /* --nocompiled  M48: every draw's translation derived again (the
                              *   compiled draw's record blocks off; src/gx/gx_draw.c, PLAN.md 63) */
     int compiled_mb;        /* --compiledmb N  M48: the blocks' memory (default 8) */

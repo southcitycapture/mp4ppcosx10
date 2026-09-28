@@ -26,6 +26,7 @@
 
 static int watchdog_progressed(void);
 int port_wb_fault(const void* addr);
+int port_skinwatch_fault(const void* addr, void* uap); /* M48: gx_skin.c */
 
 static void handler(int sig, siginfo_t* info, void* uap) {
     if (sig == SIGALRM && watchdog_progressed()) {
@@ -33,6 +34,9 @@ static void handler(int sig, siginfo_t* info, void* uap) {
     }
     /* M42 (PLAN.md 57.5): the vertex cache's write barrier -- a store to a
      * page it protected; the page is writable again and the store retries */
+    if ((sig == SIGBUS || sig == SIGSEGV) && info && port_skinwatch_fault(info->si_addr, uap)) {
+        return; /* M48: --skinreadwatch's page, opened; the access retries */
+    }
     if ((sig == SIGBUS || sig == SIGSEGV) && info && port_wb_fault(info->si_addr)) {
         return;
     }

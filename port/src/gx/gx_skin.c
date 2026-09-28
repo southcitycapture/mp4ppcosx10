@@ -145,7 +145,9 @@ static void mesh_free(SkinMesh* m) {
 }
 
 static unsigned reg_serial = 1; /* M47: bumped when the meshes' table changes */
+static void sr_hsf(SkinHsf* h, int protect); /* M48: --skinreadwatch */
 static void hsf_free(SkinHsf* h) {
+    sr_hsf(h, 0);
     int i;
     reg_serial++;
     if (h->dec_valid) {
@@ -969,11 +971,156 @@ static void ent_pose(const SkinMesh* m, const SkinEnt* e, Mtx* top, u32 nobj, u3
 /* the arrays, written from the matrices of the pose built (what SetEnvelop
  * would have written at that pose: the same multiply, the same entry per
  * index); the unnamed indices are left alone as SetEnvelop leaves them */
+
+/* ---- M48 (PLAN.md 63.7): --skinreadwatch, m427's reader hunted ------------
+ *
+ * Under the skin decode a skinned mesh's arrays are owed -- not written --
+ * from the pose build to their materialization.  Nothing but the decode
+ * should read them then (M47's premise, which m427 breaks).  With this
+ * diagnostic the pages lying wholly inside each owed array are made
+ * unreadable at the pose build and readable again at the materialization
+ * (or the game's body, or a free); the first access to one faults, and the
+ * handler (crash.c, before the write barrier's) records the program
+ * counter, the caller, whether it was a store and the frame, and opens the
+ * page.  The write barrier forgets the pages first (a diagnostic run is not
+ * timed, and the vertex cache re-hashes what it cannot trust).  The report
+ * lists the readers by place, symbolized at exit. */
+#include <signal.h>
+#include <sys/mman.h>
+#ifdef __APPLE__
+#include <dlfcn.h>
+#include <sys/ucontext.h>
+#endif
+#define SR_PAGE 4096u
+#define SR_MAX 256
+static struct { unsigned long pc, lr; const void* addr; unsigned frame; int store; unsigned n; } sr_hits[SR_MAX];
+static volatile int sr_nhits;
+static volatile unsigned long sr_faults, sr_protects, sr_opens;
+static volatile u8* sr_page; /* per MEM1 page: 1 = protected by the watch */
+static uintptr_t sr_lo, sr_hi;
+void port_wb_disarm(const void* ptr, size_t n);
+static int sr_init(void) {
+    if (sr_page) {
+        return 1;
+    }
+    sr_lo = ((uintptr_t)port_mem1_lo() + SR_PAGE - 1) & ~(uintptr_t)(SR_PAGE - 1);
+    sr_hi = (uintptr_t)port_mem1_hi() & ~(uintptr_t)(SR_PAGE - 1);
+    if (sr_hi <= sr_lo) {
+        return 0;
+    }
+    sr_page = (volatile u8*)calloc((sr_hi - sr_lo) / SR_PAGE, 1);
+    return sr_page != NULL;
+}
+static void sr_range(const void* p, size_t n, int protect) {
+    uintptr_t a = ((uintptr_t)p + SR_PAGE - 1) & ~(uintptr_t)(SR_PAGE - 1);
+    uintptr_t b = ((uintptr_t)p + n) & ~(uintptr_t)(SR_PAGE - 1);
+    if (!p || !sr_init() || a < sr_lo || b > sr_hi || b <= a) {
+        return;
+    }
+    for (; a < b; a += SR_PAGE) {
+        unsigned long pg = (a - sr_lo) / SR_PAGE;
+        if (protect && !sr_page[pg]) {
+            port_wb_disarm((const void*)a, SR_PAGE);
+            if (mprotect((void*)a, SR_PAGE, PROT_NONE) == 0) {
+                sr_page[pg] = 1;
+                sr_protects++;
+            }
+        } else if (!protect && sr_page[pg]) {
+            mprotect((void*)a, SR_PAGE, PROT_READ | PROT_WRITE);
+            sr_page[pg] = 0;
+            sr_opens++;
+        }
+    }
+}
+static void sr_hsf(SkinHsf* h, int protect) {
+    int k;
+    if (!port_opt.skinreadwatch) {
+        return;
+    }
+    for (k = 0; k < h->nmesh; k++) {
+        const SkinMesh* m = &h->mesh[k];
+        sr_range(m->vtxenv, (size_t)m->nvtx * 12u, protect);
+        sr_range(m->normenv, (size_t)m->nnrm * 12u, protect);
+    }
+}
+int port_skinwatch_fault(const void* addr, void* uap) {
+    uintptr_t a = (uintptr_t)addr & ~(uintptr_t)(SR_PAGE - 1);
+    unsigned long pg, pc = 0, lr = 0;
+    int store = 0, i, n;
+    if (!sr_page || a < sr_lo || a >= sr_hi) {
+        return 0;
+    }
+    pg = (a - sr_lo) / SR_PAGE;
+    if (!sr_page[pg]) {
+        return 0;
+    }
+    mprotect((void*)a, SR_PAGE, PROT_READ | PROT_WRITE);
+    sr_page[pg] = 0;
+    sr_faults++;
+#if defined(__APPLE__) && defined(__ppc__)
+    {
+        ucontext_t* uc = (ucontext_t*)uap;
+        if (uc && uc->uc_mcontext) {
+            pc = uc->uc_mcontext->ss.srr0;
+            lr = uc->uc_mcontext->ss.lr;
+            store = (uc->uc_mcontext->es.dsisr & 0x02000000u) != 0;
+        }
+    }
+#else
+    (void)uap;
+#endif
+    n = sr_nhits;
+    for (i = 0; i < n; i++) {
+        if (sr_hits[i].pc == pc && sr_hits[i].lr == lr) {
+            sr_hits[i].n++;
+            return 1;
+        }
+    }
+    if (n < SR_MAX) {
+        sr_hits[n].pc = pc;
+        sr_hits[n].lr = lr;
+        sr_hits[n].addr = addr;
+        sr_hits[n].frame = gl13_frame_number();
+        sr_hits[n].store = store;
+        sr_hits[n].n = 1;
+        sr_nhits = n + 1;
+    }
+    return 1;
+}
+static void sr_report(void) {
+    int i;
+    if (!port_opt.skinreadwatch) {
+        return;
+    }
+    port_log("port> skinreadwatch (M48): %lu pages protected, %lu opened, %lu faults at %d places\n",
+             sr_protects, sr_opens, sr_faults, sr_nhits);
+    for (i = 0; i < sr_nhits; i++) {
+        const char *s1 = "?", *s2 = "?";
+        unsigned long o1 = 0, o2 = 0;
+#ifdef __APPLE__
+        Dl_info di;
+        if (dladdr((void*)sr_hits[i].pc, &di) && di.dli_sname) {
+            s1 = di.dli_sname;
+            o1 = sr_hits[i].pc - (unsigned long)di.dli_saddr;
+        }
+        if (dladdr((void*)sr_hits[i].lr, &di) && di.dli_sname) {
+            s2 = di.dli_sname;
+            o2 = sr_hits[i].lr - (unsigned long)di.dli_saddr;
+        }
+#endif
+        port_log("port> skinreadwatch:   %s at %s+0x%lx (pc %#lx), called from %s+0x%lx: %u times, "
+                 "first at frame %u, address %p\n",
+                 sr_hits[i].store ? "store" : "load ", s1, o1, sr_hits[i].pc, s2, o2, sr_hits[i].n,
+                 sr_hits[i].frame, sr_hits[i].addr);
+    }
+}
+
 static void fuse_materialize(SkinHsf* h) {
     int k;
     if (h->owed != 1) {
         return;
     }
+    sr_hsf(h, 0); /* M48: --skinreadwatch */
     if (h->dec_valid) {
         rt_decode_join_pos(h->dec_pos, "skin arrays");
         h->dec_valid = 0;
@@ -1018,6 +1165,7 @@ static void hsf_body(SkinHsf* h) {
     HSFDATA* hsf = h->hsf;
     HSFMATRIX* mx = hsf->matrix;
     int i, k, meshNo, inplace = 0;
+    sr_hsf(h, 0); /* M48: --skinreadwatch (the body writes the arrays) */
     if (!fuse_mode() || !h->fuse_ok) {
         hsf_run_body(h);
         h->owed = 0;
@@ -1090,6 +1238,9 @@ static void hsf_body(SkinHsf* h) {
     h->owed = port_opt.skinverify ? 2 : 1;
     h->skin_dirty = 0;
     stat_fuse_poses++;
+    if (h->owed == 1) {
+        sr_hsf(h, 1); /* M48: --skinreadwatch */
+    }
 }
 
 static SkinMesh* mesh_by_pos(const void* p) {
@@ -1597,6 +1748,7 @@ void gx_skin_frame_end(void) {
 }
 
 void gx_skin_report(void) {
+    sr_report();
     unsigned long tot;
     if (!stat_proc_calls) {
         return;
