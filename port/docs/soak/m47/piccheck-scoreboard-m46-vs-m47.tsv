@@ -1,0 +1,18 @@
+run	frame	verdict	sim	>8%	ref L/R	new L/R
+m415	frame-14777.ppm	differs	100.0	0.3	194.9/189.6	194.9/189.8
+m415	frame-15677.ppm	differs	100.0	0.3	191.6/171.0	191.6/171.2
+m416	frame-14777.ppm	differs	99.7	0.4	13.9/11.1	14.7/11.8
+m416	frame-15677.ppm	differs	100.0	0.0	2.2/4.7	2.2/4.7
+m417	frame-14777.ppm	differs	100.0	0.0	105.3/103.0	105.3/103.0
+m417	frame-15677.ppm	differs	100.0	0.0	111.0/107.2	111.0/107.2
+m423	frame-14777.ppm	differs	100.0	0.0	102.9/96.0	102.9/96.0
+m427	frame-14777.ppm	differs	100.0	0.0	20.1/21.1	20.1/21.1
+m427	frame-15677.ppm	differs	100.0	0.0	23.2/23.2	23.2/23.2
+m435	frame-15344.ppm	differs	99.8	1.6	50.0/69.0	50.9/69.1
+m435~2	frame-15344.ppm	differs	99.8	1.6	50.9/69.1	50.0/69.0
+m435~3	frame-14444.ppm	differs	99.8	2.7	59.7/60.2	59.3/59.8
+m436	frame-14444.ppm	differs	99.8	2.7	59.1/59.7	59.5/60.0
+m436~2	frame-14444.ppm	differs	99.8	2.7	59.5/60.0	59.1/59.7
+m436~3	frame-15344.ppm	differs	99.8	1.5	69.2/71.2	69.0/70.9
+m437	frame-15343.ppm	differs	99.9	1.1	54.2/53.4	54.2/53.3
+m455	frame-14777.ppm	differs	100.0	0.0	154.5/145.5	154.5/145.5

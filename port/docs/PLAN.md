@@ -24512,3 +24512,554 @@ launch of this build (the controls file with a pad, a real key press).
 screen draws in the middle (m427's strip hid its own finding for two
 milestones); and a GL enable the shadow does not track must be put back by
 whoever takes it away.
+
+## 62. M47 log: the last seven *(2026-09-27/28, littlejelly)*
+
+M46 shipped 0.9.15 (75 of 82).  Seven screens were short: m441 25.9, m436
+27.4, m401 27.7, m431 27.9, m463 28.8, m435 28.8, m444 29.2.  The brief:
+read the leave-behind soak (item 0); class 2, the skinning -- the structural
+lever 61.9 named (a port body of the skin loop writing the decode's layout),
+its AltiVec form measured for exactness and speed, and whether the skin work
+fits on the render thread (item 1); class 1 -- the vertex cache told what the
+skinning rewrote, the state setters' own cost, m441's consumed frame (item
+2); m463's falling panels with `--pmc` (item 3); if the exact levers run
+out, the inexact one measured and laid out, not shipped (item 4); the
+scoreboard after (item 5); 0.9.16 after a two-hour soak if anything shipped.
+
+**The short answer.**  **The skin at the decode** (62.2) was built and is
+exact on m436 -- 0 of 72,254,460 skinned positions and 72,254,460 normals
+differ from the game's own arrays in lockstep, on three builds, the md5 walks
+unchanged -- and it is **not the lever 61.9 hoped for**: the body it removes
+was ~2 M cycles of m436's drawn frame, not 8, and the decode that replaces
+it multiplies once per *list* vertex (~55,600 a drawn frame on m436) where
+the body multiplied once per *array* vertex, so where both processors are
+full it moves the work rather than removing it (m436 27.9 / 27.9, m435
+28.9 / 29.0 in its A/B).  And **the picture checks on the candidate caught
+it** (62.10): two HSFs sharing buffers on m414 (fixed), and on m427 a reader
+of the unwritten arrays that is not the draw (not identified) -- so it ships
+**off** (`--skindecode` opt-in).  **Its AltiVec form** (62.3) is bit for bit
+the scalar loop's -- the vector unit found in non-Java mode and put in Java
+mode, 0 of 72 M differ -- and slower (+1.0 M cycles).  **The skin work on the
+render thread** (62.4): no room on m436/m435; the split hands decode back to
+the game thread as the render thread nears 30 ms.  **What ships** (62.6),
+each exact, each with its old path, each checked by the pictures: the skin
+registry no longer re-hashes every skinned model's envelope tables at every
+EnvelopeProc (1% of m436's game thread, consumed frames too); the SDK skin
+loop's destination lines are established with `dcbz` instead of read; the
+render thread and the audio worker are woken after the unlock (4.6% of
+m463's game thread was the woken threads blocking on the mutex).  **Item
+2's lever** (62.5) -- the skin body naming its two arrays to the vertex
+cache instead of ending every memo -- was built, exact, and cost m433 its
+pass (29.0 against 30.0): opt-in.  **m463** (62.7): its falling panels are the game's bone and
+panel walks; the wake order was its one port-side item.  **Item 4** (62.8): a
+card-side skin would buy at most what taking every skin multiply off the
+processors buys -- about a frame on m435, +0.3 on m431, nothing on m436 or
+m444 -- would move a few edge pixels a frame, and at a correctly rounded
+card's precision changes none of the three md5 frames; the tree's own
+card-side palette draws skinned characters broken today.  **The G4** lost
+power (or browned out) at 23:51 during the picture checks (62.13): no panic,
+the upstairs switch dropped littlejelly's link at the same second.
+
+### 62.1 The soak, read
+
+M46's leave-behind (`isle --soak --com4 --rtc dolphin --freshcard --status
+--perf` on 0.9.15, `isle` `16a042ad`, pid 70071) had run 25 minutes when
+this milestone began; read and stopped by pid at 13:35 G4 time (one SIGINT,
+the game's reset path, `EXITCODE=0`; `docs/soak/m47/m47-soak-m46-leave.log.gz`):
+**80,100 retraces at 100.0% speed** (game 1,335.30 s against wall 1,335.40
+s), the board to turn 9 and the minigames m401, m402, m410, m411, m412,
+m415, m419, m420, m422; **0 faults, 0 skin guard hits, 0 resyncs, no
+lock-up**, the worst frame 668 ms behind (a load).  The leave-behind's
+command has no `--halfwatch`, so no blip or half-black counts; M46's own
+two-hour soak on the same binary (61.11) is the long reading.
+
+### 62.2 The skin at the decode (item 1)
+
+**What was there.**  Since M18 the skinning runs at the draw (33.3): the
+first read of a skinned model's buffers on a drawn frame runs the game's
+`SetEnvelopMain`, which writes every skinned vertex's position and normal
+into the mesh's arrays (`vtxenv`, `normenv`), and the decode then gathers
+them again, index by index, into the ring.  61.9 read the object walk's 8.1
+M cycles on m436's drawn frame (0.85 on a consumed one) as that pass.
+
+**The build** (`gx_skin.c` `fuse_build` / `hsf_body` / `fuse_materialize`,
+`gx_draw.c` `DECODE_SKIN_JOB` / `decode_job_vertex_skin` / `skin_decide`;
+`--skindecode` since 62.10, the default the M46 path).  The body builds only what `SetEnvelop`
+computes once per envelope entry: each entry's position and normal matrix,
+with the game's own PSMTX calls in its order (`ent_pose`, M18's, whose dual
+blend compiles to the game's fmuls/fmuls/fadds -- read off both objects),
+and `SetEnvelopMain`'s one game-visible write, the inverse it stores in
+`MtxTop[Meshno]` for every mesh object.  The arrays are left *owed*.  The
+decode, per list vertex, reads the rest pose at the vertex's index and the
+entry that wrote that index last, and does the multiply `SetEnvelop` would
+have done: `m[0]*x + m[1]*y + m[2]*z + m[3]` is the expression of all three
+of its multipliers (`PSMTXMultVec`, `PSMTXMultVecArray`,
+`PSMTXROMultVecArray` on the reordered matrix), and all three compile to
+fmuls m1*y, fmadds m0*x, fmadds m2*z, fadds m3 -- as does the new loop
+(`gx_skin_mul`, one inline both the decode and the materializer use).  The
+table of which entry wrote an index last is `SetEnvelop`'s order with its
+two quirks: a single entry of one position multiplies ONE normal whatever its
+`normalNum` (`PSMTXMultVec`), and the copy writes positions only; an index
+no entry writes is read from the live array, as the gather read it.
+Nothing but the draw reads the arrays (33.3; 62.10 found a screen where
+something else does), so they are not written --
+unless a reader that is not the skin decode comes: a plan the decode cannot
+carry, immediate mode, the display-list cache, the water's CPU path, a
+cluster or shape rewriting the buffer (the rewriters' hooks), the sink --
+and then they are written first from the same matrices (`fuse_materialize`),
+the unnamed indices left alone as `SetEnvelop` leaves them.  A mesh the
+decode cannot model -- a multi entry, a range past its arrays, arrays that
+are the file's own, a cluster or shape that wrote it this frame (the
+in-place case) -- makes its HSF run the game's body as before.  The
+fused runs are never cached (the list is left to the ring as an animated
+one), and the pose's rebuild joins the render thread on the HSF's last
+record, as the body did (M29).
+
+**Exact, proved** (`--skinverify`: the game's body runs AND the decode skins
+from the rest pose, every fused vertex compared with the arrays the body
+wrote at the same moment, on the game thread; `docs/soak/m47/`):
+
+| build | run | positions compared / differ | normals compared / differ | frames 14444 / 15344 |
+|---|---|---|---|---|
+| `mp4-a` (`fa1f5b59`, the first build) | m436 lockstep, entry +300..+1,300 | 72,254,460 / **0** | 72,254,460 / **0** | `8afb5912` / `48a9addc` |
+| `mp4-f` (the lookup and pending changes) | the same | 72,254,460 / **0** | 72,254,460 / **0** | the same |
+| `mp4-h` (the arrays written through `dcbz`, 62.6) | the same | 72,254,460 / **0** | 72,254,460 / **0** | the same |
+
+The fused run and `--noskindecode` give the same two frames (M46's `T:x436`
+had `8afb5912` at 14,444).  In that run 190 of m436's skinned meshes can be
+skinned at the decode and 5 cannot (a multi entry each); the HSFs holding
+those run the game's body (1,846 of 8,132 bodies).  **The md5 walks** hold
+on every candidate (62.9).
+
+**The A/B** (`A:GAME:ARM:K`, three runs an arm, interleaved; `mp4-a`,
+`docs/soak/m47/ab1`):
+
+| screen | fused (runs) | median | `--noskindecode` (runs) | median | game ms / gx ms / gdec of the drawn frame, fused vs old |
+|---|---|---:|---|---:|---|
+| m436 | 27.9 / 27.9 / 28.0 | 27.9 | 28.0 / 27.7 / 27.9 | 27.9 | 12.8 / 14.75 / 6.2 vs 15.4 / 12.2 / 4.4 |
+| m435 | 28.7 / 28.9 / 28.9 | 28.9 | 29.0 / 29.0 / 28.8 | 29.0 | 12.6 / 14.3 / 6.5 vs 15.1 / 11.5 / 4.7 |
+| m444 | 29.7 / 29.5 / 29.8 | 29.7 | 29.3 / 29.0 / 29.2 | 29.2 | 10.5 / 14.8 / 4.8 vs 12.1 / 12.9 / 3.6 |
+
+**Why it moves rather than removes** (the counters, `K:GAME:1:pmch`, the
+same bundle both arms, `docs/soak/m47/pmc`): m436's object walk falls 7.97
+-> 6.23 M cycles a drawn frame -- the body was **~1.7-2.1 M**, not the 7 M
+difference 61.9 read (the rest of the drawn walk's extra is `hsfdraw.c`'s
+own drawing work, which a consumed frame skips) -- and the game thread's
+decode share rises 2.20 -> 4.13: the decode multiplies once per list vertex
+(72,254,460 fused vertices over 1,300 lockstep frames: ~55,600 a drawn
+frame, the shadow pass's casters included), the body once per array vertex.
+The drawn frame's total: m436 **23.07 / 23.07**, m431 30.63 / 30.58, m463
+**25.25 / 26.19** (-0.95), m441's walk 7.64 / 8.43 with 0.43 more in the
+per-primitive decision.  The sample (`SA:m436`) says the same: `decs_*` 8%
+of the game thread against `PSMTXROMultVecArray` 5.4% plus the old gather.
+
+### 62.3 The skin loop in AltiVec (item 1)
+
+`gx_skinvec.c` (`--skinvec`; the shape pos f32 / nrm f32 / tex0 f32, 68% of
+m436's list calls; its own object compiled `-maltivec`, as `psmtx_c.c`).
+One output component a lane: `vmaddfp(C1, y, -0)` is the product rounded
+once with its sign (a +0 product plus -0 is +0), two `vmaddfp` the two fused
+terms, `vaddfp` the last add -- the scalar's fmuls, fmadds, fmadds, fadds in
+the same order on the same operands; the entry's columns C0..C3 laid out at
+the pose (plain copies).  **Java mode**: each call reads VSCR and clears NJ
+if it is set, and counts it -- **it was set** (non-Java, denormals flushed)
+on each thread's first vector run of every run (1-2 a run: Leopard's
+default), so without the check the vector loop would not have been IEEE.
+**Exact**: `L:m436` with `--skinvec --skinverify`, twice (`mp4-b`,
+`mp4-c`): **0 of 72,254,460 positions and 0 of 72,254,460 normals differ**,
+the frames `8afb5912` / `48a9addc`.  **Slower**: the counters on m436
+(`pmcd`), the game thread's decode 2.80 -> 3.77 M cycles a drawn frame,
+the drawn frame 23.27 -> 24.33 -- the unaligned loads' permutes and the
+three element stores a vertex cost more than the FPU work they save, M17's
+verdict on the SDK loop (PLAN.md 32) holding for this one.  Not shipped;
+`--skinvec` kept as the measured answer.
+
+### 62.4 The skin work on the render thread (item 1)
+
+The fused decode is a decode job like any other, so the auto split (M33)
+decides where it runs -- which is the experiment: on m436 the render thread
+kept its 9.4-9.7 ms of decode and the game thread's share rose from 4.4 to
+6.2 ms (62.2's table), because the render thread's replay (19.7 ms) plus its
+decode already sits at the split's 30 ms line.  On m435 the same (19.3 +
+9.4).  m444's render thread has ~5 ms (22.1 + 5.5) and took no more of it;
+m444 passes on the trims of 62.6 anyway.  Moving the split's line
+(`--rtauto-fit 26 / 30 / 32`, `docs/soak/m47/ab2`): m436 28.0 / 28.0 /
+27.8, m435 29.1 / 29.0 / 29.1, m444 29.8 / 29.9 / 29.6 -- level.  On the
+two Bowser games both processors are within 4 ms of the 33.3 ms budget; no
+placement of the skin work makes room.
+
+### 62.5 Class 1: the vertex cache told, the setters, m441's consumed frame (item 2)
+
+**(a) The skinning tells the cache what it rewrote** (`gx_draw.c`
+`gx_vc_arrays_written`, from `gx_skin.c` `hsf_arrays_written`; `--oldvcskin`
+the M40..M46 behaviour).  Since M40 the skin body ended the cache's *epoch*
+-- every array's memo -- once per skinned model drawn, so every array the
+walk used after it was checked again (a small one re-hashed whole).
+Now the body names the two buffers it wrote, and only the cache's arrays
+whose hashed extent overlaps them are re-checked.  Exact: the body writes
+the mesh's position and normal buffers and nothing else a GX array can name
+(the bone matrices go to the card by value, through `GXLoadPosMtxImm`); an
+array not hashed yet is hashed at its next check whatever its epoch.  The
+first build scanned the cache's whole array table (1,024 buckets) at each of
+~190 notices a drawn frame and put 4.4 M cycles into m436's walk; each mesh
+now remembers the arrays that overlap it while the table's generation holds
+(a new array, a wider read, a grown extent, a first hash or a clear bumps
+it).  **Measured** (old path both arms, the notice against `--oldvcskin`):
+the keys on m436 1.58 / 1.83 M cycles a drawn frame (`pmcf`), 1.61 / 1.78
+(`pmch`); on m431 1.35 / 1.58 and 1.43 / 1.40 -- a quarter of a million
+cycles where the auto keys the same frames, lost in the auto's own swing
+where it does not.  Under the skin decode the skinned lists are never keyed
+at all (their runs cannot be cached; the list is marked animated at its
+first skinned primitive, so its bytes are not hashed either).  **And it
+costs m433 its pass**: the scoreboard on the candidate with it (`c3`) had
+Beach Volley Folly at 28.7 against M46's 29.9, and the A/B at the teleport
+(`docs/soak/m47/ab6`, three runs each, interleaved): `c3` **29.0** (29.0 /
+29.0 / 28.6), `c3 --oldvcskin` **30.0** (29.9 / 30.0 / 30.0), 0.9.15 29.9,
+`--noskindcbz` 28.9, `--oldwake` 28.9 -- the drawn frame 26.2 ms against
+25.6.  So it ships **off**: `--vcskinnotice` turns it on, the default is
+M46's epoch (a superset of the invalidation, so no picture can change).
+
+**(b) The state setters' own cost.**  The "port GX" region is not the
+setters: it is the GX work outside the sub-regions -- the list walk's own
+code, `gx_batch_touch`, immediate mode's writers.  The setters' bodies run
+in the object walk.  Counted by function in `SA:m441` (the game thread,
+6,032 samples): the GX API entry points 406 samples (**~2.2 ms a drawn
+frame**) spread over some forty functions, none above 1.5% of the thread --
+`GXCallDisplayList` 93, `GXSetChanCtrl` 38, `GXLoadPosMtxImm` 25,
+`GXSetArray` 24, `GXSetVtxDesc` 21, `GXClearVtxDesc` 19, `GXLoadNrmMtxImm`
+16, the TEV setters 5-15 each -- and `port_gx_tex_dirty` 68 (the texture
+dirty watch on the game's cache-flush calls, 1.1%).  The compare-first work
+of M36-M44 is what they are; no single one is a lever.  Not built.
+
+**m441's consumed frame, once more** (`K:m441` consumed frames, `pmcg`):
+6.39 M cycles -- the object walk 2.02 (the game's traversal, which still
+runs when nothing is drawn), Hu3DExec 1.07, the motion 0.94, DrawPost 0.78,
+`Hu3DModelObjMtxGet` 0.44, the processes 0.28; port code in it: the audio
+tick 0.34 (the port's MusyX mixer), the GX region 0.01, and inside the
+walk the skin registry's per-call signature (62.6, now gone) and the port's
+exact math replacements (`port_mtx_concat_rot`, `port_sincosf`: M42's
+memos, the game's own values).  The game's own work, as 59.6 found.
+
+### 62.6 The exact trims found on the way (three ship)
+
+* **The skin registry's signature** (`gx_skin.c` `hsf_register`;
+  `--fullskinsig` the old way).  `EnvelopeProc` runs every frame for every
+  skinned model, and the registry re-hashed the model's envelope tables
+  (every single and dual weight record) at each call, drawn frame or not:
+  `hsf_register` 1.0-1.2% of m436's game thread in the samples.  The tables
+  are the model file's and change only if the model is freed and another
+  loaded at the same address -- which M19's hook sees (`port_mem_freed`,
+  every free goes through `HuMemMemoryFree`) and drops the entry.  Now the
+  pointers and counts are compared every call and the tables re-hashed when
+  a pointer moved and every 256th call; over m436's lockstep run **361 full
+  signatures and 86,930 by the pointers alone**, 0 guard hits.
+* **The skin loop's destination lines** (`psmtx_c.c`
+  `PSMTXROMultVecArray`, `SetEnvelop`'s pass for entries of more than six
+  vertices; `--noskindcbz`).  Its stores miss and each line was read from
+  memory to be overwritten: `dcbz` establishes the lines wholly inside the
+  destination zeroed, only when the source shares no byte with it (the
+  in-place cluster case reads what it writes), and the source is read ahead
+  a line at a time.  Every byte of such a line is then written with the
+  value the loop computes; `--skinverify` on `mp4-h` compares the decode
+  against these very arrays (0 differ).
+* **The wake order** (`rt.c` `reader_wake`, `workers.c`
+  `port_worker_submit`; `--oldwake`).  Both signalled their condition with
+  the mutex held: the woken thread (the render thread, or the mixer at +8
+  priority) ran, blocked on the mutex at once, and the unlock trapped into
+  the kernel again -- `semaphore_signal_trap` and its thread variant **4.6%
+  of m463's game thread** (`SA:m463`: the mixer's hand-off 1.7%, the decode
+  and draw records' 1.7%).  The signal now follows the unlock; the flag or
+  queue it announces was changed under the mutex, and the woken side tests
+  it under the mutex before it waits, so no wake is lost.  Nothing about
+  what runs changes.
+* **The per-primitive skin question** (`skin_decide`, every primitive of a
+  drawn frame, under `--skindecode` only): a one-entry memo and an 8 KB
+  open-addressed table of the meshes' buffers instead of walking the meshes'
+  chains (the first build cost m441 0.37 M cycles a drawn frame in cache
+  misses).  With the skin decode off it returns at its first test.
+
+Together (`pmch`, the old skin path against the M46-equivalent
+`--noskindecode --oldvcskin --fullskinsig --noskindcbz`): m436's drawn frame
+23.07 / 23.25 M cycles, its consumed frame 3.93 / 4.06.  **At real time**
+(`mp4-k`, `docs/soak/m47/ab4`): m463 **29.9** (30.0 / 29.6 / 29.9; the old
+skin path 30.0 / 29.9 / 29.7) against M46's 28.8, m444 **29.9** (29.2),
+m441 27.1 against 26.9 with `--oldwake` (M46 25.9), m401 28.9 (the old skin
+path 28.0; M46 27.7) -- one run each but m463's.
+
+### 62.7 m463's falling panels (item 3)
+
+`K:m463` with the window at entry +600..+1,500 (the panels' phase, M46's),
+`mp4-pmch`: the drawn frame **25.25 M cycles with the skin decode, 26.19
+without** -- the object walk 7.70 against 9.29, of which the characters'
+skin body is the difference; the motion 1.65, Hu3DExec 1.47, the GX front
+end ~12.  The sample (`SA:m463`, 6,632 game-thread samples) names the rest:
+`Hu3DMotionExec` 9.2%, `port_mtx_concat_rot` 3.6% and
+`port_mtx_concat_trans` 2.0% (the game's rotation and translation builders,
+M42's exact replacements), `objCall` 3.4%, `GetCurve` 3.0%, `C_MTXConcat`
+2.5%, `objNull` 2.5% -- the game's bone and panel walks, each already the
+game's own arithmetic -- and **`semaphore_signal_trap` 4.6%**, the wake
+order of 62.6, built.  m463 at real time: 29.9 on `mp4-k`, three runs each
+arm (62.6).
+
+### 62.8 The inexact option, measured and not shipped (item 4)
+
+The candidate the brief named: the skinning on the Radeon, the bone
+matrices as program parameters indexed with `ARL` (native up to ~180
+params, M42).  Three measurements, each labelled for what it is.
+
+**What it could buy -- an upper bound** (`--skinfree`, `mp4-meas` /
+`mp4-i`, measurement only: the skin decode copies the rest pose where it
+would multiply -- the characters in their bind pose, the picture WRONG --
+i.e. the processors' work with every skin multiply gone, which is the most a
+card-side skin could take off them; the card's own extra cost, the per-vertex
+bone indices and weights and the palette uploads, are not in it).  One run
+each at the scoreboard's teleport (`docs/soak/m47/ab3`):
+
+| screen | 0.9.16 (scoreboard) | `--skinfree` | at most |
+|---|---:|---:|---:|
+| m435 | 29.0 | 30.0 | +1.0 |
+| m431 | 27.8 | 28.1 | +0.3 |
+| m444 | 29.8 | 29.8 | 0 |
+| m436 | 28.0 | 27.0 | none (the bind pose loads the scene differently; within the run's spread) |
+
+On the two screens where both processors are full (m436, m431) removing the
+skin multiplies entirely does not reach the bar; on m435 it might, by a
+frame.  The skin decode's own numbers say the same from the other side
+(62.2): the multiply per list vertex is ~2 M cycles of m436's drawn frame,
+the rest of the frame ~50 M cycles between the two threads.
+
+**What it would change in the picture** (`--skinround`, measurement only:
+the skin decode computes each output component as one correctly rounded dot
+product -- in double, rounded once -- where the game's code rounds after
+each fused step: the kind of difference a card's DP4 makes, not a card's
+exact bits).  m436 in lockstep (`docs/screenshots/m47-gpuskin-rounding.jpg`:
+the exact skin, the rounded one, the difference x16, the console):
+
+| frame | pixels differing from the exact skin | worst | mean | against the console (exact / rounded) |
+|---|---:|---:|---:|---|
+| 14,444 (entry +300) | **3 of 307,200** (9 channel samples) | 106 levels, an edge pixel of Bowser's arm | 0.0006 levels | 5.62 / 5.62 levels |
+| 15,344 (entry +1,200) | 1 (3 channel samples) | 55 | 0.0002 | -- |
+
+**The md5 walks** with `--skinround` (`NA:@meas,--skinround`): 800
+`0b58c5ee`, 3000 `2b99c60a`, 7000 `4a9a640c` -- **none of the three
+reference frames changes** (the title's, the character select's and the
+board's skinned characters land on the same pixels at that rounding).  A
+real card's rounding was not measured: **the tree's only card-side skin, the
+M18 palette (`--palette`), draws skinned characters broken today** --
+stretched triangles on Bowser, the Koopas, the board's four characters
+(`docs/screenshots/m47-gpuskin-palette-broken.jpg`, the palette beside the
+exact skin and the console; its walk changes 3000 `951d7a8b` and 7000
+`4b7b97d9`, 800 unchanged).  It sizes natively (16 or 18 slots, "under
+native limits: YES"); the fault is not the render thread (the same with
+`--renderthread 0`), nor `--fixbase`, nor the two table rules M47 corrected
+(a multi entry's one vertex, a lone position's one normal).  Where it broke
+between M18 and now is not found; it was measured for speed only since M18.
+
+**For the user's decision.**  A card-side skin would have to be built new
+(bones as parameters, ~20 bones x 6 params beside the 82 fixed; the decode
+writing each vertex's two bone indices and weight; the dual entries' normal
+blended on the card where the game inverts the blended matrix -- inexact by
+construction).  Measured, it would buy at most a frame a second on m435 and
+nothing that reaches the bar on m436, m431 or m444; its rounding would move a
+few edge pixels a frame and, at a correctly rounded card's precision, none of
+the three md5 frames.  The default build keeps the exact path; nothing of
+this ships (`--skinfree`, `--skinround` and `--palette` are diagnostics).
+
+### 62.9 The md5s
+
+| build (`isle`) | what it carries | `--nomovies` 800 / 3000 / 7000 | movies 800 / 3000 / 7000 |
+|---|---|---|---|
+| `03c8b65d` (`mp4-d`: the skin decode, the cache notice) | | `0b58c5ee` / `2b99c60a` / `4a9a640c` | -- |
+| `3122ca3c` (`mp4-h`: + the signature, `dcbz`) | both skin arms | `0b58c5ee` / `2b99c60a` / `4a9a640c` (x2) | -- |
+| `b299c5b4` (`mp4-c1`: + the wake order; 0.9.16 strings) | the skin decode on | `0b58c5ee` / `2b99c60a` / `4a9a640c` | `d2d40344` / `59008ce4` / `3f98f882` |
+| `3576c250` (`mp4-meas`, `--skinround`) | item 4 | `0b58c5ee` / `2b99c60a` / `4a9a640c` | -- |
+| `5bd70908` (`mp4-c3`: the skin decode off) | | `0b58c5ee` / `2b99c60a` / `4a9a640c` | `d2d40344` / `59008ce4` / `3f98f882` |
+| `6e30165c` (`mp4-c4`: the cache notice off too; the scoreboard's) | | `0b58c5ee` / `2b99c60a` / `4a9a640c` | `d2d40344` / `59008ce4` / `3f98f882` |
+| **`d7da16eb` (0.9.16, shipped)** | + the tier line "75 of 82 ... 0.9.16" | **`0b58c5ee` / `2b99c60a` / `4a9a640c`** | **`d2d40344` / `59008ce4` / `3f98f882`** |
+
+None of M47's changes reaches a walk's frame, on or off (every lever's arm
+of the walk, and the two default configurations, give the references).  In
+lockstep on the shipped build: m427 `dd789764` / `36dbdf54` (with
+`--skindecode`: `857e4f0e` / `7de25913`, the named reproduction), m414
+`bc46ffa3` / `06908722`, m436 `8afb5912` / `48a9addc` -- 0.9.15's.
+
+### 62.10 The picture checks, and why the skin decode does not ship
+
+**On the first candidate** (`PC:@c1`, the skin decode on, against M46's
+`pc-c1` by the frames' md5s from the two chains' indexes): 638 frames, **625
+identical, 13 differ** -- all seven of m427's lockstep frames, its four
+real-time ones, and two late m414 lockstep frames (15,677 and 16,577); every
+run exit 0, 0 faults.  M46's `pc-c1` was taken before its scissor fix, but
+that fix leaves a teleported m427 as it was (61.10: `b1ae2524` at +60 with or
+without it), so the 13 are M47's.
+
+**Isolated** (`L:m427`, one switch back at a time, frames +300 / +1,200):
+0.9.15 `dd789764` / `36dbdf54`; `c1` `857e4f0e` / `7de25913`, and the same
+with `--oldvcskin`, `--fullskinsig`, `--noskindcbz`, `--oldwake`;
+**`--noskindecode` gives 0.9.15's frames**.  The difference is small and in
+one place -- the left view's river, worst 32 levels, mean 0.35 -- and it is
+two faults of the skin decode's one premise, "nothing but the draw reads the
+arrays":
+
+* **m414: two HSFs sharing a buffer.**  `--skinverify` there: 707,522 of
+  37,684,539 vertices differ from the game's arrays (entry 3 of one mesh,
+  from frame 14,471).  Three registered HSFs share vertex buffers (models
+  built from one file); the old path's bodies rewrite the shared arrays in
+  turn, but a buffer can name only one mesh's matrices, so the decode drew
+  one model with another's pose.  Fixed (`fuse_share_off`: an HSF whose
+  buffer another registered HSF uses runs the game's body, the other's owed
+  arrays written first): m414's frames are 0.9.15's again (`06908722` at
+  +1,200).
+* **m427: something reads the arrays unwritten -- not identified.**
+  `--skinverify` there: 0 of 17,128,307 differ, and with the arrays written
+  (the verify arm writes them) the frames are 0.9.15's -- so a reader other
+  than the decode sees them unwritten.  Ruled out: a race (the same frames
+  with `--rtdecode 0` and with `--renderthread 0`), a shared buffer (0 pairs
+  there), an on-demand write (0), m427's own code (no read of a mesh buffer),
+  the engine's map space (`mapspace.c`, not used by m427).  One engine
+  reader exists that 33.3's grep for game logic missed: the display-list
+  build, `MakeDisplayList` -> `MakeCalcNBT` / `MakeNBT` (`hsfdraw.c`), which
+  bakes a bump-mapped mesh's normal, binormal and tangent into the list from
+  its vertex and normal buffers -- the skinned ones when `cenvNum` -- but it
+  runs at a model's creation, before its first body, so it does not explain
+  m427 by itself.  The teleport that reproduces it:
+  `L:m427:@BUNDLE,--skindecode` (+300 / +1,200: `857e4f0e` / `7de25913`
+  against the exact `dd789764` / `36dbdf54`; the difference is the left
+  view's river only, worst 32 levels, mean 0.35).
+
+The skin decode is therefore **not exact on every screen**, and its measured
+gain is marginal (62.2).  It ships **off**: the default is the M18..M46 body
+that writes the arrays; `--skindecode` turns it on for study, with the
+shared-buffer rule in it.  **On the shipped candidate `c3`** (the skin
+decode off, everything else of M47 on): m427 `dd789764` / `36dbdf54`, m414
+`bc46ffa3` / `06908722`, m436 `8afb5912` / `48a9addc` -- 0.9.15's.
+**On `c3`, the whole set** (`PC:@c3`, re-run whole after the G4's
+restart, 62.13): **634 of 638 frames identical to M46's, 4 differ, every run
+exit 0, 0 faults** -- the 4 are m427's real-time frames (+300 / +1,200 of
+both `R-m427` runs: `aa00e2b6` / `a8f08586` against `dd789764` /
+`36dbdf54`).  Not M47's: m427's river at real time has **two states in
+0.9.15 as well** -- `R:m427` on 0.9.15 itself gives `aa00e2b6` /
+`a8f08586` today, and two `c3` arms (`--oldvcskin`, `--noskindcbz`, which
+touch nothing on that screen's river) give `dd789764` / `36dbdf54`; the runs
+in the second state are the ones whose counter shot a fall's start at 14,535
+(the entry fade; not counted as a blip), so the state follows the run's
+real-time course through the fade.  The difference is the left view's river
+alone (11% of that area's pixels, worst 5 levels, mean 0.05).  M45's and
+M46's runs happened to land in the same state twice.  Reproduced by
+`R:m427:old` (0.9.15, the teleport).  **The counters over the set**
+(`--halfwatch 1`): **49,840 presented frames checked, 0 half-black, 0
+blips** (M45's rule: 0).
+
+**Rule learnt**: a proof on one screen (m436's 72 million vertices) is a
+proof of that screen's readers; "only the draw reads it" has to hold for
+every reader on every screen, and the picture checks on the candidate are
+what showed it does not -- run them before a lever is called exact.
+
+### 62.11 The scoreboard after
+
+Three candidates were timed whole, because the first two each lost what
+the last one keeps (`tools/fps_board.sh`, `FB_THREE=auto`, the chain's
+`FB:front,title,boards,mg,menus`):
+
+| candidate | what it carries | passes | against M46 | logs |
+|---|---|---:|---|---|
+| `c1` (`b299c5b4`) | the skin decode on, the cache notice on, the trims | 75 | m444 **in** (29.8), m433 **out** (29.1) | `docs/soak/m47-board-c1/` |
+| `c3` (`5bd70908`) | the skin decode off (62.10), the notice on | 74 | m433 out (28.7), m444 still short (29.0) | `docs/soak/m47-board-c3/` |
+| **`c4` (`6e30165c`, shipped as `d7da16eb`)** | the skin decode and the notice off; the signature, `dcbz`, the wake order | **75** | none lost, none gained | `docs/soak/m47-board/` |
+
+`c4`'s run: 05:45-08:41 G4 time (after the picture checks), 111 runs, 0
+faults, the lab at the G4 once every nine minutes at most;
+`port/docs/fps-scoreboard.md` (M46's kept as `fps-scoreboard-m46-after.md`).
+**75 of 82 screens pass; none of M46's passes is lost, none gained.**  All
+82 at 100% game speed.
+
+| screen | M46 | M47 (runs) | | game thread's drawn work, ms | render thread's replay + decode, ms | verdict |
+|---|---:|---|---:|---|---|---|
+| m441 Butterfly Blitz | 25.9 | 26.8 (1 run) | +0.9 | 27.8 -> 27.8 | 19.3 + 8.7 -> 19.3 + 9.0 | short by 2.7 |
+| m401 | 27.7 | 27.2 (1 run) | -0.5 | 24.6 -> 24.6 | 18.8 + 7.0 -> 18.7 + 7.0 | short by 2.3 |
+| m436 Fruits of Doom | 27.4 | 28.0 (28.0 / 28.1 / 27.9) | +0.6 | 28.3 -> 28.1 | 19.2 + 9.2 -> 19.1 + 9.0 | short by 1.5 |
+| m431 Order Up | 27.9 | 28.3 (27.6 / 28.5 / 28.3) | +0.4 | 28.4 -> 28.1 | 22.5 + 7.0 -> 22.5 + 7.0 | short by 1.2 |
+| m435 Darts of Doom | 28.8 | 29.0 (28.9 / 29.2 / 29.0) | +0.2 | 27.4 -> 27.1 | 19.4 + 9.1 -> 19.1 + 9.0 | short by 0.5 |
+| m444 | 29.2 | 29.0 (29.0 / 28.9 / 29.4) | -0.2 | 25.6 -> 25.7 | 22.3 + 5.6 -> 22.3 + 5.3 | short by 0.5 |
+| m463 Panel Panic | 28.8 | 29.4 (29.4 / 28.9 / 29.4) | +0.6 | 16.5 -> 16.3 | 12.4 + 6.8 -> 12.3 + 6.7 | short by 0.1 |
+| w01 Toad's Midway Madness | 29.6 | 29.6 (1 run) | 0.0 | 19.7 -> 19.5 | 13.9 + 4.8 -> 13.8 + 4.8 | PASS (board-only 30.0) |
+| m409 | 29.8 | 29.6 (29.9 / 29.5 / 29.6) | -0.2 | 26.3 -> 26.0 | 20.7 + 4.5 -> 20.6 + 4.5 | PASS |
+| m433 Beach Volley Folly | 29.9 | 29.7 (29.1 / 29.7 / 29.9) | -0.2 | 25.4 -> 25.4 | 17.9 + 4.5 -> 17.9 + 4.4 | PASS |
+
+**The worst ten** before (M46): m441 25.9, m436 27.4, m401 27.7, m431 27.9,
+m463 28.8, m435 28.8, m444 29.2, w01 29.6, m409 29.8, m433 / the character
+select / m430 29.9.  After: m441 26.8, m401 27.2, m436 28.0, m431 28.3,
+m435 29.0, m444 29.0, m463 29.4, w01 29.6, m409 29.6, m433 29.7.  **w01's
+two numbers** (`tools/m43_w01.py`): pooled 221 lines, median **29.6**;
+board-only 107 lines, median **30.0** (the 114 hand-over lines' median
+7.0).  m441 and m401 are one run each (their first landed more than 2 fps
+under the bar); their runs have spread 2 fps before (59.4, 61.8).
+
+**The frames**: the scoreboard's dumps against M46's (md5s on the G4, the
+differing pairs through `m46_piccheck.py`,
+`docs/soak/m47/piccheck-scoreboard-m46-vs-m47.tsv`): 174 pairs, **157
+identical, 17 differ, 0 FAIL, 0 LOOK** -- the three Bowser games' real-time
+frames (the pillar lights' phase, 61.2; similarity 99.8), m415 and m416 (the
+two screen-copying games, as in every milestone), m427 (the river's two
+states, 62.10), m417, m423 and m455 by a hair (similarity 100.0, 0.0% of
+pixels over 8 levels).
+
+### 62.12 Each remaining wall
+
+Medians of the drawn frame from `c4`'s scoreboard (33.3 ms a thread's cycle
+at 30 fps):
+
+| screen | fps | game thread (drawn + consumed) | render thread (replay + decode) | class, and what M47 measured |
+|---|---:|---:|---:|---|
+| m441 | 26.8 | 33.5 (27.8 + 5.7) | 28.3 (19.3 + 9.0) | 1: the front end and the engine's walks; the consumed frame the game's own (62.5); no port-side item left in it |
+| m401 | 27.2 | 32.2 (24.6 + 7.6) | 25.7 (18.7 + 7.0) | 1: the consumed frame 7.6 ms, the game's; one run |
+| m436 | 28.0 | 30.4 (28.1 + 2.3; 4.6 decode) | 28.1 (19.1 + 9.0) | 2: both processors within 3-5 ms of the budget; the skin body is ~2 M cycles (62.2), the replay the largest single piece |
+| m431 | 28.3 | 36.4 (28.1 + 8.3) | 29.5 (22.5 + 7.0) | 1: 66 of both cores' 66.7 ms |
+| m435 | 29.0 | 29.4 (27.1 + 2.3; 4.9 decode) | 28.1 (19.1 + 9.0) | 2: as m436; `--skinfree` reaches 30.0 (62.8) |
+| m444 | 29.0 | 30.2 (25.7 + 4.5; 4.3 decode) | 27.6 (22.3 + 5.3) | 2: the skin decode took it to 29.8 on `c1`, which does not ship (62.10) |
+| m463 | 29.4 | 19.9 (16.3 + 3.6) | 19.0 (12.3 + 6.7) | 3: the falling panels' phase, the game's walks (62.7); short by 0.1 |
+
+The levers named by measurement and not taken: the skin decode (exact on
+every screen but m427 and fixed on m414 -- the reader on m427 is the first
+thing to find, `L:m427:--skindecode`); the vertex cache's notice, faster on
+m436 and slower on m433 (the remembered sets re-scanned too often there: the
+generation bumps are the thing to measure); a card-side skin (62.8: at most
+a frame on m435).  Every finding reproduces from its teleport: `A:GAME:ARM:K`,
+`K:GAME:1:pmc` (the counters' tree `build-m47-pmc`), `SA:GAME:@BUNDLE`,
+`L:m427:@BUNDLE,--skindecode`, `R:m427:old` (the river's two states),
+`FB:` for the scoreboard.
+
+### 62.13 The G4's restart, and the soak before the dmg
+
+**The restart.**  At 23:51 G4 time, during the picture checks' `T-item7`
+run on `c3` (a `--turbo` board run, untimed), the G4 stopped and was booting
+again at 23:52:30: the system log runs normally to 23:51:21 and goes
+straight to the next boot's kernel line -- no shutdown, no panic report
+(`/Library/Logs/PanicReporter` empty), no crash report.  littlejelly, on the
+same upstairs switch, logged its wired link down at 23:51:55 and up at
+23:51:59 (`journalctl`, tg3 `enp1s0f0`) and stayed up itself (a laptop).
+The G4's `autorestart` is 0, so it came back on its own within a minute --
+a brown-out that reset the switch and the G4 without switching the G4 off
+reads better than an outage.  Nothing the lab runs power-cycles the G4 (no
+plug configured).  Treated as the lab's: the picture checks were re-run
+whole on `c3`, and nothing was timed in the hour after (the scoreboard's
+first attempt, started two minutes inside it, was stopped in its settle and
+started again at 00:53).
+
+**The soak** on the shipped build: running at this commit (62.13 is completed with its reading).
+
+### 62.14 What M47 shipped
+
+| | |
+|---|---|
+| `port/src/gx/gx_skin.c` | the registry's cheap signature (`--fullskinsig` the old way); the skin at the decode, opt-in (`--skindecode`, `--skinverify`): the entry tables as `SetEnvelop` writes them, the pose build, the arrays on demand, the rewriters' notice, the shared-buffer rule, the lookup table; the palette's two table rules (a multi entry's one vertex, a lone position's one normal) |
+| `port/src/gx/gx_draw.c` | the skin decode's loops (`DECODE_SKIN_JOB`, the walker, the pending pass's skinned steps), `skin_decide`; the vertex cache's precise skin notice, opt-in (`--vcskinnotice`; `--oldvcskin` the default); `--skinfree` / `--skinround` (item 4's measurements, never defaults) |
+| `port/src/gx/gx_skinvec.c` | the AltiVec skin loop, bit for bit, slower (`--skinvec`) |
+| `port/src/os/psmtx_c.c` | `dcbz` of the SDK skin loop's whole destination lines and its source read ahead (`--noskindcbz`) |
+| `port/src/gx/rt.c`, `port/src/platform/workers.c` | the render thread and the workers woken after the unlock (`--oldwake`) |
+| `port/src/os/vtx_rewrite.c` | the rewriters' notice to the skin decode |
+| `port/src/platform/main.c`, `port/include/port.h`, `opt_fields.h`, `machine.c` | the options, 0.9.16, M47, the tier line |
+| `port/tools/m47_chain.sh`, `m47_pmc.py`, `m47_sample.py` | the chain (M46's), the counters side by side, a `sample` thread's self time |
+| `port/docs/fps-scoreboard.md`, `fps-scoreboard-m46-after.md`, `release-checklist.md`, `port/dist/Read Me.txt` | the scoreboard, M46's kept, the checklist, the Read Me |
+| `port/docs/screenshots/m47-gpuskin-palette-broken.jpg`, `m47-gpuskin-rounding.jpg` | item 4 |
+| `port/docs/soak/m47*` | the leave-behind's soak, the A/Bs, the counters, the samples, the three scoreboards, the picture checks' table, the soak |

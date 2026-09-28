@@ -178,6 +178,24 @@ gamecontrollerdb.txt (interactive runs only).  **m427's black left half**
 (M45's open line, the user's photograph of 0.9.13) found in the candidate's
 soak and fixed: a copy read-back left the scissor test off in a window.
 
+**Where M47 left it** (0.9.16, `docs/fps-scoreboard.md`; M46's kept as
+`docs/fps-scoreboard-m46-after.md`; PLAN.md 62): **75 of 82 screens pass**,
+none of M46's passes lost, none gained.  The seven short screens moved:
+m441 25.9 -> 26.8, m436 27.4 -> 28.0, m431 27.9 -> 28.3, m463 28.8 -> 29.4,
+m435 28.8 -> 29.0, m444 29.2 -> 29.0, m401 27.7 -> 27.2 (one run each for
+m441 and m401).  **Shipped, exact, each with its old path, each through the
+picture checks (638 of 638 frames identical to 0.9.15's set; the scoreboard's
+174 pairs 157 identical, 17 differing by a hair, 0 FAIL) and both md5 walks**:
+the skin registry's cheap signature, `dcbz` of the SDK skin loop's
+destination lines, the render thread and the workers woken after the
+unlock.  **Built and not shipped**: the skin at the decode (exact on m436,
+0 of 72 M vertices differ; not on m427, where a reader other than the draw
+sees the unwritten arrays -- `--skindecode`), its AltiVec loop (bit for bit,
+slower), the vertex cache's precise skin notice (cost m433 its pass --
+`--vcskinnotice`).  **Item 4, measured for the user** (PLAN.md 62.8): a
+card-side skin buys at most ~1 fps on m435 and nothing that reaches the bar
+on m436, m431 or m444; it would move a few edge pixels a frame.
+
 ## Done
 
 | area | the claim | the evidence |
@@ -268,3 +286,25 @@ none is a known fault.
 12. **w01's rule**: 29.6 pooled / 30.0 board-only this time (M45: 29.2 /
    30.0) -- the pooled median lies where the board's lines and the teleports'
    hand-over lines meet, so it moves between runs; the rule is the user's.
+13. **A card-side skin (M47, item 4)**: measured, not built -- at most a
+   frame a second on m435 (`--skinfree`, the multiplies gone), nothing that
+   reaches the bar on m436/m431/m444; its rounding moves 1-3 edge pixels a
+   frame on m436 and none of the three md5 frames (`--skinround`,
+   `docs/screenshots/m47-gpuskin-rounding.jpg`).  The tree's M18 palette
+   draws skinned characters broken today
+   (`docs/screenshots/m47-gpuskin-palette-broken.jpg`).  The user's call
+   whether an inexact option is worth building at all.
+14. **The skin at the decode (M47)** is opt-in (`--skindecode`): exact on
+   m436 and m414 (after the shared-buffer rule), but on m427 something other
+   than the draw reads the arrays it leaves unwritten (the left view's river
+   changes, worst 32 levels); `L:m427:@BUNDLE,--skindecode` reproduces it.
+   It would take m444 over the bar (29.8 on `c1`) once m427's reader is found.
+15. **m427's river at real time has two states** in 0.9.15 and 0.9.16 alike
+   (`R:m427:old`: `aa00e2b6` or `dd789764` at +300, by the run's course
+   through the entry fade; the left view's river, worst 5 levels).  Not a
+   regression; recorded so the picture checks' pairing reads it right.
+16. **The G4 restarted once on its own** (2026-09-27 23:51, M47): no panic,
+   the upstairs switch dropped littlejelly's link at the same second; with
+   `autorestart` 0 it came back within a minute -- a brown-out reads best.
+   Worth a look at the upstairs power if it happens again.
+
