@@ -986,6 +986,36 @@ void gx_tfs_invalidate(void) {
     plan.valid = 0;
 }
 
+/* M48 (PLAN.md 63): the fragment shader's GL shadow for the compiled draw:
+ * the enable and the binding compared and restored; a draw replayed while
+ * a fold override is up is refused (the old path would clear it first) */
+void gx_tfs_blk_shadow(int* out) {
+#ifndef PORT_NO_SDL
+    out[0] = tfs_enabled;
+    out[1] = (int)tfs_bound;
+#else
+    out[0] = out[1] = 0;
+#endif
+}
+void gx_tfs_blk_shadow_set(const int* in) {
+#ifndef PORT_NO_SDL
+    tfs_enabled = in[0];
+    tfs_bound = (unsigned)in[1];
+#else
+    (void)in;
+#endif
+}
+int gx_tfs_blk_clean(void) {
+#ifndef PORT_NO_SDL
+    int u;
+    for (u = 0; u < GX_TEX_UNITS; u++) {
+        if (fold_on[u]) {
+            return 0;
+        }
+    }
+#endif
+    return 1;
+}
 void gx_tfs_off(void) {
 #ifndef PORT_NO_SDL
     memset(fold_on, 0, sizeof(fold_on));

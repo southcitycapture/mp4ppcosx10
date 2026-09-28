@@ -34,7 +34,14 @@ static double t_gx, t_present, t_audio, t_frame_start, t_sleep;
 static double win_audio, win_t0;
 static int win_frames;
 static double gx_open, present_open, audio_open;
+/* M48 (PLAN.md 63): the GX region's time since the start, never reset, and
+ * with the open interval: --repeatstat charges each batch the difference
+ * between two readings */
+static double t_gx_all;
 static int gx_depth;
+double port_perf_gx_so_far(void) {
+    return t_gx_all + (gx_depth > 0 ? port_now_seconds() - gx_open : 0.0);
+}
 
 /* per-frame samples, so the report can give a median and a worst case rather
  * than only a mean -- a port's stutter lives in the tail. */
@@ -118,7 +125,9 @@ void port_perf_gx_end(void) {
         return;
     }
     if (--gx_depth == 0) {
-        t_gx += port_now_seconds() - gx_open;
+        double d = port_now_seconds() - gx_open;
+        t_gx += d;
+        t_gx_all += d; /* M48 */
     }
     if (gx_depth < 0) {
         gx_depth = 0;

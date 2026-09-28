@@ -412,6 +412,12 @@ static void usage(const char* argv0) {
             "  --rtgxfit MS      M43: --rtgx auto only while the game thread's cycle is over MS\n"
             "  --vcarr A,B       M43: the vertex cache's served/missed vertices per display\n"
             "                    list, frames A..B from the minigame's entry, at exit\n"
+            "  --nocompiled      M48: no compiled draws (every draw's translation derived again)\n"
+            "  --compiledmb N    M48: the compiled draws' memory, MB (default 8)\n"
+            "  --glists          M48: draws of the vertex cache's region compiled into GL\n"
+            "                    display lists (--glistsmb N: their bytes, default 8)\n"
+            "  --repeatstat A,B  M48: count the draws that repeat a draw of the last drawn frame\n"
+            "                    (frames A..B from the minigame's entry), and their time\n"
             "  --pmcwin A,B      M43: --pmc counts frames A..B from the minigame's entry\n"
             "  --pmc N           M43: the G4's performance counters on the game thread,\n"
             "                    event set N (1..3), split by region, reported at exit\n"
@@ -823,6 +829,8 @@ int port_parse_args(int argc, char** argv) {
     port_opt.vcache = 3;    /* M40: the static-geometry cache, auto (PLAN.md 55) */
     port_opt.vcache_fit = 28.0;
     port_opt.dcbtdist = 1;    /* M46: the decode loops prefetch the next vertex (--dcbtdist) */
+    port_opt.glists_mb = 8; /* M48 */
+    port_opt.compiled_mb = 8; /* M48 */
     port_opt.rtgx = 0;       /* M43: the render thread's translation: measured, off (PLAN.md 58.2) */
     port_opt.wbpart = 1;     /* M43: the barrier on the partial end pages too (PLAN.md 58.4, 58.10) */
     port_opt.water = -1;     /* M44: auto (PLAN.md 59) */
@@ -1479,6 +1487,22 @@ int port_parse_args(int argc, char** argv) {
         } else if (!strcmp(a, "--vcarr") && i + 1 < argc) {
             if (sscanf(argv[++i], "%d,%d", &port_opt.vcarr_from, &port_opt.vcarr_to) != 2) {
                 port_opt.vcarr_from = port_opt.vcarr_to = 0;
+            }
+        } else if (!strcmp(a, "--nocompiled")) {
+            port_opt.nocompiled = 1;
+        } else if (!strcmp(a, "--compiled")) {
+            port_opt.nocompiled = 0;
+        } else if (!strcmp(a, "--compiledmb") && i + 1 < argc) {
+            port_opt.compiled_mb = atoi(argv[++i]);
+        } else if (!strcmp(a, "--glists")) {
+            port_opt.glists = 1;
+        } else if (!strcmp(a, "--noglists")) {
+            port_opt.glists = 0;
+        } else if (!strcmp(a, "--glistsmb") && i + 1 < argc) {
+            port_opt.glists_mb = atoi(argv[++i]);
+        } else if (!strcmp(a, "--repeatstat") && i + 1 < argc) {
+            if (sscanf(argv[++i], "%d,%d", &port_opt.rs_from, &port_opt.rs_to) != 2) {
+                port_opt.rs_from = port_opt.rs_to = 0;
             }
         } else if (!strcmp(a, "--pmcwin") && i + 1 < argc) {
             if (sscanf(argv[++i], "%d,%d", &port_opt.pmcwin_from, &port_opt.pmcwin_to) != 2) {

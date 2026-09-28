@@ -2569,6 +2569,15 @@ static void submit_rec_capture_body(SubmitRec* r, int with_tex) {
 
 static void submit_rec_capture(SubmitRec* r) { submit_rec_capture_body(r, 1); }
 
+/* M48 (PLAN.md 63): --repeatstat, defined before GXCallDisplayList */
+static void rs_state(int on_gpu);
+static void rs_prim(u32 count);
+static void rs_batch_begin(void);
+static void rs_batch_open(void);
+static void rs_draw_done(u32 nv, int n);
+static void rs_frame(void);
+#define RS_ON() __builtin_expect(port_opt.rs_to != 0, 0)
+
 static int submit_rec_differs(void) {
     submit_rec_capture(&rec_now);
     return rec_now.len != rec_batch.len || rec_now.len > SUBMIT_REC_MAX ||
@@ -3199,6 +3208,9 @@ static void batch_flush_body(void) {
         } else {
             draw_submit(src_buf + batch_pos, (int)nv, batch, n, 1);
         }
+        if (RS_ON()) {
+            rs_draw_done(nv, n);
+        }
         issue_clean = 0;
         if (endlog_armed()) {
             /* the state is still the batch's: a setter touches before it
@@ -3417,6 +3429,9 @@ static void batch_prepare(u32 count) {
         batch_flush();
         sl = cur;
     }
+    if (RS_ON() && !batch_n) {
+        rs_batch_open();
+    }
 }
 
 /* The run at `run_pos` has `nverts` vertices: advance the cursor and add it
@@ -3458,9 +3473,18 @@ static void batch_add(void) {
             stat_pm_refused_wrap++;
             merge_this = 0;
         }
+        if (RS_ON()) {
+            rs_batch_begin();
+        }
     } else if (merge_this) {
         pm_apply(src_buf + run_pos, count);
         merge_this = 0;
+        if (RS_ON()) {
+            rs_prim(0xFFFFFFFFu); /* a merged run's bytes are the matrices' */
+        }
+    }
+    if (RS_ON()) {
+        rs_prim(count);
     }
     if (vc_run != 1) {
         batch_clean = 0;
@@ -3722,6 +3746,592 @@ static int app_skip, app_probe; /* M33: --skipobj / --probeobj, named at the app
 
 void gx_tev_pre_reset(void);
 void gl13_apply_xf_raster(void);
+
+/* ---- M48 (PLAN.md 63): the compiled draw ------------------------------------
+ *
+ * 91% of m441's draws repeat a draw of the last drawn frame in everything
+ * the translation reads (63.2), and the translation -- the vertex program's
+ * decision, the raster state, the TEV chain, the binds, the program's
+ * binding and the arrays -- was derived again for each.  A draw's
+ * translation is a function of two things: its inputs (the GX state it
+ * reads, the layout, the transform descriptor's non-matrix fields, the
+ * bound texture objects -- the key below, compared byte for byte) and the
+ * GL shadow it elides against (gl13_state.c's Glc, the vertex program's
+ * binding and enable, the fragment shader's).  The first time a key is seen
+ * the draw runs the full path with the recording armed: the shadow before
+ * (S0) and after (S1), every record the apply wrote except the vertex
+ * program's parameters (between the two marks in gx_vprog_bind), the
+ * decision gx_vprog_draw made, and every texture bind (unit, object, cache
+ * slot, GL name).  A later draw with the same key over the same S0 is
+ * replayed: each texture checked to be the same plain hit (gx_tex.c
+ * gx_tex_blk_check, which validates the content this epoch as the bind
+ * would), the records up to the parameters written back, the shadow set to
+ * S1, the parameters derived and emitted live against the live parameter
+ * shadow (the matrices, the lights, the colours, the texgen matrices, the
+ * folds: whatever this frame has), then the arrays' records -- the same GL
+ * calls in the same order with the same values, the parameters' included.
+ * Anything else takes the full path.  --nocompiled is the old path. */
+#define BLK_KEY_MAX 2048
+#define BLK_SEG_MAX 4096
+#define BLK_DELTA_MAX 1024
+#define BLK_TEX_MAX 8
+#define BLK_BUCKETS 4096
+#define BLK_POOL 8192
+typedef struct BlkTex {
+    GXTexObjPort* o;
+    int unit, slot, efb;
+    u32 name;
+    u8 swap;
+} BlkTex;
+/* a block: the header, then its hot part (what a replay reads) contiguous
+ * -- the texture binds, the decision, the shadow's delta, the records, the
+ * key -- and the shadow before (S0) apart, read only when the cheap proof
+ * of S0 (below) is not there */
+typedef struct Blk {
+    struct Blk* next;       /* the hash chain */
+    u32 h1, h2;
+    u32 idx, gen;           /* its place in the pool */
+    u32 succ_idx, succ_gen; /* the block that followed it last */
+    u32 link_idx, link_gen; /* a block whose S1 is this block's S0, proved */
+    u16 klen, n1, n2, ndelta;
+    u16 hot_bytes;
+    u8 ntex;
+    unsigned last_frame;
+    int vp0[3], vp1[3], tfs0[2], tfs1[2];
+    u8* glc0;
+    size_t bytes;
+    u32 hot[1]; /* BlkTex[ntex] | pending | delta | records | key */
+} Blk;
+static Blk* blk_pool[BLK_POOL];
+static u32 blk_pool_gen[BLK_POOL];
+static u32 blk_free_idx[BLK_POOL];
+static int blk_nfree = -1;
+static Blk* blk_tab[BLK_BUCKETS];
+static u8 blk_kbuf[BLK_KEY_MAX];
+static u32 blk_klen, blk_h1, blk_h2;
+static int blk_hashed;
+int gx_blk_rec; /* the recording is armed (gx_tex.c reads it) */
+static int blk_rec_bad;
+static u32 blk_p0, blk_p1, blk_p2, blk_ver0;
+static int blk_vp0[3], blk_tfs0[2];
+static u8* blk_glc0;
+static BlkTex blk_rtex[BLK_TEX_MAX];
+static int blk_rntex;
+static size_t blk_mem;
+static unsigned blk_count;
+static size_t blk_psize, blk_gsize;
+/* the block the shadow is the S1 of while glc_ver is blk_last_ver; the last
+ * draw's block and the frame's first, for the successor's prediction */
+static u32 blk_last_idx = 0xFFFFFFFFu, blk_last_gen, blk_last_ver;
+static u32 blk_prev_idx = 0xFFFFFFFFu, blk_prev_gen;
+static u32 blk_first_idx = 0xFFFFFFFFu, blk_first_gen;
+static int blk_frame_start = 1;
+static unsigned long stat_blk_hit, stat_blk_pred, stat_blk_fast, stat_blk_nokey, stat_blk_shadow,
+    stat_blk_tex, stat_blk_rec, stat_blk_unstable, stat_blk_full, stat_blk_evict, stat_blk_inelig;
+extern unsigned glc_ver;
+size_t glc_blk_size(void);
+void glc_blk_get(void* out);
+int glc_blk_same(const void* in);
+u32 glc_blk_delta_make(const void* from, u8* out, u32 cap);
+void glc_blk_delta_apply(const u8* d, u32 n);
+void gx_vprog_blk_shadow(int* out);
+void gx_vprog_blk_shadow_set(const int* in);
+void gx_vprog_blk_count(int nverts);
+void gx_vprog_params_only(const GxXfDesc* d);
+size_t gx_vprog_pending_size(void);
+void gx_vprog_pending_get(void* out);
+void gx_vprog_pending_set(const void* in);
+void gx_tfs_blk_shadow(int* out);
+void gx_tfs_blk_shadow_set(const int* in);
+int gx_tfs_blk_clean(void);
+void gx_tev_cache_invalidate(void);
+int gx_tex_blk_check(int unit, GXTexObjPort* o, u8 swap, int slot, int efb, u32 name);
+
+#define BLK_HOT(b) ((u8*)(b)->hot)
+#define BLK_TEXP(b) ((BlkTex*)(void*)BLK_HOT(b))
+#define BLK_PEND(b) (BLK_HOT(b) + (b)->ntex * sizeof(BlkTex))
+#define BLK_DELTA(b) (BLK_PEND(b) + ((blk_psize + 3) & ~(size_t)3))
+#define BLK_SEG(b) (BLK_DELTA(b) + (b)->ndelta)
+#define BLK_KEY(b) (BLK_SEG(b) + (b)->n1 + (b)->n2)
+
+static Blk* blk_at(u32 idx, u32 gen) {
+    return idx < BLK_POOL && blk_pool[idx] && blk_pool_gen[idx] == gen ? blk_pool[idx] : NULL;
+}
+
+/* the key: everything the apply reads but the matrices and the parameters'
+ * values, in a few contiguous copies of gx (its padding is never written:
+ * gx is a static the setters assign field by field) */
+static int blk_key(const GxXfDesc* d) {
+    u8* k = blk_kbuf;
+    int i, nt = gx.num_tev < GX_TEV_STAGES ? gx.num_tev : GX_TEV_STAGES;
+    int ng = gx.num_texgens < GX_TEXCOORDS ? gx.num_texgens : GX_TEXCOORDS;
+    size_t n;
+    u8 lmask = 0;
+#define KC(from, to) do { n = (size_t)((const u8*)(to) - (const u8*)(from)); memcpy(k, (from), n); k += n; } while (0)
+    KC(&gx.proj, &gx.line_width + 1);
+    *k++ = gx.num_chans;
+    for (i = 0; i < 4; i++) {
+        /* the controls; the colours and the lights' values are the vertex
+         * program's parameters alone (vp_build_key reads the sources, the
+         * functions, the masks and the lights' use), emitted live */
+        KC(&gx.chan[i], &gx.chan[i].amb);
+    }
+    for (i = 0; i < 8; i++) {
+        lmask |= (u8)((gx.light[i].used ? 1u : 0u) << i);
+    }
+    *k++ = lmask;
+    *k++ = gx.num_texgens;
+    KC(&gx.texgen[0], &gx.texgen[ng]);
+    *k++ = gx.num_tev;
+    KC(&gx.tev[0], &gx.tev[nt]);
+    KC(&gx.tev_reg[0], &gx.ind[4]); /* the registers, the constants, the swaps, the indirect stages */
+    KC(&gx.ind_tile[0], &gx.ind_tile[nt]);
+    KC(&gx.ind_warp[0], &gx.ind_warp[nt]);
+    KC(&gx.z_enable, &gx.fog_color + 1);
+    for (i = 0; i < nt; i++) {
+        unsigned u = gx.tev[i].map;
+        if (u < GX_TEX_UNITS && gx_bound_tex(u)) {
+            KC(&gx.bound[u], &gx.bound[u].gl_name);
+            if (gx.bound[u].is_ci && gx.bound[u].tlut_name < 64) {
+                KC(&gx.tlut[gx.bound[u].tlut_name], &gx.tlut[gx.bound[u].tlut_name] + 1);
+            }
+        } else {
+            *k++ = 0xEE;
+        }
+    }
+    {
+        struct {
+            Layout sl;
+            int hs, hm, have_nrm, chan_mode, ntexgen, stride, off_nrm, off_clr, off_tex, ntex,
+                off_skin, hilite;
+            const u8* base;
+            u8 tg[GX_TEXCOORDS][4];
+        } x;
+        memset(&x, 0, sizeof(x));
+        x.sl = sl;
+        x.hs = gx_hilite_stage;
+        x.hm = gx_hilite_mode;
+        x.have_nrm = d->have_nrm;
+        x.chan_mode = d->chan_mode;
+        x.ntexgen = d->ntexgen;
+        x.stride = d->stride;
+        x.off_nrm = d->off_nrm;
+        x.off_clr = d->off_clr;
+        x.off_tex = d->off_tex;
+        x.ntex = d->ntex;
+        x.off_skin = d->off_skin;
+        x.hilite = d->hilite;
+        x.base = d->base;
+        for (i = 0; i < GX_TEXCOORDS; i++) {
+            x.tg[i][0] = d->tg[i].src_kind;
+            x.tg[i][1] = d->tg[i].src_k;
+            x.tg[i][2] = d->tg[i].divide;
+            x.tg[i][3] = d->tg[i].mtx != NULL;
+        }
+        KC(&x, &x + 1);
+    }
+#undef KC
+    blk_klen = (u32)(k - blk_kbuf);
+    while (blk_klen & 3u) {
+        blk_kbuf[blk_klen++] = 0;
+    }
+    blk_hashed = 0;
+    return blk_klen <= BLK_KEY_MAX;
+}
+static void blk_hash(void) {
+    u32 a = 2166136261u, b = 0x9E3779B9u, k;
+    if (blk_hashed) {
+        return;
+    }
+    for (k = 0; k < blk_klen; k += 4) {
+        u32 w;
+        memcpy(&w, blk_kbuf + k, 4);
+        a = (a ^ w) * 16777619u;
+        b = (b + w) * 2654435761u;
+        b ^= b >> 15;
+    }
+    blk_h1 = a;
+    blk_h2 = b ^ blk_klen;
+    blk_hashed = 1;
+}
+static int blk_key_is(const Blk* b) {
+    return b->klen == blk_klen && memcmp(BLK_KEY(b), blk_kbuf, blk_klen) == 0;
+}
+
+static void blk_unlink(Blk* b) {
+    Blk** pp = &blk_tab[b->h1 & (BLK_BUCKETS - 1)];
+    while (*pp) {
+        if (*pp == b) {
+            *pp = b->next;
+            return;
+        }
+        pp = &(*pp)->next;
+    }
+}
+static void blk_free(Blk* b) {
+    blk_unlink(b);
+    blk_pool[b->idx] = NULL;
+    blk_pool_gen[b->idx]++;
+    blk_free_idx[blk_nfree++] = b->idx;
+    blk_mem -= b->bytes;
+    blk_count--;
+    free(b);
+}
+/* the least recently used out: every block unused for 120 drawn frames */
+static void blk_sweep(unsigned now) {
+    u32 i;
+    for (i = 0; i < BLK_POOL; i++) {
+        Blk* b = blk_pool[i];
+        if (b && now - b->last_frame > 120u) {
+            blk_free(b);
+            stat_blk_evict++;
+        }
+    }
+}
+
+static int blk_eligible(void) {
+    return !port_opt.nocompiled && rt_recording && gl13_live() && !palette_on && !vc_vbo &&
+           gx.num_ind == 0 && !port_opt.forceobj && !port_opt.skipobj && !port_opt.skipverts &&
+           !port_opt.probeobj && !port_opt.cpuxf && gx_tfs_blk_clean();
+}
+
+static void blk_prefetch(const Blk* b) {
+    const u8* p = (const u8*)b;
+    const u8* e = BLK_HOT(b) + b->hot_bytes;
+    for (; p < e; p += 32) {
+        __builtin_prefetch(p, 0, 3);
+    }
+}
+
+/* the draw's block is b (replayed or recorded): the chains move on */
+static void blk_follow(Blk* b) {
+    Blk* prev = blk_at(blk_prev_idx, blk_prev_gen);
+    if (prev) {
+        prev->succ_idx = b->idx;
+        prev->succ_gen = b->gen;
+    } else if (blk_frame_start) {
+        blk_first_idx = b->idx;
+        blk_first_gen = b->gen;
+    }
+    blk_frame_start = 0;
+    blk_prev_idx = b->idx;
+    blk_prev_gen = b->gen;
+    blk_last_idx = b->idx;
+    blk_last_gen = b->gen;
+    blk_last_ver = glc_ver;
+    {
+        Blk* nx = blk_at(b->succ_idx, b->succ_gen);
+        if (nx) {
+            blk_prefetch(nx);
+        }
+    }
+}
+static void blk_nofollow(void) {
+    blk_prev_idx = 0xFFFFFFFFu;
+    blk_frame_start = 0;
+}
+void gx_blk_frame(void) {
+    Blk* f;
+    blk_prev_idx = 0xFFFFFFFFu;
+    blk_frame_start = 1;
+    f = blk_at(blk_first_idx, blk_first_gen);
+    if (f) {
+        blk_prefetch(f);
+    }
+}
+
+/* S0: the shadow now is the one b was recorded over -- proved cheaply when
+ * the shadow is untouched since the last block (glc_ver) and b's S0 is known
+ * to be that block's S1 (the link), else compared byte for byte */
+static int blk_s0(Blk* b, const int* vp, const int* tf) {
+    Blk* last;
+    if (memcmp(vp, b->vp0, sizeof(b->vp0)) != 0 || memcmp(tf, b->tfs0, sizeof(b->tfs0)) != 0) {
+        return 0;
+    }
+    last = glc_ver == blk_last_ver ? blk_at(blk_last_idx, blk_last_gen) : NULL;
+    if (last && b->link_idx == last->idx && b->link_gen == last->gen) {
+        stat_blk_fast++;
+        return 1;
+    }
+    if (!glc_blk_same(b->glc0)) {
+        return 0;
+    }
+    if (last) {
+        b->link_idx = last->idx;
+        b->link_gen = last->gen;
+    }
+    return 1;
+}
+
+/* 1: the draw's apply was replayed; 0: the full path runs (the recording
+ * armed if the draw can be kept) */
+static int blk_draw(const u8* s, int n, int in_ring, GxXfDesc* xfd, u32* bias_out) {
+    Blk* b = NULL;
+    Blk* cand;
+    u32 bias = 0;
+    int vp[3], tf[2], k, found = 0;
+    unsigned fr = gl13_frame_number();
+    gx_blk_rec = 0;
+    if (!blk_eligible()) {
+        stat_blk_inelig++;
+        blk_nofollow();
+        return 0;
+    }
+    fill_xf_desc(xfd, s);
+    if (xfd->pal_n) {
+        stat_blk_inelig++;
+        blk_nofollow();
+        return 0;
+    }
+    /* the base and the bias as the GPU path takes them (draw_apply below) */
+    if (in_ring && !port_opt.nofixbase && src_buf && s >= src_buf && sl.stride > 0 &&
+        ((size_t)(s - src_buf) % (size_t)sl.stride) == 0) {
+        bias = (u32)((size_t)(s - src_buf) / (size_t)sl.stride);
+        xfd->base = src_buf;
+    }
+    if (!blk_key(xfd)) {
+        stat_blk_inelig++;
+        blk_nofollow();
+        return 0;
+    }
+    gx_vprog_blk_shadow(vp);
+    gx_tfs_blk_shadow(tf);
+    /* the prediction: the block that followed the last draw's last time */
+    cand = blk_frame_start && blk_prev_idx == 0xFFFFFFFFu ? blk_at(blk_first_idx, blk_first_gen)
+                                                         : blk_at(blk_prev_idx, blk_prev_gen);
+    if (cand && !(blk_frame_start && blk_prev_idx == 0xFFFFFFFFu)) {
+        cand = blk_at(cand->succ_idx, cand->succ_gen);
+    }
+    if (cand && blk_key_is(cand)) {
+        found = 1;
+        if (blk_s0(cand, vp, tf)) {
+            b = cand;
+            stat_blk_pred++;
+        }
+    }
+    if (!b) {
+        Blk* c;
+        blk_hash();
+        for (c = blk_tab[blk_h1 & (BLK_BUCKETS - 1)]; c; c = c->next) {
+            if (c == cand || c->h1 != blk_h1 || c->h2 != blk_h2 || !blk_key_is(c)) {
+                continue;
+            }
+            found = 1;
+            if (blk_s0(c, vp, tf)) {
+                b = c;
+                break;
+            }
+        }
+    }
+    if (b) {
+        BlkTex* t = BLK_TEXP(b);
+        for (k = 0; k < b->ntex; k++) {
+            if (!gx_tex_blk_check(t[k].unit, t[k].o, t[k].swap, t[k].slot, t[k].efb, t[k].name)) {
+                break;
+            }
+        }
+        if (k < b->ntex) {
+            stat_blk_tex++;
+            b = NULL;
+        }
+    }
+    if (b) {
+        /* the replay: the records up to the parameters, the shadow the
+         * recording left, the decision, the parameters live, the arrays */
+        b->last_frame = fr;
+        rt_blk_emit(BLK_SEG(b), b->n1);
+        glc_blk_delta_apply(BLK_DELTA(b), b->ndelta);
+        gx_vprog_blk_shadow_set(b->vp1);
+        gx_tfs_blk_shadow_set(b->tfs1);
+        gx_vprog_pending_set(BLK_PEND(b));
+        gx_vprog_blk_count(n);
+        gx_vprog_params_only(xfd);
+        rt_blk_emit(BLK_SEG(b) + b->n1, b->n2);
+        gx_tev_cache_invalidate();
+        stat_blk_hit++;
+        blk_follow(b);
+        *bias_out = bias;
+        return 1;
+    }
+    if (found) {
+        stat_blk_shadow++;
+    } else {
+        stat_blk_nokey++;
+    }
+    /* arm the recording: the shadow before, the stream's position */
+    if (!blk_glc0) {
+        blk_gsize = glc_blk_size();
+        blk_psize = gx_vprog_pending_size();
+        blk_glc0 = (u8*)malloc(blk_gsize);
+        if (!blk_glc0) {
+            blk_nofollow();
+            return 0;
+        }
+    }
+    glc_blk_get(blk_glc0);
+    blk_ver0 = glc_ver;
+    memcpy(blk_vp0, vp, sizeof(vp));
+    memcpy(blk_tfs0, tf, sizeof(tf));
+    blk_p0 = rt_pos();
+    blk_p1 = blk_p2 = 0;
+    blk_rntex = 0;
+    blk_rec_bad = 0;
+    gx_blk_rec = 1;
+    return 0;
+}
+
+void gx_blk_mark(int which) {
+    if (!gx_blk_rec) {
+        return;
+    }
+    if (which == 1) {
+        blk_p1 = rt_pos();
+    } else {
+        blk_p2 = rt_pos();
+    }
+}
+void gx_blk_tex_note(int unit, GXTexObjPort* o, u8 swap, int slot, int efb, u32 name) {
+    if (!gx_blk_rec) {
+        return;
+    }
+    if (slot < 0 || blk_rntex >= BLK_TEX_MAX) {
+        blk_rec_bad = 1;
+        return;
+    }
+    blk_rtex[blk_rntex].o = o;
+    blk_rtex[blk_rntex].unit = unit;
+    blk_rtex[blk_rntex].slot = slot;
+    blk_rtex[blk_rntex].efb = efb;
+    blk_rtex[blk_rntex].name = name;
+    blk_rtex[blk_rntex].swap = swap;
+    blk_rntex++;
+}
+
+/* the full path's apply is over: keep it as a block if it was a plain one */
+static void blk_record_end(int on_gpu) {
+    static u8 seg[BLK_SEG_MAX];
+    static u8 delta[BLK_DELTA_MAX];
+    int n1, n2;
+    u32 nd, p3 = rt_pos();
+    size_t hot, bytes;
+    Blk* b;
+    Blk* last;
+    unsigned fr = gl13_frame_number();
+    gx_blk_rec = 0;
+    if (!on_gpu || blk_rec_bad || !blk_p1 || !blk_p2 || !gx_tfs_blk_clean()) {
+        stat_blk_unstable++;
+        blk_nofollow();
+        return;
+    }
+    n1 = rt_blk_copy(blk_p0, blk_p1, seg, BLK_SEG_MAX);
+    n2 = n1 < 0 ? -1 : rt_blk_copy(blk_p2, p3, seg + n1, BLK_SEG_MAX - (u32)n1);
+    nd = glc_blk_delta_make(blk_glc0, delta, BLK_DELTA_MAX);
+    if (n1 < 0 || n2 < 0 || nd == 0xFFFFFFFFu) {
+        stat_blk_unstable++;
+        blk_nofollow();
+        return;
+    }
+    if (blk_nfree < 0) {
+        u32 i;
+        for (i = 0; i < BLK_POOL; i++) {
+            blk_free_idx[i] = BLK_POOL - 1 - i;
+        }
+        blk_nfree = BLK_POOL;
+    }
+    if (!blk_nfree || blk_mem > ((size_t)port_opt.compiled_mb << 20)) {
+        static unsigned last_sweep;
+        if (fr != last_sweep) {
+            last_sweep = fr;
+            blk_sweep(fr);
+        }
+        if (!blk_nfree || blk_mem > ((size_t)port_opt.compiled_mb << 20)) {
+            stat_blk_full++;
+            blk_nofollow();
+            return;
+        }
+    }
+    blk_hash();
+    hot = (size_t)blk_rntex * sizeof(BlkTex) + ((blk_psize + 3) & ~(size_t)3) + nd +
+          (size_t)(n1 + n2) + blk_klen;
+    bytes = offsetof(Blk, hot) + hot + blk_gsize + 16;
+    b = (Blk*)malloc(bytes);
+    if (!b) {
+        stat_blk_full++;
+        blk_nofollow();
+        return;
+    }
+    memset(b, 0, offsetof(Blk, hot));
+    b->ntex = (u8)blk_rntex;
+    b->ndelta = (u16)nd;
+    b->n1 = (u16)n1;
+    b->n2 = (u16)n2;
+    b->klen = (u16)blk_klen;
+    b->hot_bytes = (u16)hot;
+    memcpy(BLK_TEXP(b), blk_rtex, sizeof(BlkTex) * (size_t)blk_rntex);
+    gx_vprog_pending_get(BLK_PEND(b));
+    memcpy(BLK_DELTA(b), delta, nd);
+    memcpy(BLK_SEG(b), seg, (size_t)(n1 + n2));
+    memcpy(BLK_KEY(b), blk_kbuf, blk_klen);
+    b->glc0 = (u8*)(((uintptr_t)(BLK_HOT(b) + hot) + 7) & ~(uintptr_t)7);
+    memcpy(b->glc0, blk_glc0, blk_gsize);
+    b->h1 = blk_h1;
+    b->h2 = blk_h2;
+    memcpy(b->vp0, blk_vp0, sizeof(b->vp0));
+    memcpy(b->tfs0, blk_tfs0, sizeof(b->tfs0));
+    gx_vprog_blk_shadow(b->vp1);
+    gx_tfs_blk_shadow(b->tfs1);
+    b->last_frame = fr;
+    b->bytes = bytes;
+    b->succ_idx = b->link_idx = 0xFFFFFFFFu;
+    b->idx = blk_free_idx[--blk_nfree];
+    b->gen = blk_pool_gen[b->idx];
+    blk_pool[b->idx] = b;
+    /* the link: the shadow this was recorded over was the last block's S1 */
+    last = blk_ver0 == blk_last_ver ? blk_at(blk_last_idx, blk_last_gen) : NULL;
+    if (last) {
+        b->link_idx = last->idx;
+        b->link_gen = last->gen;
+    }
+    {
+        /* at most four blocks a key (four shadows it is replayed over): the
+         * oldest of them goes */
+        Blk* c;
+        Blk* oldest = NULL;
+        int same = 0;
+        for (c = blk_tab[blk_h1 & (BLK_BUCKETS - 1)]; c; c = c->next) {
+            if (c->h1 == blk_h1 && c->h2 == blk_h2 && blk_key_is(c)) {
+                same++;
+                if (!oldest || c->last_frame < oldest->last_frame) {
+                    oldest = c;
+                }
+            }
+        }
+        if (same >= 4 && oldest) {
+            blk_free(oldest);
+            stat_blk_evict++;
+        }
+        b->next = blk_tab[blk_h1 & (BLK_BUCKETS - 1)];
+        blk_tab[blk_h1 & (BLK_BUCKETS - 1)] = b;
+    }
+    blk_mem += bytes;
+    blk_count++;
+    stat_blk_rec++;
+    blk_follow(b);
+}
+
+static void blk_report(void) {
+    if (port_opt.nocompiled) {
+        return;
+    }
+    port_log("port> compiled draws (M48): %lu replayed (%lu the predicted successor, %lu over "
+             "a proved shadow), %lu recorded (%u kept, %.1f MB); not replayed: %lu new keys, "
+             "%lu over another shadow, %lu refused by a texture, %lu not plain (an upload, a "
+             "compile, a movie), %lu ineligible, %lu with the table full; %lu evicted\n",
+             stat_blk_hit, stat_blk_pred, stat_blk_fast, stat_blk_rec, blk_count,
+             blk_mem / 1048576.0, stat_blk_nokey, stat_blk_shadow, stat_blk_tex,
+             stat_blk_unstable, stat_blk_inelig, stat_blk_full, stat_blk_evict);
+}
+
 static int draw_apply(const u8* s, int n, int in_ring) {
     GxXfDesc* xfd = &app_xfd;
     int on_gpu = 0;
@@ -3740,6 +4350,20 @@ static int draw_apply(const u8* s, int n, int in_ring) {
     u32 bias = 0; /* M21 --fixbase: the batch's first vertex as an index from the ring's start */
     sub_posm = in_ring ? batch_posm : pi.pos_mtx;
     sub_nrmm = in_ring ? batch_nrmm : pi.nrm_mtx;
+    if (!rtgx && in_ring && !water_plan_cur && blk_draw(s, n, in_ring, xfd, &bias)) {
+        /* M48: a compiled draw, replayed (above) */
+        water_pt = 0;
+        gx_force_flags = 0;
+        app_skip = 0;
+        app_probe = 0;
+        app_on_gpu = 1;
+        app_bias = bias;
+        stat_fixbase_batches++;
+        if (!port_opt.nounitmemo) {
+            gx_unit_memo(0);
+        }
+        return 1;
+    }
     /* M11: phase 2 on the GPU.  The decision has to be made *before* phase 2
      * runs, because the whole point is not to run it; `gx_vprog_draw` compiles
      * or finds the variant, uploads the parameters and binds the source
@@ -3846,6 +4470,9 @@ static int draw_apply(const u8* s, int n, int in_ring) {
         if (!port_opt.nounitmemo) {
             gx_unit_memo(0);
         }
+        if (RS_ON()) {
+            rs_state(on_gpu);
+        }
         return on_gpu;
     }
     if (__builtin_expect(port_opt.rtgx == 2, 0)) {
@@ -3907,6 +4534,12 @@ static int draw_apply(const u8* s, int n, int in_ring) {
     app_bias = bias;
     if (!port_opt.nounitmemo) {
         gx_unit_memo(0);
+    }
+    if (gx_blk_rec) {
+        blk_record_end(on_gpu); /* M48 */
+    }
+    if (RS_ON()) {
+        rs_state(on_gpu);
     }
     return on_gpu;
 }
@@ -6925,6 +7558,15 @@ static void job_fill(GxDecJob* j, const u8* p, const u8* end, u32 count) {
     memcpy(j->fill, plan_fill, (size_t)plan_nfill * sizeof(plan_fill[0]));
 }
 
+/* M48 (PLAN.md 63): the region's bounds and generation, for --glists on the
+ * render thread (the generation changes only at a reset, which drains the
+ * render thread first: rt_finish_join) */
+void gx_vc_region(const u8** lo, const u8** hi, unsigned* gen) {
+    *lo = src_buf && vc_cap && !vc_vbo ? src_buf + src_cap : NULL;
+    *hi = *lo ? src_buf + src_cap + vc_cap : NULL;
+    *gen = vc_gen;
+}
+
 /* the region's room for `bytes`, aligned to the stride from src_buf (the
  * batch's index base, --fixbase); 0 when there is none this frame */
 static int vc_alloc(size_t bytes, u32* off) {
@@ -7404,6 +8046,337 @@ static int rtdec_build_sub(GxDecJob* j, const u8* p, const u8* end, u32 count) {
     r = rtdec_build(j, p, end, count);
     PORT_SUB_LEAVE();
     return r;
+}
+
+
+/* ---- M48 (PLAN.md 63): --repeatstat, the repeat draws measured -----------
+ *
+ * A draw (a batch's submit) repeats a draw of the last drawn frame when
+ * everything its translation reads is the same: its geometry -- every run a
+ * hit of the vertex cache (the list's bytes, its plan and its arrays'
+ * versions: the stored run's place in the region names its bytes), or a run
+ * decoded here whose output bytes are hashed -- and its state, the bytes
+ * SubmitRec reads less the matrices (projection, texture matrices; the
+ * position and normal matrices are not in it), with each bound texture's GL
+ * name and content.  Two state keys: `strict` (the lights, the channel
+ * colours, the TEV registers and constants and the fog colour in it: every
+ * non-matrix parameter the same) and `loose` (those set outside the unit as
+ * parameters).  Classes: 1 strict repeat, 2 loose repeat only, 3 the state
+ * repeats and the geometry does not (the skinned characters), 0 neither.
+ * Each batch is charged the GX region's time since the last batch ended
+ * (less this code's own), and on the render thread the replay and decode
+ * between its marks (rt.c).  A measurement: nothing drawn changes. */
+typedef struct RsSet {
+    u32* k1;
+    u32* k2;
+    u16* n;
+} RsSet;
+#define RS_TAB 8192u
+static RsSet rs_set[3][2]; /* [strict, loose, state][cur, prev] */
+static int rs_cur;
+static u32 rs_seq;
+static int rs_open, rs_active, rs_app, rs_geo_ok;
+static u32 rs_g1, rs_g2, rs_s1, rs_s2, rs_l1, rs_l2, rs_prims;
+static double rs_gx_last, rs_self, rs_self_last;
+/* window totals: [class] */
+static double rs_draws[4], rs_verts[4], rs_primsum[4], rs_gx_s[4], rs_gx_out;
+static unsigned rs_frames, rs_geo_draws;
+static SubmitRec rs_rec;
+static unsigned rs_frame_draws;
+
+static void rs_mix(u32* h1, u32* h2, const void* pv, size_t n) {
+    const u8* p = (const u8*)pv;
+    u32 a = *h1, b = *h2;
+    while (n--) {
+        a = (a ^ *p) * 16777619u;
+        b = (b + *p++) * 2654435761u + 0x9E3779B9u;
+    }
+    *h1 = a;
+    *h2 = b;
+}
+static void rs_mix32(u32* h1, u32* h2, u32 v) { rs_mix(h1, h2, &v, sizeof(v)); }
+
+static void rs_cap(SubmitRec* r, int loose, int on_gpu) {
+    int i;
+    u8 lmask;
+    r->len = 0;
+#define PUT(f) rec_put(r, &gx.f, sizeof(gx.f))
+    PUT(proj_type); PUT(vp); PUT(scissor); PUT(cull); PUT(line_width);
+    PUT(num_chans);
+    for (i = 0; i < 4; i++) {
+        PUT(chan[i].enable); PUT(chan[i].amb_src); PUT(chan[i].mat_src);
+        PUT(chan[i].diff_fn); PUT(chan[i].attn_fn); PUT(chan[i].light_mask);
+        if (!loose) {
+            PUT(chan[i].amb); PUT(chan[i].mat);
+        }
+    }
+    lmask = (u8)(gx.chan[0].light_mask | gx.chan[1].light_mask | gx.chan[2].light_mask |
+                 gx.chan[3].light_mask);
+    for (i = 0; i < 8; i++) {
+        if ((lmask & (1u << i)) && !loose) {
+            PUT(light[i]);
+        }
+    }
+    PUT(num_texgens);
+    for (i = 0; i < gx.num_texgens && i < GX_TEXCOORDS; i++) {
+        PUT(texgen[i]);
+    }
+    PUT(num_tev); PUT(num_ind);
+    for (i = 0; i < gx.num_tev && i < GX_TEV_STAGES; i++) {
+        unsigned u = gx.tev[i].map;
+        PUT(tev[i]);
+        PUT(ind_tile[i]);
+        PUT(ind_warp[i]);
+        if (u < GX_TEX_UNITS && gx_bound_tex(u)) {
+            rec_put(r, &gx.bound[u], sizeof(GXTexObjPort)); /* the GL name and content too */
+            if (gx.bound[u].is_ci && gx.bound[u].tlut_name < 64) {
+                PUT(tlut[gx.bound[u].tlut_name]);
+            }
+        } else {
+            rec_put(r, &i, sizeof(i));
+        }
+    }
+    if (!loose) {
+        PUT(tev_reg); PUT(kcolor); PUT(fog_color);
+    }
+    PUT(swap_tbl); PUT(ind);
+    PUT(z_enable); PUT(z_func); PUT(z_update); PUT(z_comploc);
+    PUT(blend_mode); PUT(blend_src); PUT(blend_dst); PUT(blend_logic);
+    PUT(alpha_comp0); PUT(alpha_ref0); PUT(alpha_op); PUT(alpha_comp1); PUT(alpha_ref1);
+    PUT(color_update); PUT(alpha_update);
+    PUT(fog_type); PUT(fog_startz); PUT(fog_endz); PUT(fog_nearz); PUT(fog_farz);
+#undef PUT
+    rec_put(r, &sl, sizeof(sl));
+    rec_put(r, &on_gpu, sizeof(on_gpu));
+    rec_put(r, &gx_hilite_stage, sizeof(gx_hilite_stage));
+    rec_put(r, &gx_hilite_mode, sizeof(gx_hilite_mode));
+    rec_put(r, &gx_force_flags, sizeof(gx_force_flags));
+    if (!on_gpu) {
+        rec_put(r, &out_stride, sizeof(out_stride));
+        rec_put(r, &out_off_clr, sizeof(out_off_clr));
+        rec_put(r, &out_off_tex, sizeof(out_off_tex));
+        rec_put(r, &out_ntex, sizeof(out_ntex));
+    }
+}
+
+static void rs_state(int on_gpu) {
+    double t0 = port_now_seconds();
+    rs_s1 = 2166136261u; rs_s2 = 1u;
+    rs_cap(&rs_rec, 0, on_gpu);
+    rs_mix(&rs_s1, &rs_s2, rs_rec.bytes, rs_rec.len < SUBMIT_REC_MAX ? rs_rec.len : SUBMIT_REC_MAX);
+    rs_mix32(&rs_s1, &rs_s2, rs_rec.len);
+    rs_l1 = 2166136261u; rs_l2 = 2u;
+    rs_cap(&rs_rec, 1, on_gpu);
+    rs_mix(&rs_l1, &rs_l2, rs_rec.bytes, rs_rec.len < SUBMIT_REC_MAX ? rs_rec.len : SUBMIT_REC_MAX);
+    rs_mix32(&rs_l1, &rs_l2, rs_rec.len);
+    rs_app = 1;
+    rs_self += port_now_seconds() - t0;
+}
+
+static void rs_batch_begin(void) {
+    rs_g1 = 2166136261u;
+    rs_g2 = 3u;
+    rs_geo_ok = 1;
+    rs_prims = 0;
+    rs_app = 0;
+}
+
+static void rs_prim(u32 count) {
+    double t0 = port_now_seconds();
+    if (count == 0xFFFFFFFFu) {
+        rs_geo_ok = 0;
+    } else if (vc_run == 1 && vc_cur) {
+        rs_mix32(&rs_g1, &rs_g2, 0x48495400u);
+        rs_mix32(&rs_g1, &rs_g2, vc_cur->off);
+        rs_mix32(&rs_g1, &rs_g2, vc_cur->nverts);
+        rs_mix32(&rs_g1, &rs_g2, vc_gen);
+    } else if (!run_rt && src_buf) {
+        rs_mix(&rs_g1, &rs_g2, src_buf + run_pos, (size_t)count * (size_t)sl.stride);
+    } else {
+        rs_geo_ok = 0;
+    }
+    rs_mix32(&rs_g1, &rs_g2, ((u32)prim << 24) ^ count);
+    rs_prims++;
+    rs_self += port_now_seconds() - t0;
+}
+
+static int rs_window(void) {
+    unsigned long base = 0, f;
+    if (port_opt.minigame) {
+        base = port_mg_entry();
+        if (!base) {
+            return 0;
+        }
+    }
+    f = VIGetRetraceCount() - base;
+    return (int)f >= port_opt.rs_from && (int)f < port_opt.rs_to;
+}
+
+static void rs_batch_open(void) {
+    if (!rs_open) {
+        rs_seq = (rs_seq + 1) & 0x3FFFFFFFu;
+        rt_mark(rs_seq | (rs_active ? 0x40000000u : 0u));
+        rs_open = 1;
+    }
+}
+
+static RsSet* rs_setp(int kind, int prev) { return &rs_set[kind][rs_cur ^ prev]; }
+
+static int rs_find_take(RsSet* t, u32 a, u32 b) {
+    u32 i = (a ^ (b * 0x9E3779B1u)) & (RS_TAB - 1);
+    for (;;) {
+        if (!t->n[i] && !t->k1[i] && !t->k2[i]) {
+            return 0;
+        }
+        if (t->k1[i] == a && t->k2[i] == b && t->n[i]) {
+            t->n[i]--;
+            return 1;
+        }
+        i = (i + 1) & (RS_TAB - 1);
+    }
+}
+static unsigned rs_fill[3];
+static void rs_put(int kind, u32 a, u32 b) {
+    RsSet* t = rs_setp(kind, 0);
+    u32 i = (a ^ (b * 0x9E3779B1u)) & (RS_TAB - 1);
+    if (rs_fill[kind] >= RS_TAB / 2) {
+        return;
+    }
+    for (;;) {
+        if (t->k1[i] == a && t->k2[i] == b) {
+            t->n[i]++;
+            return;
+        }
+        if (!t->n[i] && !t->k1[i] && !t->k2[i]) {
+            t->k1[i] = a;
+            t->k2[i] = b;
+            t->n[i] = 1;
+            rs_fill[kind]++;
+            return;
+        }
+        i = (i + 1) & (RS_TAB - 1);
+    }
+}
+
+static void rs_draw_done(u32 nv, int n) {
+    double t0 = port_now_seconds();
+    double g = port_perf_gx_so_far();
+    double dt = (g - rs_gx_last) - (rs_self - rs_self_last);
+    int cls = 0;
+    (void)n;
+    if (!rs_set[0][0].k1) {
+        int k, c;
+        for (k = 0; k < 3; k++) {
+            for (c = 0; c < 2; c++) {
+                rs_set[k][c].k1 = (u32*)calloc(RS_TAB, 4);
+                rs_set[k][c].k2 = (u32*)calloc(RS_TAB, 4);
+                rs_set[k][c].n = (u16*)calloc(RS_TAB, 2);
+            }
+        }
+    }
+    if (rs_app && !gl13_draw_off()) {
+        u32 a, b;
+        int strict = 0, loose = 0, state = 0;
+        if (rs_geo_ok) {
+            a = rs_s1 ^ rs_g1; b = rs_s2 + rs_g2 * 3u;
+            strict = rs_find_take(rs_setp(0, 1), a, b);
+            rs_put(0, a, b);
+            a = rs_l1 ^ rs_g1; b = rs_l2 + rs_g2 * 5u;
+            loose = rs_find_take(rs_setp(1, 1), a, b);
+            rs_put(1, a, b);
+        }
+        state = rs_find_take(rs_setp(2, 1), rs_s1, rs_s2);
+        rs_put(2, rs_s1, rs_s2);
+        cls = strict ? 1 : loose ? 2 : state ? 3 : 0;
+    }
+    if (gl13_draw_off()) {
+        cls = 0; /* a consumed frame's immediate primitive: nothing drawn */
+    } else {
+        rs_frame_draws++;
+    }
+    rt_rs_cls[rs_seq & 4095u] = (unsigned char)cls;
+    if (rs_open) {
+        rt_mark(rs_seq | 0x80000000u | (rs_active ? 0x40000000u : 0u));
+        rs_open = 0;
+    }
+    if (rs_active && !gl13_draw_off()) {
+        rs_draws[cls] += 1.0;
+        rs_verts[cls] += nv;
+        rs_primsum[cls] += rs_prims;
+        rs_gx_s[cls] += dt;
+        rs_geo_draws += rs_geo_ok && rs_app;
+    }
+    rs_app = 0;
+    rs_geo_ok = 0;
+    rs_self += port_now_seconds() - t0;
+    rs_gx_last = port_perf_gx_so_far();
+    rs_self_last = rs_self;
+}
+
+static void rs_frame(void) {
+    int k;
+    double g = port_perf_gx_so_far();
+    if (!rs_frame_draws) {
+        /* a consumed frame (no batch drawn): not counted, not a "last
+         * drawn frame" -- its GX time (the compare-first setters) is not
+         * a draw's */
+        rs_gx_last = g;
+        rs_self_last = rs_self;
+        return;
+    }
+    rs_frame_draws = 0;
+    if (rs_active) {
+        rs_gx_out += (g - rs_gx_last) - (rs_self - rs_self_last);
+        rs_frames++;
+    }
+    rs_gx_last = g;
+    rs_self_last = rs_self;
+    if (rs_set[0][0].k1) {
+        rs_cur ^= 1;
+        for (k = 0; k < 3; k++) {
+            RsSet* t = rs_setp(k, 0);
+            memset(t->k1, 0, RS_TAB * 4);
+            memset(t->k2, 0, RS_TAB * 4);
+            memset(t->n, 0, RS_TAB * 2);
+            rs_fill[k] = 0;
+        }
+    }
+    rs_active = rs_window();
+}
+
+static void rs_report(void) {
+    static const char* const nm[4] = {"other", "strict repeat", "loose repeat", "state only"};
+    double f = rs_frames ? (double)rs_frames : 1.0;
+    double gt = rs_gx_out, rtt = rt_rs_s[7];
+    int c;
+    if (!port_opt.rs_to) {
+        return;
+    }
+    if (rt_threaded()) {
+        rt_finish_join("repeatstat");
+    }
+    for (c = 0; c < 4; c++) {
+        gt += rs_gx_s[c];
+        rtt += rt_rs_s[c];
+    }
+    port_log("repeatstat> %u drawn frames in %d..%d; a drawn frame: %.1f draws (%.1f with their "
+             "geometry named), gx %.2f ms, render thread %.2f ms (replay + decode)\n",
+             rs_frames, port_opt.rs_from, port_opt.rs_to,
+             (rs_draws[0] + rs_draws[1] + rs_draws[2] + rs_draws[3]) / f, rs_geo_draws / f,
+             gt * 1000.0 / f, rtt * 1000.0 / f);
+    for (c = 0; c < 4; c++) {
+        port_log("repeatstat>   %-14s %7.1f draws %7.1f prims %8.0f verts  gx %6.2f ms (%4.1f%%)  "
+                 "rt %6.2f ms (%4.1f%%)\n",
+                 nm[c], rs_draws[c] / f, rs_primsum[c] / f, rs_verts[c] / f,
+                 rs_gx_s[c] * 1000.0 / f, gt > 0 ? 100.0 * rs_gx_s[c] / gt : 0.0,
+                 rt_rs_s[c] * 1000.0 / f, rtt > 0 ? 100.0 * rt_rs_s[c] / rtt : 0.0);
+    }
+    port_log("repeatstat>   %-14s %7s draws %7s prims %8s verts  gx %6.2f ms (%4.1f%%)  "
+             "rt %6.2f ms (%4.1f%%)\n",
+             "outside", "", "", "", rs_gx_out * 1000.0 / f, gt > 0 ? 100.0 * rs_gx_out / gt : 0.0,
+             rt_rs_s[7] * 1000.0 / f, rtt > 0 ? 100.0 * rt_rs_s[7] / rtt : 0.0);
+    port_log("repeatstat>   this code's own time %.2f ms a drawn frame (not in the columns)\n",
+             rs_self * 1000.0 / (rs_frames ? rs_frames : 1));
 }
 
 void GXCallDisplayList(const void* list, u32 nbytes) {
@@ -7954,12 +8927,18 @@ void port_gx_init(void) {
 
 void port_gx_present(void) {
     GX_FLUSH_NOW();
+    gx_blk_frame(); /* M48 */
+    if (RS_ON()) {
+        rs_frame();
+    }
     gl13_present();
 }
 
 void gl13_state_report(void);
 
 void port_gx_shutdown(void) {
+    rs_report();
+    blk_report();
     gx_draw_report();
     gx_decodestats_report();
     gx_skin_report();

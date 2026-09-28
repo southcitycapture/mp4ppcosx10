@@ -482,6 +482,16 @@ typedef struct PortOptions {
                              *   thread's cycle is over this (29 ms) */
     int vcarr_from, vcarr_to; /* --vcarr A,B  M43: the vertex cache's reasons per display
                              *   list, frames A..B from the minigame's entry (PLAN.md 58.5) */
+    int nocompiled;         /* --nocompiled  M48: every draw's translation derived again (the
+                             *   compiled draw's record blocks off; src/gx/gx_draw.c, PLAN.md 63) */
+    int compiled_mb;        /* --compiledmb N  M48: the blocks' memory (default 8) */
+    int glists;             /* --glists  M48: a draw wholly in the vertex cache's region is
+                             *   compiled into a GL display list on its second sight and
+                             *   replayed with glCallList (src/gx/rt.c; PLAN.md 63) */
+    int glists_mb;          /* --glistsmb N  M48: the lists' vertex bytes (default 8) */
+    int rs_from, rs_to;     /* --repeatstat A,B  M48: the repeat draws counted over frames A..B
+                             *   from the minigame's entry (or retrace frames without one);
+                             *   a measurement (src/gx/gx_draw.c; PLAN.md 63) */
     int pmcwin_from, pmcwin_to; /* --pmcwin A,B  M43: --pmc counts frames A..B from the
                              *   minigame's entry (or retrace frames A..B without one) */
     int pmc;                /* --pmc N  M43: the G4's performance counters on the game
@@ -709,6 +719,7 @@ int port_dialog_choose_image(char* out, size_t n);
 /* --perf, src/debug/perf.c */
 void port_perf_gx_begin(void);
 void port_perf_gx_end(void);
+double port_perf_gx_so_far(void); /* M48: the GX region's time since the start */
 void port_perf_present_begin(void);
 void port_perf_present_end(void);
 void port_perf_slept(double seconds);
@@ -1002,6 +1013,7 @@ double rt_last_dec_ms(void);
  * replayed, then glFinish -- for the vertex cache's reset */
 unsigned long rt_records_written(void);
 void rt_finish_join(const char* why);
+int rt_threaded(void); /* M48: rt.c */
 void gx_draw_counters(unsigned long* calls, unsigned long* verts, unsigned long* vchit);
 /* M33 (PLAN.md 48): --rtdecode auto.  rt_decode_want says whether this run is
  * the render thread's (the frame's share, spread by vertices); a run decoded

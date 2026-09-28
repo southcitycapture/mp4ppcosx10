@@ -107,6 +107,11 @@ const GLubyte* rt_glGetString(GLenum name);
 void rt_glGetIntegerv(GLenum p, GLint* v);
 /* ---- the extensions gl13.c / gx_vprog.c reach through pointers ---- */
 void rt_ext_multi_draw_arrays(GLenum mode, const GLint* first, const GLsizei* count, GLsizei n);
+void rt_mark(u32 v); /* M48: --repeatstat's batch marks (PLAN.md 63) */
+int rt_blk_copy(u32 from, u32 to, u8* dst, u32 cap); /* M48: the compiled draw's blocks */
+void rt_blk_emit(const u8* src, u32 n);
+extern volatile unsigned char rt_rs_cls[4096];
+extern double rt_rs_s[8];
 void rt_ext_flush_var(GLsizei len, const GLvoid* p);
 void rt_ext_bind_buffer(GLuint id);                                 /* M40 */
 void rt_ext_buffer_subdata(long off, long n, const void* p);        /* M40 */

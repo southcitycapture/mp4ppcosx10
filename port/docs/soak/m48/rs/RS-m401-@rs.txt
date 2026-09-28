@@ -1,0 +1,7 @@
+repeatstat> 478 drawn frames in 300..1500; a drawn frame: 304.6 draws (69.1 with their geometry named), gx 9.77 ms, render thread 28.23 ms (replay + decode)
+repeatstat>   other            183.0 draws   348.4 prims    26239 verts  gx   5.69 ms (58.2%)  rt  11.93 ms (42.3%)
+repeatstat>   strict repeat      2.5 draws     2.8 prims      100 verts  gx   0.10 ms ( 1.1%)  rt   0.18 ms ( 0.6%)
+repeatstat>   loose repeat      19.5 draws    20.2 prims      225 verts  gx   0.31 ms ( 3.2%)  rt   0.46 ms ( 1.6%)
+repeatstat>   state only        99.6 draws   250.7 prims    36950 verts  gx   3.67 ms (37.6%)  rt  14.97 ms (53.0%)
+repeatstat>   outside                draws         prims          verts  gx   0.00 ms ( 0.0%)  rt   0.70 ms ( 2.5%)
+repeatstat>   this code's own time 12.22 ms a drawn frame (not in the columns)

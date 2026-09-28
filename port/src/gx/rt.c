@@ -99,6 +99,7 @@ enum {
     OP_DECODE, /* M29: a display-list run decoded into the ring (PLAN.md 44) */
     OP_BIND_BUFFER, OP_BUFFER_SUB, /* M40: the vertex cache's buffer object (PLAN.md 55) */
     OP_LOCAL4, /* M41: a program's local parameter (the packed lights, PLAN.md 56) */
+    OP_MARK, /* M48: --repeatstat's batch marks (a measurement; no GL call, PLAN.md 63) */
     OP_N
 };
 
@@ -122,7 +123,7 @@ static const char* const op_name[OP_N] = {
     "BindProgramARB", "ProgramEnvParameter4fvARB", "ProgramEnvParameters4fvEXT",
     "call", "present",
     "decode", "BindBufferARB", "BufferSubDataARB",
-    "ProgramLocalParameter4fvARB",
+    "ProgramLocalParameter4fvARB", "mark",
 };
 
 typedef struct { u32 op, len; } Hdr;
@@ -173,7 +174,8 @@ typedef struct { GLenum target; GLuint idx; GLfloat v[4]; } A_env4;
 typedef struct { GLenum target; GLuint idx; GLsizei n; /* n*4 floats follow */ } A_envn;
 typedef struct { void (*fn)(void*); u32 n; /* args follow */ } A_call;
 typedef struct { unsigned frame; double t_rec; } A_present;
-typedef struct { u32 done; u32 verts; GxDecJob job; } A_decode; /* done: set by the reader */
+typedef struct { u32 done; u32 verts; GxDecJob job; } A_decode;
+typedef struct { u32 v; } A_mark; /* M48 */ /* done: set by the reader */
 
 /* ---- the stream ------------------------------------------------------------ */
 
@@ -798,6 +800,113 @@ void rt_glDrawArrays(GLenum mode_, GLint first, GLsizei count) {
     if (!RT_REC()) { glDrawArrays(mode_, first, count); return; }
     { REC(OP_DRAW_ARRAYS, A_draw); a->mode = mode_; a->first = first; a->count = count; }
     done();
+}
+
+/* ---- M48 (PLAN.md 63): the compiled draw's record blocks ------------------
+ *
+ * gx_draw.c records the records a draw's translation wrote -- the state
+ * calls, the program's binding and the arrays, never a draw, an upload, a
+ * call or a decode -- and on a later frame writes the same bytes back into
+ * the stream (rt_blk_emit), record by record, as the twins would have. */
+static int blk_op_ok(u32 op) {
+    switch (op) {
+        case OP_ENABLE: case OP_DISABLE: case OP_ENABLE_CS: case OP_DISABLE_CS:
+        case OP_ACTIVE_TEX: case OP_CLIENT_ACTIVE_TEX: case OP_BIND_TEX:
+        case OP_TEXENV_I: case OP_TEXENV_F: case OP_TEXENV_FV:
+        case OP_MATRIX_MODE: case OP_LOAD_IDENTITY: case OP_LOAD_MATRIX: case OP_PUSH: case OP_POP:
+        case OP_ORTHO: case OP_DEPTH_MASK: case OP_DEPTH_FUNC: case OP_DEPTH_RANGE:
+        case OP_COLOR_MASK: case OP_CULL: case OP_FRONT: case OP_SHADE: case OP_POLYMODE:
+        case OP_HINT: case OP_BLEND_FUNC: case OP_BLEND_EQ: case OP_ALPHA_FUNC:
+        case OP_FOG_I: case OP_FOG_F: case OP_FOG_FV: case OP_LINE_WIDTH:
+        case OP_VIEWPORT: case OP_SCISSOR:
+        case OP_VERTEX_PTR: case OP_COLOR_PTR: case OP_NORMAL_PTR: case OP_TEXCOORD_PTR:
+        case OP_FOGCOORD_PTR: case OP_BIND_PROG:
+            return 1;
+        default:
+            return 0;
+    }
+}
+/* the records in [from, to) into dst (the WRAP padding left out); -1 when
+ * one is not a plain state record or they do not fit in cap */
+int rt_blk_copy(u32 from, u32 to, u8* dst, u32 cap) {
+    u32 p = from, n = 0;
+    if (!rt_recording) {
+        return -1;
+    }
+    while ((s32)(to - p) > 0) {
+        const Hdr* h = (const Hdr*)(buf + (p & RT_MASK));
+        if (h->op == OP_WRAP) {
+            p += h->len;
+            continue;
+        }
+        if (!blk_op_ok(h->op) || n + h->len > cap || h->len < sizeof(Hdr)) {
+            return -1;
+        }
+        memcpy(dst + n, h, h->len);
+        n += h->len;
+        p += h->len;
+    }
+    return (int)n;
+}
+void rt_blk_emit(const u8* src, u32 n) {
+    u32 p = 0;
+    while (p < n) {
+        const Hdr* h = (const Hdr*)(const void*)(src + p);
+        void* a = rec(h->op, h->len - sizeof(Hdr));
+        memcpy(a, h + 1, h->len - sizeof(Hdr));
+        done_op(h->op);
+        p += h->len;
+    }
+}
+
+/* M48 (PLAN.md 63): --repeatstat's marks.  The game thread brackets a
+ * batch's records -- its decode jobs, its state, its draw calls -- with a
+ * start mark (the batch's number) and an end mark (the number | RS_END),
+ * and writes the batch's class into rt_rs_cls[] before the end mark; the
+ * replay times every record while the option is on and charges the time
+ * between the two marks, with the batch's decode jobs wherever the decode
+ * cursor ran them, to that class.  No GL call: a measurement. */
+#define RS_RING 4096u
+#define RS_END 0x80000000u
+#define RS_ACTIVE 0x40000000u
+#define RS_SEQ(v) ((v) & 0x3FFFFFFFu)
+volatile unsigned char rt_rs_cls[RS_RING];
+double rt_rs_s[8]; /* per class, seconds, in the window; [7] outside a batch */
+static double rs_dec_s[RS_RING];
+static u32 rs_cur = 0xFFFFFFFFu, rs_dec_cur = 0xFFFFFFFFu;
+static double rs_acc;
+void rt_mark(u32 v) {
+    if (!RT_REC()) { return; }
+    { REC(OP_MARK, A_mark); a->v = v; }
+    done();
+}
+static void rs_on_mark(u32 v) {
+    double t = rs_acc;
+    rs_acc = 0.0;
+    if (rs_cur != 0xFFFFFFFFu && !(rs_cur & RS_END)) {
+        u32 i = RS_SEQ(rs_cur) & (RS_RING - 1);
+        if ((v & RS_END) && RS_SEQ(v) == RS_SEQ(rs_cur)) {
+            if (rs_cur & RS_ACTIVE) {
+                rt_rs_s[rt_rs_cls[i] & 7] += t + rs_dec_s[i];
+            }
+        } else if (rs_cur & RS_ACTIVE) {
+            rt_rs_s[7] += t + rs_dec_s[i];
+        }
+        rs_dec_s[i] = 0.0;
+    } else if (rs_cur != 0xFFFFFFFFu && (rs_cur & RS_ACTIVE)) {
+        rt_rs_s[7] += t;
+    }
+    rs_cur = v;
+}
+static void rs_dec_note(u32 v) {
+    rs_dec_cur = v;
+}
+static void rs_dec_add(double t) {
+    if (rs_dec_cur != 0xFFFFFFFFu && !(rs_dec_cur & RS_END)) {
+        rs_dec_s[RS_SEQ(rs_dec_cur) & (RS_RING - 1)] += t;
+    } else if (rs_dec_cur != 0xFFFFFFFFu && (rs_dec_cur & RS_ACTIVE)) {
+        rt_rs_s[7] += t;
+    }
 }
 void rt_ext_multi_draw_arrays(GLenum mode_, const GLint* first, const GLsizei* count, GLsizei n) {
     if (!RT_REC()) { x_MultiDrawArraysEXT(mode_, first, count, n); return; }
@@ -1862,19 +1971,281 @@ static void class_end(int c) {
     }
 }
 
+
+/* ---- M48 (PLAN.md 63): --glists, the static geometry compiled ------------
+ *
+ * A draw whose every vertex lies in the vertex cache's region (M40: runs the
+ * game thread stored and never rewrites while the region's generation
+ * holds) is compiled, on its second sight, into a GL display list on this
+ * thread's context -- the same draw under the same array pointers -- and
+ * replayed with glCallList from then on, so the driver may keep the
+ * vertices on the card.  The render thread mirrors the client array state
+ * the stream sets (pointers, enables, the client unit) to key and range-
+ * check a draw; a draw under a buffer object, or reading an array outside
+ * the region, goes the old way.  A new generation (the region's reset, a
+ * join) deletes every list.  The lists' vertex bytes are bounded by
+ * --glistsmb (8); a list unused for 120 presented frames is deleted when
+ * the budget is short. */
+#define RL_ARR 12 /* vertex, colour, normal, fog, texcoord 0..7 */
+static struct { const u8* p; GLint size; GLenum type; GLsizei stride; } rl_ptr[RL_ARR];
+static u32 rl_en;
+static int rl_unit;
+static GLuint rl_buffer;
+typedef struct RlEnt {
+    u32 k1, k2;
+    GLuint list;
+    unsigned last;
+    u32 bytes;
+    u8 state; /* 0 empty, 1 seen once, 2 compiled, 3 tombstone */
+} RlEnt;
+#define RL_TAB 8192u
+static RlEnt* rl_tab;
+static unsigned rl_gen = 0xFFFFFFFFu, rl_frame;
+static double rl_bytes;
+static unsigned long rl_st_calls, rl_st_compiles, rl_st_region, rl_st_other, rl_st_full,
+    rl_st_resets, rl_st_evicts, rl_st_live;
+static double rl_st_compile_s;
+void gx_vc_region(const u8** lo, const u8** hi, unsigned* gen); /* gx_draw.c */
+
+static int rl_arr_index(GLenum a) {
+    switch (a) {
+        case GL_VERTEX_ARRAY: return 0;
+        case GL_COLOR_ARRAY: return 1;
+        case GL_NORMAL_ARRAY: return 2;
+        case 0x8457: return 3; /* GL_FOG_COORDINATE_ARRAY_EXT */
+        case GL_TEXTURE_COORD_ARRAY: return 4 + (rl_unit & 7);
+        default: return -1;
+    }
+}
+static void rl_enable(GLenum a, int on) {
+    int i = rl_arr_index(a);
+    if (i >= 0) {
+        rl_en = on ? rl_en | (1u << i) : rl_en & ~(1u << i);
+    }
+}
+static void rl_set(int i, GLint size, GLenum type, GLsizei stride, const void* ptr) {
+    rl_ptr[i].p = (const u8*)ptr;
+    rl_ptr[i].size = size;
+    rl_ptr[i].type = type;
+    rl_ptr[i].stride = stride;
+}
+static u32 rl_elem(int i) {
+    u32 t = rl_ptr[i].type == GL_FLOAT ? 4u : rl_ptr[i].type == GL_SHORT ? 2u
+          : rl_ptr[i].type == GL_UNSIGNED_SHORT ? 2u : 1u;
+    return t * (u32)(i == 2 ? 3 : i == 3 ? 1 : rl_ptr[i].size);
+}
+static void rl_mix(u32* a, u32* b, const void* pv, size_t n) {
+    const u8* q = (const u8*)pv;
+    u32 x = *a, y = *b;
+    while (n--) {
+        x = (x ^ *q) * 16777619u;
+        y = (y + *q++) * 2654435761u + 0x9E3779B9u;
+    }
+    *a = x;
+    *b = y;
+}
+static void rl_reset(void) {
+    u32 i;
+    for (i = 0; i < RL_TAB; i++) {
+        if (rl_tab[i].state == 2) {
+            glDeleteLists(rl_tab[i].list, 1);
+        }
+        rl_tab[i].state = 0;
+    }
+    rl_bytes = 0.0;
+    rl_st_live = 0;
+    rl_st_resets++;
+}
+/* the draw's vertex window [lo, hi] is in the region for every enabled array */
+static int rl_in_region(u32 lo, u32 hi) {
+    const u8 *r0, *r1;
+    unsigned gen;
+    int i;
+    if (rl_buffer || !(rl_en & 1u)) {
+        return 0;
+    }
+    gx_vc_region(&r0, &r1, &gen);
+    if (!r0 || r1 <= r0) {
+        return 0;
+    }
+    if (gen != rl_gen) {
+        if (rl_gen != 0xFFFFFFFFu) {
+            rl_reset();
+        }
+        rl_gen = gen;
+    }
+    for (i = 0; i < RL_ARR; i++) {
+        if (rl_en & (1u << i)) {
+            const u8* a = rl_ptr[i].p + (size_t)lo * (size_t)rl_ptr[i].stride;
+            const u8* b = rl_ptr[i].p + (size_t)hi * (size_t)rl_ptr[i].stride + rl_elem(i);
+            if (!rl_ptr[i].stride || a < r0 || b > r1) {
+                return 0;
+            }
+        }
+    }
+    return 1;
+}
+static RlEnt* rl_lookup(u32 k1, u32 k2) {
+    u32 i = (k1 ^ (k2 * 0x9E3779B1u)) & (RL_TAB - 1), n;
+    RlEnt* free_slot = NULL;
+    for (n = 0; n < RL_TAB; n++, i = (i + 1) & (RL_TAB - 1)) {
+        RlEnt* e = &rl_tab[i];
+        if (e->state == 0) {
+            return free_slot ? free_slot : e;
+        }
+        if (e->state == 3) {
+            if (!free_slot) {
+                free_slot = e;
+            }
+            continue;
+        }
+        if (e->k1 == k1 && e->k2 == k2) {
+            return e;
+        }
+    }
+    return free_slot;
+}
+static void rl_evict(void) {
+    u32 i;
+    for (i = 0; i < RL_TAB; i++) {
+        RlEnt* e = &rl_tab[i];
+        if (e->state == 2 && rl_frame - e->last > 120u) {
+            glDeleteLists(e->list, 1);
+            rl_bytes -= e->bytes;
+            e->state = 3;
+            rl_st_evicts++;
+            rl_st_live--;
+        } else if (e->state == 1 && rl_frame - e->last > 120u) {
+            e->state = 3;
+        }
+    }
+}
+/* 1: drawn from a list (or compiled and drawn); 0: the caller draws */
+static int rl_draw(int kind, const void* rec, u32 lo, u32 hi, u32 nverts) {
+    u32 k1 = 2166136261u, k2 = 7u;
+    int i;
+    RlEnt* e;
+    double t0;
+    if (!rl_in_region(lo, hi)) {
+        rl_st_other++;
+        return 0;
+    }
+    rl_st_region++;
+    if (!rl_tab) {
+        rl_tab = (RlEnt*)calloc(RL_TAB, sizeof(RlEnt));
+        if (!rl_tab) {
+            return 0;
+        }
+    }
+    rl_mix(&k1, &k2, &rl_en, sizeof(rl_en));
+    for (i = 0; i < RL_ARR; i++) {
+        if (rl_en & (1u << i)) {
+            rl_mix(&k1, &k2, &rl_ptr[i], sizeof(rl_ptr[i]));
+        }
+    }
+    rl_mix(&k1, &k2, &kind, sizeof(kind));
+    if (kind == OP_MULTI_DRAW) {
+        const A_multi* a = (const A_multi*)rec;
+        rl_mix(&k1, &k2, a, sizeof(*a) + (size_t)a->n * 8);
+    } else if (kind == OP_DRAW_RANGE) {
+        const A_range* a = (const A_range*)rec;
+        rl_mix(&k1, &k2, a, sizeof(*a) + a->bytes);
+    } else {
+        rl_mix(&k1, &k2, rec, sizeof(A_draw));
+    }
+    e = rl_lookup(k1, k2);
+    if (!e) {
+        rl_st_full++;
+        return 0;
+    }
+    if (e->state == 2) {
+        e->last = rl_frame;
+        glCallList(e->list);
+        rl_st_calls++;
+        return 1;
+    }
+    if (e->state != 1) {
+        e->state = 1;
+        e->k1 = k1;
+        e->k2 = k2;
+        e->last = rl_frame;
+        return 0; /* the first sight is drawn the old way */
+    }
+    {
+        u32 bytes = 0;
+        for (i = 0; i < RL_ARR; i++) {
+            if (rl_en & (1u << i)) {
+                bytes += rl_elem(i);
+            }
+        }
+        bytes *= nverts;
+        if (rl_bytes + bytes > (double)port_opt.glists_mb * 1048576.0) {
+            rl_evict();
+            if (rl_bytes + bytes > (double)port_opt.glists_mb * 1048576.0) {
+                rl_st_full++;
+                return 0;
+            }
+        }
+        t0 = now();
+        e->list = glGenLists(1);
+        if (!e->list) {
+            rl_st_full++;
+            return 0;
+        }
+        glNewList(e->list, GL_COMPILE);
+        if (kind == OP_MULTI_DRAW) {
+            const A_multi* a = (const A_multi*)rec;
+            const GLint* f = (const GLint*)(a + 1);
+            const GLsizei* c = (const GLsizei*)(f + a->n);
+            GLsizei j;
+            for (j = 0; j < a->n; j++) {
+                glDrawArrays(a->mode, f[j], c[j]);
+            }
+        } else if (kind == OP_DRAW_RANGE) {
+            const A_range* a = (const A_range*)rec;
+            glDrawRangeElements(a->mode, a->lo, a->hi, a->n, a->type, a + 1);
+        } else {
+            const A_draw* a = (const A_draw*)rec;
+            glDrawArrays(a->mode, a->first, a->count);
+        }
+        glEndList();
+        glCallList(e->list);
+        e->state = 2;
+        e->bytes = bytes;
+        e->last = rl_frame;
+        rl_bytes += bytes;
+        rl_st_compiles++;
+        rl_st_live++;
+        rl_st_compile_s += now() - t0;
+        return 1;
+    }
+}
+static void rl_report(void) {
+    if (!port_opt.glists) {
+        return;
+    }
+    port_log("port> glists (M48): %lu draws in the region, %lu elsewhere; %lu drawn from lists, "
+             "%lu compiled (%.0f ms), %lu live (%.1f MB of vertices), %lu evicted, %lu resets, "
+             "%lu refused (budget / table)\n",
+             rl_st_region, rl_st_other, rl_st_calls, rl_st_compiles, rl_st_compile_s * 1000.0,
+             rl_st_live, rl_bytes / 1048576.0, rl_st_evicts, rl_st_resets, rl_st_full);
+}
+
 /* replay one record; returns its class for the split */
 static void replay_one(const Hdr* h) {
     const void* p = h + 1;
     int cls = RC_STATE;
+    double rs_t0 = port_opt.rs_to ? now() : 0.0;
     class_begin();
     switch (h->op) {
+        case OP_MARK: rs_on_mark(((const A_mark*)p)->v); cls = RC_OTHER; break;
         case OP_NOP: case OP_WRAP: cls = RC_OTHER; break;
         case OP_ENABLE: glEnable(((const A1e*)p)->a); break;
         case OP_DISABLE: glDisable(((const A1e*)p)->a); break;
-        case OP_ENABLE_CS: glEnableClientState(((const A1e*)p)->a); break;
-        case OP_DISABLE_CS: glDisableClientState(((const A1e*)p)->a); break;
+        case OP_ENABLE_CS: glEnableClientState(((const A1e*)p)->a); rl_enable(((const A1e*)p)->a, 1); break;
+        case OP_DISABLE_CS: glDisableClientState(((const A1e*)p)->a); rl_enable(((const A1e*)p)->a, 0); break;
         case OP_ACTIVE_TEX: glActiveTexture(((const A1e*)p)->a); break;
-        case OP_CLIENT_ACTIVE_TEX: glClientActiveTexture(((const A1e*)p)->a); break;
+        case OP_CLIENT_ACTIVE_TEX: glClientActiveTexture(((const A1e*)p)->a); rl_unit = (int)(((const A1e*)p)->a - GL_TEXTURE0); break;
         case OP_BIND_TEX: { const A_eu* a = p; glBindTexture(a->a, a->b); cls = RC_TEX; break; }
         case OP_TEXPARAM_I: { const A_eei* a = p; glTexParameteri(a->a, a->b, a->v); cls = RC_TEX; break; }
         case OP_TEXPARAM_F: { const A_eef* a = p; glTexParameterf(a->a, a->b, a->v); cls = RC_TEX; break; }
@@ -1921,21 +2292,54 @@ static void replay_one(const Hdr* h) {
         case OP_END: glEnd(); cls = RC_DRAW; break;
         case OP_TEXCOORD2F: { const A_f2* a = p; glTexCoord2f(a->x, a->y); cls = RC_DRAW; break; }
         case OP_VERTEX2F: { const A_f2* a = p; glVertex2f(a->x, a->y); cls = RC_DRAW; break; }
-        case OP_VERTEX_PTR: { const A_ptr* a = p; glVertexPointer(a->size, a->type, a->stride, a->p); cls = RC_DRAW; break; }
-        case OP_COLOR_PTR: { const A_ptr* a = p; glColorPointer(a->size, a->type, a->stride, a->p); cls = RC_DRAW; break; }
-        case OP_NORMAL_PTR: { const A_ptr2* a = p; glNormalPointer(a->type, a->stride, a->p); cls = RC_DRAW; break; }
-        case OP_TEXCOORD_PTR: { const A_ptr* a = p; glTexCoordPointer(a->size, a->type, a->stride, a->p); cls = RC_DRAW; break; }
-        case OP_FOGCOORD_PTR: { const A_ptr2* a = p; if (x_FogCoordPointerEXT) { x_FogCoordPointerEXT(a->type, a->stride, a->p); } cls = RC_DRAW; break; }
-        case OP_DRAW_ARRAYS: { const A_draw* a = p; if (!rt_skip_draws) glDrawArrays(a->mode, a->first, a->count); cls = RC_DRAW; break; }
+        case OP_VERTEX_PTR: { const A_ptr* a = p; glVertexPointer(a->size, a->type, a->stride, a->p); rl_set(0, a->size, a->type, a->stride, a->p); cls = RC_DRAW; break; }
+        case OP_COLOR_PTR: { const A_ptr* a = p; glColorPointer(a->size, a->type, a->stride, a->p); rl_set(1, a->size, a->type, a->stride, a->p); cls = RC_DRAW; break; }
+        case OP_NORMAL_PTR: { const A_ptr2* a = p; glNormalPointer(a->type, a->stride, a->p); rl_set(2, 3, a->type, a->stride, a->p); cls = RC_DRAW; break; }
+        case OP_TEXCOORD_PTR: { const A_ptr* a = p; glTexCoordPointer(a->size, a->type, a->stride, a->p); rl_set(4 + (rl_unit & 7), a->size, a->type, a->stride, a->p); cls = RC_DRAW; break; }
+        case OP_FOGCOORD_PTR: { const A_ptr2* a = p; if (x_FogCoordPointerEXT) { x_FogCoordPointerEXT(a->type, a->stride, a->p); } rl_set(3, 1, a->type, a->stride, a->p); cls = RC_DRAW; break; }
+        case OP_DRAW_ARRAYS: {
+            const A_draw* a = p;
+            if (!rt_skip_draws && !(port_opt.glists && a->count > 0 &&
+                                    rl_draw(OP_DRAW_ARRAYS, a, (u32)a->first, (u32)(a->first + a->count - 1), (u32)a->count))) {
+                glDrawArrays(a->mode, a->first, a->count);
+            }
+            cls = RC_DRAW;
+            break;
+        }
         case OP_MULTI_DRAW: {
             const A_multi* a = p;
             const GLint* f = (const GLint*)(a + 1);
             const GLsizei* c = (const GLsizei*)(f + a->n);
-            if (!rt_skip_draws) x_MultiDrawArraysEXT(a->mode, f, c, a->n);
+            if (!rt_skip_draws) {
+                int done_l = 0;
+                if (port_opt.glists && a->n > 0) {
+                    GLsizei j;
+                    u32 lo = 0xFFFFFFFFu, hi = 0, nv = 0;
+                    for (j = 0; j < a->n; j++) {
+                        if (c[j] > 0) {
+                            if ((u32)f[j] < lo) lo = (u32)f[j];
+                            if ((u32)(f[j] + c[j] - 1) > hi) hi = (u32)(f[j] + c[j] - 1);
+                            nv += (u32)c[j];
+                        }
+                    }
+                    done_l = lo <= hi && rl_draw(OP_MULTI_DRAW, a, lo, hi, nv);
+                }
+                if (!done_l) {
+                    x_MultiDrawArraysEXT(a->mode, f, c, a->n);
+                }
+            }
             cls = RC_DRAW;
             break;
         }
-        case OP_DRAW_RANGE: { const A_range* a = p; if (!rt_skip_draws) glDrawRangeElements(a->mode, a->lo, a->hi, a->n, a->type, a + 1); cls = RC_DRAW; break; }
+        case OP_DRAW_RANGE: {
+            const A_range* a = p;
+            if (!rt_skip_draws && !(port_opt.glists && a->hi >= a->lo &&
+                                    rl_draw(OP_DRAW_RANGE, a, a->lo, a->hi, a->hi - a->lo + 1))) {
+                glDrawRangeElements(a->mode, a->lo, a->hi, a->n, a->type, a + 1);
+            }
+            cls = RC_DRAW;
+            break;
+        }
         case OP_DELETE_TEX: { const A_del* a = p; glDeleteTextures(a->n, (const GLuint*)(a + 1)); cls = RC_TEX; break; }
         case OP_TEXIMAGE: {
             const A_teximg* a = p;
@@ -1965,7 +2369,7 @@ static void replay_one(const Hdr* h) {
         case OP_GET_TEX_IMAGE: { const A_gettex* a = p; glGetTexImage(a->target, a->level, a->fmt, a->type, a->out); cls = RC_OTHER; break; }
         case OP_GET_ERROR: { const A_geterr* a = p; *a->out = glGetError(); cls = RC_OTHER; break; }
         case OP_FLUSH_VAR: { const A_flushvar* a = p; x_FlushVertexArrayRangeAPPLE(a->len, a->p); cls = RC_DRAW; break; }
-        case OP_BIND_BUFFER: { const A_bindbuf* a = p; x_BindBufferARB(RT_ARRAY_BUFFER_ARB, a->id); cls = RC_STATE; break; }
+        case OP_BIND_BUFFER: { const A_bindbuf* a = p; x_BindBufferARB(RT_ARRAY_BUFFER_ARB, a->id); rl_buffer = a->id; cls = RC_STATE; break; }
         case OP_BUFFER_SUB: { const A_bufsub* a = p; x_BufferSubDataARB(RT_ARRAY_BUFFER_ARB, a->off, a->n, a->p); cls = RC_DRAW; break; }
         case OP_SET_FENCE: {
             const A_fence* a = p;
@@ -2009,6 +2413,7 @@ static void replay_one(const Hdr* h) {
             halfwatch(a->frame);
             presentdump(a->frame);
             SDL_GL_SwapWindow(win);
+            rl_frame++; /* M48 */
             gx_rtgx_rt_present(); /* M43: the translation's time this frame, published */
             st_tail_s += tail;
             if (tail > st_tail_max) {
@@ -2041,6 +2446,9 @@ static void replay_one(const Hdr* h) {
                        h->op < OP_N ? op_name[h->op] : "?", rd);
     }
     class_end(cls);
+    if (rs_t0 > 0.0) {
+        rs_acc += now() - rs_t0;
+    }
 }
 
 /* M29: the decode cursor.  From max(dec, rd) to `upto` (a published
@@ -2056,7 +2464,9 @@ static void decode_ahead(u32 upto) {
     while ((s32)(upto - dec) > 0) {
         const Hdr* h = (const Hdr*)(buf + (dec & RT_MASK));
         u32 len = h->len;
-        if (h->op == OP_DECODE) {
+        if (h->op == OP_MARK) {
+            rs_dec_note(((const A_mark*)(const void*)(h + 1))->v); /* M48 */
+        } else if (h->op == OP_DECODE) {
             A_decode* d = (A_decode*)(void*)(h + 1);
             if (!d->done) {
                 double t0 = now();
@@ -2068,6 +2478,9 @@ static void decode_ahead(u32 upto) {
                 st_dec_s += t0;
                 st_frame_dec_s += t0;
                 any = 1;
+                if (port_opt.rs_to) {
+                    rs_dec_add(t0);
+                }
             }
         }
         dec += len;
@@ -2373,6 +2786,7 @@ double rt_last_dec_ms(void) { return st_last_dec_ms; }
 void rt_report(void) {
     int i;
     rt_halfwatch_report(1);
+    rl_report();
     if (mode == 0) {
         return;
     }
@@ -2454,6 +2868,11 @@ void rt_finish_join(const char* why) {
 
 #else /* PORT_NO_SDL */
 
+volatile unsigned char rt_rs_cls[4096];
+double rt_rs_s[8];
+void rt_mark(u32 v) { (void)v; }
+int rt_blk_copy(u32 from, u32 to, u8* dst, u32 cap) { (void)from; (void)to; (void)dst; (void)cap; return -1; }
+void rt_blk_emit(const u8* src, u32 n) { (void)src; (void)n; }
 unsigned long rt_records_written(void) { return 0; }
 void rt_finish_join(const char* why) { (void)why; }
 

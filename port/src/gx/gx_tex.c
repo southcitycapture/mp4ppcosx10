@@ -667,6 +667,11 @@ static unsigned stat_frames_over20;
  * (every bind re-checks content) but leave the sampled-vs-full hash choice
  * alone.  This isolates the epoch from the sampling for bisection, the way
  * `--texhash-full` isolates the sampling from the epoch. */
+/* M48 (PLAN.md 63): the compiled draw's recording is told every bind
+ * (gx_draw.c); the swap the caller asked for, for the finish's note */
+void gx_blk_tex_note(int unit, GXTexObjPort* o, u8 swap, int slot, int efb, u32 name);
+extern int gx_blk_rec;
+static u8 blk_swap;
 static int validate_every_bind;
 void gx_tex_set_validate_every_bind(int v) { validate_every_bind = v; }
 
@@ -1515,6 +1520,9 @@ static void tex_bind_finish(int unit, GXTexObjPort* o, int slot) {
     }
     o->gl_name = cache[slot].gl_name;
     gx_unit_alpha_min[unit & 7] = cache[slot].alpha_min;
+    if (gx_blk_rec) {
+        gx_blk_tex_note(unit, o, blk_swap, slot, 0, cache[slot].gl_name); /* M48 */
+    }
     if (!gl13_live() || !o->gl_name) {
         return;
     }
@@ -1653,6 +1661,7 @@ void gx_tex_bind_swapped(int unit, GXTexObjPort* o, u8 swap) {
         return;
     }
     PORT_SUB_ENTER(PERF_SUB_TEX);
+    blk_swap = swap;
     tex_bind_body(unit, o, swap);
     PORT_SUB_LEAVE();
 }
@@ -1668,6 +1677,9 @@ static void tex_bind_body(int unit, GXTexObjPort* o, u8 swap) {
         return;
     }
     if (o->format == GX_TF_PORT_RGBA) {
+        if (gx_blk_rec) {
+            gx_blk_tex_note(unit, o, swap, -1, 0, 0); /* M48: a movie frame is never compiled */
+        }
         tex_bind_port(unit, o);
         return;
     }
@@ -1701,6 +1713,9 @@ static void tex_bind_body(int unit, GXTexObjPort* o, u8 swap) {
         o->gl_name = cache[slot].gl_name;
         cache[slot].last_used = frame;
         gx_unit_alpha_min[unit & 7] = 0; /* an EFB copy: unknown, assume it can */
+        if (gx_blk_rec) {
+            gx_blk_tex_note(unit, o, swap, slot, 1, cache[slot].gl_name); /* M48 */
+        }
         if (!gl13_live() || !o->gl_name) {
             return;
         }
@@ -1917,6 +1932,82 @@ static void tex_bind_body(int unit, GXTexObjPort* o, u8 swap) {
             cache_evict_to_budget();
         }
     }
+}
+
+
+/* M48 (PLAN.md 63): a compiled draw's texture, checked.  1: binding `o` on
+ * `unit` now would be a plain hit on `slot` -- the same entry, the same GL
+ * name, not dirty, its content validated this epoch (the sampled hash taken
+ * here if it was not yet, as tex_bind_body would), its parameters already
+ * the object's -- so the full bind would emit exactly the binding and the
+ * fold the block recorded; the hit's bookkeeping (the name, the unit's alpha
+ * floor, the entry's use, the epoch) is done here as the bind does it.  0:
+ * anything else, and the draw takes the full path, which finds nothing
+ * changed that it would not have changed itself first. */
+int gx_tex_blk_check(int unit, GXTexObjPort* o, u8 swap, int slot, int efb, u32 name) {
+    const GXTlutObjPort* tlut = NULL;
+    CacheEntry* e;
+    int s2, is_efb;
+    unsigned frame;
+    if (!o || o->magic != TEXOBJ_MAGIC || o->format == GX_TF_PORT_RGBA || gl13_draw_off() ||
+        slot < 0 || slot >= CACHE_MAX || tlutlog_armed()) {
+        return 0;
+    }
+    frame = gl13_frame_number();
+    if (!cache_epoch_started || frame != cache_epoch_frame) {
+        cache_epoch_started = 1;
+        cache_epoch_frame = frame;
+        cache_epoch++;
+    }
+    cache_frame = frame;
+    if (o->is_ci && o->tlut_name < 64 && gx.tlut[o->tlut_name].magic == TLUT_MAGIC) {
+        tlut = &gx.tlut[o->tlut_name];
+    }
+    s2 = find_slot(o->image, o->format, o->width, o->height, tlut ? tlut->lut : NULL, swap,
+                   &is_efb);
+    if (s2 != slot || (is_efb != 0) != (efb != 0)) {
+        return 0;
+    }
+    e = &cache[slot];
+    if (e->gl_name != name || !name) {
+        return 0;
+    }
+    if (efb) {
+        if (e->param_wrap_s != (int)gl_wrap(o->wrap_s)) {
+            return 0;
+        }
+        o->gl_name = e->gl_name;
+        e->last_used = frame;
+        gx_unit_alpha_min[unit & 7] = 0;
+        stat_hit++;
+        return 1;
+    }
+    if (e->dirty) {
+        return 0;
+    }
+    {
+        int ws = (int)gl_wrap(o->wrap_s);
+        int wt = (int)gl_wrap(o->wrap_t);
+        int mn = o->min_filt == GX_NEAR ? GL_NEAREST : GL_LINEAR;
+        int mg = (int)gl_filter(o->mag_filt, 0);
+        if (e->param_wrap_s != ws || e->param_wrap_t != wt || e->param_min != mn ||
+            e->param_mag != mg) {
+            return 0;
+        }
+    }
+    if (port_opt.texhash_full || validate_every_bind || e->validated_epoch != cache_epoch) {
+        u32 content = tex_bind_content_hash(o, tlut, 0);
+        if (content != e->content) {
+            return 0; /* rewritten in place: the full path re-hashes and uploads */
+        }
+        stat_revalidate++;
+        e->validated_epoch = cache_epoch;
+    }
+    e->last_used = frame;
+    stat_hit++;
+    o->gl_name = e->gl_name;
+    gx_unit_alpha_min[unit & 7] = e->alpha_min;
+    return 1;
 }
 
 /* ---- the GX texture-object entry points ----------------------------------- */
@@ -2651,6 +2742,9 @@ static void ind_components(const GXTexObjPort* map, const u8* texel, u32 mask, i
 
 int gx_tex_bind_tiled(int unit, GXTexObjPort* sheet, GXTexObjPort* map,
                       const GXIndTile* tile) {
+    if (gx_blk_rec) {
+        gx_blk_tex_note(unit, sheet, 0, -1, 0, 0); /* M48: an indirect tile is never compiled */
+    }
     u32 key;
     int i, slot = -1;
     int ts = tile->ts_s, tt = tile->ts_t;

@@ -1528,9 +1528,56 @@ int gx_vprog_draw(const GxXfDesc* d, int nverts) {
  * samples one texel of the atlas for the whole primitive.  That is what the
  * first G4 witness of this path looked like: the 3D characters correct and
  * every 2D layer -- the sky, the logo's "4", the sprites -- flat or absent. */
-void gx_vprog_bind(const GxXfDesc* d) {
+#if !defined(PORT_NO_SDL) && !defined(GX_RTI)
+void gx_blk_mark(int which); /* M48: gx_draw.c, the compiled draw's recording */
+#define VP_BLK_MARK(w) gx_blk_mark(w)
+#else
+#define VP_BLK_MARK(w) do { } while (0)
+#endif
+static void vprog_bind_body(const GxXfDesc* d, int params_only);
+void gx_vprog_bind(const GxXfDesc* d) { vprog_bind_body(d, 0); }
+/* M48 (PLAN.md 63): the parameters alone, where a compiled draw's replay
+ * puts them -- between its records up to here and its arrays' records --
+ * with the decision restored (gx_vprog_pending_set) */
+void gx_vprog_params_only(const GxXfDesc* d) { vprog_bind_body(d, 1); }
+/* M48: the vertex program's GL shadow, for the compiled draw's compare */
+void gx_vprog_blk_shadow(int* out) {
+#ifndef PORT_NO_SDL
+    out[0] = (int)vp_bound;
+    out[1] = vp_enabled;
+    out[2] = vp_last_vbo;
+#else
+    out[0] = out[1] = out[2] = 0;
+#endif
+}
+void gx_vprog_blk_shadow_set(const int* in) {
+#ifndef PORT_NO_SDL
+    vp_bound = (unsigned)in[0];
+    vp_enabled = in[1];
+    vp_last_vbo = in[2];
+#else
+    (void)in;
+#endif
+}
+/* M48: what gx_vprog_draw counts for a draw it decided, for a replay */
+void gx_vprog_blk_count(int nverts) {
+#ifndef PORT_NO_SDL
+    VpVariant* v = pending_var;
+    if (v) {
+        v->draws++;
+        v->verts += (unsigned)nverts;
+        stat_gpu_draws++;
+        stat_gpu_verts += (unsigned)nverts;
+        frame_gpu_draws++;
+    }
+#else
+    (void)nverts;
+#endif
+}
+static void vprog_bind_body(const GxXfDesc* d, int params_only) {
 #ifdef PORT_NO_SDL
     (void)d;
+    (void)params_only;
 #else
     VpKey key = pending_key;
     VpVariant* v = pending_var;
@@ -1541,14 +1588,17 @@ void gx_vprog_bind(const GxXfDesc* d) {
     if (!v) {
         return;
     }
-    if (vp_bound != v->id) {
-        vp_bound = v->id;
-        rt_ext_bind_program(VP_VERTEX_PROGRAM_ARB, v->id);
+    if (!params_only) {
+        if (vp_bound != v->id) {
+            vp_bound = v->id;
+            rt_ext_bind_program(VP_VERTEX_PROGRAM_ARB, v->id);
+        }
+        if (vp_enabled != 1) {
+            vp_enabled = 1;
+            glEnable(VP_VERTEX_PROGRAM_ARB);
+        }
     }
-    if (vp_enabled != 1) {
-        vp_enabled = 1;
-        glEnable(VP_VERTEX_PROGRAM_ARB);
-    }
+    VP_BLK_MARK(1);
 
     /* ---- the parameters.  env4 emits only what changed, which matters:
      * consecutive draws share the lights and the texgen matrices and usually
@@ -1756,6 +1806,10 @@ void gx_vprog_bind(const GxXfDesc* d) {
         }
         glc_get_tex_fold(u, &su, &sv, &tv);
         env4(VPE_TEXSCL + u, su, sv, 0.0f, tv);
+    }
+    VP_BLK_MARK(2);
+    if (params_only) {
+        return;
     }
 
     /* ---- the arrays.  The *source* layout is the vertex format now: no

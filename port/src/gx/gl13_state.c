@@ -160,6 +160,11 @@ static unsigned glc_emitted, glc_elided;
  * gx_tev_apply can tell that nobody has touched the units since its own
  * last apply */
 unsigned glc_unit_gen;
+/* M48 (PLAN.md 63): bumped on entry to every function below that can write
+ * the shadow (so, conservatively, by some that do not): a compiled draw's
+ * replay trusts that the shadow is still the one the last replay left while
+ * this has not moved */
+unsigned glc_ver;
 #define HITU(cond)                                                                       \
     do {                                                                                 \
         HIT(cond);                                                                       \
@@ -195,6 +200,7 @@ int gl13_trace_armed(void) {
     } while (0)
 
 void glc_invalidate(void) {
+    glc_ver++; /* M48 */
     GLC_FWD(RTGX_F_INVALIDATE, 0, 0, 0, 0, 0);
     glc_unit_gen++;
     /* The vertex program's binding, enable and parameter block are GL state
@@ -261,6 +267,58 @@ void glc_invalidate(void) {
 }
 
 void glc_forget_white(void) { glc_white_name = 0; } /* M43: gl13_shutdown's */
+/* M48 (PLAN.md 63): the whole shadow, for the compiled draw -- a record
+ * block is replayed only over the shadow it was recorded over (compared
+ * byte for byte), and leaves the shadow the recording left */
+size_t glc_blk_size(void) { return sizeof(Glc); }
+void glc_blk_get(void* out) { memcpy(out, &glc, sizeof(Glc)); }
+int glc_blk_same(const void* in) { return memcmp(&glc, in, sizeof(Glc)) == 0; }
+void glc_blk_set(const void* in) {
+    glc_ver++; /* M48 */
+    memcpy(&glc, in, sizeof(Glc));
+    glc_unit_gen++; /* the units may have moved: gx_tev_apply's skip must not trust them */
+}
+/* the words that differ from `from` to the shadow now, as runs: {u16 word
+ * offset, u16 words, the words}; the bytes written, or 0 when over cap */
+u32 glc_blk_delta_make(const void* from, u8* out, u32 cap) {
+    const u32* a = (const u32*)from;
+    const u32* b = (const u32*)(const void*)&glc;
+    u32 nw = (u32)(sizeof(Glc) / 4), i = 0, n = 0;
+    while (i < nw) {
+        u32 j;
+        if (a[i] == b[i]) {
+            i++;
+            continue;
+        }
+        j = i;
+        while (j < nw && a[j] != b[j]) {
+            j++;
+        }
+        if (n + 4 + (j - i) * 4 > cap) {
+            return 0xFFFFFFFFu;
+        }
+        out[n] = (u8)(i >> 8); out[n + 1] = (u8)i;
+        out[n + 2] = (u8)((j - i) >> 8); out[n + 3] = (u8)(j - i);
+        memcpy(out + n + 4, b + i, (j - i) * 4);
+        n += 4 + (j - i) * 4;
+        i = j;
+    }
+    return n;
+}
+/* the shadow moved by a delta (the replay: the shadow was the block's
+ * before, so it is the block's after) */
+void glc_blk_delta_apply(const u8* d, u32 n) {
+    u32* b = (u32*)(void*)&glc;
+    u32 p = 0;
+    glc_ver++;
+    glc_unit_gen++;
+    while (p < n) {
+        u32 off = ((u32)d[p] << 8) | d[p + 1];
+        u32 w = ((u32)d[p + 2] << 8) | d[p + 3];
+        memcpy(b + off, d + p + 4, w * 4);
+        p += 4 + w * 4;
+    }
+}
 
 void glc_stats(unsigned* emitted, unsigned* elided) {
     *emitted = glc_emitted;
@@ -268,6 +326,7 @@ void glc_stats(unsigned* emitted, unsigned* elided) {
 }
 
 void glc_active_texture(int unit) {
+    glc_ver++; /* M48 */
     GLC_FWD(RTGX_F_ACTIVE, unit, 0, 0, 0, 0);
     HIT(glc.active_tex == unit);
     glc.active_tex = unit;
@@ -276,6 +335,7 @@ void glc_active_texture(int unit) {
 }
 
 void glc_client_active_texture(int unit) {
+    glc_ver++; /* M48 */
     GLC_FWD(RTGX_F_CLIENT_ACTIVE, unit, 0, 0, 0, 0);
     HIT(glc.client_active_tex == unit);
     glc.client_active_tex = unit;
@@ -284,6 +344,7 @@ void glc_client_active_texture(int unit) {
 }
 
 void glc_bind_texture(int unit, unsigned name) {
+    glc_ver++; /* M48 */
     GLC_FWD(RTGX_F_BIND, unit, (int)name, 0, 0, 0);
     HITU(glc.unit[unit].tex_name == name);
     glc.unit[unit].tex_name = name;
@@ -295,6 +356,7 @@ void glc_bind_texture(int unit, unsigned name) {
 /* The binding a texture *upload* leaves behind: gx_tex.c has to bind the name
  * it is about to fill, and the shadow has to be told rather than guess. */
 void glc_note_bind(int unit, unsigned name) {
+    glc_ver++; /* M48 */
     GLC_FWD(RTGX_F_NOTE_BIND, unit, (int)name, 0, 0, 0);
     glc_unit_gen++;
     glc.unit[unit].tex_name = name;
@@ -313,6 +375,7 @@ void glc_note_bind(int unit, unsigned name) {
  * dropped there as well, because a forgotten shadow may mean a new context. */
 
 unsigned glc_white_texture(void) {
+    glc_ver++; /* M48 */
     GLC_OWNED("glc_white_texture");
     if (!glc_white_name) {
         static const unsigned char px[4] = { 255, 255, 255, 255 };
@@ -349,6 +412,7 @@ unsigned glc_white_texture(void) {
 }
 
 void glc_unit_enable_tex2d(int unit, int on) {
+    glc_ver++; /* M48 */
     GLC_FWD(RTGX_F_ENABLE2D, unit, on, 0, 0, 0);
     HITU(glc.unit[unit].tex2d_on == (signed char)on);
     glc.unit[unit].tex2d_on = (signed char)on;
@@ -387,6 +451,7 @@ static int* glc_env_slot_i(GlcUnit* u, unsigned pname) {
 }
 
 void glc_texenvi(int unit, unsigned pname, int v) {
+    glc_ver++; /* M48 */
     GLC_OWNED("glc_texenvi");
     int* slot = glc_env_slot_i(&glc.unit[unit], pname);
     HITU(slot != NULL && *slot == v);
@@ -399,6 +464,7 @@ void glc_texenvi(int unit, unsigned pname, int v) {
 }
 
 void glc_texenvf(int unit, unsigned pname, float v) {
+    glc_ver++; /* M48 */
     GLC_OWNED("glc_texenvf");
     GlcUnit* u = &glc.unit[unit];
     float* slot = pname == GL_RGB_SCALE ? &u->scale_rgb
@@ -414,6 +480,7 @@ void glc_texenvf(int unit, unsigned pname, float v) {
 }
 
 void glc_texenv_color(int unit, const float* c) {
+    glc_ver++; /* M48 */
     GLC_OWNED("glc_texenv_color");
     GlcUnit* u = &glc.unit[unit];
     HITU(memcmp(u->env_color, c, sizeof(float) * 4) == 0);
@@ -430,10 +497,12 @@ void glc_texenv_color(int unit, const float* c) {
  * glCopyTexSubImage2D fills the texture in GL's row order -- t = 0 is the
  * *bottom* of the copied region -- where a GX texture's t = 0 is its top. */
 void glc_tex_matrix(int unit, float su, float sv) {
+    glc_ver++; /* M48 */
     GLC_FWD(RTGX_F_TEXMTX, unit, 0, su, sv, 0);
     glc_tex_matrix_fold(unit, su, sv, 0.0f);
 }
 void glc_tex_matrix_fold(int unit, float su, float sv, float tv) {
+    glc_ver++; /* M48 */
     GLfloat m[16];
     GLC_FWD(RTGX_F_TEXMTX_FOLD, unit, 0, su, sv, tv);
     GlcUnit* u = &glc.unit[unit];
@@ -455,6 +524,7 @@ void glc_tex_matrix_fold(int unit, float su, float sv, float tv) {
 }
 
 static void glc_enable(GLenum cap, int on, signed char* shadow) {
+    glc_ver++; /* M48 */
     HIT(*shadow == (signed char)on);
     *shadow = (signed char)on;
     TR("glEnable/Disable cap %04x on %d\n", (unsigned)cap, on);
@@ -520,11 +590,13 @@ void gl13_zprepass_end(void) {
  * program writes it (gx_vprog.c) for the hilite fold and nothing else. */
 #define GLC_COLOR_SUM 0x8458
 void glc_color_sum(int on) {
+    glc_ver++; /* M48 */
     GLC_OWNED("glc_color_sum");
     glc_enable(GLC_COLOR_SUM, on, &glc.color_sum_on);
 }
 
 void glc_projection(const float* m) {
+    glc_ver++; /* M48 */
     GLC_OWNED("glc_projection");
     HIT(glc.proj_valid && memcmp(glc.proj, m, sizeof(float) * 16) == 0);
     memcpy(glc.proj, m, sizeof(float) * 16);
@@ -535,6 +607,7 @@ void glc_projection(const float* m) {
 }
 
 void glc_modelview_identity(void) {
+    glc_ver++; /* M48 */
     GLC_OWNED("glc_modelview_identity");
     HIT(glc.modelview_identity);
     glc.modelview_identity = 1;
@@ -546,6 +619,7 @@ void glc_modelview_identity(void) {
  * reads it from index zero, so the pointers are set once for the life of the
  * process and only the per-unit enables change. */
 void glc_vertex_array(const void* p, int stride) {
+    glc_ver++; /* M48 */
     GLC_OWNED("glc_vertex_array");
     /* The stride is part of the identity now: M9 packs the vertex to the
      * primitive, so the same base pointer can be handed over with a different
@@ -561,6 +635,7 @@ void glc_vertex_array(const void* p, int stride) {
 }
 
 void glc_color_array(const void* p, int stride) {
+    glc_ver++; /* M48 */
     GLC_OWNED("glc_color_array");
     HIT(glc.color_array_on == 1 && glc.color_ptr == p && glc.color_stride == stride);
     if (glc.color_array_on != 1) {
@@ -576,6 +651,7 @@ void glc_color_array(const void* p, int stride) {
  * its own lighting and never hands GL a normal (gx_draw.c's file header says
  * why), so before M11 there was nothing to shadow. */
 void glc_normal_array(const void* p, int stride) {
+    glc_ver++; /* M48 */
     GLC_OWNED("glc_normal_array");
     HIT(glc.normal_array_on == (signed char)(p != NULL) && glc.normal_ptr == p &&
         glc.normal_stride == stride);
@@ -621,6 +697,7 @@ int glc_fogcoord_available(void) {
  * cache's buffer object was bound or unbound, and a pointer value means an
  * offset in one and an address in the other */
 void glc_arrays_forget(void) {
+    glc_ver++; /* M48 */
     GLC_OWNED("glc_arrays_forget");
     int i;
     glc.vertex_ptr = glc.color_ptr = glc.normal_ptr = (const void*)-1;
@@ -631,6 +708,7 @@ void glc_arrays_forget(void) {
 }
 
 void glc_fogcoord_array(const void* p, int stride) {
+    glc_ver++; /* M48 */
     GLC_OWNED("glc_fogcoord_array");
     if (!glc_fogcoord_available()) {
         return;
@@ -676,6 +754,7 @@ void glc_get_tex_fold(int unit, float* su, float* sv, float* tv) {
 }
 
 void glc_coord_array_n(int unit, const void* p, int stride, int size) {
+    glc_ver++; /* M48 */
     GLC_OWNED("glc_coord_array");
     GlcUnit* u = &glc.unit[unit];
     HIT(u->coord_array_on == (signed char)(p != NULL) && u->coord_ptr == p &&
@@ -732,6 +811,7 @@ static GLenum gl_blend_dst(u8 f) {
 }
 
 void gl13_apply_raster_state(void) {
+    glc_ver++; /* M48 */
     GLC_OWNED("gl13_apply_raster_state");
     if (!gl_on) {
         return;
@@ -1109,6 +1189,7 @@ void gl13_apply_xf_raster(void) {
 unsigned long gl13_xr_skips(void) { return stat_xr_skips; }
 
 void gl13_apply_transform(void) {
+    glc_ver++; /* M48 */
     GLC_OWNED("gl13_apply_transform");
     float m[16];
     const f32* p;
