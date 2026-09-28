@@ -24782,9 +24782,13 @@ Together (`pmch`, the old skin path against the M46-equivalent
 `--noskindecode --oldvcskin --fullskinsig --noskindcbz`): m436's drawn frame
 23.07 / 23.25 M cycles, its consumed frame 3.93 / 4.06.  **At real time**
 (`mp4-k`, `docs/soak/m47/ab4`): m463 **29.9** (30.0 / 29.6 / 29.9; the old
-skin path 30.0 / 29.9 / 29.7) against M46's 28.8, m444 **29.9** (29.2),
-m441 27.1 against 26.9 with `--oldwake` (M46 25.9), m401 28.9 (the old skin
-path 28.0; M46 27.7) -- one run each but m463's.
+skin path 30.0 / 29.9 / 29.7) against M46's 28.8, m441 27.1 against 26.9
+with `--oldwake` (M46 25.9), m401 28.9 (the old skin path 28.0; M46 27.7)
+-- one run each but m463's; m444 29.9 in both skin arms of `mp4-h`
+(`ab2`).  These builds still had the cache notice on, and the A/B reads
+entry +300..+1,500 where the scoreboard pools the whole game: the
+scoreboard's own numbers for the shipped build (62.11) are m463 29.4, m444
+29.0, m441 26.8, m401 27.2.
 
 ### 62.7 m463's falling panels (item 3)
 
@@ -25044,9 +25048,38 @@ reads better than an outage.  Nothing the lab runs power-cycles the G4 (no
 plug configured).  Treated as the lab's: the picture checks were re-run
 whole on `c3`, and nothing was timed in the hour after (the scoreboard's
 first attempt, started two minutes inside it, was stopped in its settle and
-started again at 00:53).
+started again at 00:53, stopped seven minutes in for the m427 isolation of
+62.10 and started again at 01:07; `c4`'s, the one that counts, ran at
+05:45-08:41).
 
-**The soak** on the shipped build: running at this commit (62.13 is completed with its reading).
+**The soak** (`SX:120:base` of the chain on the shipped build, `isle`
+`d7da16eb`, installed as `~/MarioParty4.app` with 0.9.15 kept as
+`~/MarioParty4-m46.app`), 08:59-10:58 G4 time (`isle --soak --com4 --rtc
+dolphin --freshcard --status --perf --stuckwatch 200 --ovllog --halfwatch 3
+--frames 431520`; `docs/soak/m47-soak-final-120.log.gz`): **431,520
+retraces, game 7,199.20 s against wall 7,199.74 s -- 100.0%**; **0 faults, 0
+skin guard hits, 0 resyncs, no lock-up**; the worst frame 663 ms behind, 176
+`stall:` lines (loads), 77 underruns totalling 1.1 s; three `STUCK` lines,
+the soak's own end-of-game walk as in every soak since M40.  One whole
+20-turn game and a second to turn 11: **40 minigames entered**.  The disc:
+2,886 reads, none over 100 ms.  The card: 32 writes, 65 image flushes.  rss
+177 -> 289 MB.  The registry: 11,538 full signatures, 2,792,490 by the
+pointers alone, 1,016 entries dropped by the game's frees.  **The counters**
+(`--halfwatch 3`): 71,539 frames checked, **0 blips** (M45's rule: 5), **12
+half-black, all m416's dark room at 251,154-251,226** (the lit half 83-164
+samples; M46's soak had the same range), and the shot the counter takes of a
+fall's start at 411,753 -- m427's entry fade, the frame M46's soak shot too
+-- with both views drawn.  Before it, on the same build: both md5 walks
+(62.9) and the named teleport (`L:m427:--skindecode`: `857e4f0e` /
+`7de25913`; without: `dd789764` / `36dbdf54`).
+
+**The dmg**: littlejelly `~/MarioParty4-PowerPC-0.9.16.dmg` (md5
+`e896792f4f90ac1d80330233b610762b`, 4.45 MB; the G4 keeps `~/Mario Party 4
+PowerPC Edition 0.9.16.dmg`), built with nothing running and mounted and read
+on the G4: `Mario Party 4.app` with `isle` `d7da16eb`,
+CFBundleShortVersionString 0.9.16, CFBundleVersion 47,
+`Contents/Resources/PowerPCube.plist`, 99 modules, the Read Me (Version
+0.9.16) and the four licences, no file over 20 MB (no disc image).
 
 ### 62.14 What M47 shipped
 
@@ -25063,3 +25096,38 @@ started again at 00:53).
 | `port/docs/fps-scoreboard.md`, `fps-scoreboard-m46-after.md`, `release-checklist.md`, `port/dist/Read Me.txt` | the scoreboard, M46's kept, the checklist, the Read Me |
 | `port/docs/screenshots/m47-gpuskin-palette-broken.jpg`, `m47-gpuskin-rounding.jpg` | item 4 |
 | `port/docs/soak/m47*` | the leave-behind's soak, the A/Bs, the counters, the samples, the three scoreboards, the picture checks' table, the soak |
+
+### 62.15 What is left running, and what M48 starts with
+
+On the G4, since 10:59 G4 time on 2026-09-28, on 0.9.16 (`isle`
+`d7da16eb`, the bundle `~/MarioParty4.app`; exec'd by the chain's
+`M47_LEAVE`; runner slot `~/isle.app` -> `MarioParty4-chain.app`, whose
+executable is `m47_chain.sh`):
+
+```
+isle --soak --com4 --rtc dolphin --freshcard --status --perf
+```
+
+log `~/isle-log.txt`, pid 75831.  The player's card and `~/memcard-backup.raw`
+untouched (every run `--freshcard`).  0.9.15 stays installed as
+`~/MarioParty4-m46.app`; M47's bundles as `~/mp4-*.app` (`mp4-c4.app` the
+scoreboard's, `mp4-c1.app` the skin decode on, `mp4-meas.app` item 4's
+diagnostics, `mp4-pmc*.app` the counters' bundles); the chain settings
+`~/m47.env` (`M47_LEAVE` set: clear it before the next chain) and
+`~/fps-board.env` (`FB_APP=~/mp4-c4.app`, `FB_DIR=~/fps-board-m47c4`); the
+scoreboards `~/fps-board-m47`, `-m47c3`, `-m47c4`.
+
+M48: the user's decision on item 4 (62.8: nothing an inexact card-side skin
+could buy reaches the bar on the class-2 screens); **m427's reader of the
+unwritten skin arrays** (`L:m427:@BUNDLE,--skindecode`) -- found, the skin
+decode takes m444 over (29.8 on `c1`) and is worth measuring again on m435
+and m463 (29.0, 29.4); the vertex cache's notice, cheaper on m436 and dearer
+on m433 -- why its remembered sets are re-scanned there; m463 is 0.1 short.
+**Rules learnt**: a lever proven exact on one screen is proven for that
+screen's readers only -- the picture checks run on every candidate before a
+lever is called exact; a lever's A/B arms must switch that lever alone
+against the previous release (`old`), on the screens nearest the bar, before
+the whole scoreboard is spent on it; and after an unexplained restart of the
+G4, an hour's wait before anything is timed, even when the chain is the
+agent's own.
+
