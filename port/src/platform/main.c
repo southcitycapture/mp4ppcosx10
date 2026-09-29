@@ -365,11 +365,11 @@ static void usage(const char* argv0) {
             "                    poll (the controls file's table or the built-in one), logged\n"
             "  --dcbtdist N      M46: the decode loops prefetch the array entries N\n"
             "                    vertices ahead (default 1, the next vertex)\n"
-            "  --skindecode      M47, the default since M48: skinned meshes skinned at the\n"
-            "                    decode from the rest pose, their arrays written only for a\n"
-            "                    reader that is not the draw -- and as the game frees them\n"
-            "                    (--nofreemat: not; PLAN.md 63.7)\n"
-            "  --noskindecode    the deferred body writes the arrays (M18..M47)\n"
+            "  --skindecode      M47 (opt-in): skinned meshes skinned at the decode from the\n"
+            "                    rest pose, their arrays written only for a reader that is\n"
+            "                    not the draw and, since M48, as the game frees them (exact on\n"
+            "                    the picture checks; slower: PLAN.md 63.7-63.8)\n"
+            "  --noskindecode    the default: the deferred body writes the arrays (M18..M48)\n"
             "  --skinverify      M47: both -- the arrays written and the skin at the\n"
             "                    decode, every fused position/normal compared bit for bit\n"
             "  --vcskinnotice    M47 (opt-in): the skin body names its two arrays to the\n"
@@ -812,9 +812,10 @@ int port_parse_args(int argc, char** argv) {
      * found the reader: m427's river hook never sets its ripple phase and
      * reads the model heap's leftover bytes -- freed skin arrays among them;
      * the owed arrays are now written as the game frees them (--nofreemat the
-     * M47 behaviour), and the skin decode is the default (--noskindecode the
-     * deferred body, M18..M46) */
-    port_opt.noskindecode = 0;
+     * M47 behaviour), which makes it exact on the picture checks -- and still
+     * opt-in: measured against 0.9.16 it costs the game thread more than it
+     * saves on nearly every screen (PLAN.md 63.8) */
+    port_opt.noskindecode = 1;
     /* M47 (PLAN.md 62.11): the skin body's precise notice to the vertex cache is
      * opt-in (--vcskinnotice): on m433 it cost 0.6 ms of the drawn frame and
      * the screen's pass (29.0 against 30.0 with the epoch, three runs each) */
