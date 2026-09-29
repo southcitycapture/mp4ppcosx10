@@ -25162,7 +25162,7 @@ built alone (63.11) it costs m409, m433 and m444 0.7-0.8.  **Not shipped**
 (63.7): the river hook never initializes its ripple phase and reads the
 model heap's leftover bytes, freed skin arrays among them; the skin decode
 now writes its owed arrays as the game frees them and passes the picture
-checks (599 of 599 frames), **and it trades** (+0.4 m463, +0.6 m441, -0.7
+checks (638 of 638 frames), **and it trades** (+0.4 m463, +0.6 m441, -0.7
 m431, -0.5 m444): opt-in.  **The first final build lost m409 and m433** to
 M48's own hooks in the hot paths (63.10); they are compiled out of the
 player's build, which is 0.9.16's speed.  **The scoreboard after** (63.12):
@@ -25516,12 +25516,12 @@ through the whole gate before anything was timed:
 * **the md5 walks**: `--nomovies` `0b58c5ee` / `2b99c60a` / `4a9a640c`,
   movies `d2d40344` / `59008ce4` / `3f98f882`;
 * **the picture checks** (`PC:@c1`, `tools/m48_pccmp.py` against M47's
-  `@c4` set, lines 291- of `~/m47/index.txt`, by the frames' md5s): **599 of
-  599 frames identical, 0 differ, 25 of 25 runs exit 0 with 0 faults** --
+  `@c4` set, lines 291- of `~/m47/index.txt`, by the frames' md5s): **638 of
+  638 frames identical, 0 differ, every run exit 0 with 0 faults** --
   m427's seven lockstep moments (`b1ae2524` ... the river the references)
   and both real-time runs, m414's, the Bowser pillars' 18 frames a game,
-  the Mega Mushroom and the fourteen items; `--halfwatch 1` over the 23
-  runs: 47,848 frames, 0 half-black, 0 blips.
+  the Mega Mushroom and the fourteen items; `--halfwatch 1` over 24
+  runs: 49,837 frames, 0 half-black, 0 blips (`docs/soak/m48/piccheck-pc-c1.txt`).
 
 **The A/B** (the skin decode alone against 0.9.16, three runs an arm,
 interleaved; `docs/soak/m48/ab4/`):
