@@ -30,7 +30,7 @@ typedef struct {
     unsigned long ndraw[2][2];
     unsigned long long motion;
     unsigned long nmotion;
-    char name[24];
+    const void* hsf; /* named by --skinstats' "hsf 0x... registered" line */
     int objs;
     unsigned attr;
 } MC;
@@ -62,8 +62,9 @@ static int mc_on_frame(void) {
 }
 
 static void mc_note(MC* m, HU3DMODEL* p) {
-    if (!m->name[0] && p->hsf && p->hsf->objectNum > 0 && p->hsf->object && p->hsf->object[0].name) {
-        strncpy(m->name, p->hsf->object[0].name, sizeof(m->name) - 1);
+    /* not the objects' names: a lighter character file's root has none */
+    if (p->hsf && !(p->attr & HU3D_ATTR_HOOK)) { /* a hook model's hsf is its function */
+        m->hsf = p->hsf;
         m->objs = p->hsf->objectNum;
     }
     m->attr = p->attr;
@@ -149,9 +150,9 @@ void port_modelcost_report(void) {
              mc_post[1] * ms / fc);
     for (j = 0; j < n && j < 80; j++) {
         MC* m = &mc[mc_cmp_idx[j]];
-        port_log("port> modelcost: %3d %-22s objs %3d attr %08x  drawn %.3f / %.3f (%lu/%lu)  "
+        port_log("port> modelcost: %3d hsf %p objs %3d attr %08x  drawn %.3f / %.3f (%lu/%lu)  "
                  "consumed %.3f / %.3f  motion %.3f (%lu)\n",
-                 mc_cmp_idx[j], m->name, m->objs, m->attr, m->draw[0][0] * ms / fd,
+                 mc_cmp_idx[j], m->hsf, m->objs, m->attr, m->draw[0][0] * ms / fd,
                  m->draw[0][1] * ms / fd, m->ndraw[0][0], m->ndraw[0][1], m->draw[1][0] * ms / fc,
                  m->draw[1][1] * ms / fc, m->motion * ms / (fd + fc), m->nmotion);
     }

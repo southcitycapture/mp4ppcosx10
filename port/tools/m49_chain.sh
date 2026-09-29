@@ -4,6 +4,7 @@
 #                     --gamehash 60 (the determinism proof: Lite on and off must
 #                     print the same hashes) and dumps at M49_HDUMP (300,1200)
 #                     -- the before/after pictures, the same frame in both arms
+#   AL:GAME:ARM:K     A: over the whole minigame (entry + M49_ALEND frames)
 # M48 (PLAN.md 63): compiled draws -- M47's chain in ~/m48 with ~/m48.env, plus
 #   RS:GAME[:ARM]    GAME at real time with --repeatstat over the pmc window
 #                    (the repeat draws and their time, PLAN.md 63.2)
@@ -140,6 +141,11 @@ for r in ${M49_RUNS:-N}; do
         A:*)
             g=$(echo $r | cut -d: -f2); a=$(echo $r | cut -d: -f3); k=$(echo $r | cut -d: -f4)
             run "A-$g-$a-$k" 600 - $BASE --realtime $(scene $g) $(arm $a) ;;
+        AL:*)
+            # M49: A: over the whole minigame (entry + M49_ALEND, 4800 frames) --
+            # the play, not only the scoreboard's window (m435/m436's is Bowser's intro)
+            g=$(echo $r | cut -d: -f2); a=$(echo $r | cut -d: -f3); k=$(echo $r | cut -d: -f4)
+            run "AL-$g-$a-$k" 900 - $BASE --realtime $(scene $g) --mgend ${M49_ALEND:-4800} $(arm $a) ;;
         R:*)
             # M45: GAME at real time (the scoreboard's teleport) with
             # --halfwatch M49_HW (3) and a dump spread from the entry
