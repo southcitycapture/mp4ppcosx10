@@ -25131,3 +25131,670 @@ the whole scoreboard is spent on it; and after an unexplained restart of the
 G4, an hour's wait before anything is timed, even when the chain is the
 agent's own.
 
+
+## 63. M48 log: compiled draws *(2026-09-28/29, littlejelly)*
+
+M47 shipped 0.9.16 (75 of 82).  Seven screens were short: m441 26.8, m401
+27.2, m436 28.0, m431 28.3, m435 29.0, m444 29.0, m463 29.4.  The brief:
+read the leave-behind soak (item 0); measure the repeat first -- per drawn
+frame, how many draws repeat a draw of the last drawn frame in everything
+the translation reads, and their share of the front end, the decode and the
+replay (item 1); compile those draws, once, into a unit the card replays
+(GL display lists, the port's own record blocks, or both), exact by
+construction, with its old path, A/B'd alone against 0.9.16 on the short
+screens and their neighbours before the scoreboard (item 2); m427's reader
+of the unwritten skin arrays and m463's 0.1 if budget remains (item 3); the
+scoreboard after, every wall in plain words (item 4).
+
+**The short answer.**  **The repeat is large** (63.2): 90-91% of m441's,
+m431's and the character select's draws repeat the last drawn frame
+exactly, three quarters of the GX front end and 39-47% of the render
+thread's time.  **GL display lists** (63.3) are exact and slower on this
+driver (the repeat draws' replay 9.5 -> 11.7 ms on m441).  **The port's own
+compiled draw** (63.4-63.6) -- the translation's records replayed when the
+key and the GL shadow are the same, the parameters emitted live at their
+place, the same calls in the same order with the same values -- is exact
+(every lockstep frame and md5 walk) and removes about half of the
+translation's cycles (m441: 7.4 -> 3.9 M), **and no screen crosses**: the
+balancers spend the saved time, m431's translation was already cheap, and
+built alone (63.11) it costs m409, m433 and m444 0.7-0.8.  **Not shipped**
+(`M48C=1` / `M48X=1`, `--compiled auto|on`).  **m427's reader is found**
+(63.7): the river hook never initializes its ripple phase and reads the
+model heap's leftover bytes, freed skin arrays among them; the skin decode
+now writes its owed arrays as the game frees them and passes the picture
+checks (599 of 599 frames), **and it trades** (+0.4 m463, +0.6 m441, -0.7
+m431, -0.5 m444): opt-in.  **The first final build lost m409 and m433** to
+M48's own hooks in the hot paths (63.10); they are compiled out of the
+player's build, which is 0.9.16's speed.  **The scoreboard after** (63.12):
+**74 of 82** -- m409 29.45 on the count (29.1 / 29.45 / 29.6; 29.9 against
+0.9.16's 29.9 in the A/B), nothing else crossed either way (m463's 0.1 of
+item 3: 29.2 here, 29.2-29.9 across the chains, at the bar in its noise).
+Nothing shipped: 0.9.16 stays the release; each wall is in 63.14 -- no exact lever
+reaches them.
+
+### 63.1 The soak, read
+
+M47's leave-behind (`isle --soak --com4 --rtc dolphin --freshcard --status
+--perf` on 0.9.16, `isle` `d7da16eb`, pid 75831) had run 26 minutes when
+this milestone began; read and stopped by pid at 11:26 G4 time (one SIGINT,
+the game's reset path, `EXITCODE=0`; `docs/soak/m48/m48-soak-m47-leave.log.gz`):
+**89,896 retraces at 100.0% speed** (game 1,499.77 s against wall 1,499.87
+s), the board to turn 10 and the minigames m401, m402, m406, m410, m411,
+m412, m415, m419, m420, m422; **0 faults, 0 skin guard hits, 0 resyncs, no
+lock-up**, the worst frame 659 ms behind (a load), 43 `stall:` lines, 74
+underruns totalling 1.1 s.  `M47_LEAVE` was cleared in `~/m47.env` before
+the first chain; M48's chain (`tools/m48_chain.sh`, `~/m48`, `~/m48.env`)
+has `M48_APP_OLD` = 0.9.16.
+
+### 63.2 The repeat, measured first (item 1)
+
+**The instrument** (`--repeatstat A,B`, gx_draw.c `rs_*`, rt.c `OP_MARK`; a
+measurement, off by default, nothing drawn changes).  A draw -- a batch's
+submit -- *repeats* a draw of the last drawn frame when everything its
+translation reads is the same:
+
+* its **geometry**: every run of the batch a hit of the vertex cache (the
+  list's bytes, the plan and the arrays' versions: the stored run's place in
+  the region names its bytes, the region's generation with it), or a run
+  decoded on the game thread whose output bytes are hashed; a run the render
+  thread decodes (an animated or skinned list, or one the cache did not key)
+  is unnamed and never repeats;
+* its **state**: the bytes `SubmitRec` reads (M22) less the matrices -- the
+  viewport, scissor, cull, the channels' controls and colours, the lights in
+  use, the texgens, every TEV stage in use with its indirect tile and warp,
+  each bound texture object whole (its GL name and content hash included)
+  and its TLUT, the registers and constants, the swaps, the z, blend, alpha,
+  colour-update and fog state -- with the layout, the path (the vertex
+  program or the CPU's), the hilite decision and the CPU path's layout.
+
+`strict` compares all of that; `loose` lets the lights' values, the channel
+colours, the TEV registers and constants and the fog colour differ (the
+parameters a compiled unit could set outside itself).  The previous drawn
+frame's keys are a multiset: a draw repeats when a key of its kind is left
+in it.  **The time**: each batch is charged the GX region's time since the
+last batch ended (the list walk, the layout, the keys, the decode jobs, the
+translation, the issue -- less this code's own), and on the render thread
+the replay and decode between two marks the game thread writes around the
+batch's records (`OP_MARK`: the decode records of a batch are inside its
+marks, and the decode cursor's work is charged by the mark it last passed).
+The instrument's own cost is 13-15 ms a drawn frame (not in the columns): it
+slows the frame, so the ms below are inflated and **the shares are the
+reading**.  Real time at the scoreboard's teleport, entry +300..+1,500 (the
+character select 3,000..4,800), `--vcache on` (the cache keys every drawn
+frame, so static geometry is named; under the default `auto` the cache
+does not key most of m441's frames and the geometry of most draws is
+unnamed -- `docs/soak/m48/rs/`):
+
+| screen | draws a drawn frame | strict repeats | their vertices | their share of the GX front end | of the render thread (replay + decode) | the skinned draws (state repeats, new geometry) |
+|---|---:|---:|---:|---:|---:|---|
+| m441 | 441 | **404 (91%)** | 20,566 of 67,555 (30%) | **76%** | **39%** | 30 draws, 45,757 vertices: 21% / 56% |
+| m431 | 379 | **342 (90%)** | 33,334 of 83,935 (40%) | **78%** | **46%** | 37, 50,364: 22% / 51% |
+| m401 | 329 | 70 strict + **199 loose** (82%) | 21,203 of 63,626 | 22% + **52%** | 10% + 26% | 42, 28,852: 16% / 44% |
+| m436 | 111 | **76 (69%)** + 6 loose | 14,583 of 91,561 (16%) | **46%** | **14%** | 26, 70,536: 43% / **75%** |
+| the character select | 239 | **215 (90%)** | 26,581 of 73,824 | **74%** | **47%** | 23, 43,065: 23% / 46% |
+
+**What it says.**  On the game thread the repeat draws are three quarters of
+the GX front end everywhere but m436 -- far more than the 1-3 ms these
+screens need, so item 2 was built.  On the render thread they are 39-47% of
+the replay on the three front-end screens and 14% on m436, where the skinned
+characters' draws (a quarter of the draws, three quarters of the vertices)
+are the render thread's work -- and those are exactly the draws whose
+geometry a compiled unit cannot hold (the skin moves every frame).  m401's
+repeats differ in a parameter (the lights or the colours: `loose`), which
+the compiled draw below sets outside itself.
+
+### 63.3 Two candidates for the unit, measured
+
+**GL display lists on the render thread** (`--glists`, rt.c `rl_*`,
+`--glistsmb N`, measured and not shipped).  A draw whose every vertex lies
+in the vertex cache's region is, on its second sight, compiled on the render
+thread's context (`glNewList(GL_COMPILE)`: the same draw under the same
+array pointers, the render thread mirroring the client array state the
+stream sets to key it and range-check it) and replayed with `glCallList`;
+the region's generation (M40's reset) deletes every list; the lists'
+vertex bytes bounded at 8 MB (they live where the driver puts them: the
+card's 64 MB beside the 40 MB texture budget and the framebuffers, or AGP
+beside the ring and the region -- 0.6 MB live on m441, 5.7 MB at the most
+on the md5 walk).  **Exact** -- m441 in lockstep `d44a6ac2` / `5e319d4d` as
+without, the md5 walk `0b58c5ee` / `2b99c60a` / `4a9a640c` -- and **slower
+on this driver**: m441 with the cache keying every frame, the repeat draws'
+render-thread time 9.53 -> **11.69 ms** a drawn frame, the whole 24.25 ->
+26.85 (`RS-m441-@rs,--vcache,on,--glists`), 374,573 draws from lists; each
+compile ~0.6 ms (18.9 s for the walk's 17,057).  The ATI driver's
+`glCallList` of a compiled draw costs more than its VAR draw of the same
+vertices; lists for state as well were not built on that evidence (the
+state records are 13% of the replay, M32's split: the draw calls are the
+driver's cost, and a list does not make them cheaper).
+
+**The port's own record blocks on the game thread** (the compiled draw
+below): the render thread replays the same records it did, and the game
+thread stops deriving them.
+
+### 63.4 The compiled draw (item 2)
+
+**The unit.**  A draw's translation -- the vertex program's decision
+(`gx_vprog_draw`), the transform and raster state, the TEV chain and its
+texture binds, the colour sum, the program's binding and enable, its
+parameters, the arrays -- is a function of two things: its **inputs** (the
+key below) and the **GL shadow** it elides against (gl13_state.c's `Glc`,
+the vertex program's binding / enable / buffer flag, the fragment shader's
+enable and binding).  The same inputs over the same shadow give the same
+records and leave the same shadow.  So (gx_draw.c `blk_*`, `--nocompiled`
+the old path, `--compiledmb N` its memory):
+
+* **The key**, byte for byte (hashed only to find it): the projection,
+  viewport, scissor, cull and line width; the channels' *controls* (their
+  sources, functions, masks); which lights are in use; the texgens; every
+  TEV stage in use with its indirect tile and warp; the registers, the
+  constants, the swap tables, the indirect stages; the z, blend, alpha,
+  colour-update and fog state; each bound texture object up to its GL name
+  and its TLUT; the layout, the hilite decision, and the transform
+  descriptor's non-matrix fields (the normal's presence, the channel mode,
+  the texgens' sources, whether each has a matrix, the arrays' base and
+  offsets).  The lights' values and the channel colours are *not* in it:
+  `vp_build_key` reads their sources and use only, and their values reach
+  nothing but the program's parameters.
+* **The recording** (the first time a key is seen twice -- a key seen once,
+  a pointer or a coordinate that moves every frame, costs a hash and is not
+  recorded): the full path runs, and the block keeps the shadow before (S0),
+  the records the apply wrote *except the parameters* (the stream's
+  positions at the apply's start, at `gx_vprog_bind`'s two marks around its
+  parameter section, and at the end; every record a plain state record --
+  an upload, a draw, a call, a decode, a texture parameter, a compile makes
+  the draw not plain and the key is not armed again for ten seconds), the
+  shadow after as a delta of words from S0, the decision `gx_vprog_draw`
+  made, and every texture bind (unit, object, the cache's slot, the GL
+  name).
+* **The replay**, for a draw with a recorded key over the same S0: each
+  texture checked to be the same plain hit (gx_tex.c `gx_tex_blk_check`:
+  the same slot, the same name, not dirty, its parameters the object's, its
+  content validated this epoch -- the sampled hash taken there if it was not
+  yet, as the bind would take it), the records up to the parameters written
+  back into the stream (rt.c `rt_blk_emit`, record by record, as the twins
+  write them), the shadow moved by the delta, the decision restored, the
+  **parameters derived and emitted live** at their place in the sequence
+  (the matrices, the lights, the colours, the texgen matrices, the folds:
+  whatever this frame has, against the live parameter shadow), then the
+  arrays' records.  **The same GL calls in the same order with the same
+  values** -- the parameters' included -- and the same shadow after; the
+  TEV's signature memo is dropped (the units moved under it) and the texture
+  cache's bookkeeping is the bind's.  Anything else -- a new key, another
+  shadow, a texture that is not a plain hit, a draw on the CPU path, a
+  palette, an indirect stage, a fold override up, a diagnostic -- takes the
+  full path.
+* **S0, cheaply.**  The first build compared the whole shadow (1.3 KB) and
+  set it whole; a replay then read ~3.5 KB of cold memory and cost 4.4 M
+  cycles and 17,300 L3 misses a drawn frame on m441 against the 7.4 M the
+  translation it replaced cost.  Now: `glc_ver` is bumped on entry to every
+  function in gl13_state.c that can write the shadow; the block last
+  replayed or recorded is remembered with the counter's value after it; a
+  block's S0 proved equal to another block's S1 (byte for byte, once) is a
+  link (two a block); a replay over a linked predecessor with the counter
+  unmoved needs no compare.  The shadow after is a delta.  The next draw's
+  block is predicted -- the last frame's draw at the same place in the
+  sequence, else the last block's successor -- compared first, and
+  prefetched (`dcbt`) with its S0 when its proof will not be the cheap one.
+  On m441: 97% of the replays are the predicted block, 94% over a proved
+  shadow.
+* **Memory.**  The blocks are the port's own heap: ~1.3 KB of S0 (read only
+  on a slow proof) and ~0.8 KB hot (the key ~420 bytes, the records, the
+  delta, the decision, the binds) each; 8 MB at the most (`--compiledmb`),
+  8,192 blocks, at most four a key (four shadows), unused for 120 drawn
+  frames evicted when full: 2.9 MB on m441, 6.6 MB at the most on the md5
+  walk.  Nothing of it is on the card or in AGP: the texture budget (40 MB
+  of 64), the framebuffers and the vertex range (the ring's 8 MB and the
+  cache's 8 MB region) are as they were.
+
+**What a replay costs, by the counters** (`K:m441:1:pmc48*`, the `PMC_WRAP=1`
+tree, set 1, entry +300..+1,500, M cycles of m441's drawn frame;
+`docs/soak/m48/pmc/`).  The full path's translation -- the vertex program's
+decision 1.38, its binding and parameters 1.46, the TEV 1.29, the transform
+and raster 0.72, the binds 0.62, the flush's own 1.08, the issue 1.02 -- is
+**7.4 M cycles**.  With the blocks those regions fall to ~1.6 and the replay
+is charged to the flush (and, in the split build, to the regions it reuses):
+
+| build | replay (M cycles) | its L3 misses | the drawn frame, all regions | against the full path |
+|---|---:|---:|---:|---:|
+| `--nocompiled` | -- | -- | 31.47 | -- |
+| cd1: S0 and S1 whole, hashed lookup | 4.36 | 17,300 | 30.78 | -0.4 (-1%) |
+| cd2: S1 a delta, the version counter, one successor | 3.19 | 10,100 | 29.46 | -2.0 (-6%) |
+| cd3: second sights, refused keys | 3.02 | 9,600 | 29.27 | -2.2 (-7%) |
+| cd4: the sequence predictor, two links | 3.0 | 9,500 | 29.81-30.35 | -1.1..-1.7 |
+
+The split of cd4's replay (`pmc48d`, the replay's parts charged to the
+regions they replace): **the key, the lookup and S0 1.2 M** (2,000 L3
+misses; the key 420 bytes), **the texture checks 0.6 M** (the full path's
+binds cost the same: the validation is the same work), **the records and the
+delta 1.0 M** (its 4,000 misses mostly the prefetches' own), **the
+parameters 0.8 M**.  Three quarters of the replay is work the full path
+does too (the validation, the parameters, the record writes); what the
+blocks remove is the derivation, ~3.5 M cycles on m441.  On the game thread's
+whole drawn frame (the sample, `SA:m441:@cd4`, `docs/soak/m48/sample/`) the
+GX front end is now small beside the game's own work: `Hu3DMotionExec`
+5.8%, `objCall` 3.2%, `C_MTXConcat` 2.9%, `PGObjCalc` 2.8%, the mixer 2.6%
+... `draw_apply` (with the replay inlined) 0.8%.
+
+### 63.5 The A/B (item 2)
+
+`tools/m48_chain.sh` `A:GAME:ARM:K`, the scoreboard's teleport at real time,
+interleaved (run k of every arm before run k+1), three runs an arm; `old` is
+0.9.16 (`d7da16eb`), `tools/m44_ab.py` reads them (the scene's median
+presented fps per run from its own status lines; the drawn and consumed
+frames' work and the render thread's replay and decode, medians over entry
++300..+1,500).  **The lever against 0.9.16** (cd5, `3e1559f9`: the compiled
+draw on -- in a build that also carried every M48 diagnostic's hooks, which
+63.10 found cost m409 and m433 0.3-0.6 ms with everything off; 63.11
+re-measures the lever built alone; `docs/soak/m48/ab2/`):
+
+| screen | 0.9.16 (runs) | median | compiled draws (runs) | median | drawn work | render thread replay / decode |
+|---|---|---:|---|---:|---|---|
+| m441 | 26.9 / 27.0 / 27.0 | 27.0 | 26.9 / 28.0 / 27.5 | **27.5** | 27.8 -> 27.4 | 19.5 / 9.1 -> 19.3 / 6.7 |
+| m401 | 28.7 / 28.4 / 28.1 | 28.4 | 28.3 / 29.1 / 28.9 | **28.9** | 25.5 -> 25.4 | 19.1 / 6.8 -> 19.3 / 6.5 |
+| m436 | 28.3 / 28.0 / 28.0 | 28.0 | 28.1 / 27.9 / 27.9 | **27.9** | 28.3 -> 28.5 | 19.6 / 9.3 -> 19.9 / 9.3 |
+| m431 | 28.9 / 28.9 / 28.6 | 28.9 | 28.2 / 28.4 / 28.2 | **28.2** | 28.4 -> 28.7 | 22.9 / 7.0 -> 23.4 / 7.1 |
+| m435 | 29.2 / 29.2 / 29.3 | 29.2 | 29.3 / 29.0 / 29.1 | **29.1** | 27.6 -> 28.0 | 19.5 / 9.1 -> 19.8 / 9.0 |
+| m444 | 30.0 / 28.5 / 29.8 | 29.8 | 28.7 / 29.8 / 29.9 | **29.8** | 25.3 -> 25.5 | 22.1 / 5.3 -> 22.7 / 4.7 |
+| m463 | 29.0 / 29.4 / 29.2 | 29.2 | 30.0 / 30.0 / 28.6 | **30.0** | 26.4 -> 26.4 | 18.5 / 10.4 -> 18.7 / 10.2 |
+| the character select | 30.0 / 30.0 / 30.0 | 30.0 | 30.0 / 29.9 / 30.0 | **30.0** | 25.9 -> 26.0 | 21.1 / 7.2 -> 21.5 / 7.3 |
+| m433 | 30.0 / 30.0 / 29.9 | 30.0 | 30.0 / 30.0 / 29.9 | **30.0** | 25.3 -> 25.2 | 17.9 / 4.4 -> 18.3 / 4.5 |
+| m409 | 29.9 / 29.6 / 29.8 | 29.8 | 29.1 / 29.9 / 29.9 | **29.9** | 27.0 -> 27.2 | 21.0 / 3.7 -> 21.3 / 3.8 |
+
+**A second round** on the five that moved, with the refinements (cd6,
+`891cbb0c`: a key over four shadows not recorded again, the churn m431
+showed -- 26,006 recordings and 24,355 evictions a run; and without the
+prefetch, `--nocompiledpf`), against 0.9.16 in the same chain
+(`docs/soak/m48/ab3/`): m431 28.8 / **28.1** / 27.8, m436 28.0 / **28.0** /
+27.9, m441 26.9 / **27.1** / 27.4, m444 29.9 / **29.1** / 29.8, m463 29.9 /
+**29.6** / 29.6.  0.9.16's own m463 read 29.2 in the first chain and 29.9 in
+the second: a screen that close to the bar moves 0.7 between two chains.
+
+**Why the translation's cycles do not reach the frame.**
+* **m431**: 262,085 replays and its GX region did not fall (13.39 -> 13.54
+  ms a drawn frame): its full path is already cheap there -- M44's memos
+  (the TEV skip, the raster skip, the key memos) serve consecutive draws of
+  one material -- and the replay's fixed cost (the key, the proof, the
+  checks, the parameters) is as much; its draw order changes from frame to
+  frame, so the shadows it is recorded over keep missing (54,441 a run);
+  and the blocks' memory (3.2 MB) costs the game's own work 0.2 ms in the
+  caches.  A loss of 0.7.
+* **m441**: the translation's saving is real (the counters: 7.4 -> ~3.9 M
+  cycles; the gate's timers: a replay 12 us against the full path's 32 on
+  the walk), and the two balancers spend it -- the vertex cache's `auto`
+  keys more frames (234 -> 416 of ~1,000; 20,698 vertices a drawn frame
+  from the cache, the game thread paying the hashing, the render thread's
+  decode 9.1 -> 6.7 ms) because its estimate of the game thread's cycle
+  (the decode split's "game 25.1 + consumed 5.8 ms") leaves out ~4 ms the
+  scoreboard counts.  With the cache's keying off (`@cd6,--vcache,off`,
+  three runs 26.9 / 27.1 / 26.8) the game thread's drawn frame is 27.5 and
+  the frame rate stays **26.9**: the render thread's decode rises to 9.6 ms
+  and its replay to 21.6, and the gate waits twice as long.
+* **Every screen, the render thread +0.3..0.6 ms of replay** with the
+  blocks on (the records are the same bytes: the md5s and the lockstep
+  frames say so), prefetch or not.  Not isolated.
+
+**The gate** (`--compiled auto`, gx_draw.c `blk_gate_*`): the replays timed,
+one draw in 32 timed on the full path, the blocks used only while a replay
+is under 90% of the full path, decided every 120 drawn frames -- it keeps
+m441's replays (on the walk: 12.4 against 32.1 us) and would turn m431's
+off, but cannot win what the balancers spend.  **Verdict: exact, and no
+short screen crosses; two lose.  It does not ship**: `--compiled auto|on`
+opt-in, off by default, for the next measurement.
+
+### 63.6 The compiled draw's exactness
+
+On every build of it, in lockstep and on the walks (`docs/soak/m48/`):
+m441 `L:m441` frames 14,777 / 15,677 **`d44a6ac2` / `5e319d4d`** with and
+without it (cd1, cd2, cd3, cd4, cd5; 602,473 draws replayed in cd1's run);
+the md5 walk `--nomovies` **`0b58c5ee` / `2b99c60a` / `4a9a640c`** (cd1:
+1,784,195 replays; cd3: 1,765,375; m48d with `--compiled auto`: 1,635,350,
+the gate on 70 times of 70); `--glists` the same.  Exact by construction and
+by the frames -- and not shipped (63.5, 63.11); the full picture-check
+chain was spent on the skin decode (63.8) and the final builds (63.9, 63.13).
+
+### 63.7 m427's reader, found (item 3)
+
+M47 left `L:m427:@BUNDLE,--skindecode`: with the skin at the decode on, the
+left view's river differs from 0.9.15 (frame 14,777 `857e4f0e` against
+`dd789764`), although every fused vertex is exact, and "a reader of the
+unwritten arrays that is not the draw" was the reading.  Four instruments,
+each a diagnostic (off by default, `docs/soak/m48/m427/`):
+
+1. **`--skinreadwatch`** (gx_skin.c `sr_*`, crash.c): the owed arrays'
+   pages made unreadable at the pose build and readable again at their
+   materialization, a free or a disc read (`port_wb_disarm` opens them), the
+   faulting code recorded.  Interior pages only: 18,828 pages protected over
+   the run, **0 faults**.  With the partial end pages too (a fault outside
+   an owed array counted as a neighbour): 4,196 faults inside them, all in
+   the fused decode's own loop (`decs_n2c0t1`, reading an index no envelope
+   entry writes from the live array, as the gather did) -- no foreign reader
+   (and a reader that comes after the decode opened a page is not seen).
+2. **`--drawhash A,B`** (gx_draw.c): every batch of the frames hashed after
+   the decode's join -- its vertices, its matrices, the state it is drawn
+   under -- and named.  Frames 14,776-14,778, skin decode against the old
+   path: **every batch's vertices and matrices are the same**; the vertex
+   ring wraps at another place (the skin decode fills it differently), which
+   splits one 3,524-vertex batch in two; splitting that batch on the old
+   path (`--maxbatchverts 2000`, `1533`) changes nothing, nor does
+   `--novar` or `--rtdecode 0`.  One draw differs in its *state*: frame
+   14,776's batch 97, 1,200 vertices, texgen 2's matrix (`GX_TEXMTX2`)
+   translation **0.565597 against 0.206905**.
+3. **`--texmtxlog 36`** (gx_state.c): every load of that matrix, with its
+   frame.  Both runs load it twice a frame from frame 14,474 on, the same
+   number of times; the first load's translation differs **from the first
+   frame** (0.331239 against -0.0551064) and the second's never does.
+4. **The game's source**: `map.c` `fn_1_B3CC`'s river hook loads
+   `MTXScale(0.5) . mtxTransCat(sind(unk_24), unk_1C, 0)` as `GX_TEXMTX2`,
+   adding 0.05 to `unk_24` a call -- and `fn_1_A1F4`, which builds the hook's
+   data (`M427DllMapStruct6`, `HuMemDirectMallocNum(HEAP_MODEL, ...)`) sets
+   every field around it and **never `unk_24`**.  The ripple's phase is the
+   model heap's leftover bytes.  On the old path those bytes include skinned
+   arrays the game's body wrote every drawn frame until their model was
+   freed; under the skin decode the same arrays were owed -- never written --
+   so the leftover bytes, and the ripple's phase, differ.  A game bug, as
+   the console has it (an uninitialized read); the port's old path is what
+   the references were made on.
+
+**The fix** (gx_skin.c `port_mem_freed` -> `fuse_materialize_free`;
+`--nofreemat` the M47 behaviour): an HSF whose arrays are owed has them
+written, from the last pose built -- what the game's body left in them --
+at the first free that touches its memory (the hook runs at the start of
+`HuMemMemoryFree`, before the block goes back; the entry is dropped at that
+first free, so the rest of the model's memory is still the model's).  With
+it the skin decode gives **the references on all three screens M47 checked
+in lockstep**: m427 `dd789764` / `36dbdf54` (`--nofreemat`: `857e4f0e` /
+`7de25913`, the reproduction), m414 `bc46ffa3` / `06908722`, m436
+`8afb5912` / `48a9addc`; 9 HSFs' arrays written as the game freed them in
+m427's run.  The skin decode is therefore exact wherever the old path's
+garbage is the reference, and it becomes candidate c1's default (63.8).
+
+### 63.8 The skin decode, exact now: the gates and the A/B
+
+With 63.7's fix the skin decode was built as the default (candidate `c1`,
+`isle` `d9cbd202`: the skin decode on, the compiled draws off) and put
+through the whole gate before anything was timed:
+
+* **the md5 walks**: `--nomovies` `0b58c5ee` / `2b99c60a` / `4a9a640c`,
+  movies `d2d40344` / `59008ce4` / `3f98f882`;
+* **the picture checks** (`PC:@c1`, `tools/m48_pccmp.py` against M47's
+  `@c4` set, lines 291- of `~/m47/index.txt`, by the frames' md5s): **599 of
+  599 frames identical, 0 differ, 25 of 25 runs exit 0 with 0 faults** --
+  m427's seven lockstep moments (`b1ae2524` ... the river the references)
+  and both real-time runs, m414's, the Bowser pillars' 18 frames a game,
+  the Mega Mushroom and the fourteen items; `--halfwatch 1` over the 23
+  runs: 47,848 frames, 0 half-black, 0 blips.
+
+**The A/B** (the skin decode alone against 0.9.16, three runs an arm,
+interleaved; `docs/soak/m48/ab4/`):
+
+| screen | 0.9.16 (runs) | median | the skin decode (runs) | median | drawn work | render thread replay / decode |
+|---|---|---:|---|---:|---|---|
+| m441 | 26.9 / 26.9 / 26.9 | 26.9 | 26.4 / 27.0 / 27.0 | 27.0 | 28.0 -> 28.1 | 19.4 / 9.1 -> 19.2 / 7.6 |
+| m401 | 28.5 / 28.7 / 28.1 | 28.5 | 28.8 / 27.9 / 27.5 | **27.9** | 25.5 -> 25.9 | 19.1 / 6.8 -> 19.2 / 6.8 |
+| m436 | 28.4 / 27.9 / 28.1 | 28.1 | 28.1 / 28.2 / 28.0 | 28.1 | 28.4 -> 28.7 | 19.7 / 9.3 -> 19.7 / 9.5 |
+| m431 | 28.1 / 28.4 / 28.1 | 28.1 | 27.8 / 27.6 / 27.9 | **27.8** | 28.6 -> 29.2 | 23.0 / 7.0 -> 23.1 / 7.9 |
+| m435 | 28.9 / 29.0 / 29.0 | 29.0 | 29.1 / 29.4 / 29.2 | 29.2 | 27.5 -> 27.9 | 19.5 / 9.1 -> 19.6 / 9.2 |
+| m444 | 29.9 / 29.8 / 29.8 | 29.8 | 29.2 / 29.4 / 29.4 | **29.4** | 25.1 -> 25.9 | 22.0 / 5.3 -> 22.3 / 5.4 |
+| m463 | 29.9 / 30.0 / 29.6 | 29.9 | 29.2 / 29.9 / 29.2 | **29.2** | 26.3 -> 26.6 | 18.5 / 10.5 -> 18.7 / 10.8 |
+| the character select | 29.9 / 29.9 / 29.9 | 29.9 | 29.9 / 29.1 / 29.9 | 29.9 | 25.9 -> 26.1 | 21.2 / 7.2 -> 21.2 / 7.8 |
+| m433 | 29.9 / 29.9 / 30.0 | 29.9 | 28.9 / 29.1 / 29.0 | **29.0** | 25.2 -> 26.6 | 18.0 / 4.4 -> 18.2 / 4.9 |
+| m409 | 29.9 / 29.9 / 29.4 | 29.9 | 29.6 / 29.2 / 28.9 | **29.2** | 27.0 -> 27.4 | 21.0 / 3.7 -> 21.2 / 4.4 |
+
+**Read as it was, it costs two passing screens** (m433 29.9 -> 29.0, m409
+29.9 -> 29.2) and four short ones -- but this arm, like 63.5's, carried
+every M48 hook (63.10), and built alone (63.11) the skin decode keeps m409
+and m433 at 29.9 / 29.8; m435 +0.2 and m441 +0.1 are inside a run's spread.  M47's
+reading holds (62.2): the decode multiplies once per *list* vertex where the
+body multiplied once per *array* vertex, and the fused lists cannot be
+cached, so the work moves -- here mostly onto the game thread (its drawn
+frame +0.3..+1.4 ms; m433's +1.4 is its four characters' lists, which the
+cache used to serve).  M47's m444 29.8 on `c1` was a run of a candidate
+with more in it, and 0.9.16's own m444 reads 29.8-29.9 in this milestone's
+chains.  **Not shipped**: `--skindecode` opt-in, exact now (the picture
+checks above; `--nofreemat` the M47 behaviour) -- the verdict 63.11's
+re-measure keeps.
+
+### 63.9 The first final build, and its gates
+
+Nothing of M48 is in the player's default path: the compiled draws
+(`--compiled auto|on`), the skin decode (`--skindecode`, exact now), GL
+display lists (`--glists`) and every diagnostic (`--repeatstat`,
+`--drawhash`, `--texmtxlog`, `--skinreadwatch`, `--maxbatchverts`) are
+opt-in.  The build (`isle` `87aa35b0`, `~/mp4-m48final.app` on the G4;
+`PORT_MILESTONE` "M48", the version still 0.9.16 -- no release) differs from
+0.9.16 in its default path only by bookkeeping that cannot reach a GL call
+(the shadow's version counter, early returns).  Its gates:
+
+* **the md5 walks**: `--nomovies` **`0b58c5ee` / `2b99c60a` / `4a9a640c`**,
+  movies **`d2d40344` / `59008ce4` / `3f98f882`**; in lockstep m427
+  `dd789764` / `36dbdf54`, m414 and m436 0.9.16's;
+* **the picture checks** (`PC:@m48final` against M47's `@c4` set): **634 of
+  638 frames identical, 27 of 27 runs exit 0 with 0 faults**, `--halfwatch
+  1` over 24 runs 49,809 frames, **0 half-black, 0 blips**.  The 4 that
+  differ are m427's real-time frames in both runs (`aa00e2b6` / `a8f08586`
+  against `dd789764` / `36dbdf54`): **the river's second state, which M47
+  found in 0.9.15 itself** (62.10, `R:m427:old`) -- and which 63.7 now
+  explains: the ripple's phase is the model heap's leftover bytes, and at
+  real time which frames were drawn (so which pose the game's body left in
+  the skinned arrays before they were freed) follows the run's course.
+
+### 63.10 The first final build lost two passes: the hooks' cost
+
+**The scoreboard on the first final build** (`isle` `87aa35b0`, every lever
+off; `docs/soak/m48/board-rejected/`): **73 of 82** -- m409 **29.0** (28.9 /
+29.0 / 29.0; M47 29.6) and m433 **29.1** (29.0 / 29.4 / 29.1; M47 29.7) under
+the bar, their game threads' drawn frames 0.6-0.7 ms heavier than on M47's
+scoreboard.  Its default path draws what 0.9.16 draws (the walks, the
+picture checks), so the time was the hooks: an A/B against 0.9.16 at once
+(`docs/soak/m48/ab5/`, three runs each) -- **m409 29.9 -> 29.0, m433 29.9 ->
+29.1**, the drawn frame +0.3 / +0.6 ms.  M48 had put checks and calls into
+the hottest paths -- the shadow's version counter in every shadow writer,
+the gate's call and the recording's tests in every apply, the parameters'
+marks in every program bind, the texture notes in every bind, the
+measurement's tests in every primitive and flush, the render thread's
+client-array mirror in every pointer record, a longer `draw_apply` -- each
+a load and a branch or a call, together a third to two thirds of a
+millisecond of m409's and m433's game thread with everything switched off.
+
+**The switches** (`include/port.h`, `Makefile`): `PORT_M48X` (`make
+M48X=1`: the levers and the diagnostics) and `PORT_M48C` (`make M48C=1`:
+the compiled draws' own hooks alone); both off in the player's build, where
+every hook is a constant-false test the compiler removes with the code
+behind it.  **The player's build** (`p`, `isle` `1d6d112b`): the md5 walks
+the references (`0b58c5ee` / `2b99c60a` / `4a9a640c`, `d2d40344` /
+`59008ce4` / `3f98f882`), and against 0.9.16 (63.11) at parity.
+
+**This also re-reads 63.5 and 63.8**: every M48 arm of those A/Bs carried
+the diagnostics' hooks.  The re-measure with each lever built alone:
+
+### 63.11 Each lever alone, and the player's build, against 0.9.16
+
+`docs/soak/m48/ab6/`: four arms, three runs each, interleaved -- 0.9.16
+(`old`); the player's build (`p`, `1d6d112b`: every M48 hook compiled out);
+the compiled draws alone (`c`, `5259f7cc`, `make M48C=1`, with `--compiled
+auto`; exact: m441 in lockstep `d44a6ac2` / `5e319d4d`, the walk the
+references); the skin decode alone (`p --skindecode`) -- on the eight
+screens nearest the bar:
+
+| screen | 0.9.16 | the player's build | the compiled draws alone | the skin decode alone |
+|---|---:|---:|---:|---:|
+| m409 | 29.9 (29.9 / 29.9 / 29.1) | 29.9 (29.9 / 30.0 / 29.9) | **29.2** (28.8 / 29.2 / 29.5) | 29.9 (29.0 / 29.9 / 29.9) |
+| m433 | 29.9 (29.9 / 29.9 / 29.8) | 29.9 (29.9 / 29.9 / 30.0) | **29.1** (29.1 / 29.2 / 28.8) | 29.8 (29.8 / 29.9 / 29.8) |
+| m444 | 30.0 (30.0 / 29.4 / 30.0) | 29.9 (29.8 / 29.9 / 29.9) | **29.2** (28.1 / 29.2 / 29.8) | 29.5 (29.5 / 29.4 / 29.9) |
+| m463 | 29.2 (29.2 / 29.2 / 29.5) | 29.4 (29.2 / 29.9 / 29.4) | 29.5 (29.5 / 29.9 / 29.0) | 29.6 (29.9 / 29.6 / 29.6) |
+| m435 | 29.3 (29.0 / 29.3 / 29.4) | 29.0 (29.1 / 29.0 / 28.8) | 29.0 (29.0 / 29.1 / 28.8) | 29.0 (29.4 / 29.0 / 29.0) |
+| m436 | 28.1 (27.9 / 28.1 / 28.1) | 28.1 (28.2 / 28.1 / 28.1) | 27.9 (27.9 / 27.6 / 28.0) | 28.0 (27.9 / 28.1 / 28.0) |
+| m441 | 26.6 (26.4 / 26.6 / 27.1) | 26.9 (27.7 / 26.9 / 26.9) | 27.1 (27.1 / 26.9 / 27.2) | 27.2 (27.2 / 27.4 / 27.1) |
+| m431 | 28.2 (28.2 / 28.6 / 28.1) | 28.4 (28.9 / 28.1 / 28.4) | 27.8 (28.3 / 27.4 / 27.8) | **27.5** (27.4 / 27.9 / 27.5) |
+
+* **The player's build is 0.9.16's speed** (every screen within its runs'
+  spread; the drawn frames within 0.1-0.2 ms).
+* **The compiled draws, with only their own hooks**, still cost the three
+  screens at the bar 0.7-0.8 (the shadow's version bump in every writer,
+  the gate at every apply, the block memory in the caches) and win half a
+  frame on m441 and a third on m463: **not shipped** (`M48C=1` or
+  `M48X=1`, then `--compiled auto|on`).
+* **The skin decode** trades: m463 +0.4 and m441 +0.6 against m431 -0.7 and
+  m444 -0.5; m409 and m433 keep their passes.  Where both processors are
+  full it still moves work rather than removing it (62.2).  A lever that
+  might carry m463 over by a few tenths while pushing two other short
+  screens further under, measured on eight screens of 82, is not shipped on
+  that evidence: **opt-in**, exact now (63.7-63.8).
+
+**Rule learnt**: a hook in a path run thousands of times a frame costs
+something with its lever off -- M48's cost m409 and m433 a pass (0.3-0.6 ms
+of the game thread) before any lever was on; an arm of an A/B carries every
+hook its build has, so each lever is built alone (with only its own hooks)
+before it is measured, and the final build is A/B'd against the previous
+release on the screens at the bar **before** its scoreboard is spent.
+
+### 63.12 The scoreboard after
+
+On the final build (the player's build `p`, `isle` `1d6d112b`;
+`tools/fps_board.sh` `front title boards mg menus`, FB_THREE=auto, 04:40-07:40
+G4 time, the lab at the G4 once every nine minutes at most;
+`port/docs/fps-scoreboard.md`, M47's kept as `fps-scoreboard-m47-after.md`,
+the logs `docs/soak/m48/board/`): **74 of 82 screens pass**, all 82 at
+100% game speed, 119 runs, every run exit 0 but `goto-mstorydll` (exit 2,
+M47's too: the story mode's teleport, an `OSPanic` in `dvd.c` -- not a
+measurement).
+
+| screen | M47 (0.9.16) | M48 final (runs) | | game thread (drawn + consumed), ms | render thread (replay + decode), ms | verdict |
+|---|---:|---|---:|---|---|---|
+| m441 Butterfly Blitz | 26.8 | 26.5 (1 run) | -0.3 | 33.3 (27.6 + 5.7) | 27.3 (19.3 + 8.0) | short by 3.0 |
+| m401 Manta Rings | 27.2 | 27.6 (28.1 / 27.6 / 27.1) | +0.4 | 32.1 (24.6 + 7.5) | 25.7 (18.7 + 7.0) | short by 1.9 |
+| m436 Fruits of Doom | 28.0 | 28.0 (28.0 / 28.0 / 27.9) | 0.0 | 30.4 (28.1 + 2.3; 4.6 decode) | 28.2 (19.3 + 8.9) | short by 1.5 |
+| m431 Order Up | 28.3 | 28.4 (28.6 / 28.4 / 28.1) | +0.1 | 35.9 (28.0 + 7.9) | 29.4 (22.4 + 7.0) | short by 1.1 |
+| m444 Reversal of Fortune | 29.0 | 29.0 (29.0 / 29.7 / 29.0) | 0.0 | 29.9 (25.4 + 4.5; 4.1 decode) | 27.7 (22.3 + 5.4) | short by 0.5 |
+| m435 Darts of Doom | 29.0 | 29.0 (29.0 / 28.9 / 29.0) | 0.0 | 29.5 (27.1 + 2.4; 5.0 decode) | 28.0 (19.1 + 8.9) | short by 0.5 |
+| m463 Panel Panic | 29.4 | 29.2 (29.1 / 29.2 / 29.7) | -0.2 | 20.0 (16.4 + 3.6) | 19.2 (12.4 + 6.8) | short by 0.3 |
+| **m409** | 29.6 | **29.45** (29.1 / 29.45 / 29.6) | -0.15 | 32.6 (26.3 + 6.3) | 25.1 (20.6 + 4.5) | **short by 0.05** |
+| w01 Toad's Midway Madness | 29.6 | 29.5 (1 run; board-only 30.0) | -0.1 | 25.3 (19.5 + 5.8) | 18.7 (13.9 + 4.8) | PASS |
+| m433 Beach Volley Folly | 29.7 | 29.8 (29.9 / 29.8 / 29.0) | +0.1 | 30.9 (25.4 + 5.5) | 22.4 (18.0 + 4.4) | PASS |
+
+**m409 is the one pass lost on the count**: its first run read 29.1 where
+M47's read 29.95 (its second, 29.45, is M47's second to the hundredth); the
+same build at the same teleport against 0.9.16, three runs each interleaved,
+read 29.9 / 29.9 (63.11), and its drawn frame is 0.9.16's.  It is counted
+short, as the rule counts it, and named here rather than re-run until it
+passes.  **The worst ten** before (M47): m441 26.8, m401 27.2, m436 28.0,
+m431 28.3, m435 29.0, m444 29.0, m463 29.4, w01 29.6, m409 29.6, m433 29.7;
+after: m441 26.5, m401 27.6, m436 28.0, m431 28.4, m444 29.0, m435 29.0,
+m463 29.2, m409 29.45, w01 29.5, m433 29.8.  **w01's two numbers**
+(`tools/m43_w01.py`): pooled 224 lines, median **29.5**; board-only 107
+lines, median **30.0** (the 117 hand-over lines' median 7.0).
+
+### 63.13 The pictures on the final build
+
+* **The md5 walks** on `p`: `--nomovies` **`0b58c5ee` / `2b99c60a` /
+  `4a9a640c`**, movies **`d2d40344` / `59008ce4` / `3f98f882`**.
+* **The picture checks** (`PC:@p` against M47's `@c4` set, 07:48-08:35 G4
+  time): **636 of 638 frames identical, every run exit 0 with 0 faults**,
+  `--halfwatch 1` over 24 runs 49,849 frames, **0 half-black, 0 blips**; the
+  2 that differ are the second real-time m427 run's two frames (`aa00e2b6`
+  / `a8f08586`), the river's second state (63.9, 63.7) -- the first run
+  landed in the references'.
+* **The scoreboard's frames** against M47's scoreboard (by the two indexes'
+  md5s, the differing pairs measured; `docs/soak/m48/piccheck-scoreboard-m47-vs-m48.tsv`):
+  **182 pairs, 170 identical, 12 differ, 0 FAIL, 0 LOOK** -- the three Bowser
+  games' real-time frames (the pillar lights' phase, similarity 99.76-99.91,
+  1.1-2.7% of pixels over 8 levels), m415 and m416 (the two screen-copying
+  games, 99.99-100.00), m417 and m455 by a hair (100.00) -- the same screens
+  M47 listed.
+
+### 63.14 Each remaining wall, in plain words
+
+A picture every 33.3 ms needs both processors to finish their share within
+it: the first (the game thread) the game's own work for two moments and the
+port's turning of one moment's drawing into the card's calls; the second
+(the render thread) the card's calls and the vertices' decoding.
+
+* **Butterfly Blitz (m441), 26.5.**  The first processor needs about 33 ms
+  (27.6 to draw, 5.7 for the game's next moment) and goes over when the
+  swarm is dense.  M48 showed the port's own share could be cut by a third
+  to a half (7.4 -> 3.9 M cycles) and the picture did not get faster: the
+  two processors pass the saved time between them, and most of what is left
+  is the game's own animation, matrix and effect code.  **No exact lever of
+  the size (3 ms) is left.**
+* **Manta Rings (m401), 27.6.**  The first processor needs about 32 ms --
+  7.5 of it the game's own work between pictures, the most of any
+  minigame -- and its drawing is mostly repeats the compiled draws halved
+  without moving the frame rate.  **None left.**
+* **Fruits of Doom (m436), 28.0, and Darts of Doom (m435), 29.0.**  Both
+  processors sit 3-5 ms under the budget; three quarters of the second's
+  time is the four skinned characters (their moving shapes decoded and the
+  card driver's cost for each draw), which no compiled unit can hold (their
+  shape changes every frame) and which GL display lists made slower.  **No
+  exact lever left**; the one inexact one (the skin on the card, M47) buys
+  at most about a frame on m435 and nothing that reaches the bar on m436.
+* **Order Up (m431), 28.4.**  The first processor needs about 36 ms for
+  each 33 -- the heaviest game-side load of all -- and its drawing is
+  already cheap (M44's memos), so replaying it saved nothing.  **None
+  left.**
+* **Reversal of Fortune (m444), 29.0.**  Half a frame short: the pinball
+  table's 83,000 vertices keep the second processor at ~28 ms and the first
+  at ~30; this milestone's chains read 0.9.16's m444 at 29.8-30.0 at the
+  teleport, so it lives at the bar's edge.  **Nothing exact beyond the
+  noise.**
+* **Panel Panic (m463), 29.2, and m409, 29.45.**  Both at the bar, their
+  runs spreading 0.5-0.8 between chains (m463 29.2-29.9, m409 29.1-29.9):
+  light on average, short in bursts (m463's falling panels, the game's own
+  walks).  **Nothing exact left but the noise.**
+
+**Whether any exact lever is left**: not one that reaches these screens.
+M48 built and measured the last big one this layer had -- the translation
+of repeat draws -- and it removes cycles the frame rate cannot see; what
+remains is the game's own work on the first processor and the card
+driver's per-draw and per-vertex cost on the second.  The screens that
+still move between runs (m463, m409, m444) move by noise, not by levers.
+### 63.15 What M48 built (nothing for the player)
+
+| | |
+|---|---|
+| `port/src/gx/gx_draw.c` | `--repeatstat` (the repeat draws, their share of the front end and of the render thread: item 1); the compiled draw (`blk_*`: the key, the recording, the replay, the shadow's proof by version and links, the delta, the sequence and successor predictors with their prefetch, the second-sight and refused-key tables, the four-shadow rule) and its gate (`blk_gate_*`, `--compiled auto|on`, off by default; `--compiledmb`, `--nocompiledpf`); `gx_vc_region` for the render thread; `--drawhash`, `--maxbatchverts` (diagnostics) |
+| `port/src/gx/rt.c`, `gx_rt.h` | `OP_MARK` (--repeatstat's marks), `rt_blk_copy` / `rt_blk_emit` (the blocks' records), `--glists` (`rl_*`: the region's draws as GL display lists, measured slower) |
+| `port/src/gx/gl13_state.c` | `glc_ver` (every shadow writer bumps it), the shadow's get / compare / delta for the blocks |
+| `port/src/gx/gx_vprog.c` | the parameters' section on its own (`gx_vprog_params_only`) between two marks, the program's shadow for the blocks |
+| `port/src/gx/gx_tex.c`, `gx_tfs.c`, `gx_state.c` | the blocks' texture check and notes; the fragment shader's shadow; `--texmtxlog` |
+| `port/src/gx/gx_skin.c`, `port/src/debug/crash.c`, `gx_wb.c` | **the owed skin arrays written as the game frees them** (`fuse_materialize_free`, `--nofreemat`): the skin decode exact; `--skinreadwatch` (the MMU watch of the owed arrays) |
+| `port/src/debug/perf.c` | `port_perf_gx_so_far` (the GX region's running total) |
+| `port/src/platform/main.c`, `port/include/port.h`, `opt_fields.h`, `port/Makefile` | the options; `PORT_MILESTONE` M48; `PORT_M48X` / `PORT_M48C` (`make M48X=1`, `M48C=1`): every M48 hook out of the player's build |
+| `port/tools/m48_chain.sh`, `m48_pccmp.py`, `port/docs/fps-scoreboard.md`, `fps-scoreboard-m47-after.md`, `release-checklist.md` | the chain (M47's, `RS:`), the picture checks by the two indexes' md5s; the scoreboard, M47's kept, the checklist |
+| `port/docs/soak/m48/` | the soak read, the repeat measurements (`rs/`), the counters (`pmc/`), the sample, the A/Bs (`ab0`..`ab6`), m427's hunt (`m427/`), the scoreboards' logs (`board/`, `board-rejected/`), the scoreboard's pictures against M47's |
+
+
+### 63.16 What is left running, and what M49 starts with
+
+On the G4, since the end of the picture checks on 2026-09-29, on the final
+build (the player's build `p`, `isle` `1d6d112b`, `~/mp4-p.app`; exec'd by
+the chain's `M48_LEAVE`; runner slot `~/isle.app` ->
+`MarioParty4-chain.app`, whose executable is `m48_chain.sh`):
+
+```
+isle --soak --com4 --rtc dolphin --freshcard --status --perf
+```
+
+log `~/isle-log.txt`, pid 17190 (the chain's own pid: `exec` keeps it, so
+`ps` counts its age from the chain's start).  The player's card and `~/memcard-backup.raw`
+untouched (every run `--freshcard`).  **0.9.16 stays the release**:
+`~/MarioParty4.app` (`d7da16eb`) and the dmg `~/MarioParty4-PowerPC-0.9.16.dmg`
+(`e896792f`) -- nothing shipped, so no 0.9.17, no dmg, and the Read Me's
+frame rates (0.9.16's, measured by M47) stand.  M48's bundles on the G4:
+`~/mp4-p.app` (the final build), `~/mp4-c.app` (the compiled draws alone,
+`M48C=1`), `~/mp4-c1.app` (every hook, the skin decode on), `~/mp4-m48*.app`,
+`~/mp4-cd*.app`, `~/mp4-pmc48*.app` (the counters' tree); the chain
+settings `~/m48.env` (`M48_LEAVE` set: clear it before the next chain) and
+`~/fps-board.env` (`FB_APP=~/mp4-p.app`, `FB_DIR=~/fps-board-m48p`); the
+scoreboards `~/fps-board-m48` (the rejected build) and `~/fps-board-m48p`.
+
+M49: the scoreboard is 74 of 82 with every short screen's wall named
+(63.14) and no exact lever left that reaches them; the user's call is
+whether the remaining screens are spent on inexact levers (a card-side
+skin: M47, at most ~1 fps on m435) or accepted as the machine's limit.
+**Rules learnt**: a hook in the hottest paths costs with its lever off --
+build each lever alone (`M48X`, `M48C`) and A/B the final build against the
+previous release on the screens at the bar before its scoreboard; the
+scoreboard of a screen at the bar moves by run (m409 29.1-29.95 on the
+same drawing path), so a pass lost by hundredths is named, not re-run
+until it passes; and a reader of "unwritten" memory may be the game reading
+garbage (m427's `unk_24`): hash what the draws receive (`--drawhash`) before
+hunting a reader.

@@ -1,0 +1,14 @@
+# M48 (PLAN.md 63.13): the final build's scoreboard dumps against M47's (0.9.16) -- 182 pairs, 170 identical, 12 differ
+# run	frame	similarity	pixels_over_8_levels_%	left_half_brightness_ratio	right_half_brightness_ratio	verdict
+m415	14777	99.99	0.11	1.000	1.000	ok
+m415	15677	99.99	0.11	1.000	1.000	ok
+m416	15677	100.00	0.00	1.000	1.000	ok
+m417	14777	100.00	0.00	1.000	1.000	ok
+m417	15677	100.00	0.00	1.000	1.000	ok
+m435	15344	99.79	1.60	0.982	0.998	ok
+m435~2	15344	99.79	1.60	1.018	1.002	ok
+m435~3	15344	99.79	1.60	0.982	0.998	ok
+m436~2	14444	99.76	2.72	1.006	1.005	ok
+m437	14443	99.76	2.71	1.006	1.005	ok
+m437	15343	99.91	1.07	1.001	1.001	ok
+m455	14777	100.00	0.00	1.000	1.000	ok

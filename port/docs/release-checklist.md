@@ -196,6 +196,23 @@ slower), the vertex cache's precise skin notice (cost m433 its pass --
 card-side skin buys at most ~1 fps on m435 and nothing that reaches the bar
 on m436, m431 or m444; it would move a few edge pixels a frame.
 
+**Where M48 left it** (no release: 0.9.16 stays; `docs/fps-scoreboard.md`, the final M48
+build's; M47's kept as `docs/fps-scoreboard-m47-after.md`; PLAN.md 63): **74 of 82 screens
+pass** -- m409 at 29.45 on the count (29.1 / 29.45 / 29.6; the same drawing path read 29.9
+against 0.9.16's 29.9 in an interleaved A/B), nothing else crossed either way (m441 26.5,
+m401 27.6, m436 28.0, m431 28.4, m444 29.0, m435 29.0, m463 29.2).  **Built, exact, measured
+and not shipped**: the compiled draw (the translation's records replayed when the key and the
+GL shadow match: half the translation's cycles gone, no screen faster, m409/m433/m444 0.7-0.8
+slower built alone -- `make M48C=1`, `--compiled auto|on`); GL display lists for the static
+geometry (slower on the ATI driver -- `--glists`); the skin decode, now exact (m427's
+"reader" was the game reading an uninitialized ripple phase from freed memory: the owed arrays
+are written as the game frees them), trading +0.4 m463 / +0.6 m441 against -0.7 m431 / -0.5
+m444 (`--skindecode`).  **Found on the way**: M48's own hooks cost m409 and m433 their passes
+with every lever off (0.3-0.6 ms of the game thread) -- compiled out of the player's build
+(`PORT_M48X`, `PORT_M48C`).  The final build: both md5 walks the references, the picture checks
+636 of 638 frames identical to 0.9.16's set (the 2 m427's known second river state), 0 blips, the scoreboard's frames 170 of 182 identical to M47's (the 12 the Bowser pillars'
+phase and the screen-copy games, 0 FAIL).
+
 ## Done
 
 | area | the claim | the evidence |
