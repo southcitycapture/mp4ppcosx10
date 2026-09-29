@@ -56,20 +56,20 @@ typedef struct {
  * option by option (PLAN.md 64.4) */
 static const LiteOpt lite_opts[] = {
     {44101, "m441.bshadow", 1, "Butterfly Blitz: the butterflies cast no shadow"},
-    {44102, "m441.nshadow", 1, "Butterfly Blitz: the nets and baskets cast no shadow"},
-    {44103, "m441.rings", 1, "Butterfly Blitz: every other flower around the field hidden"},
-    {44104, "m441.char", 0, "Butterfly Blitz: the lighter character models"},
-    {40101, "m401.fish", 1, "Manta Rings: each fish school drawn to its first 10 fish"},
-    {40102, "m401.bubbles", 1, "Manta Rings: the ambient bubbles not drawn"},
-    {40103, "m401.char", 0, "Manta Rings: the lighter character models"},
-    {43601, "m436.plates", 1, "Fruits of Doom: the plates cast no shadow (hidden under them)"},
+    {44102, "m441.nshadow", 0, "Butterfly Blitz: the nets and baskets cast no shadow"},
+    {44103, "m441.rings", 0, "Butterfly Blitz: every other flower around the field hidden"},
+    {44104, "m441.char", 1, "Butterfly Blitz: the lighter character models"},
+    {40101, "m401.fish", 0, "Manta Rings: each fish school drawn to its first 10 fish"},
+    {40102, "m401.bubbles", 0, "Manta Rings: the ambient bubbles not drawn"},
+    {40103, "m401.char", 1, "Manta Rings: the lighter character models"},
+    {43601, "m436.plates", 0, "Fruits of Doom: the plates cast no shadow (hidden under them)"},
     {43602, "m436.pillars", 0, "Fruits of Doom: the two side pillars cast no shadow"},
-    {43603, "m436.char", 0, "Fruits of Doom: the lighter character models"},
+    {43603, "m436.char", 1, "Fruits of Doom: the lighter character models"},
     {43501, "m435.pillars", 0, "Darts of Doom: the two side pillars cast no shadow"},
-    {43502, "m435.char", 0, "Darts of Doom: the lighter character models"},
-    {43101, "m431.char", 0, "Order Up: the lighter character models"},
-    {44401, "m444.char", 0, "Reversal of Fortune: the lighter character models"},
-    {46301, "m463.char", 0, "Panel Panic: the lighter character models"},
+    {43502, "m435.char", 1, "Darts of Doom: the lighter character models"},
+    {43101, "m431.char", 1, "Order Up: the lighter character models"},
+    {44401, "m444.char", 1, "Reversal of Fortune: the lighter character models"},
+    {46301, "m463.char", 1, "Panel Panic: the lighter character models"},
 };
 #define N_LITE ((int)(sizeof(lite_opts) / sizeof(lite_opts[0])))
 

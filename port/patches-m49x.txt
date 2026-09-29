@@ -1,0 +1,6 @@
+# M49 (PLAN.md 64): the --modelcost measurement tree only (port/Makefile M49X=1).
+# Hu3DDraw and Hu3DDrawPost renamed *_game so that src/debug/modelcost.c can
+# time each model's draw (the skin runs inside it, port_envelope_sync) on the
+# game thread, per pass; never in a shipped build.
+src/game/hsfdraw.c	void Hu3DDraw(HU3DMODEL *modelP, Mtx mtx, HuVecF *scale) {	void Hu3DDraw_game(HU3DMODEL *modelP, Mtx mtx, HuVecF *scale) {
+src/game/hsfdraw.c	void Hu3DDrawPost(void) {	void Hu3DDrawPost_game(void) {

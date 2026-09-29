@@ -31,8 +31,8 @@ extern "C" {
 /* ---- settings, from argv ------------------------------------------------- */
 /* M32: the shipped version (the dmg's name, the plist, the --defaults header)
  * and the milestone that built it. */
-#define PORT_VERSION_STRING "0.9.16"
-#define PORT_MILESTONE "M48"
+#define PORT_VERSION_STRING "0.9.17"
+#define PORT_MILESTONE "M49"
 /* M48 (PLAN.md 63.10): the milestone's levers and diagnostics -- the compiled
  * draws, --glists, --repeatstat, --drawhash, --texmtxlog, --maxbatchverts,
  * --skinreadwatch -- are built only with M48X=1 (make): their hooks sit in
@@ -486,6 +486,8 @@ typedef struct PortOptions {
     int notrim;             /* --notrim  M49: the exact trims' old path (m431's sparkle list whole,
                              *   m444's table re-evaluated while paused) */
     int gamehash;           /* --gamehash N  M49: the determinism hash every N frames (0 off) */
+    int modelcost_from, modelcost_to; /* --modelcost A,B  M49 (make M49X=1): each model's game-thread
+                             *   cost, frames A..B from the minigame's entry */
     int norastermemo;       /* --norastermemo  M44: the transform and raster state applied every
                              *   draw, not skipped when their inputs and the shadow are unchanged */
     int novcpos;            /* --novcpos  M44: a stored run whose position array alone moved is

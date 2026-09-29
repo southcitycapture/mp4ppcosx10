@@ -222,6 +222,14 @@ else
   PATCHES_EXTRA :=
   PMC_DEFS :=
 endif
+# M49X=1               M49's --modelcost (PLAN.md 64): Hu3DDraw / Hu3DDrawPost /
+#                       Hu3DMotionExec timed per model (patches-m49x.txt,
+#                       src/debug/modelcost.c); a measurement tree, never shipped
+M49X ?=
+ifeq ($(M49X),1)
+  PATCHES_EXTRA := $(PATCHES_EXTRA) patches-m49x.txt
+  PMC_DEFS := $(PMC_DEFS) -DPORT_M49X=1
+endif
 GAME_OPT ?= -O2
 PORT_OPT ?= -O2
 HOT_OPT  ?=
