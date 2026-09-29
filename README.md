@@ -31,7 +31,7 @@ applied at build time.
 
 ## Where it stands
 
-Build **0.9.15**, measured on a dual 1 GHz Power Mac G4 (Quicksilver) with a
+Build **0.9.16**, measured on a dual 1 GHz Power Mac G4 (Quicksilver) with a
 Radeon 9000 under Mac OS X 10.5:
 
 | | |
@@ -39,9 +39,9 @@ Radeon 9000 under Mac OS X 10.5:
 | Game speed | 100% of the console on every screen |
 | 30 fps scoreboard | **75 of 82** reachable screens at a median of 29.5 fps or better |
 | Boards | all six pass (29.6 to 30) |
-| Minigames | most at 30; the heaviest seven (m441, m436, m401, m431, m463, m435, m444) at 26 to 29 |
+| Minigames | most at 30; the heaviest seven (m441, m401, m436, m431, m435, m444, m463) at 26.8 to 29.4 |
 | Picture | 59 of 63 minigames match the console frame for frame; all six boards play |
-| Stability | multi-hour unattended soaks on 0.9.8 to 0.9.15 with no faults and, since 0.9.9, no drive pauses |
+| Stability | multi-hour unattended soaks on 0.9.8 to 0.9.16 with no faults and, since 0.9.9, no drive pauses |
 | Movies | all twelve play with sound |
 
 The target for 1.0 is **30 fps on every screen** on that machine, measured by
@@ -63,6 +63,12 @@ dimming (there since the first build), and the Bowser room's pillar lights,
 which strobed at 30 fps. Every build is now checked frame by frame against the
 previous release on split-screen games, all 14 board items and the Bowser
 room.
+
+**Next: Lite mode.** The last seven screens are limited by the game's own
+work, not by the port, and no exact change reaches them on this machine. A
+Lite mode will make small, gameplay-neutral simplifications (fewer shadows,
+thinner fish schools, no background bubbles) on those screens only, switched
+on only on machines that need it. Faster Macs keep the console-exact picture.
 
 ## Documentation
 
