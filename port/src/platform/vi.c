@@ -267,6 +267,10 @@ void VIWaitForRetrace(void) {
      * PadReadVSync post-callback, so that what it writes is the last word on
      * the frame the game is about to run. */
     port_selfplay_tick(retrace_count);
+    {
+        void port_lite_tick(unsigned frame);
+        port_lite_tick(retrace_count); /* M49: --gamehash */
+    }
 
     if (port_opt.max_frames && (int)retrace_count >= port_opt.max_frames) {
         double wall = now_seconds() - first_retrace_at;

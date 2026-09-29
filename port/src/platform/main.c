@@ -41,6 +41,8 @@ unsigned port_rss_mb(void) {
 PortOptions port_opt;
 static int water_set; /* M44: --water given on the command line */
 static int waterlook_set; /* M45: --waterlook given on the command line */
+static int lite_set;      /* M49: --lite / --nolite / --liteauto given */
+static int liteopts_set;  /* M49: --liteopts given */
 static int pondlook_set;  /* M45: --pondlook given on the command line */
 /* M46 (PLAN.md 61): PowerPCube's keys -- movies, prefetch, resident -- are
  * read from the config and never written by the game; a flag overrides them
@@ -402,6 +404,14 @@ static void usage(const char* argv0) {
             "  --water L         M44: the water's indirect warp: off, cheap (at the game's vertices),\n"
             "                    full (subdivided), auto (the default: by machine and screen)\n"
             "  --watergrid N     M44: full's subdivision levels (default 1: four triangles each)\n"
+            "  --lite            M49: Lite on (simplified drawing on the screens that have it)\n"
+            "  --nolite          M49: Lite off: console-exact everywhere (remembered)\n"
+            "  --liteauto        M49: Lite by machine and screen (the default; remembered)\n"
+            "  --liteopts LIST   M49: Lite's options by name (m441.bshadow,...), ref, all\n"
+            "  --litefishk K     M49: m401.fish: fish drawn per school (10)\n"
+            "  --litechar 4|8    M49: the char options' model file (default one step lighter)\n"
+            "  --notrim          M49: the exact trims' old path (m431 sparkles, m444 table)\n"
+            "  --gamehash N      M49: the determinism hash (RNG, models, players) every N frames\n"
             "  --novcpos         M44: no positions refresh of a cached run (the whole run decoded)\n"
             "  --norastermemo    M44: the transform and raster state applied at every draw\n"
             "  --nowbpart        M43: the write barrier arms only the pages wholly inside an\n"
@@ -841,6 +851,7 @@ int port_parse_args(int argc, char** argv) {
     port_opt.rtgx = 0;       /* M43: the render thread's translation: measured, off (PLAN.md 58.2) */
     port_opt.wbpart = 1;     /* M43: the barrier on the partial end pages too (PLAN.md 58.4, 58.10) */
     port_opt.water = -1;     /* M44: auto (PLAN.md 59) */
+    port_opt.lite = -1;      /* M49: auto (PLAN.md 64) */
     port_opt.watergrid = 1;
     port_opt.waterlook = 1;  /* M45: the user's tuning (PLAN.md 60) */
     port_opt.novcposoff = 1; /* M45: measured level on m463 (PLAN.md 60); --vcposoff turns it on */
@@ -1474,6 +1485,26 @@ int port_parse_args(int argc, char** argv) {
             water_set = 1;
         } else if (!strcmp(a, "--watergrid") && i + 1 < argc) {
             port_opt.watergrid = atoi(argv[++i]);
+        } else if (!strcmp(a, "--lite")) {
+            port_opt.lite = 1; /* M49 */
+            lite_set = 1;
+        } else if (!strcmp(a, "--nolite")) {
+            port_opt.lite = 0;
+            lite_set = 1;
+        } else if (!strcmp(a, "--liteauto")) {
+            port_opt.lite = -1;
+            lite_set = 1;
+        } else if (!strcmp(a, "--liteopts") && i + 1 < argc) {
+            port_opt.liteopts = argv[++i];
+            liteopts_set = 1;
+        } else if (!strcmp(a, "--litefishk") && i + 1 < argc) {
+            port_opt.litefishk = atoi(argv[++i]);
+        } else if (!strcmp(a, "--litechar") && i + 1 < argc) {
+            port_opt.litechar = atoi(argv[++i]);
+        } else if (!strcmp(a, "--notrim")) {
+            port_opt.notrim = 1;
+        } else if (!strcmp(a, "--gamehash") && i + 1 < argc) {
+            port_opt.gamehash = atoi(argv[++i]);
         } else if (!strcmp(a, "--novcpos")) {
             port_opt.novcpos = 1;
         } else if (!strcmp(a, "--norastermemo")) {
@@ -1673,6 +1704,10 @@ void port_shutdown(int code) {
     void gx_tfs_report(void);
     gx_tev_report();
     gx_water_report(); /* M44 */
+    {
+        void port_lite_report(void);
+        port_lite_report(); /* M49 */
+    }
     gx_tfs_report(); /* M35 */
     port_perf_report();
     port_pmc_report(); /* M43: on the game thread, whose counters they are */
@@ -1738,6 +1773,23 @@ int main(int argc, char** argv) {
             if (w) {
                 port_opt.water = !strcmp(w, "off") ? 0 : !strcmp(w, "cheap") ? 1
                                : !strcmp(w, "full") ? 2 : -1;
+            }
+        }
+        /* M49: Lite, remembered the same way (lite = auto|on|off, liteopts) */
+        if (lite_set) {
+            port_config_set("lite", port_opt.lite == 0 ? "off" : port_opt.lite == 1 ? "on" : "auto");
+        } else {
+            const char* w = port_config_get("lite");
+            if (w) {
+                port_opt.lite = !strcmp(w, "off") ? 0 : !strcmp(w, "on") ? 1 : -1;
+            }
+        }
+        if (liteopts_set) {
+            port_config_set("liteopts", port_opt.liteopts);
+        } else {
+            const char* w = port_config_get("liteopts");
+            if (w && *w) {
+                port_opt.liteopts = strdup(w);
             }
         }
         /* M45: the water's look, remembered the same way */

@@ -477,6 +477,15 @@ typedef struct PortOptions {
                              *   vertices (src/gx/gx_water.c); -1 auto (the default: by the
                              *   machine's class and the screen) */
     int watergrid;          /* --watergrid N  M44: full's subdivision levels (default 1) */
+    int lite;               /* --lite / --nolite / --liteauto  M49: Lite mode (src/debug/lite.c):
+                             *   -1 auto (the default: by the machine's class and the screen),
+                             *   0 off (console-exact everywhere), 1 on */
+    const char* liteopts;   /* --liteopts LIST  M49: the options Lite turns on (names, ref, all) */
+    int litefishk;          /* --litefishk K  M49: m401.fish's fish drawn per school (10) */
+    int litechar;           /* --litechar 4|8  M49: the char options' file (default one step lighter) */
+    int notrim;             /* --notrim  M49: the exact trims' old path (m431's sparkle list whole,
+                             *   m444's table re-evaluated while paused) */
+    int gamehash;           /* --gamehash N  M49: the determinism hash every N frames (0 off) */
     int norastermemo;       /* --norastermemo  M44: the transform and raster state applied every
                              *   draw, not skipped when their inputs and the shadow are unchanged */
     int novcpos;            /* --novcpos  M44: a stored run whose position array alone moved is
