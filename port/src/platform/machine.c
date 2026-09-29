@@ -698,7 +698,7 @@ static void print_inventory(void) {
  * game's core.  Machines this port has never run on are marked untested. */
 /* the scoreboard's count on the reference at the last milestone that ran it;
  * the promise is "30 fps everywhere", the count is where the port is */
-#define MACH_SCOREBOARD "75 of 82 screens there today (0.9.16, docs/fps-scoreboard.md)"
+#define MACH_SCOREBOARD "measured screen by screen in docs/fps-scoreboard.md (0.9.17, Lite at auto)"
 /* M44 (PLAN.md 59): the class as a number, for the settings chosen per
  * machine (the water): 0 below the reference, 1 the reference (a dual 1 GHz
  * G4 + Radeon 9000), 2 faster than it; -1 not judged */

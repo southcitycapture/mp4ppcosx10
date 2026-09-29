@@ -212,6 +212,10 @@ for r in ${M49_RUNS:-N}; do
             g=$(echo $r | cut -d: -f2); a=$(echo $r | cut -d: -f3)
             case $g in cs) w=${M49_PMCWIN_CS:-3000,4800} ;; b*) w=${M49_PMCWIN_B:-8400,10400} ;; *) w=${M49_PMCWIN:-300,1500} ;; esac
             run "RS-$g-${a:-base}" 600 - $BASE --realtime --repeatstat $w $(scene $g) $(arm $a) ;;
+        FBE:*)
+            # M49: FBE:FILE:R[,R...] -- fps_board.sh with ~/FILE as its settings
+            f=$(echo $r | cut -d: -f2); rr=$(echo $r | cut -d: -f3)
+            FB_ENVFILE="$HOME/$f" FB_SETTLE=0 sh "$HOME/fps_board.sh" $(echo $rr | tr ',' ' ') ;;
         FB:*)
             FB_SETTLE=0 sh "$HOME/fps_board.sh" $(echo ${r#FB:} | tr ',' ' ') ;;
         PROOF:*)

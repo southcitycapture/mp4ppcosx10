@@ -36,7 +36,8 @@
 cd "$HOME"
 # the runner passes arguments but no environment: the settings may also come
 # from ~/fps-board.env (sh syntax), which the lab writes before `g4 run`
-[ -f "$HOME/fps-board.env" ] && . "$HOME/fps-board.env"
+# M49: FB_ENVFILE names another settings file (m49_chain.sh's FBE:)
+[ -f "${FB_ENVFILE:-$HOME/fps-board.env}" ] && . "${FB_ENVFILE:-$HOME/fps-board.env}"
 sleep "${FB_SETTLE:-90}"
 APP="${FB_APP:-$HOME/MarioParty4.app}/Contents/MacOS/isle"
 D="${FB_DIR:-$HOME/fps-board}"; mkdir -p "$D"

@@ -1,6 +1,6 @@
 Mario Party 4 PowerPC Edition
 =============================
-Version 0.9.16
+Version 0.9.17
 
 
 WHAT THIS IS
@@ -125,6 +125,69 @@ The console's own amplitude and sky come back with --waterlook console
 --pondlook sky or --pondlook tint (`pondlook = tint`); --wavegain PERCENT
 sets the waves on every rippling pool (100 is the console's).  All of them
 are remembered like the water level.
+
+
+LITE MODE
+
+Seven minigames draw more than the reference machine (a dual 1 GHz G4
+with a Radeon 9000) can finish in a thirtieth of a second, however the
+drawing is done.  Since 0.9.17 those seven draw a little less there, and
+reach 30 frames a second: this is Lite mode.  What changes is only what is
+drawn -- never what the game does.  The characters move, score, collide
+and are dealt their luck exactly as with Lite off; the port checks that
+frame by frame (the game's random numbers, every model's position and the
+players' records are the same with Lite on and off).
+
+What Lite changes, by default ("auto") on the reference machine:
+
+    Butterfly Blitz        the lighter character models; the butterflies
+                           cast no shadow
+    Manta Rings            the lighter character models
+    Fruits of Doom         the lighter character models
+    Darts of Doom          the lighter character models
+    Order Up               the lighter character models
+    Reversal of Fortune    the lighter character models
+    Panel Panic            the lighter character models
+
+"The lighter character models" are the game's own: every character comes
+on the disc in three versions of decreasing detail, and the game already
+uses the lighter ones in its busier minigames (Manta Rings and Panel Panic
+use the middle one).  Lite takes the next one down -- the same character,
+the same animations, fewer polygons.  Side by side the difference is in
+the hands, the hair and the rounder parts of the face.
+
+Every other screen is drawn exactly as before.  A faster Mac than the
+reference gets no Lite at all; a slower one gets every Lite option on
+those seven screens (the list below).
+
+To turn it off -- the console's drawing everywhere, the seven slower --
+run the game once from the Terminal with --nolite, or put
+
+    lite = off
+
+in the config file (WHERE YOUR THINGS LIVE).  --lite (lite = on) turns
+every option on; --liteauto (lite = auto) is the default.  All three are
+remembered.  The options can also be picked one by one with --liteopts
+and their names (liteopts = ... in the config file):
+
+    m441.char      Butterfly Blitz: the lighter character models
+    m441.bshadow   Butterfly Blitz: the butterflies cast no shadow
+    m441.nshadow   Butterfly Blitz: the nets and baskets cast no shadow
+    m441.rings     Butterfly Blitz: every other big flower by the fence
+    m401.char      Manta Rings: the lighter character models
+    m401.fish      Manta Rings: each fish school drawn to 10 fish
+    m401.bubbles   Manta Rings: the drifting bubbles not drawn
+    m436.char      Fruits of Doom: the lighter character models
+    m436.plates    Fruits of Doom: the plates cast no shadow
+    m436.pillars   Fruits of Doom: the two side pillars cast no shadow
+    m435.char      Darts of Doom: the lighter character models
+    m435.pillars   Darts of Doom: the two side pillars cast no shadow
+    m431.char      Order Up: the lighter character models
+    m444.char      Reversal of Fortune: the lighter character models
+    m463.char      Panel Panic: the lighter character models
+
+(ref is the default set, all is every one.)  0.9.17 also draws Order Up's
+sparkles faster with the same pixels, for everyone.
 
 
 LOADING
