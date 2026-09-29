@@ -1111,7 +1111,7 @@ void port_skinwatch_open(const void* ptr, size_t n) {
 }
 static void sr_hsf(SkinHsf* h, int protect) {
     int k;
-    if (!port_opt.skinreadwatch) {
+    if (!PORT_M48X || !port_opt.skinreadwatch) {
         return;
     }
     for (k = 0; k < h->nmesh; k++) {

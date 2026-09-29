@@ -202,6 +202,18 @@ DEBUG_G = -gdwarf-2 -gstrict-dwarf -fno-shrink-wrap
 # PMC_WRAP=1            the --pmc measurement tree (PLAN.md 58.4): the engine's
 #                       walks renamed *_game by patches-pmc.txt and wrapped
 #                       between a counter read in and out (src/debug/pmc_wrap.c)
+# M48X=1               M48's levers and diagnostics built in (PLAN.md 63.10):
+#                       --compiled, --glists, --repeatstat, --drawhash, ...
+# M48C=1               the compiled draws alone (--compiled auto|on)
+M48X ?=
+M48C ?=
+ifeq ($(M48X),1)
+  M48X_DEFS := -DPORT_M48X=1
+else ifeq ($(M48C),1)
+  M48X_DEFS := -DPORT_M48C=1
+else
+  M48X_DEFS :=
+endif
 PMC_WRAP ?=
 ifeq ($(PMC_WRAP),1)
   PATCHES_EXTRA := patches-pmc.txt
@@ -238,7 +250,7 @@ GAME_CFLAGS = -std=gnu11 $(GAME_OPT) $(DEBUG_G) -fno-strict-aliasing -fwrapv -fc
               $(GAME_UBSAFE) $(TUNE) \
               $(GAME_WARN) $(GAME_DEFS) $(GAME_INC) $(TARGET_CFLAGS) \
               -include include/msl_math.h
-PORT_CFLAGS = -std=gnu11 $(PORT_OPT) $(DEBUG_G) $(PMC_DEFS) -fno-strict-aliasing -fcommon \
+PORT_CFLAGS = -std=gnu11 $(PORT_OPT) $(DEBUG_G) $(PMC_DEFS) $(M48X_DEFS) -fno-strict-aliasing -fcommon \
               -Wall -Wno-unused-parameter -Wno-unknown-pragmas $(TUNE) \
               $(GAME_DEFS) $(GAME_INC) $(SDL_CFLAGS) $(TARGET_CFLAGS)
 LDFLAGS   = $(TARGET_LDFLAGS) -lm $(SDL_LIBS) \

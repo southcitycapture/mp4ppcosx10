@@ -2235,17 +2235,17 @@ static void rl_report(void) {
 static void replay_one(const Hdr* h) {
     const void* p = h + 1;
     int cls = RC_STATE;
-    double rs_t0 = port_opt.rs_to ? now() : 0.0;
+    double rs_t0 = PORT_M48X && port_opt.rs_to ? now() : 0.0;
     class_begin();
     switch (h->op) {
         case OP_MARK: rs_on_mark(((const A_mark*)p)->v); cls = RC_OTHER; break;
         case OP_NOP: case OP_WRAP: cls = RC_OTHER; break;
         case OP_ENABLE: glEnable(((const A1e*)p)->a); break;
         case OP_DISABLE: glDisable(((const A1e*)p)->a); break;
-        case OP_ENABLE_CS: glEnableClientState(((const A1e*)p)->a); rl_enable(((const A1e*)p)->a, 1); break;
-        case OP_DISABLE_CS: glDisableClientState(((const A1e*)p)->a); rl_enable(((const A1e*)p)->a, 0); break;
+        case OP_ENABLE_CS: glEnableClientState(((const A1e*)p)->a); if (PORT_M48X) rl_enable(((const A1e*)p)->a, 1); break;
+        case OP_DISABLE_CS: glDisableClientState(((const A1e*)p)->a); if (PORT_M48X) rl_enable(((const A1e*)p)->a, 0); break;
         case OP_ACTIVE_TEX: glActiveTexture(((const A1e*)p)->a); break;
-        case OP_CLIENT_ACTIVE_TEX: glClientActiveTexture(((const A1e*)p)->a); rl_unit = (int)(((const A1e*)p)->a - GL_TEXTURE0); break;
+        case OP_CLIENT_ACTIVE_TEX: glClientActiveTexture(((const A1e*)p)->a); if (PORT_M48X) rl_unit = (int)(((const A1e*)p)->a - GL_TEXTURE0); break;
         case OP_BIND_TEX: { const A_eu* a = p; glBindTexture(a->a, a->b); cls = RC_TEX; break; }
         case OP_TEXPARAM_I: { const A_eei* a = p; glTexParameteri(a->a, a->b, a->v); cls = RC_TEX; break; }
         case OP_TEXPARAM_F: { const A_eef* a = p; glTexParameterf(a->a, a->b, a->v); cls = RC_TEX; break; }
@@ -2292,14 +2292,14 @@ static void replay_one(const Hdr* h) {
         case OP_END: glEnd(); cls = RC_DRAW; break;
         case OP_TEXCOORD2F: { const A_f2* a = p; glTexCoord2f(a->x, a->y); cls = RC_DRAW; break; }
         case OP_VERTEX2F: { const A_f2* a = p; glVertex2f(a->x, a->y); cls = RC_DRAW; break; }
-        case OP_VERTEX_PTR: { const A_ptr* a = p; glVertexPointer(a->size, a->type, a->stride, a->p); rl_set(0, a->size, a->type, a->stride, a->p); cls = RC_DRAW; break; }
-        case OP_COLOR_PTR: { const A_ptr* a = p; glColorPointer(a->size, a->type, a->stride, a->p); rl_set(1, a->size, a->type, a->stride, a->p); cls = RC_DRAW; break; }
-        case OP_NORMAL_PTR: { const A_ptr2* a = p; glNormalPointer(a->type, a->stride, a->p); rl_set(2, 3, a->type, a->stride, a->p); cls = RC_DRAW; break; }
-        case OP_TEXCOORD_PTR: { const A_ptr* a = p; glTexCoordPointer(a->size, a->type, a->stride, a->p); rl_set(4 + (rl_unit & 7), a->size, a->type, a->stride, a->p); cls = RC_DRAW; break; }
-        case OP_FOGCOORD_PTR: { const A_ptr2* a = p; if (x_FogCoordPointerEXT) { x_FogCoordPointerEXT(a->type, a->stride, a->p); } rl_set(3, 1, a->type, a->stride, a->p); cls = RC_DRAW; break; }
+        case OP_VERTEX_PTR: { const A_ptr* a = p; glVertexPointer(a->size, a->type, a->stride, a->p); if (PORT_M48X) rl_set(0, a->size, a->type, a->stride, a->p); cls = RC_DRAW; break; }
+        case OP_COLOR_PTR: { const A_ptr* a = p; glColorPointer(a->size, a->type, a->stride, a->p); if (PORT_M48X) rl_set(1, a->size, a->type, a->stride, a->p); cls = RC_DRAW; break; }
+        case OP_NORMAL_PTR: { const A_ptr2* a = p; glNormalPointer(a->type, a->stride, a->p); if (PORT_M48X) rl_set(2, 3, a->type, a->stride, a->p); cls = RC_DRAW; break; }
+        case OP_TEXCOORD_PTR: { const A_ptr* a = p; glTexCoordPointer(a->size, a->type, a->stride, a->p); if (PORT_M48X) rl_set(4 + (rl_unit & 7), a->size, a->type, a->stride, a->p); cls = RC_DRAW; break; }
+        case OP_FOGCOORD_PTR: { const A_ptr2* a = p; if (x_FogCoordPointerEXT) { x_FogCoordPointerEXT(a->type, a->stride, a->p); } if (PORT_M48X) rl_set(3, 1, a->type, a->stride, a->p); cls = RC_DRAW; break; }
         case OP_DRAW_ARRAYS: {
             const A_draw* a = p;
-            if (!rt_skip_draws && !(port_opt.glists && a->count > 0 &&
+            if (!rt_skip_draws && !(PORT_M48X && port_opt.glists && a->count > 0 &&
                                     rl_draw(OP_DRAW_ARRAYS, a, (u32)a->first, (u32)(a->first + a->count - 1), (u32)a->count))) {
                 glDrawArrays(a->mode, a->first, a->count);
             }
@@ -2312,7 +2312,7 @@ static void replay_one(const Hdr* h) {
             const GLsizei* c = (const GLsizei*)(f + a->n);
             if (!rt_skip_draws) {
                 int done_l = 0;
-                if (port_opt.glists && a->n > 0) {
+                if (PORT_M48X && port_opt.glists && a->n > 0) {
                     GLsizei j;
                     u32 lo = 0xFFFFFFFFu, hi = 0, nv = 0;
                     for (j = 0; j < a->n; j++) {
@@ -2333,7 +2333,7 @@ static void replay_one(const Hdr* h) {
         }
         case OP_DRAW_RANGE: {
             const A_range* a = p;
-            if (!rt_skip_draws && !(port_opt.glists && a->hi >= a->lo &&
+            if (!rt_skip_draws && !(PORT_M48X && port_opt.glists && a->hi >= a->lo &&
                                     rl_draw(OP_DRAW_RANGE, a, a->lo, a->hi, a->hi - a->lo + 1))) {
                 glDrawRangeElements(a->mode, a->lo, a->hi, a->n, a->type, a + 1);
             }
@@ -2369,7 +2369,7 @@ static void replay_one(const Hdr* h) {
         case OP_GET_TEX_IMAGE: { const A_gettex* a = p; glGetTexImage(a->target, a->level, a->fmt, a->type, a->out); cls = RC_OTHER; break; }
         case OP_GET_ERROR: { const A_geterr* a = p; *a->out = glGetError(); cls = RC_OTHER; break; }
         case OP_FLUSH_VAR: { const A_flushvar* a = p; x_FlushVertexArrayRangeAPPLE(a->len, a->p); cls = RC_DRAW; break; }
-        case OP_BIND_BUFFER: { const A_bindbuf* a = p; x_BindBufferARB(RT_ARRAY_BUFFER_ARB, a->id); rl_buffer = a->id; cls = RC_STATE; break; }
+        case OP_BIND_BUFFER: { const A_bindbuf* a = p; x_BindBufferARB(RT_ARRAY_BUFFER_ARB, a->id); if (PORT_M48X) rl_buffer = a->id; cls = RC_STATE; break; }
         case OP_BUFFER_SUB: { const A_bufsub* a = p; x_BufferSubDataARB(RT_ARRAY_BUFFER_ARB, a->off, a->n, a->p); cls = RC_DRAW; break; }
         case OP_SET_FENCE: {
             const A_fence* a = p;
@@ -2413,7 +2413,7 @@ static void replay_one(const Hdr* h) {
             halfwatch(a->frame);
             presentdump(a->frame);
             SDL_GL_SwapWindow(win);
-            rl_frame++; /* M48 */
+            if (PORT_M48X) rl_frame++; /* M48 */
             gx_rtgx_rt_present(); /* M43: the translation's time this frame, published */
             st_tail_s += tail;
             if (tail > st_tail_max) {
@@ -2464,7 +2464,7 @@ static void decode_ahead(u32 upto) {
     while ((s32)(upto - dec) > 0) {
         const Hdr* h = (const Hdr*)(buf + (dec & RT_MASK));
         u32 len = h->len;
-        if (h->op == OP_MARK) {
+        if (PORT_M48X && h->op == OP_MARK) {
             rs_dec_note(((const A_mark*)(const void*)(h + 1))->v); /* M48 */
         } else if (h->op == OP_DECODE) {
             A_decode* d = (A_decode*)(void*)(h + 1);

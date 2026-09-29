@@ -1530,7 +1530,7 @@ int gx_vprog_draw(const GxXfDesc* d, int nverts) {
  * every 2D layer -- the sky, the logo's "4", the sprites -- flat or absent. */
 #if !defined(PORT_NO_SDL) && !defined(GX_RTI)
 void gx_blk_mark(int which); /* M48: gx_draw.c, the compiled draw's recording */
-#define VP_BLK_MARK(w) gx_blk_mark(w)
+#define VP_BLK_MARK(w) do { if (PORT_M48C) { gx_blk_mark(w); } } while (0)
 #else
 #define VP_BLK_MARK(w) do { } while (0)
 #endif

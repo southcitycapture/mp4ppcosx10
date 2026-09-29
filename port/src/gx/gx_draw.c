@@ -2576,7 +2576,7 @@ static void rs_batch_begin(void);
 static void rs_batch_open(void);
 static void rs_draw_done(u32 nv, int n);
 static void rs_frame(void);
-#define RS_ON() __builtin_expect(port_opt.rs_to != 0, 0)
+#define RS_ON() (PORT_M48X && __builtin_expect(port_opt.rs_to != 0, 0))
 
 static int submit_rec_differs(void) {
     submit_rec_capture(&rec_now);
@@ -3211,7 +3211,7 @@ static void batch_flush_body(void) {
         if (RS_ON()) {
             rs_draw_done(nv, n);
         }
-        if (__builtin_expect(port_opt.drawhash_from != 0, 0)) {
+        if (PORT_M48X && __builtin_expect(port_opt.drawhash_from != 0, 0)) {
             /* M48 (PLAN.md 63.7): --drawhash A,B -- every batch of frames
              * A..B: its object, its vertices' bytes hashed (the render
              * thread's decode joined first), for two runs' diff */
@@ -3505,7 +3505,7 @@ static void batch_prepare(u32 count) {
          (port_opt.batchmax && batch_n >= port_opt.batchmax) ||
          batch_verts + count > MAX_VERTS || memcmp(&batch_sl, &sl, sizeof(sl)) != 0 ||
          /* M48: --maxbatchverts N, a diagnostic (m427's river split, PLAN.md 63.7) */
-         (port_opt.maxbatchverts && batch_verts + count > (u32)port_opt.maxbatchverts) ||
+         (PORT_M48X && port_opt.maxbatchverts && batch_verts + count > (u32)port_opt.maxbatchverts) ||
          /* M22: the matrices moved under the batch (the loads no longer end
           * it): transform the object in, or flush under the batch's own */
          (gx_batch_spans && !palette_on &&
@@ -4692,8 +4692,10 @@ static int draw_apply(const u8* s, int n, int in_ring) {
     u32 bias = 0; /* M21 --fixbase: the batch's first vertex as an index from the ring's start */
     sub_posm = in_ring ? batch_posm : pi.pos_mtx;
     sub_nrmm = in_ring ? batch_nrmm : pi.nrm_mtx;
-    blk_full_t0 = 0.0;
-    if (!rtgx && in_ring && !water_plan_cur && blk_gate_draw(s, n, in_ring, xfd, &bias)) {
+    if (PORT_M48C) {
+        blk_full_t0 = 0.0;
+    }
+    if (PORT_M48C && !rtgx && in_ring && !water_plan_cur && blk_gate_draw(s, n, in_ring, xfd, &bias)) {
         /* M48: a compiled draw, replayed (above) */
         water_pt = 0;
         gx_force_flags = 0;
@@ -4878,10 +4880,10 @@ static int draw_apply(const u8* s, int n, int in_ring) {
     if (!port_opt.nounitmemo) {
         gx_unit_memo(0);
     }
-    if (gx_blk_rec) {
+    if (PORT_M48C && gx_blk_rec) {
         blk_record_end(on_gpu); /* M48 */
     }
-    if (blk_full_t0 > 0.0) {
+    if (PORT_M48C && blk_full_t0 > 0.0) {
         blk_gate_full(port_now_seconds() - blk_full_t0); /* M48: the gate's sample */
     }
     if (RS_ON()) {
@@ -9273,7 +9275,9 @@ void port_gx_init(void) {
 
 void port_gx_present(void) {
     GX_FLUSH_NOW();
-    gx_blk_frame(); /* M48 */
+    if (PORT_M48C) {
+        gx_blk_frame(); /* M48 */
+    }
     if (RS_ON()) {
         rs_frame();
     }

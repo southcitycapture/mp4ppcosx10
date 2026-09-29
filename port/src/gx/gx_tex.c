@@ -671,6 +671,7 @@ static unsigned stat_frames_over20;
  * (gx_draw.c); the swap the caller asked for, for the finish's note */
 void gx_blk_tex_note(int unit, GXTexObjPort* o, u8 swap, int slot, int efb, u32 name);
 extern int gx_blk_rec;
+#define gx_blk_rec (PORT_M48C && gx_blk_rec)
 static u8 blk_swap;
 static int validate_every_bind;
 void gx_tex_set_validate_every_bind(int v) { validate_every_bind = v; }
@@ -1661,7 +1662,9 @@ void gx_tex_bind_swapped(int unit, GXTexObjPort* o, u8 swap) {
         return;
     }
     PORT_SUB_ENTER(PERF_SUB_TEX);
-    blk_swap = swap;
+    if (PORT_M48C) {
+        blk_swap = swap;
+    }
     tex_bind_body(unit, o, swap);
     PORT_SUB_LEAVE();
 }

@@ -33,6 +33,18 @@ extern "C" {
  * and the milestone that built it. */
 #define PORT_VERSION_STRING "0.9.16"
 #define PORT_MILESTONE "M48"
+/* M48 (PLAN.md 63.10): the milestone's levers and diagnostics -- the compiled
+ * draws, --glists, --repeatstat, --drawhash, --texmtxlog, --maxbatchverts,
+ * --skinreadwatch -- are built only with M48X=1 (make): their hooks sit in
+ * the hottest paths, and the player's build keeps 0.9.16's there */
+#ifndef PORT_M48X
+#define PORT_M48X 0
+#endif
+/* the compiled draws' own hooks (the shadow's version, the marks, the texture
+ * notes, the gate at the apply): M48C=1, or with M48X=1 */
+#ifndef PORT_M48C
+#define PORT_M48C PORT_M48X
+#endif
 
 typedef struct PortOptions {
     const char* image;      /* --image  disc image or extracted files/ tree   */
