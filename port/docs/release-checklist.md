@@ -240,7 +240,10 @@ split on m441 with the lighter file (the RNG moved from entry +563, the minigame
 frames later).  The other six Lite games, second cast, Lite auto against off: identical to each
 minigame's end; m441 with its new auto set (no butterfly shadows) identical on both casts.
 **m441 with Lite at auto now reads 29.1** (29.1 / 29.0 / 29.2) -- short; with the nets' shadows
-and every other fence flower as well 30.0 / 30.0 / 30.0 (not proved to the end: not shipped).
+and every other fence flower as well 30.0 / 30.0 / 30.0 (proved to the end on both casts after
+the soak; not shipped -- the user's call).  The final build: both md5 walks the references, the
+picture checks 636 of 638 identical to 0.9.16's with Lite off (the 2 m427's known second river
+state), 0 blips; a 1 h soak with Lite at auto, 0 faults, no lock-up.
 Class 0 (below the reference) now gets the reference's set, not every option; `--litechar 8`
 is refused on the m1 games (m3 never proved).  m436/m435's charring pass keeps the eyes of the
 file Lite loaded (`docs/screenshots/m49b-eyes-m436.jpg`).
@@ -366,8 +369,8 @@ none is a known fault.
    shadows.  A gentler set: the character files alone (m441 then 29.9).  PLAN.md 64.5 has each
    option's cost.  **M49b: `m441.char` left the auto set** (it moves the net's joint the game
    reads: PLAN.md 64b.1); m441 is at 29.1 with the butterfly shadows alone.  The user's call:
-   also `m441.nshadow` + `m441.rings` (30.0 in the A/B; the pictures are among the fifteen;
-   their whole-minigame proof on both casts is PLAN.md 64b.4's), or leave m441 short.
+   also `m441.nshadow` + `m441.rings` (30.0 in the A/B; proved to the minigame's end on both
+   casts, PLAN.md 64b.4; the pictures are among the fifteen), or leave m441 short.
 18. **m433 Beach Volley Folly (M49)**: 29.4 on the count, 29.9-30.0 in A/Bs -- the one screen
    short; no Lite option is allowed there (the game reads the hand joint a lighter file moves).
 

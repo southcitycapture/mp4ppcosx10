@@ -26300,8 +26300,14 @@ real time, three runs an arm, interleaved; `tools/m44_ab.py`,
 What else would take it to 29.5: the nets' and baskets' shadows and every
 other big flower by the fence, both already in M49's fifteen pictures
 (`m49-lite-m441-nshadow.jpg`, `-rings.jpg`); M49 proved each for the first
-1,300 frames only.  **Not shipped**: {{ALTPROOF}}  The user's call (the
-checklist's item 17).
+1,300 frames only.  **Proved since** (after the soak, `H:` on `b3`, the
+three together against Lite off): **identical to the minigame's end on both
+casts** (second cast 392 lines, `14864195`, left at +5,295; default cast
+391 lines, `8e1116da`, +5,337 -- the Lite-off chains of 64b.2).  **Not
+shipped**: the release candidate had been soaked with the smaller set, and
+the two options' pictures await the user like the rest of the fifteen.  The
+user's call (the checklist's item 17): `liteopts = ref,m441.nshadow,m441.rings`
+turns them on (m441 30.0), or they go into `ref` in M50.
 
 ### 64b.5 The untested paths (item 3): restricted
 
@@ -26316,7 +26322,39 @@ checklist's item 17).
 
 ### 64b.6 The final build, the pictures, the md5s, the soak
 
-{{FINAL}}
+**Where M49's soak was** (item 0): M49's leave-behind (0.9.17, pid 33974) was
+stopped by pid at 01:17 G4 time (one SIGINT, `EXITCODE=0`;
+`docs/soak/m49b/m49b-soak-m49-leave.log.gz`): 2,080.8 s of game against
+2,080.9 s of wall (100.0%), the board to turn 13, 12 minigame modules, **0
+faults, 0 resyncs, no lock-up**, the worst frame 741 ms behind.
+
+**The final build** is `b3` (**0.9.18**, `isle` **`d0e16c40`**; the committed
+source differs from it by one comment in lite.c).  The chain (`~/m49b`,
+`docs/soak/m49b/index.txt.gz`):
+
+* **The md5 walks**: `--nomovies` **`0b58c5ee` / `2b99c60a` / `4a9a640c`**,
+  movies **`d2d40344` / `59008ce4` / `3f98f882`** -- the references.
+* **The picture checks with Lite off** (`PC:@b3,--nolite` against M48's `@p`
+  set, 0.9.16's frames, `tools/m48_pccmp.py`): **636 of 638 identical, the 2
+  the real-time m427's known second river state** (`14777:aa00e2b6`,
+  `15677:a8f08586` -- the pair M47, M48 and M49's indexes hold 8, 3 and 2
+  times), 24 runs, every run exit 0, 0 faults; `--halfwatch 1`: 49,828
+  frames, **0 half-black, 0 blips**.
+* **The soak** (`SOAK:60`, `--soak --com4 --rtc dolphin --freshcard --status
+  --perf --stuckwatch 200 --ovllog --frames 215760`, 04:34-05:34 G4 time,
+  Lite at auto; `docs/soak/m49b/m49b-soak-final-60.log.gz`): 3,599.6 s of
+  game against 3,601.8 s of wall (99.9%), the 20-turn board to turn 18, 19
+  minigame modules -- m441 (105 status lines), m401, m431, m444 of the Lite
+  screens among them; **0 faults, no lock-up, 0 `STUCK`**, the worst frame
+  671 ms behind, 87 `stall:` lines; **one resync** (1.62 s at retrace
+  194,495): m444's module took 1,617 ms to come off the disk (81 KB) -- the
+  checklist's known one-to-two-second pauses (the drive), the same class as
+  M49's one.
+* **The disk image**: `littlejelly:~/MarioParty4-PowerPC-0.9.18.dmg`
+  (`tools/make_dmg.sh` from `mp4-b3.app`, 4,469,415 bytes, md5
+  **`39dcd9c3...`**; the G4 keeps `~/Mario Party 4 PowerPC Edition
+  0.9.18.dmg`).  Installed on the G4 from the image: **`~/MarioParty4.app`
+  is 0.9.18**, 0.9.17 kept as `~/MarioParty4-0.9.17.app`.
 
 ### 64b.7 What M49b shipped (0.9.18)
 
@@ -26330,4 +26368,25 @@ checklist's item 17).
 | `port/docs/soak/m49b/` | the audit, the hash runs, the A/B, the soak |
 | `port/dist/Read Me.txt`, `release-checklist.md`, `fps-scoreboard.md` | Lite's set, m441, the eyes; 80 of 82 on 0.9.18 |
 
-{{LEFT}}
+### 64b.8 What is left running, and what M50 starts with
+
+On the G4 since 05:48 on 2026-09-30, on 0.9.18 (`~/MarioParty4.app`, `isle`
+`d0e16c40`; the runner slot `~/isle.app` -> `MarioParty4.app`):
+
+```
+isle --soak --com4 --rtc dolphin --freshcard --status --perf
+```
+
+log `~/isle-log.txt`, pid 69598, Lite at auto.  M49b's bundles on the G4:
+`~/mp4-b1.app` (the hash runs), `~/mp4-b2.app` (the materials' audit, the
+eyes' "before"), `~/mp4-b3.app` (the final build); `~/m49.env` now points
+at `~/m49b` and `b3`.  **M50 starts with**: the user's call on m441 (the
+nets' shadows and fence flowers into `ref`: proved, 30.0; or m441 stays
+29.1) and on the fifteen pictures; m433 as ever.
+
+**Rules learnt**: a proof by hash is only as wide as its cast -- M49's
+default cast passed m441 with a joint that is 25 units off for Donkey Kong;
+prove a character option with both casts (all eight characters), and audit
+what the option changes directly (the joint audit took three minutes and
+said it at once).  The game's own tables can be wrong for files it never
+uses in that place (the m2 eye names).
