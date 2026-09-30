@@ -234,7 +234,9 @@ nothing in it.  The very first time the game starts it offers Benchmark
 Mode by itself, once.
 
 "Run Benchmark Mode" closes the game and plays five scenes by itself, each
-in its own window, for about five minutes (twice that on a slow Mac):
+in its own window, for about five minutes (a few more when a scene lands
+right at the line and is played three times, as the port's own speed
+tests do; twice that on a slow Mac):
 
     1. the opening movie
     2. Toad's Midway Madness, a board with four computer players
@@ -369,7 +371,9 @@ Keyboard (always active, beside a pad too)
     F5 (or F12)             screenshot onto the Desktop, as a PNG named by
                             the frame (Mac OS X 10.5 gives F12 to Dashboard
                             unless you change that in System Preferences)
-    Esc                     quit
+    F1 or M                 the port's menu: Benchmark Mode, the settings
+                            now (BENCHMARK MODE); Esc closes it
+    Esc                     quit (closes the menu when it is open)
     Cmd+Q                   quit
 
 Game pads: Xbox One controllers over USB are driven directly (no driver

@@ -2,10 +2,10 @@
 ! (a dual 1 GHz Power Mac G4 with a Radeon 9000).
  
   The opening movie                30.0 fps
-  Toad's Midway Madness (board)    20.1 fps
-  Butterfly Blitz, Lite off        10.1 fps
-  Butterfly Blitz, Lite on         15.0 fps
-  Makin' Waves (the water)         24.8 fps
+  Toad's Midway Madness (board)    22.5 fps
+  Butterfly Blitz, Lite off        10.8 fps
+  Butterfly Blitz, Lite on         15.2 fps
+  Makin' Waves (the water)         22.8 fps
  
 Chosen and saved:
   Lite mode: on, the reference set and the extras
