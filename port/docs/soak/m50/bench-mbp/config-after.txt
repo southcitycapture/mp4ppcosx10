@@ -1,0 +1,11 @@
+# Mario Party 4 -- settings remembered from the command line and the
+# dialogs.  One `key = value' a line; `#' starts a comment.
+fullscreen = 0
+machine = unsupported: PowerMac, 4 x 2300 MHz 7400 (G4), 4096 MB RAM, Intel HD Graphics 3000 OpenGL Engine, 416 MB VRAM, 8 units, OS 10.6.6
+lite = on
+liteopts = ref,extras
+water = off
+movies = 1
+resident = 256
+benchmark = 2026-09-30 09:14 slower
+benchoffer = done

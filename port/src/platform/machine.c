@@ -857,6 +857,16 @@ void port_machine_check(void) {
             port_log("port> machine: --cpuxf given already (no GL_ARB_vertex_program)\n");
         }
     }
+    /* M50 (PLAN.md 65): under Rosetta a write to a protected page reaches the
+     * handler as SIGBUS with no fault address (and pc 0), so the vertex
+     * cache's write barrier (M42, gx_wb.c) cannot tell its own faults from a
+     * crash: every board and minigame died at its first drawn frame on the
+     * MacBook bench, 0.9.18 too.  Off there; the cache re-hashes instead. */
+    if (!mach.native && !mach.host_build && !port_opt.nowb) {
+        port_opt.nowb = 1;
+        port_log("port> machine: applying --nowb (under Rosetta a protected page's fault "
+                 "arrives without its address; the vertex cache re-hashes instead)\n");
+    }
     /* M36 (PLAN.md 51): the two loader settings.  The prefetch is on
      * everywhere (it only warms the cache); the resident set's budget is
      * the rule above unless --resident was given. */

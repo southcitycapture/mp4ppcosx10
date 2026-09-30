@@ -1,0 +1,15 @@
++ This Mac is as fast as the reference machine (a dual 1 GHz Power Mac G4 with a Radeon 9000).
+ 
+  The opening movie: 30.0 fps (the slowest tenth 30.0), game speed 100%
+  Toad's Midway Madness (a board): 30.0 fps (the slowest tenth 26.5), game speed 100%
+  Butterfly Blitz, Lite off: 27.3 fps (the slowest tenth 25.1), game speed 100%
+  Butterfly Blitz, Lite on: 30.0 fps (the slowest tenth 28.7), game speed 100%
+  Makin' Waves (the water): 29.9 fps (the slowest tenth 19.9), game speed 100%
+ 
+Chosen and saved:
+  Lite mode: on for the heaviest screens (the reference set)
+  Water: ripples (auto)
+  Movies: on
+  Memory kept for loading: 256 MB
+ 
+The report is on your Desktop: MarioParty4-benchmark-2026-09-30.txt

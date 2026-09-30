@@ -43,7 +43,7 @@ static void handler(int sig, siginfo_t* info, void* uap) {
     port_log_sync(); /* M40: the ring out, and this handler's lines written in place */
 #if defined(__APPLE__)
     ucontext_t* uc = (ucontext_t*)uap;
-    unsigned long long pc = 0, sp = 0;
+    unsigned long long pc = 0, sp = 0, lr = 0, ctr = 0;
     unsigned long long base = (unsigned long long)_dyld_get_image_header(0);
 #if defined(__aarch64__)
     if (uc && uc->uc_mcontext) {
@@ -54,6 +54,8 @@ static void handler(int sig, siginfo_t* info, void* uap) {
     if (uc && uc->uc_mcontext) {
         pc = uc->uc_mcontext->ss.srr0;
         sp = uc->uc_mcontext->ss.r1;
+        lr = uc->uc_mcontext->ss.lr;   /* M50: a jump to 0 leaves its caller here */
+        ctr = uc->uc_mcontext->ss.ctr;
     }
 #endif
     port_log("\n*** port: %s: signal %d at address %p\n",
@@ -84,6 +86,13 @@ static void handler(int sig, siginfo_t* info, void* uap) {
     port_log("    pc   %016llx  (image base %016llx, offset %llx)\n", pc, base,
              pc > base ? pc - base : 0);
     port_log("    sp   %016llx\n", sp);
+    if (lr || ctr) {
+        Dl_info dl;
+        port_log("    lr   %016llx (offset %llx)  ctr %016llx\n", lr, lr > base ? lr - base : 0, ctr);
+        if (lr && dladdr((void*)(uintptr_t)lr, &dl) && dl.dli_sname) {
+            port_log("    lr in %s  (%s)\n", dl.dli_sname, dl.dli_fname ? dl.dli_fname : "?");
+        }
+    }
     port_log("    atos -o <binary> -l 0x%llx 0x%llx\n", base, pc);
     {
         Dl_info di;

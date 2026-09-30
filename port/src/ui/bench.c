@@ -325,8 +325,7 @@ static int run_scene(const char* exe, int k, int nsc, const BenchScene* sc, cons
 }
 
 static const char* lite_names_ref =
-    "Butterfly Blitz (no butterfly or net shadows - round shadows under the nets instead - and fewer "
-    "fence flowers), and the lighter character models in Manta Rings, Fruits of Doom, Darts of Doom, "
+    "Butterfly Blitz (no butterfly or net shadows and fewer fence flowers), and the lighter character models in Manta Rings, Fruits of Doom, Darts of Doom, "
     "Order Up, Reversal of Fortune and Panel Panic";
 static const char* lite_names_extra =
     "plus fewer fish and no drifting bubbles in Manta Rings, and no pillar or fruit-stand shadows in "
@@ -481,8 +480,25 @@ void port_bench_driver(void) {
         fprintf(f, "\nSettings chosen (written to the game's config):\n");
         fprintf(f, "  lite     = %s%s%s\n", lite, *liteopts ? ", liteopts = " : "", liteopts);
         if (!fast) {
-            fprintf(f, "             Lite changes only what is drawn on the heaviest screens: %s%s%s.\n",
-                    lite_names_ref, slow ? ", " : "", slow ? lite_names_extra : "");
+            /* wrapped at 76 columns, indented under the value */
+            char w[1200];
+            const char* p = w;
+            snprintf(w, sizeof(w), "Lite changes only what is drawn on the heaviest screens: %s%s%s.", lite_names_ref,
+                     slow ? ", " : "", slow ? lite_names_extra : "");
+            while (*p) {
+                size_t n = strlen(p), cut = n;
+                if (n > 63) {
+                    cut = 63;
+                    while (cut > 10 && p[cut] != ' ') {
+                        cut--;
+                    }
+                }
+                fprintf(f, "             %.*s\n", (int)cut, p);
+                p += cut;
+                while (*p == ' ') {
+                    p++;
+                }
+            }
         }
         fprintf(f, "  water    = %s\n", water);
         fprintf(f, "  movies   = %d\n", movies_ok);

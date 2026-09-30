@@ -1,6 +1,6 @@
 Mario Party 4 PowerPC Edition
 =============================
-Version 0.9.18
+Version 0.9.19
 
 
 WHAT THIS IS
@@ -140,7 +140,9 @@ players' records are the same with Lite on and off).
 
 What Lite changes, by default ("auto") on the reference machine:
 
-    Butterfly Blitz        the butterflies cast no shadow
+    Butterfly Blitz        no shadows under the butterflies and the
+                           nets; every other big flower by the fence
+                           left out
     Manta Rings            the lighter character models
     Fruits of Doom         the lighter character models
     Darts of Doom          the lighter character models
@@ -155,17 +157,33 @@ use the middle one).  Lite takes the next one down -- the same character,
 the same animations, fewer polygons.  Side by side the difference is in
 the hands, the hair and the rounder parts of the face.
 
+The round shadow (0.9.19, m441.blob below) is the one you may remember
+from the Nintendo 64: a soft dark disc on the ground under each net, drawn
+by the port in a few triangles instead of the net's real shadow, which
+costs a whole extra drawing of every net each frame.  It follows the net
+and fades a little as the net rises; the game never sees it.  It is not
+in the default set: on the reference machine Butterfly Blitz read 30.0,
+29.9 and 29.9 frames a second with it against 30.0 without it (no dearer
+to draw, but the rule for the default set was 30.0 every time).  To have
+it, put
+
+    liteopts = ref,m441.blob
+
+in the config file.
+
 Every other screen is drawn exactly as before.  A faster Mac than the
-reference gets no Lite at all; a slower one gets the same set.
+reference gets no Lite at all.  A slower one gets the same set and a few
+extras on top, which the reference machine does not need: fewer fish and
+no drifting bubbles in Manta Rings, and no shadows under the fruit stands
+and the side pillars in Bowser's arena (Fruits of Doom, Darts of Doom).
 
 Butterfly Blitz keeps its own character models since 0.9.18: the game
 works out where each net is -- and so which butterflies are caught --
 from a joint of the character's hand, and in the lighter models that
 joint sits a little elsewhere (for Donkey Kong a good way off).  With
 the lighter models the game would play differently, so Lite leaves them
-out there; Butterfly Blitz reaches about 29 frames a second instead of
-30.  (m441.char below still turns them on, for anyone who prefers the
-speed -- knowing the catches can then differ from the console's.)
+out there.  (m441.char below still turns them on, for anyone who prefers
+the speed -- knowing the catches can then differ from the console's.)
 
 To turn it off -- the console's drawing everywhere, the seven slower --
 run the game once from the Terminal with --nolite, or put
@@ -182,6 +200,8 @@ and their names (liteopts = ... in the config file):
                    in the default set: changes the catches)
     m441.bshadow   Butterfly Blitz: the butterflies cast no shadow
     m441.nshadow   Butterfly Blitz: the nets and baskets cast no shadow
+    m441.blob      Butterfly Blitz: a round shadow under each net instead
+                   (with or without m441.nshadow, the nets' own shadows go)
     m441.rings     Butterfly Blitz: every other big flower by the fence
     m401.char      Manta Rings: the lighter character models
     m401.fish      Manta Rings: each fish school drawn to 10 fish
@@ -195,10 +215,65 @@ and their names (liteopts = ... in the config file):
     m444.char      Reversal of Fortune: the lighter character models
     m463.char      Panel Panic: the lighter character models
 
-(ref is the default set, all is every one.)  0.9.17 also draws Order Up's
+(ref is the default set, extras the slower Macs' additions -- m401.fish,
+m401.bubbles, m436.plates, m436.pillars, m435.pillars -- and all is every
+one.)  0.9.17 also draws Order Up's
 sparkles faster with the same pixels, for everyone.  0.9.18 fixes the
 lighter models' eyes in Fruits of Doom and Darts of Doom: when Bowser
 chars the loser, the eyes stay white, as on the console.
+
+
+BENCHMARK MODE
+
+Mario Party 4 can measure your Mac and choose its settings itself.  Press
+F1 (on a laptop keyboard fn-F1) or M at any time in the game: a small menu
+opens over the picture.  The arrow keys or the controller's stick choose,
+Return or A selects, Esc or B goes back; F1 or M again closes it.  While
+the menu is open the game goes on underneath but your controllers do
+nothing in it.  The very first time the game starts it offers Benchmark
+Mode by itself, once.
+
+"Run Benchmark Mode" closes the game and plays five scenes by itself, each
+in its own window, for about five minutes (twice that on a slow Mac):
+
+    1. the opening movie
+    2. Toad's Midway Madness, a board with four computer players
+    3. Butterfly Blitz, the heaviest minigame, with Lite off
+    4. Butterfly Blitz again with Lite on -- only if it needed it
+    5. Makin' Waves, the heaviest water
+
+Each is the same short trip the port's own speed tests make (the computer
+players walk in from the start, the game hurries undrawn to the scene, and
+the scene is timed as it plays at real speed).  Please don't touch the
+controls while it runs.  Your memory card is never touched -- the scenes
+play on a scratch card.  Then the game opens again and shows, in plain
+words, how fast this Mac is next to the reference machine (a dual 1 GHz
+Power Mac G4 with a Radeon 9000), the frame rate of each scene, and what
+it chose:
+
+    Lite mode   off on a faster Mac; on for the heaviest screens (the
+                default set) on one as fast as the reference; the default
+                set and the extras on a slower one (LITE MODE)
+    Water       the ripples where the Mac keeps up, flat where it does not
+                (THE WATER)
+    Movies      on when the opening movie plays at full speed (MOVIES)
+    Memory      the memory kept for loading, by the memory installed
+                (LOADING)
+
+These go into the config file (WHERE YOUR THINGS LIVE) as lite, liteopts,
+water, movies and resident -- the same lines the PowerPCube launcher uses
+-- and stay until you change them or run Benchmark Mode again.
+
+It also leaves a report on your Desktop, MarioParty4-benchmark-DATE.txt:
+the Mac's model, processors and speed, memory, graphics card and its
+memory, the system version and the game's version, each scene's frame rate
+(with Lite off and on), and the settings chosen.  Nothing personal -- no
+names, no file paths of yours -- so it can be sent to anyone helping you.
+The scenes' own logs are in the Benchmark folder next to the config.
+
+On the reference machine Benchmark Mode chooses what the game already
+does by default (Lite at auto, the water at auto, the movies on, 256 MB
+kept), so running it there changes nothing.
 
 
 LOADING
@@ -238,9 +313,11 @@ is where the PowerPCube launcher keeps them:
     resident = 128        the resident set's size: auto (the machine
                           check's choice, the default), 0, 64, 128 or 256
 
-The game only reads these two lines, it never writes them; a switch on the
-command line (--noprefetch or --prefetch, --resident N or --resident auto)
-wins for the run it is given to.
+The game reads these lines at every start; only Benchmark Mode writes
+one of them (resident, with the movies line, the water and Lite: see
+BENCHMARK MODE).  A switch on the command line (--noprefetch or
+--prefetch, --resident N or --resident auto) wins for the run it is given
+to.
 
 On the machine this was built on -- a dual 1 GHz Power Mac with 1.5 GB --
 the two together turn a twenty-turn board's 319 MB of disc reading into
@@ -365,8 +442,11 @@ WHERE YOUR THINGS LIVE
                               same layout Dolphin uses, so a save moves
                               either way)
         config                the disc image's path, the fullscreen and
-                              water choices (level, look, the pond), and
-                              movies / prefetch / resident if set
+                              water choices (level, look, the pond), Lite,
+                              and movies / prefetch / resident if set;
+                              Benchmark Mode's choices
+        benchmark-result.txt  Benchmark Mode's last result (and its
+        benchmark/            scenes' logs)
         MarioParty4.log       the log of the last run
 
 Deleting the folder loses your save file, so that is the folder to back up.

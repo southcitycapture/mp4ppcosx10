@@ -58,9 +58,9 @@ typedef struct {
 
 /* `ref`: the set that takes each screen over 29.5 on the reference, measured
  * option by option (PLAN.md 64.4).  M50 (PLAN.md 65, the user's picks of
- * 2026-09-30): m441's nets without their projected shadow -- a round blob
- * under each instead (m441.blob) -- and every other fence flower join the
- * butterflies' shadows; the `extra` options are on at auto only below the
+ * 2026-09-30): m441's nets without their projected shadow and every other
+ * fence flower join the butterflies' shadows (the round blob under each net,
+ * m441.blob, is an option by name); the `extra` options are on at auto only below the
  * reference class, where the reference's set is not enough. */
 static const LiteOpt lite_opts[] = {
     {44101, "m441.bshadow", 1, "Butterfly Blitz: the butterflies cast no shadow", 0},
@@ -73,8 +73,12 @@ static const LiteOpt lite_opts[] = {
     /* M50: the user's "very basic circular shadow... like it's from the N64":
      * a flat dark disc on the floor under each net, drawn by the port after
      * the floor's layer (port_lite_layer_end); the net casts no projected
-     * shadow while it is on (as m441.nshadow) */
-    {44105, "m441.blob", 1, "Butterfly Blitz: a round N64-style shadow under each net instead of its projected one", 0},
+     * shadow while it is on (as m441.nshadow).  Not in `ref`: the user's rule
+     * was "in the default set if it still holds 30.0 three runs" and it read
+     * 30.0 / 29.9 / 29.9 (six runs: three 30.0, three 29.9; the drawn frame
+     * 24.1 ms against 24.2 without it -- no dearer, but not 30.0 three times;
+     * PLAN.md 65.2) */
+    {44105, "m441.blob", 0, "Butterfly Blitz: a round N64-style shadow under each net instead of its projected one", 0},
     {40101, "m401.fish", 0, "Manta Rings: each fish school drawn to its first 10 fish", 1},
     {40102, "m401.bubbles", 0, "Manta Rings: the ambient bubbles not drawn", 1},
     {40103, "m401.char", 1, "Manta Rings: the lighter character models", 0},
