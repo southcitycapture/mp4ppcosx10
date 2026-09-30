@@ -25798,3 +25798,382 @@ same drawing path), so a pass lost by hundredths is named, not re-run
 until it passes; and a reader of "unwritten" memory may be the game reading
 garbage (m427's `unk_24`): hash what the draws receive (`--drawhash`) before
 hunting a reader.
+
+## 64. M49 log: Lite mode *(2026-09-29, littlejelly)*
+
+M48 left 74 of 82 with every short screen's wall named and "no exact lever
+left that reaches these screens" (63.14).  The user's decision, in their
+words: "we are building for the lowest spec possible… take all angles to
+get that 30fps target.  Simplification is our best bet… we're making a
+'Lite' mode for low spec machines."  The brief: read M48's soak (item 0);
+the exact trims the Fable review found, pixel-identical, on for everyone
+(item 1); measure the lighter character files (item 2); the Lite options,
+each behind a per-screen, per-machine switch, each measured and pictured
+for the user's approval, under two unbreakable rules -- never change how
+many times the RNG is called, never change anything game logic reads
+(item 3); the scoreboard with Lite at its auto default and the seven with
+Lite off (item 4).
+
+**The short answer.**  **The lighter character files are the lever**
+(64.4): the game ships every character in three files of decreasing detail,
+and one step lighter takes 3-8 ms off the game thread's drawn frame in each
+of the seven -- alone it takes every one to 29.9-30.0.  The review's other
+options (shadows, decorations, fish, bubbles) buy 0.3-1.5 fps each (64.5).
+**Lite mode** (64.3): `lite = auto|on|off`, per screen and per machine like
+the water; at auto on the reference the character file in the seven and no
+butterfly shadows in m441; faster Macs none; below the reference every
+option.  **The two rules held and were proved**: in lockstep, Lite auto
+against off, to each minigame's end, both RNG seeds, every model's
+position and the players' records hash the same on every frame, the same
+exit frame, coins and results screen (64.4); a lighter file for m433 was
+built and refused on exactly that proof (64.6).  **The exact trims** (64.2):
+m431's sparkles 28.1 -> 29.1 (shipped), m444's paused table (exact, no
+gain, shipped), the off-frustum skin skip -- no model qualifies.  **The
+scoreboard with Lite at auto: 81 of 82** (M48: 74) -- the seven all pass
+(29.8-30.0), m433 29.4 the one short (not a Lite screen; parity with 0.9.16
+in its A/B).  With Lite off the seven are 26.9-29.7.  The picture checks:
+638 of 638 identical to 0.9.16's, Lite off and on; both md5 walks the
+references.  **0.9.17** shipped after a 2 h 10 min soak (0 faults, no lock-up; one disk-bound resync).
+
+### 64.1 The soak, read (item 0)
+
+M48's leave-behind (`isle --soak --com4 --rtc dolphin --freshcard --status
+--perf` on the player's build `p`, `isle` `1d6d112b`, pid 17190) was read
+and stopped by pid at 09:32 G4 time (one SIGINT, `EXITCODE=0`;
+`docs/soak/m49/m49-soak-m48-leave.log.gz`): **225,368 retraces at 100.0%
+speed** (game 3,759.89 s against wall 3,760.01 s), the board to turn 19 and
+19 minigames (m402, m406, m410-412, m415, m419-424, m426-428, m431, m438,
+m441, m444); **0 faults, 0 skin guard hits, 0 resyncs, no lock-up**, the
+worst frame 673 ms behind (a load), 89 `stall:` lines (the worst 461 ms),
+38 underruns (36.4 an hour, all at the boot, the character select and the
+board's first turn), the card's renames 1.7 s behind the game as ever.
+`M48_LEAVE` was cleared in `~/m48.env` before the first chain; M49's chain
+is `tools/m49_chain.sh` (`~/m49`, `~/m49.env`, `M49_APP_OLD` = 0.9.16).
+
+### 64.2 The exact trims (item 1)
+
+* **(a) m431 Order Up's sparkles** (`patches.txt`, the hook `fn_1_72B4`):
+  the effect model keeps a 1,024-slot quad array and called a fixed
+  4,096-vertex display list every drawn frame with ~20 slots alive; a dead
+  slot's four vertices are written at the origin (drawn as nothing).  Now
+  the live slots are counted and only their quads are sent (`GXBegin` with
+  the same indices, in the same order); a list whose every slot is live
+  still goes as the display list, one with none sends nothing.  **Exact**:
+  m431's lockstep frames with `--notrim` (the old path) and without are the
+  same bytes (entry +60/+300/+1,200: `8f7857f5` / `415b6a9b` / `902e7755`),
+  and the picture checks with Lite off are 0.9.16's (64.7).  **The A/B**
+  (0.9.16 against the M49 build with Lite off, three runs, interleaved):
+  **28.1 (28.0 / 28.6 / 28.1) -> 29.1 (29.1 / 28.9 / 29.9)**, the drawn frame
+  28.5 -> 28.0 ms, the render thread's replay 23.0 -> 21.7 ms.
+* **(b) m444 Reversal of Fortune's paused table** (`pinball.c`
+  `fn_1_C214`): the loop re-ran `Hu3DMotionExec` on the table every frame to
+  read one hook matrix.  While the table is paused at the time this loop
+  last evaluated, with no shift, overlay, shape or cluster motion on it, its
+  objects already hold that evaluation (Hu3DExec's is the same call on the
+  same inputs; the call writes values, it does not accumulate), so it is
+  skipped.  **Exact** (entry +60/+300/+1,200 `b559ef95` / `c9d1af50` /
+  `87f9fd1c` with and without `--notrim`); **the A/B: 29.7 (29.8 / 29.7 /
+  29.2) -> 29.5 (29.2 / 29.9 / 29.5)**, the drawn frame 25.0 -> 25.1 -- no
+  measurable gain (the review's 0.1-0.3 ms is inside a run's spread).  It
+  ships (exact, harmless); it buys nothing.
+* **(c) m436/m435: skinning skipped for models outside the camera and
+  every shadow frustum** -- **no model qualifies.**  The port already skins
+  lazily (M18: at the model's first draw of a drawn frame, never on a
+  consumed one), so the question is only models that are walked for drawing
+  and land nowhere.  Every skinned model in both games -- Bowser, the two
+  Koopa Kids, the four players -- is a shadow caster (`Hu3DModelShadowSet`,
+  main.c:1163/1233/1468 and m435's), and the shadow camera looks straight
+  down from 2,500 over the arena with a 45-degree field (main.c:303), the
+  whole floor the players stand on: every caster is drawn in the shadow
+  pass, which runs first each frame and reads the skin.  What the
+  measurement found instead (64.4): in the scoreboard's window (entry
+  +300..+1,500, Bowser's introduction) the four players are drawn behind
+  the camera -- none of their pixels is on screen (the Lite frames there
+  are byte-identical to the exact ones) -- and cost ~8 ms of the drawn
+  frame.  An exact skip of their main-pass draw alone would need a bound of
+  a skinned pose (the engine's boxes are the bind pose's) and would still
+  pay the skin for the shadow pass; not built.
+
+### 64.3 The switch: `lite = auto|on|off` (item 3's mechanism)
+
+`port/src/debug/lite.c`, modelled on the water's levels (59.7).  Lite is a
+list of **options**, each belonging to one minigame, each asked for by a
+patched line of that game's code -- `port_lite_opt(ID)` -- which answers
+yes only inside that minigame (`port_cur_mg_number()`), only when the
+machine and the setting say so:
+
+* **`lite = auto`** (the default, the config key; `--liteauto`): on the
+  reference class (`port_machine_class()` 1: a dual 1 GHz G4 + Radeon 9000)
+  the table's `ref` set; below the reference (class 0) every option of the
+  seven; **faster machines (class 2) and machines not judged (-1) none**.
+* **`lite = on`** (`--lite`): every option, or `--liteopts`'s list.
+* **`lite = off`** (`--nolite`): console-exact everywhere.
+* **`liteopts = LIST`** (`--liteopts`): the options by name (`m441.bshadow,
+  m401.fish, ...`), `ref` the reference's set, `all`.  All remembered like
+  the water; the log says what is in force (`port> lite (M49): ...`).
+
+Each option changes what is drawn and nothing the game computes, by one of
+four shapes: a caster's `Hu3DModelShadowSet` not made; a decorative model
+left `HU3D_ATTR_DISPOFF` (not drawn, not animated -- after every `frand`
+its placement makes); a particle model's quads neither built nor drawn
+while its hook (the simulation and its `frand` calls) still runs
+(`port_lite_nodraw`, one test in `hsfanim.c`'s `particleFunc` per particle
+model per drawn frame); the character file one step lighter
+(`CharModelCreate(c, 2)` -> 4, 4 -> 8: `port_lite_charmodel`).  The
+options' ids and the patched lines are in `patches.txt` (M49 block).
+
+**The determinism proof, `--gamehash N`** (lite.c): every frame, both RNG
+seeds (`frand_seed`, through a one-line getter patched into `frand.c`, and
+`rand8`'s `rnd_seed`), every live model's position, rotation and scale
+(`Hu3DData`, 512 slots) and the four players' records (`GWPlayer`) hashed,
+the frame's hash chained, the chain logged every N frames.  A Lite change
+that moved one `frand` call, one model or one coin would split the chains
+at that frame and never rejoin.
+
+### 64.4 The lighter character files (item 2)
+
+`CharModelCreate(char, N)` (chrman.c:217) loads one of three files per
+character: N=2 `c00Xm1` (the close-up games: m431, m435, m436, m441,
+m444), N=4 `c00Xm2` (m401, m463 and other busy games), N=8 `c00Xm3`.  The
+hook names (`CharModelItemHookGet`) do not depend on the file, the eye
+textures follow it (chrman.c:1174), the motions are the character's own.
+
+**Measured** (`--skinstats`, lockstep, the default cast Mario / Luigi /
+Peach / Yoshi; `docs/soak/m49/h/`): the skinned vertices per character,
+m1 -> m2: **1,744 -> 1,065, 2,163 -> 1,611, 1,628 -> 1,167, 1,801 -> 1,356**
+(-25..-39%), objects 107-113 -> 91-109, meshes the same or fewer; m2 -> m3
+(m401, m463): **1,065 -> 759, 1,611 -> 1,102, 1,167 -> 794, 1,356 -> 712** (-29..-47%), objects 91-109 -> 51-67.  **The time** (the A/B below, the option alone):
+the game thread's drawn frame **-3.3 to -8.0 ms** on the five close-up
+games (m441 28.1 -> 24.8, m436 28.4 -> 20.4, m435 27.5 -> 19.3, m431 28.0 ->
+24.2, m444 25.1 -> 21.4) and -3.4 / -6.2 on m401 / m463 (m2 -> m3), the
+render thread's replay -0.7 to -4.4 ms.  Far more than the vertices alone:
+the lighter files also have fewer objects to walk and fewer materials to
+set up.  The other cast (Wario / Donkey Kong / Daisy / Waluigi, `--cast 4,5,6,7`), m1 -> m2:
+**1,819 -> 1,316, 1,702 -> 1,240, 2,285 -> 1,780, 1,688 -> 1,307**.  **Per
+model, on the game thread** (`--modelcost 300,1500`, a measurement tree
+`make M49X=1` that times each model's draw -- the skin runs inside it --
+in the main and the shadow pass; `docs/soak/m49/mc/`): m436's four players
+**8.6 -> 4.9 ms** a drawn frame (Mario's cast) and **8.5 -> 6.1 ms**
+(Wario's), 1.8-2.7 ms a character before, 1.0-1.7 after, each about half in
+the shadow pass; m401's (m2 -> m3) **5.4 -> 3.6 ms** and **6.3 -> 3.9 ms**.
+The draws: m1 -> m2 keeps the skinned meshes within one or two of each
+other (13 -> 13, 9 -> 9, 15 -> 13; the saving is vertices and objects), m2 ->
+m3 halves them (13 -> 6, 9 -> 6, 12 -> 8).
+
+**Does it touch game logic?**  The file changes the character's meshes,
+and could change a joint the game reads (m441 reads the net's hook matrix
+for its catches, main.c:1015/1080; m436 hands fruit by `g000m0-itemhook_R`).
+The proof says no: **every one of the seven, lockstep, Lite auto against
+Lite off, to the minigame's end** -- identical `--gamehash` chains on every
+line (m441 391 lines to frame 23,460; m436 385; m435 385; m401, m431, m444,
+m463 315-321), the module left on the same frame (m441 entry +5,337, m436
++8,710, m435 +5,953, m401 +3,727, m431 +4,354, m444 +3,669, m463 +2,949),
+the same coins and stars after, the results screen's frame byte-identical
+(m401 `4b82f1a3`, m431 `94920474`, m444/m436/m435 `2adf366f`, m463
+`045f0670`, m441 `f096d609`).
+
+### 64.5 The Lite options, each measured (item 3)
+
+**The A/B** (`tools/m49_chain.sh` `A:GAME:ARM:K`, the scoreboard's teleport
+at real time, three runs an arm, interleaved; the build `l1`, whose code is
+the final build's; `tools/m44_ab.py`, `docs/soak/m49/ab1/`): each option
+alone, `--lite --liteopts NAME`, against `--nolite`; the fps is the scene's
+median presented fps, the drawn frame and the render thread's replay the
+medians over entry +300..+1,500.  **Determinism**: every option in
+lockstep, `--gamehash 60`, against Lite off -- the first 1,300 frames of the
+minigame for each option alone, every option at once (`--liteopts all`,
+the pilot: m441 and m401), and the auto set to each minigame's end (64.4):
+**every chain identical, every run exit 0**.
+
+| game | option | what changes on screen | fps alone (runs) | drawn frame, ms | rt replay, ms | picture | auto |
+|---|---|---|---|---|---|---|---|
+| m441 Butterfly Blitz | (Lite off) | -- | 26.6 (26.6 / 26.1 / 27.0) | 28.1 | 19.6 | -- | |
+| | `m441.char` | the lighter character file (m2 for m1) | **29.9** (29.9 / 30.0 / 29.9) | 24.8 | 18.3 | `m49-lite-m441-char.jpg` | **on** |
+| | `m441.bshadow` | the 20 butterflies cast no shadow | 29.2 (29.9 / 28.8 / 29.2) | 25.9 | 17.8 | `m49-lite-m441-bshadow.jpg` | **on** |
+| | `m441.nshadow` | the nets and baskets cast no shadow | 27.5 (28.1 / 27.5 / 27.1) | 27.4 | 19.5 | `m49-lite-m441-nshadow.jpg` | off |
+| | `m441.rings` | every other big flower by the fence hidden | 27.5 (27.5 / 27.7 / 27.1) | 27.7 | 18.9 | `m49-lite-m441-rings.jpg` | off |
+| | all four | | 30.0 (30.0 / 30.0 / 30.0) | 20.7 | 15.7 | | |
+| m401 Manta Rings | (Lite off) | -- | 28.1 (28.1 / 28.4 / 28.1) | 25.8 | 19.1 | -- | |
+| | `m401.char` | the next lighter file (m3 for the game's own m2) | **29.9** (29.9 / 29.8 / 29.9) | 22.4 | 18.6 | `m49-lite-m401-char.jpg` | **on** |
+| | `m401.fish` | each fish school drawn to its first 10 fish (all simulated) | 29.9 (29.1 / 30.0 / 29.9) | 23.4 | 18.5 | `m49-lite-m401-fish.jpg` | off |
+| | `m401.bubbles` | the 450 drifting bubbles not drawn (simulated) | 28.5 (27.9 / 28.6 / 28.5) | 25.2 | 18.8 | `m49-lite-m401-bubbles.jpg` | off |
+| | all three | | 30.0 (30.0 / 30.0 / 29.9) | 19.9 | 17.6 | | |
+| m436 Fruits of Doom | (Lite off) | -- | 28.2 (28.0 / 28.2 / 28.2) | 28.4 | 19.7 | -- | |
+| | `m436.char` | the lighter character file | **30.0** (30.0 / 30.0 / 30.0) | 20.4 | 16.5 | `m49-lite-m436-char.jpg` | **on** |
+| | `m436.plates` | the eight fruit stands cast no shadow (visible: the review's "hidden under them" is wrong) | 28.9 (28.8 / 28.9 / 29.1) | 27.7 | 18.9 | `m49-lite-m436-plates.jpg` | off |
+| | `m436.pillars` | the two side pillars cast no shadow (off camera in every frame dumped) | 28.8 (28.8 / 28.3 / 28.8) | 28.0 | 19.3 | `m49-lite-m436-pillars.jpg` | off |
+| | all three | | 30.0 (30.0 / 30.0 / 30.0) | 19.2 | 15.1 | | |
+| m435 Darts of Doom | (Lite off) | -- | 29.2 (29.2 / 29.1 / 30.0) | 27.5 | 19.3 | -- | |
+| | `m435.char` | the lighter character file -- the players are off camera through the throws: byte-identical frames | **30.0** (30.0 / 30.0 / 30.0) | 19.3 | 15.9 | `m49-lite-m435-char.jpg` | **on** |
+| | `m435.pillars` | the side pillars cast no shadow (off camera) | 30.0 (29.9 / 30.0 / 30.0) | 27.2 | 18.9 | `m49-lite-m435-pillars.jpg` | off |
+| m431 Order Up | (0.9.16) | -- | 28.1 (28.0 / 28.6 / 28.1) | 28.5 | 23.0 | -- | |
+| | (Lite off: the exact trim) | none | 29.1 (29.1 / 28.9 / 29.9) | 28.0 | 21.7 | -- | |
+| | `m431.char` | the lighter character file | **30.0** (30.0 / 30.0 / 30.0) | 24.2 | 18.7 | `m49-lite-m431-char.jpg` | **on** |
+| m444 Reversal of Fortune | (0.9.16) | -- | 29.7 (29.8 / 29.7 / 29.2) | 25.0 | 22.1 | -- | |
+| | (Lite off: the exact trim) | none | 29.5 (29.2 / 29.9 / 29.5) | 25.1 | 22.2 | -- | |
+| | `m444.char` | the lighter character file | **29.9** (30.0 / 29.8 / 29.9) | 21.4 | 21.5 | `m49-lite-m444-char.jpg` | **on** |
+| m463 Panel Panic | (Lite off) | -- | 29.8 (29.9 / 29.8 / 29.5) | 26.4 | 18.6 | -- | |
+| | `m463.char` | the next lighter file (m3 for m2) | **30.0** (30.0 / 30.0 / 30.0) | 20.2 | 16.0 | `m49-lite-m463-char.jpg` | **on** |
+
+(The pictures are `port/docs/screenshots/`, each the same lockstep frame
+console-exact and Lite, and the 160x120 that changed most, enlarged, or a
+x16 difference map where nothing changes by more than 8 levels.)
+
+**The auto set** (the table's `ref`): **the lighter character file on all
+seven, and no butterfly shadows on m441** -- the minimum that takes each over
+29.5 with margin: the character file alone reads 29.9-30.0 on every one of
+the seven, three runs each, and m441, the heaviest game thread (its drawn
+frame still 24.8 ms with the file), gets the butterflies' shadows too (alone
+they take 2.2 ms off the drawn frame; the pair is what the scoreboard and
+the whole-minigame runs measure: 30.0 there).  **A
+gentler set for the user**: the character file is the one option that
+matters; every shadow and decoration option buys 0.3-1.5 fps alone and
+none crosses on its own except `m401.fish` (29.9, near-invisible) and
+`m435.pillars` (inside the spread).  Without `m441.bshadow`, m441 reads 29.9
+(the file alone); `liteopts = m441.char,m401.char,...` sets exactly that.
+Below the reference class every option of the seven is on; above it none.
+
+**Through the play, not only the window** (`AL:`, the whole minigame at
+real time, entry +120 to the end, two runs each, `docs/soak/m49/al/`):
+Lite off -> Lite auto: m441 26.9 / 26.9 -> **30.0 / 30.0**, m401 28.9 /
+28.2 -> **30.0 / 30.0**, m436 28.1 / 28.2 -> **30.0 / 30.0**, m435 28.1 /
+28.1 -> **30.0 / 30.0** (its play is heavier than the scoreboard's
+introduction window), m431 28.8 / 28.9 -> **30.0 / 30.0**, m444 29.5 / 29.8
+-> **29.9 / 29.9**, m463 30.0 / 30.0 -> 30.0 / 30.0.
+
+### 64.6 The scoreboard with Lite at auto, and the seven with Lite off (item 4)
+
+On the final build (0.9.17, `l3`, `isle` `d375aa32`; Lite auto, the
+reference class) -- `port/docs/fps-scoreboard.md`, M48's kept as
+`fps-scoreboard-m48-after.md`, the logs `docs/soak/m49/board/` and
+`board-off/`: **81 of 82 screens pass**, all 82 at 100% game speed, 125
+runs, every run exit 0 but `goto-mstorydll` (exit 2, every milestone's).
+
+| screen | M48 (0.9.16's code) | M49, Lite auto (runs) | Lite off, same build (runs) | game thread drawn + consumed, auto | render thread replay + decode, auto | verdict |
+|---|---:|---|---|---|---|---|
+| m441 Butterfly Blitz | 26.5 | **30.0** (30.0 / 30.0 / 30.0) | 26.9 (26.8 / 26.9 / 26.9) | 21.8 + 5.7 | 16.2 + 7.1 | PASS |
+| m401 Manta Rings | 27.6 | **29.9** (29.6 / 29.9 / 29.9) | 27.0 (28.0 / 26.9 / 27.0) | 21.0 + 7.3 | 18.1 + 6.8 | PASS |
+| m436 Fruits of Doom | 28.0 | **30.0** (30.0 / 30.0 / 30.0) | 28.0 (28.0 / 28.0 / 27.8) | 20.2 + 4.2 | 16.0 + 10.3 | PASS |
+| m435 Darts of Doom | 29.0 | **30.0** (30.0 / 30.0 / 30.0) | 29.0 (29.0 / 29.1 / 29.0) | 19.2 + 4.3 | 15.6 + 10.0 | PASS |
+| m431 Order Up | 28.4 | **30.0** (1 run) | 29.0 (28.9 / 29.0 / 29.2) | 23.9 + 4.2 | 18.4 + 4.7 | PASS |
+| m444 Reversal of Fortune | 29.0 | **29.8** (29.8 / 29.8 / 29.8) | 28.9 (28.9 / 29.4 / 28.8) | 22.0 + 4.1 | 21.7 + 6.4 | PASS |
+| m463 Panel Panic | 29.2 | **30.0** (1 run) | 29.7 (29.7 / 29.9 / 29.1) | 14.6 + 4.0 | 11.1 + 6.1 | PASS |
+| m409 | 29.45 | **29.6** (28.9 / 29.8 / 29.6) | -- | 22.2 | 20.8 + 4.8 | PASS |
+| w01 | 29.5 | 29.5 pooled / 30.0 board-only | -- | | | PASS |
+| **m433 Beach Volley Folly** | 29.8 | **29.4** (29.9 / 29.4 / 29.3) | -- | 25.3 + 5.5 | 17.9 + 4.5 | **short by 0.1** |
+
+**m433, the one short.**  Not a Lite screen: 0.9.17 draws it as 0.9.16
+does.  The A/B at once (`A:m433`, three runs each, interleaved,
+`docs/soak/m49/ab433/`): 0.9.16 **30.0** (30.0 / 29.9 / 30.0), 0.9.17's path
+(`@l4,--nolite`, whose m433 code is l3's) **29.9** (29.9 / 29.9 / 29.0), the
+drawn frame 25.4 / 25.7 ms: parity within its spread, like M48's m409; it
+is counted short, as the rule counts it, and named rather than re-run.
+**A Lite option for it was built and refused**: `m433.char` (the next
+lighter file, 4 -> 8) read 30.0 (30.0 / 30.0 / 29.9, drawn 22.2 ms) -- and
+its determinism run split from Lite off at frame 14,520: the RNG never
+moved and the game ended on the same frame with the same coins, but on a
+few frames a model's position differs and rejoins (the ball held at the
+player's hand: m433 reads the hand joint by name, player.c:1439-1442, and
+the lighter file's joint sits elsewhere).  A position game logic reads --
+rule 1; the option was removed from the code (l4 -> back to l3's source).
+**Screens meeting 29.5: 81 of 82** (M48: 74).
+
+### 64.7 The pictures and the md5s on the final build
+
+* **The md5 walks** on `l3` with Lite at auto (and on `l2`, `l4`):
+  `--nomovies` **`0b58c5ee` / `2b99c60a` / `4a9a640c`**, movies
+  **`d2d40344` / `59008ce4` / `3f98f882`** -- the references; the walks never
+  enter the seven minigames (they stop on the board at frame 9,000).
+* (`l2` and `l3` are the same code but for the machine check's scoreboard
+  sentence -- a string no draw reads; the proofs and the picture checks ran
+  on `l2`, the walks, the scoreboard and the soak on `l3`.)
+* **The picture checks with Lite off** (`PC:@l2,--nolite` against M48's
+  `@p` set -- 0.9.16's frames -- `tools/m48_pccmp.py`): **638 of 638 frames
+  identical, every run exit 0, 0 faults**; `--halfwatch 1` over 24 runs:
+  49,833 frames, **0 half-black, 0 blips**.
+* **With Lite at auto** (`PC:@l2`): **the same 638 of 638** (49,889 frames,
+  0 half-black, 0 blips): the set's only Lite screens are the Bowser
+  pillars' lockstep frames at entry +300/+700/+1,200, Bowser's introduction,
+  where no player is on screen.  **The Lite reference set** for the seven is
+  the lockstep dumps of the auto runs (`docs/soak/m49/lite-reference-frames.txt`:
+  m441 `ca9eb467` / `b082772c` / `b2f1af1c` at +60/+300/+1,200, m401
+  `3ab8c9f4` / `ccb0ab6f` / `24c46ef1`, m431 `98a30d42` / `506132f9` /
+  `3b021253`, m444 `e4b12c01` / `5861ba2e` / `aa7bd7b1`, m463 `33bcf9fc` /
+  `923f3386` / `abae02e3`; m436 and m435 there the exact frames; each
+  game's results screen identical to Lite off), plus the play frames of
+  64.5's pictures.
+* **The exact trims**: m431 and m444's lockstep frames with and without
+  `--notrim` identical (64.2); the scoreboard's minigame frames that Lite
+  does not touch are the same pairs as ever.
+
+### 64.8 The soak before the dmg
+
+On the final build (0.9.17, `l3`, `isle` `d375aa32`, Lite at auto; chain 7,
+`SOAK:130`: `--soak --com4 --rtc dolphin --freshcard --status --perf
+--stuckwatch 200 --ovllog --frames 467480`, 22:30-00:40 G4 time;
+`docs/soak/m49/m49-soak-final-130.log.gz`): **467,480 retraces at 100.0%
+speed** (game 7,799.13 s against wall 7,800.71 s), a whole 20-turn board and
+twelve turns of the next, 29 minigame modules -- four of them Lite screens,
+with Lite on: m441 (267 status lines, mean 29.4 fps), m444 (258, 28.7), m431
+(73, 27.6), m401 (62, 25.6; the soak's means count every line, loads and
+fades included); **0 faults, 0 skin guard hits, no lock-up**, the worst
+frame 666 ms behind, 188 `stall:` lines, the card's renames ~1.7 s behind
+the game as ever.  **One resync** (1.04 s of game time dropped at retrace
+252,434): the board's ending module (`mstory3dll`, overlay 78) took 1,040 ms
+to load from the disk right after a card write whose rename took 1.8 s --
+the checklist's known "one-to-two-second pauses" class (the drive), on a
+screen Lite never touches.  **Three `STUCK` lines** (frames 270,513,
+283,066, 297,284: the harness's 200-second watch across the board's end, the
+mode select and the character select) -- **the same three at the same
+frames as M47's release soak of 0.9.16** (`m47-soak-final-120.log.gz`): the
+soak's own navigation, deterministic; the game went on to turn 12 of the
+next board.  Then the dmg: **`littlejelly:~/MarioParty4-PowerPC-0.9.17.dmg`**
+(`tools/make_dmg.sh` from `mp4-l3.app`, 4,467,205 bytes, md5 `1a227120...`;
+the G4 keeps `~/Mario Party 4 PowerPC Edition 0.9.17.dmg`).
+
+### 64.9 What M49 shipped (0.9.17)
+
+| | |
+|---|---|
+| `port/src/debug/lite.c` | Lite mode: `lite = auto|on|off`, `--lite` / `--nolite` / `--liteauto`, `--liteopts`, `--litefishk`, `--litechar`; the option table and the reference class's set; `port_lite_nodraw` (particle quads not drawn, the hook still run); `--gamehash N` (the determinism proof); `--notrim` |
+| `port/patches.txt` (M49 block) | the exact trims (m431's live sparkle quads, m444's paused table); the options' lines in m441, m401, m436, m435, m431, m444, m463 (`port_lite_opt`, `port_lite_charmodel`, `port_lite_fishk`); `frand.c`'s seed getter; `hsfanim.c`'s one test |
+| `port/src/platform/main.c`, `vi.c`, `machine.c`, `port/include/port.h` | the flags and the config keys; the hash per retrace; the machine check's scoreboard sentence; 0.9.17 / M49 |
+| `port/src/debug/modelcost.c`, `port/patches-m49x.txt`, `port/Makefile` (`M49X=1`), `motion_exec.c` | `--modelcost A,B`: each model's game-thread cost per pass -- a measurement tree, compiled out of the player's build |
+| `port/tools/m49_chain.sh`, `m49_compare.py`, `fps_board.sh` | the chain (`H:` lockstep with the hash, `AL:` the whole minigame, `FBE:` a scoreboard with its own settings file); the pictures |
+| `port/docs/screenshots/m49-lite-*.jpg` | the fifteen options, console-exact / Lite, for the user |
+| `port/docs/fps-scoreboard.md`, `fps-scoreboard-m48-after.md`, `release-checklist.md`, `port/dist/Read Me.txt` | the scoreboard, M48's kept, the checklist, the Read Me's LITE MODE |
+| `port/docs/soak/m49/` | the soak read, the option A/B (`ab1/`), the proofs (`h/`, `pilot/`), the whole-minigame runs (`al/`), the model costs (`mc/`), m433's A/B (`ab433/`), the scoreboards (`board/`, `board-off/`), the soak |
+
+### 64.10 What is left running, and what M50 starts with
+
+On the G4, since 00:44 on 2026-09-30, on the final build (0.9.17, `isle`
+`d375aa32`, now **`~/MarioParty4.app`**; 0.9.16 moved beside it as
+`~/MarioParty4-0.9.16.app`; the runner slot `~/isle.app` -> `MarioParty4.app`):
+
+```
+isle --soak --com4 --rtc dolphin --freshcard --status --perf
+```
+
+log `~/isle-log.txt`, pid 33974; Lite at auto (the config has no `lite`
+key).  The player's card and `~/memcard-backup.raw` untouched (every run
+`--freshcard`).  M49's bundles on the G4: `~/mp4-l1.app` (the options'
+A/B), `~/mp4-l2.app` (the proofs, the picture checks), `~/mp4-l3.app` (the
+final build), `~/mp4-l4.app` (m433's refused option), `~/mp4-x.app` (the
+`--modelcost` tree); the chain `~/MarioParty4-chain.app` (`m49_chain.sh`),
+its settings `~/m49.env` (`M49_LEAVE` empty, `M49_APP` = l3), the
+scoreboards `~/fps-board-m49` and `~/fps-board-m49off` with
+`~/fps-board-l3.env` / `~/fps-board-off.env`.  **M50 starts with**: the
+user's look at the fifteen pictures (the auto set, or a gentler one --
+`liteopts`); m433, the one screen short (29.4 on the count, 29.9-30.0 in
+A/Bs, no Lite option allowed); the M49_APP_OLD for the next A/B is now
+0.9.17 at `~/MarioParty4.app`.
+
+**Rules learnt**: measure the option before believing the review -- the
+character file, "the biggest unmeasured lever", was the only one that
+mattered (-3 to -8 ms each), and the plates' shadows "hidden under them"
+were plainly visible; a Lite option is proved by hashing what the game
+reads (the RNG, the models, the players) every frame to the minigame's end,
+Lite against off -- m433's file passed every picture and coin and still
+failed the hash; and look at what the scoreboard's window shows: m435's and
+m436's are Bowser's introduction, with the players drawn behind the camera
+(8 ms of the frame, none of the pixels).
