@@ -26429,7 +26429,7 @@ option (`liteopts = ref,m441.blob`), `docs/screenshots/m50-blob-m441.jpg`.
 (65.3) -- no option built.  **Benchmark Mode** (65.4): F1 or M opens the
 menu (and it offers itself once on the first launch); five scenes as child
 runs of the game (the opening movie, a board, Butterfly Blitz with Lite
-off and, if needed, on, Makin' Waves), 5 min 28 s on the G4; **on the G4
+off and, if needed, on, Makin' Waves), 5 min 55 s on the G4; **on the G4
 it chose today's defaults** (Lite auto, water auto, movies on, 256 MB),
 **on the MacBook under Rosetta "slower than the reference"** (Lite on with
 the extras, the water off, movies on), and the report is on the Desktop.
@@ -26437,7 +26437,12 @@ On the way: the MacBook could not play a board or a minigame at all since
 M42 (the write barrier's faults arrive without an address under Rosetta:
 `--nowb` is now applied there by the machine check), and Leopard refuses
 `execve` from a process with threads (the hand-overs are fork + exec).
-**The scoreboard: XX of 82** (65.5).  **0.9.19.**
+**The scoreboard: 81 of 82** (65.5): m441 30.0, m433 29.8, the one short
+**m401 29.1** on the count (29.1 / 28.9 / 29.9) and **30.0** in the five-run
+A/B right after (0.9.18 29.9, the same work: the machine's edge).  Both md5
+walks the references, the picture checks 636 of 638 identical to 0.9.16's
+(m427's known river state), a 2 h 05 min soak with 0 faults and no lock-up.
+**0.9.19**, `littlejelly:~/MarioParty4-PowerPC-0.9.19.dmg`.
 
 ### 65.1 The soak, read (item 0)
 
@@ -26584,13 +26589,13 @@ in miniature**: a scene that lands at the edge (28.5 up to 29.5) runs twice
 more and is judged by the median of the three medians.  **The scenes**
 (about 5-6 minutes on the G4, a few more when one runs three times):
 
-| # | scene | the teleport | on the G4 (`c2`) |
+| # | scene | the teleport | on the G4, final build (`c6`) |
 |---|---|---|---|
 | 1 | the opening movie | `--frames 1500` (movies on), lines from 300 | 30.0 fps (p10 30.0), 27 s |
-| 2 | Toad's Midway Madness (a board) | `--board 1 --ffto 7808 --frames 9400` | 30.0 (26.5), 55 s |
-| 3 | Butterfly Blitz, Lite off | `--minigame m441 --ffto 14000 --mgend 900 --nolite` | 27.3 (25.1), 82 s |
-| 4 | Butterfly Blitz, Lite on (only if 3 is short) | the same, `--lite --liteopts ref` | 30.0 (28.7), 82 s |
-| 5 | Makin' Waves (the water) | `--minigame m417 ... --water cheap` (the reference's level) | 29.9 (19.9), 82 s |
+| 2 | Toad's Midway Madness (a board) | `--board 1 --ffto 7808 --frames 9800`, lines from 8,400 | 30.0 (29.3), 62 s |
+| 3 | Butterfly Blitz, Lite off | `--minigame m441 --ffto 14000 --mgend 1300 --nolite`, lines from entry +300 | 26.9 (25.2), 89 s |
+| 4 | Butterfly Blitz, Lite on (only if 3 is short) | the same, `--lite --liteopts ref` | 30.0 (27.8), 89 s |
+| 5 | Makin' Waves (the water) | `--minigame m417 ... --water cheap` (the reference's level) | 30.0 (29.4), 89 s |
 
 **The rules** (plain, in the code's header): m441 holds 29.5 with Lite off
 and the board holds -> faster than the reference: `lite = off`; m441 holds
@@ -26630,25 +26635,32 @@ The machine check now applies `--nowb` when the binary runs translated
 crash report prints the link register and `ctr` (it found this).
 
 **On the G4** (`BENCH:` of the chain, the lab's config saved and put back;
-`docs/soak/m50/bench-g4/`): **5 min 28 s**; "This Mac is as fast as the
-reference machine"; **`lite = auto`, `water = auto`, `movies = 1`,
-`resident = 256`** -- today's defaults, as the brief requires.  The whole
-hand-over from the menu (`--menu 300/start`: the game quits, the driver
-runs, the game comes back with the result on screen) was run too.  On the
-final build: XX.
+`docs/soak/m50/bench-g4/`, the final build `c6`): **5 min 55 s**; "This Mac
+is as fast as the reference machine"; **`lite = auto`, `water = auto`,
+`movies = 1`, `resident = 256`** -- today's defaults, as the brief requires
+(and the same on `c2`, before the windows: 5 min 28 s).  **The build before
+the final one** (`c5`, `docs/soak/m50/bench-g4-c5-first/`) counted each
+scene's lines from `--ffto`'s hand-back -- the load and the first real-time
+frames -- and a single run of m441 with Lite read 29.2: it called the
+reference "slower" (Lite + extras).  Hence the A/B's windows, the three-run
+rule at the edge and 29.0 for one run's "at the reference" (the rules
+above); `c6`'s own m441 run read 30.0.  The whole hand-over from the menu
+(`--menu 300/start`: the game quits, the driver runs, the game comes back
+with the result on screen) was run on `c4`.
 
 **On the MacBook** (`open -a MarioParty4-m50.app --args --benchmark
---force`; `docs/soak/m50/bench-mbp/`): 7 min 46 s; the movie 30.0, the board
-20.1, Butterfly Blitz 10.1 with Lite off and 15.0 with it, Makin' Waves
-24.8; **"This Mac is slower than the reference machine"**: **`lite = on`,
-`liteopts = ref,extras`, `water = off`, `movies = 1`, `resident = 256`**.
+--force`, the final build; `docs/soak/m50/bench-mbp/`): 8 min 12 s; the
+movie 30.0, the board 22.5, Butterfly Blitz 10.8 with Lite off and 15.2
+with it, Makin' Waves 22.8; **"This Mac is slower than the reference
+machine"**: **`lite = on`, `liteopts = ref,extras`, `water = off`,
+`movies = 1`, `resident = 256`**.
 (Rosetta's numbers say nothing about speed on a PowerPC Mac -- §0 -- only
 that the rules pick more Lite on a slower machine and say so.)  The
 report's first lines:
 
 ```
 Mario Party 4 PowerPC Edition 0.9.19 -- Benchmark Mode report
-Date:      2026-09-30 09:14 (466 s)
+Date:      2026-09-30 11:03 (492 s)
 Game:      0.9.19 (milestone M50)
 Machine:   PowerMac
 CPU:       4 x 2300 MHz, 7400 (G4), AltiVec yes (under Rosetta)
@@ -26667,11 +26679,63 @@ the final build (65.6) are the references.
 
 ### 65.5 The scoreboard (item 4)
 
-XX
+On the final build (`c6`, **0.9.19**, `isle` **`eaa9c87f`**, Lite at auto:
+the user's set) -- `port/docs/fps-scoreboard.md`, M49's kept as
+`fps-scoreboard-m49-after.md`, the logs `docs/soak/m50/board/`: the whole
+chain (`fps_board.sh` front, title, boards, mg, menus; three-run mode auto),
+12:15-15:23 G4 time, 125 runs, every run exit 0 but `goto-mstorydll` (exit
+2, every milestone's), **all 82 screens at 100% game speed**.  **81 of 82
+pass.**
+
+| screen | M49 (0.9.17) | M49b (0.9.18) | M50 (0.9.19, runs) | game drawn / consumed, rt / dec (ms) | verdict |
+|---|---:|---:|---|---|---|
+| m441 Butterfly Blitz | 30.0 | 29.1 (A/B) | **30.0** (30.0 / 30.0 / 30.0) | 23.7 / 5.5, 16.9 / 8.1 | PASS |
+| m433 Beach Volley Folly | 29.4 | -- | **29.8** (29.8 / 29.9 / 29.8) | 25.4 / 5.7, 18.0 / 4.4 | PASS |
+| m409 | 29.6 | -- | 29.8 (29.8 / 29.8 / 28.9) | 26.4 / 6.3, 20.6 / 4.5 | PASS |
+| w01 | 29.5 pooled | -- | 29.5 (one run, pooled) | 19.6 / 5.8, 13.8 / 4.8 | PASS |
+| **m401 Manta Rings** | 29.9 | -- | **29.1** (29.1 / 28.9 / 29.9) | 21.2 / 7.2, 18.2 / 6.8 | **short by 0.4** |
+
+(The six other Lite screens: m436, m435, m431, m444, m463 30.0; every other
+screen 29.9-30.0.)  **m401, the one short**: the same work as M49's pass
+(game 21.2 / consumed 7.2 / rt 18.2 / dec 6.8 ms against 21.0 / 7.3 / 18.1 /
+6.8), and in the A/B right after the soak (the scoreboard's teleport at real
+time, five runs each, interleaved, `docs/soak/m50/ab401/`) **0.9.19 30.0**
+(29.9 / 29.9 / 30.0 / 30.0 / 30.0) against **0.9.18 29.9** (30.0 / 29.9 /
+30.0 / 29.9 / 29.9), the drawn frame 22.2 / 22.1 ms: parity, the machine's
+edge -- as m433's 29.4 was in M49 (29.9 in every A/B since).  Counted short,
+as the rule counts it.  **Screens meeting 29.5: 81 of 82** (M49 81, M49b 80).
 
 ### 65.6 The md5s, the picture checks, the soak, the disk image
 
-XX
+The final build is **`c6`** (0.9.19, `isle` `eaa9c87f`; the committed
+source differs from it by the header comment of `bench.c`, which now says
+29.0 where the code already did).  The chain (`~/m50`, `docs/soak/m50/index.txt.gz`):
+
+* **The md5 walks**: `--nomovies` **`0b58c5ee` / `2b99c60a` / `4a9a640c`**,
+  movies **`d2d40344` / `59008ce4` / `3f98f882`** -- the references (and the
+  same on `c5`).
+* **The picture checks with Lite off** (`PC:@c6,--nolite` against M48's `@p`
+  set, 0.9.16's frames, `tools/m48_pccmp.py`): **636 of 638 identical, the 2
+  the real-time m427's known second river state** (`R-m427-2`, 14777 and
+  15677: the pair M47-M49b's indexes hold), 24 runs, every run exit 0, 0
+  faults; `--halfwatch 1`: 49,891 frames, **0 half-black, 0 blips**.
+* **The soak** (`SOAK:125`: `--soak --com4 --rtc dolphin --freshcard
+  --status --perf --stuckwatch 200 --ovllog --frames 449500`, 15:23-17:28 G4
+  time, Lite at auto; `docs/soak/m50/m50-soak-final-125.log.gz`): **7,499.2 s
+  of game against 7,499.7 s of wall (100.0%)**, 449,460 retraces, the whole
+  20-turn board and 13 turns of the next, 28 minigame modules (m401, m431,
+  m441, m444 of the Lite screens among them); **0 faults, 0 resyncs, 0 skin
+  guard hits, no lock-up**, the worst frame 677 ms behind, 182 `stall:`
+  lines, 77 underruns (all by frame 5,520); **three `STUCK` lines at frames
+  270,513, 283,066 and 297,284 -- the same three frames as M47's and M49's
+  release soaks** (the soak's own navigation across the board's end, the
+  mode select and the character select).
+* **The disk image**: **`littlejelly:~/MarioParty4-PowerPC-0.9.19.dmg`**
+  (`tools/make_dmg.sh` from `mp4-c6.app`, 4,483,018 bytes, md5
+  **`ef548665...`**; the G4 keeps `~/Mario Party 4 PowerPC Edition
+  0.9.19.dmg`; the image's Licences folder carries the font's).  Installed
+  on the G4 from the image: **`~/MarioParty4.app` is 0.9.19**, 0.9.18 kept
+  as `~/MarioParty4-0.9.18.app`.
 
 ### 65.7 What M50 shipped (0.9.19)
 
@@ -26689,4 +26753,36 @@ XX
 
 ### 65.8 What is left running, and what M51 starts with
 
-XX
+On the G4 since 17:55 on 2026-09-30, on 0.9.19 (`~/MarioParty4.app`, `isle`
+`eaa9c87f`; the runner slot `~/isle.app` -> `MarioParty4.app`):
+
+```
+isle --soak --com4 --rtc dolphin --freshcard --status --perf
+```
+
+log `~/isle-log.txt`, pid 50540, Lite at auto (the lab's config has no
+Lite, water or Benchmark keys; it was saved and put back around every
+`BENCH:`).  The player's card and `~/memcard-backup.raw` untouched (every
+run `--freshcard`).  M50's bundles on the G4: `~/mp4-c1.app` .. `~/mp4-c6.app`
+(`c4` the proofs and the blob's A/B, `c5` the first final build, `c6` the
+final); the chain `~/MarioParty4-chain.app` = `tools/m50_chain.sh` with
+`~/m50.env`; the scoreboard `~/fps-board-m50c6` with `~/fps-board-m50.env`;
+`~/m49.env` put back as M49b left it.  The MacBook: `~/MarioParty4-m50.app`
+(the final build, `LSRequiresNativeExecution` removed), `~/MarioParty4-0918.app`,
+its config put back; it is on the Wi-Fi now, `192.168.50.237` (the lab's
+`mbp` alias names the old wired address: `ssh -o HostName=192.168.50.237
+mbp`).  **M51 starts with**: the user's look at Benchmark Mode (the menu,
+the report) and at the round shadow (`liteopts = ref,m441.blob` turns it
+on; into `ref` if they want it despite the 29.9s); m401's edge (30.0 in
+every A/B, 29.1 on this count).
+
+**Rules learnt**: a benchmark's single run is not the scoreboard's
+three-run median -- judge "at the reference" with a margin and repeat at
+the edge, and read only the scene's own window (the first final build
+called the reference machine slower on one 29.2); Leopard's `execve` fails
+with threads alive (fork, then exec); under Rosetta a protected page's
+fault has no address, so anything built on `mprotect` + SIGBUS (the write
+barrier) must be off there -- the MacBook had not played a board since
+M42 and nobody had run one on it; presented-frame numbers step over
+consumed frames, so a lab switch keyed to frame N must fire at the first
+frame >= N.

@@ -132,7 +132,7 @@ LITE MODE
 Seven minigames draw more than the reference machine (a dual 1 GHz G4
 with a Radeon 9000) can finish in a thirtieth of a second, however the
 drawing is done.  Since 0.9.17 those seven draw a little less there, and
-six of them reach 30 frames a second: this is Lite mode.  What changes is only what is
+since 0.9.19 all seven reach 30 frames a second: this is Lite mode.  What changes is only what is
 drawn -- never what the game does.  The characters move, score, collide
 and are dealt their luck exactly as with Lite off; the port checks that
 frame by frame (the game's random numbers, every model's position and the
@@ -489,12 +489,13 @@ left is the disk itself holding the game.  (0.9.8 had about two or three
 an hour on the reference machine; the project's notes, PLAN.md section 55,
 have what 0.9.9 measured.)
 
-With Lite mode (LITE MODE) 80 of the 82 screens measured reach 30 frames
-a second on the reference machine, six of the seven slowest minigames
-among them; Butterfly Blitz is at about 29 (27 with Lite off) since
-0.9.18 keeps its character models (LITE MODE).  The other one short is
-Beach Volley Folly, which lands on 29.4-30.0 from run to run -- the machine's
-edge, not a Lite screen; with Lite off the seven are back at 27 to 29.7.
+With Lite mode (LITE MODE) 81 of the 82 screens measured reach 30 frames
+a second on the reference machine, the seven slowest minigames among
+them since 0.9.19 (Butterfly Blitz back at 30 without the nets' shadows
+and with fewer fence flowers).  The one short on the last count is Manta
+Rings, 29.1 there and 30.0 when measured again straight after: the
+machine's edge, like Beach Volley Folly's before it (now 29.8); with Lite
+off the seven are back at 27 to 29.7.
 The game's own speed is the console's everywhere; only the picture is
 slower where it is.  0.9.17 also draws Order Up's sparkles more cheaply,
 the same pixels, for everyone.  0.9.16

@@ -263,9 +263,11 @@ Blitz Lite off and on, Makin' Waves), about 6 minutes on the G4, the settings wr
 config (lite, liteopts, water, movies, resident) and a report on the Desktop; on the G4 it picks
 today's defaults, on the MacBook under Rosetta "slower" (Lite + extras, water off).  The MacBook
 could not play a board or a minigame since M42 (Rosetta's faults carry no address: `--nowb`
-there now).  **The scoreboard: XX of 82** (XX).  The final build: both md5 walks the references,
-the picture checks 636 of 638 identical to 0.9.16's with Lite off (the 2 m427's known second
-river state), 0 blips; XX soak.
+there now).  **The scoreboard: 81 of 82** (m441 30.0, m433 29.8; the one short m401 29.1 on the
+count -- 30.0 against 0.9.18's 29.9 in the five-run A/B right after, the same work: the edge).
+The final build: both md5 walks the references, the picture checks 636 of 638 identical to
+0.9.16's with Lite off (the 2 m427's known second river state), 0 blips; a 2 h 05 min soak,
+0 faults, 0 resyncs, no lock-up; `littlejelly:~/MarioParty4-PowerPC-0.9.19.dmg` (md5 ef548665).
 
 ## Done
 
@@ -393,7 +395,9 @@ none is a known fault.
    casts, PLAN.md 64b.4; the pictures are among the fifteen), or leave m441 short.
 18. **m433 Beach Volley Folly (M49)**: 29.4 on the count, 29.9-30.0 in A/Bs -- the one screen
    short; no Lite option is allowed there (the game reads the hand joint a lighter file moves).
-   **M50: not short** -- five runs each, 0.9.18 29.9 x5, 0.9.16 29.9 (PLAN.md 65.3); XX.
+   **M50: not short** -- five runs each, 0.9.18 29.9 x5, 0.9.16 29.9 (PLAN.md 65.3); 29.8 on
+   0.9.19's count.  **m401 Manta Rings** took its place on the count: 29.1 (29.1 / 28.9 / 29.9),
+   30.0 in the A/B right after (0.9.18 29.9) -- the same edge.
 19. **The round shadow (M50)**: `m441.blob`, the user's request, built and proved; 30.0 / 29.9 /
    29.9 against the rule's 30.0 three times -- an option, not the default.  The user's call to
    put it in `ref` anyway (it is no dearer to draw: PLAN.md 65.2).

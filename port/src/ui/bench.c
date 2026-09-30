@@ -14,12 +14,13 @@
  *
  *   Butterfly Blitz (m441, the heaviest screen) holds 29.5 with Lite off and
  *     the board holds too  -> faster than the reference: Lite off;
- *   it holds with the reference's Lite set  -> the reference: Lite at auto
- *     (on the reference class) or the reference's set (anywhere else);
+ *   it holds 29.0 with the reference's Lite set  -> the reference: Lite at
+ *     auto (on the reference class) or the reference's set (anywhere else)
+ *     -- 29.0, not 29.5: one run at the edge spreads half a frame (below);
  *   neither  -> slower than the reference: Lite on, the reference's set and
  *     the user's extras (m401's fish and bubbles, the Bowser arena's pillars
  *     and fruit stands);
- *   Makin' Waves (m417) holds 29.5 with the water at the reference's level ->
+ *   Makin' Waves (m417) holds 29.0 with the water at the reference's level ->
  *     water auto (cheap on a machine below the reference), else off;
  *   the opening movie at full speed and 27+ frames a second -> movies on;
  *   the resident set: the machine check's rule by the RAM (machine.c).
