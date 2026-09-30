@@ -213,6 +213,23 @@ with every lever off (0.3-0.6 ms of the game thread) -- compiled out of the play
 636 of 638 frames identical to 0.9.16's set (the 2 m427's known second river state), 0 blips, the scoreboard's frames 170 of 182 identical to M47's (the 12 the Bowser pillars'
 phase and the screen-copy games, 0 FAIL).
 
+**Where M49 left it** (**0.9.17**, `docs/fps-scoreboard.md`; M48's kept as
+`docs/fps-scoreboard-m48-after.md`; PLAN.md 64): **81 of 82 screens pass** with **Lite mode**
+at its auto default -- on the reference machine the seven short minigames draw the game's own
+lighter character file (and Butterfly Blitz's butterflies cast no shadow): m441 26.5 -> 30.0,
+m401 27.6 -> 29.9, m436 28.0 -> 30.0, m435 29.0 -> 30.0, m431 28.4 -> 30.0, m444 29.0 -> 29.8,
+m463 29.2 -> 30.0 (and through each whole minigame, 29.9-30.0).  Lite changes what is drawn and
+nothing the game computes: the determinism hash (both RNG seeds, every model's position, the
+players) is identical with Lite on and off on every frame to each minigame's end, the same exit
+frame, coins and results screen.  Every other screen is console-exact; faster Macs get no Lite;
+`lite = off` (`--nolite`) is the console's drawing everywhere (the seven then 26.9-29.7).  The
+one short: **m433 Beach Volley Folly 29.4** (not a Lite screen; 30.0 vs 29.9 against 0.9.16 in
+an interleaved A/B -- its spread); a lighter file for it was refused (it moves a joint the game
+reads).  Exact and for everyone: m431's sparkle list trimmed to its live quads (28.1 -> 29.1).
+The final build: both md5 walks the references, the picture checks 638 of 638 identical to
+0.9.16's with Lite off and with Lite on, 0 blips; fifteen before/after pictures of the options
+(`docs/screenshots/m49-lite-*.jpg`) for the user's approval.
+
 ## Done
 
 | area | the claim | the evidence |
@@ -324,4 +341,15 @@ none is a known fault.
    the upstairs switch dropped littlejelly's link at the same second; with
    `autorestart` 0 it came back within a minute -- a brown-out reads best.
    Worth a look at the upstairs power if it happens again.
+17. **Lite mode's options (M49) -- the user's approval.**  Fifteen pictures,
+   `docs/screenshots/m49-lite-*.jpg` (console-exact / Lite, the same lockstep frame, the most
+   changed patch enlarged).  On at auto on the reference: the lighter character file in the
+   seven (m1 -> m2; m2 -> m3 in m401 and m463: at the size played, a little blockier in the
+   hands and hair) and no butterfly shadows in m441.  Off at auto, on below the reference or
+   by `liteopts`: m441's net/basket shadows and every other big flower, m401's fish (10 a
+   school) and bubbles, m436's plate shadows (visible) and pillar shadows, m435's pillar
+   shadows.  A gentler set: the character files alone (m441 then 29.9).  PLAN.md 64.5 has each
+   option's cost.
+18. **m433 Beach Volley Folly (M49)**: 29.4 on the count, 29.9-30.0 in A/Bs -- the one screen
+   short; no Lite option is allowed there (the game reads the hand joint a lighter file moves).
 

@@ -394,10 +394,14 @@ left is the disk itself holding the game.  (0.9.8 had about two or three
 an hour on the reference machine; the project's notes, PLAN.md section 55,
 have what 0.9.9 measured.)
 
-Not every screen reaches 30 frames a second yet on the reference machine:
-75 of the 82 screens measured do; 7 of the 63 minigames run between 26.8
-and 29.5 (Butterfly Blitz the slowest).  The game's own speed
-is the console's everywhere; only the picture is slower there.  0.9.16
+With 0.9.17's Lite mode (LITE MODE) 81 of the 82 screens measured reach
+30 frames a second on the reference machine, the seven slowest minigames
+among them (Butterfly Blitz from about 27 to 30).  The one short is Beach
+Volley Folly, which lands on 29.4-30.0 from run to run -- the machine's
+edge, not a Lite screen; with Lite off the seven are back at 27 to 29.7.
+The game's own speed is the console's everywhere; only the picture is
+slower where it is.  0.9.17 also draws Order Up's sparkles more cheaply,
+the same pixels, for everyone.  0.9.16
 brings five of those seven closer (Butterfly Blitz from about 26 to 27,
 Fruits of Doom 27.4 to 28, Order Up 27.9 to 28.3, Panel Panic 28.8 to
 29.4, Darts of Doom 28.8 to 29) -- the port stops re-checking every
