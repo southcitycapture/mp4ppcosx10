@@ -26390,3 +26390,303 @@ prove a character option with both casts (all eight characters), and audit
 what the option changes directly (the joint audit took three minutes and
 said it at once).  The game's own tables can be wrong for files it never
 uses in that place (the m2 eye names).
+
+## 65. M50 log: the Lite picks, and Benchmark Mode *(2026-09-30, littlejelly)*
+
+M49b left 0.9.18 at 80 of 82 with Lite at auto: m441 at 29.1 once its
+lighter character file had to leave the auto set, m433 at 29.4 on the
+count.  The user looked at the fifteen option pictures and kept every
+option (the review of 2026-09-30).  The brief: read M49b's soak (item 0);
+**the user's picks** -- the default set on the reference class = M49b's auto
+set + `m441.nshadow` + `m441.rings`; the other shadow and decoration
+options auto-on only below the reference class; `m441.char` stays out;
+and, the user's request, instead of no shadow under Butterfly Blitz's nets
+"a very basic circular shadow… kinda looking like it's from the N64",
+`m441.blob`, in the default set if it still holds 30.0 three runs (item
+1); m433 measured five runs against 0.9.16, Lite options only if it is
+genuinely short and they obey the two rules (item 2); **Benchmark Mode in
+the game itself** -- a port-drawn overlay menu, a fixed ~5-minute set of
+the heaviest scenes through the scoreboard's teleports, the settings
+picked for this machine and written to the config PowerPCube reads, a
+shareable plain-text report on the Desktop (item 3); the scoreboard on the
+final build (item 4).
+
+**The short answer.**  **The default set** on the reference is now M49b's
+plus the nets' shadows and every other fence flower (`ref` =
+`m441.bshadow,m441.nshadow,m441.rings` + the six character files); **the
+extras** (`m401.fish`, `m401.bubbles`, `m436.plates`, `m436.pillars`,
+`m435.pillars`) are auto-on only on class 0; `m441.char` is out.  Every
+change proved with `--gamehash` to the minigame's end on both casts
+(65.2).  **The round shadow** is built (a port-drawn disc under each net,
+no texture, 48 triangles a net, after the floor's layer): the picture is
+the N64's idea, it costs nothing measurable (the drawn frame 24.1 ms
+against 24.2 without it; the projected net shadows it replaces cost 0.7),
+but it read **30.0 / 29.9 / 29.9** in the three-run A/B (six runs: three
+30.0, three 29.9) against 30.0 / 30.0 / 29.9 without it -- **not 30.0 three
+times, so by the rule it is not in the default set**: `m441.blob` is an
+option (`liteopts = ref,m441.blob`), `docs/screenshots/m50-blob-m441.jpg`.
+**m433** is not short: 29.9 in all five runs of 0.9.18 and 29.9 on 0.9.16
+(65.3) -- no option built.  **Benchmark Mode** (65.4): F1 or M opens the
+menu (and it offers itself once on the first launch); five scenes as child
+runs of the game (the opening movie, a board, Butterfly Blitz with Lite
+off and, if needed, on, Makin' Waves), 5 min 28 s on the G4; **on the G4
+it chose today's defaults** (Lite auto, water auto, movies on, 256 MB),
+**on the MacBook under Rosetta "slower than the reference"** (Lite on with
+the extras, the water off, movies on), and the report is on the Desktop.
+On the way: the MacBook could not play a board or a minigame at all since
+M42 (the write barrier's faults arrive without an address under Rosetta:
+`--nowb` is now applied there by the machine check), and Leopard refuses
+`execve` from a process with threads (the hand-overs are fork + exec).
+**The scoreboard: XX of 82** (65.5).  **0.9.19.**
+
+### 65.1 The soak, read (item 0)
+
+M49b's leave-behind (`isle --soak --com4 --rtc dolphin --freshcard --status
+--perf` on 0.9.18, `d0e16c40`, pid 69598) was read and stopped by pid at
+07:19 G4 time (one SIGINT, `EXITCODE=0`;
+`docs/soak/m50/m50-soak-m49b-leave.log.gz`): **5,459.6 s of game against
+5,459.7 s of wall (100.0%)**, 327,240 retraces, the whole 20-turn board and
+five turns of the next, 25 minigame modules (m441 among them, playing at
+the end with Lite at auto); **0 faults, 0 resyncs, no lock-up**, the worst
+frame 674 ms behind, 130 `stall:` lines, 74 underruns (all by frame 5,520: the boot, the character select, the board's first turn -- as every soak's);
+three `STUCK` lines at the board's end, the mode select and the character
+select (the soak's own navigation, the 90 s watch -- as every soak's).
+
+### 65.2 The user's picks (item 1)
+
+**The set** (`port/src/debug/lite.c`).  The option table gains a column,
+`extra`: on at auto only below the reference class.  `ref` (the default on
+the reference class, and what `lite = on` gives anywhere):
+`m441.bshadow`, `m441.nshadow`, `m441.rings`, `m401.char`, `m436.char`,
+`m435.char`, `m431.char`, `m444.char`, `m463.char`.  Class 0 (below the
+reference): `ref` + the extras `m401.fish`, `m401.bubbles`, `m436.plates`,
+`m436.pillars`, `m435.pillars`.  `liteopts` knows a new word, `extras`.
+Faster machines (class 2) and machines not judged (-1): none, as before.
+`m441.char` stays out (an option by name, the Read Me says what it costs).
+
+**The proofs** (`H:` runs of the chain, lockstep, `--gamehash 60`, to
+entry +9,000 -- past each minigame's end and its results; `tools/m49b_hash.py`;
+`docs/soak/m50/h/`; the build `c4`, whose game code is the final build's).
+The default cast's Lite-off chains were run again on `c4`; the second
+cast's are M49b's (`b1`, the same game code -- and `c4`'s Lite-off m441
+chain is `b1`'s, line for line, `8e1116da`):
+
+| game | arm (Lite on) | against | cast | result | left the minigame |
+|---|---|---|---|---|---|
+| m441 | `ref` + `m441.blob` | `c4 --nolite` | Mario, Luigi, Peach, Yoshi | **identical**, 391 lines, `8e1116da` | entry +5,337, both |
+| m441 | `ref` + `m441.blob` | `b1 --nolite` | Wario, DK, Daisy, Waluigi | **identical**, 392 lines, `14864195` | +5,295, both |
+| m401 | `ref,extras` (fish, bubbles) | `c4 --nolite` | default | **identical**, 391 lines, `ac3eaafe` | +3,727 |
+| m401 | `ref,extras` | `b1 --nolite` | second | **identical**, 392 lines, `99a73570` | +3,727 |
+| m436 | `ref,extras` (plates, pillars) | `c4 --nolite` | default | **identical**, 385 lines, `0f92e551` | +8,710 |
+| m436 | `ref,extras` | `b1 --nolite` | second | **identical**, 387 lines, `e454ac8a` | +8,710 |
+| m435 | `ref,extras` (pillars) | `c4 --nolite` | default | **identical**, 385 lines, `73b7f963` | +5,953 |
+| m435 | `ref,extras` | `b1 --nolite` | second | **identical**, 387 lines, `3deba122` | +5,953 |
+
+(The new m441 set without the blob -- the three options together -- was
+proved to the end on both casts in M49b, 64b.4; the blob draws after the
+floor and changes nothing the game has.)  The coins after each game are
+the Lite-off runs' (m441 13/10/10/13, m401 23/10/10/13 and 13/10/10/23 by
+cast, m436 13/10/10/13, m435 13/10/10/13).
+
+**The round shadow, `m441.blob`** (lite.c `port_lite_blob_net`,
+`port_lite_layer_end`; `patches.txt` M50 block).  The patched m441 player
+update hands lite.c, each frame, the net point the game has just computed
+(`work->unk28`, hook x (0, 0, 170) -- the value the catches read; read,
+never written) and the net model's id; `Hu3DExec` calls
+`port_lite_layer_end(camera, layer)` after each layer's models (one call,
+returning at once unless the option is on and the screen is m441); after
+camera 0's layer 0 -- the floor -- it draws one disc per visible net (the
+net model not `DISPOFF`) on the floor under the point: GX direct vertices,
+colour only, no texture, no light, blended, depth-tested against the floor
+and not written, so the players and the nets drawn after it cover it; a
+16-triangle fan at 150/255 darkness and a 32-triangle rim fading to
+nothing (the soft edge of the N64's blob texture), 80 units to the
+rim's outer edge (the dark core 62), a little smaller and fainter as the net rises.  With the blob
+on, the nets cast no projected shadow (as `m441.nshadow`).  No Hu3DData
+slot, no model, no motion: the hash above.  `--blobr` / `--bloba` set the
+size and darkness for a look.
+
+**The picture**: `docs/screenshots/m50-blob-m441.jpg` -- lockstep frame
+15,677 (entry +1,200), console-exact / Lite without the blob / Lite with
+it, and Mario's net enlarged: the console's ring-shaped projected shadow of
+the hoop, nothing, and a soft round disc in its place.
+
+**The A/B** (the scoreboard's teleport at real time, interleaved; `A:`;
+`tools/m44_ab.py`; `docs/soak/m50/ab441/`):
+
+| m441 arm | presented fps (runs) | median | drawn frame | rt replay |
+|---|---|---:|---:|---:|
+| `ref` without the blob (the three M49b options) | 30.0 / 30.0 / 29.9 / 30.0 / 30.0 / 30.0 | **30.0** | 24.2 ms | 17.3 ms |
+| `ref` + `m441.blob` | 30.0 / 29.9 / 29.9 / 29.9 / 30.0 / 30.0 | **30.0** (29.95) | 24.1 ms | 17.4 ms |
+
+The first three runs of each were the rule's A/B: the blob **30.0 / 29.9 /
+29.9**.  It costs less than the projected shadow it replaces (the nets'
+shadows alone cost 0.7 ms of the drawn frame in M49's table; the blob's
+arm is 0.1 ms under the control), but it did not hold 30.0 three times,
+so it is **not in the default set**, and the Read Me says so and how to
+turn it on.  Butterfly Blitz with the default set: 30.0.
+
+### 65.3 m433 Beach Volley Folly (item 2)
+
+Five runs each, interleaved, the scoreboard's teleport at real time, 0.9.18
+(`d0e16c40`) against 0.9.16 (`d7da16eb`) (`docs/soak/m50/ab433/`):
+
+| build | presented fps (runs) | median | drawn frame | consumed | rt replay |
+|---|---|---:|---:|---:|---:|
+| 0.9.16 | 29.9 / 29.9 / 29.9 / 30.0 / 29.8 | **29.9** | 25.5 ms | 6.0 | 18.0 |
+| 0.9.18 | 29.9 / 29.9 / 29.9 / 29.9 / 29.9 | **29.9** | 25.6 ms | 6.0 | 17.9 |
+
+**Not genuinely short**: ten runs of two builds all 29.8-30.0, the drawn
+frame the same to 0.1 ms; the scoreboard's 29.4 (M49, M49b) was one
+unlucky first run (its three-run rule then took the median of 29.9 / 29.4 /
+29.3).  Nothing was profiled and no option built (the brief's condition).
+The final scoreboard's reading is in 65.5.
+
+### 65.4 Benchmark Mode, in the game (item 3)
+
+**The menu** (`port/src/ui/overlay.c`).  A panel the port draws over the
+game's picture, the Snowboard Kids launcher's approach: GL 1.3 fixed
+function, one bitmap font (Terminus Bold 8x16, OFL -- its ASCII glyphs
+compiled in, `ui_font16.h`, the licence in `dist/Licences`) in one 128x128
+texture, quads in a 640x480 frame drawn into the EFB just before the
+present (so it scales with the picture in fullscreen, and no `--dumpframe`
+or game read sees it).  The drawing is one `rt_call` a presented frame
+carrying that frame's rectangles and strings; it runs on the render thread,
+pushes every GL attribute and the three matrix stacks and pops them, so
+the state shadows stay true.  **F1 or M** opens and closes it (Esc closes
+it); the pad and the keyboard navigate through `PADRead`: up/down on the
+stick or the D-pad, A or Start to select, B to go back (the keyboard's own
+mapping gives the arrows, Return, Z and X).  While it is open the game
+runs on and its four controllers read at rest.  **The first launch** (a
+config without `benchoffer`) opens it once by itself (from presented
+frame 420) with the offer; the answer is remembered.  Pages: the main menu
+(the machine in one line, the settings now, Run Benchmark Mode, the last
+result, back), the offer, the confirmation (what will happen, "please
+don't touch the controls", the card untouched), the result.
+**Scripted runs never see it**: `--play`, `--record`, `--soak`, `--noconfig`,
+`--com4`, `--nopad` (PowerPCube's definition) and `--nomenu` turn it off;
+`--menu N[/PAGE]` opens a page at presented frame N for the lab's pictures
+(and `/start` presses Start: the whole hand-over, tested so).
+
+**The driver** (`port/src/ui/bench.c`).  Start leaves the game through its
+own quit path (the card flushed, `port_shutdown`); an `atexit` hand-over
+starts `isle --benchmark`, which opens no window: it runs the scenes one
+after another as child runs of the same program, each the scoreboard's own
+teleport (`tools/fps_board.sh`: `--rtc dolphin --freshcard --noconfig
+--realtime --perf --status --ovllog`, the `--play` walk, `--ffto`,
+`--minigame`), each in its own window with a one-line banner (and a black
+screen with the banner every 60 frames while `--ffto` runs ahead undrawn),
+and reads each child's log as `fps_board.sh` does: the median presented
+fps over the scene's `--status` lines at real time (speed <= 110%), and
+their tenth percentile, in the A/B's windows (`tools/m44_ab.py`: a
+minigame from its entry +300, the board from 8,400).  **The three-run rule
+in miniature**: a scene that lands at the edge (28.5 up to 29.5) runs twice
+more and is judged by the median of the three medians.  **The scenes**
+(about 5-6 minutes on the G4, a few more when one runs three times):
+
+| # | scene | the teleport | on the G4 (`c2`) |
+|---|---|---|---|
+| 1 | the opening movie | `--frames 1500` (movies on), lines from 300 | 30.0 fps (p10 30.0), 27 s |
+| 2 | Toad's Midway Madness (a board) | `--board 1 --ffto 7808 --frames 9400` | 30.0 (26.5), 55 s |
+| 3 | Butterfly Blitz, Lite off | `--minigame m441 --ffto 14000 --mgend 900 --nolite` | 27.3 (25.1), 82 s |
+| 4 | Butterfly Blitz, Lite on (only if 3 is short) | the same, `--lite --liteopts ref` | 30.0 (28.7), 82 s |
+| 5 | Makin' Waves (the water) | `--minigame m417 ... --water cheap` (the reference's level) | 29.9 (19.9), 82 s |
+
+**The rules** (plain, in the code's header): m441 holds 29.5 with Lite off
+and the board holds -> faster than the reference: `lite = off`; m441 holds
+29.0 with the reference's set (and the board 29.0) -> the reference (29.0,
+not 29.5: the scoreboard judges 29.5 by three runs' median, one benchmark
+run of a screen at the edge spreads half a frame -- the first final build's
+single run read m441 29.2 on the G4 and called the reference "slower";
+a Mac truly below the reference is frames under, not tenths): `lite = auto` on the reference
+class (anywhere else `lite = on`, `liteopts = ref`); neither -> slower:
+`lite = on`, `liteopts = ref,extras`.  m417 holds 29.0 at the reference's
+water level -> `water = auto` (`cheap` below the reference class), else
+`off`.  The movie at 27+ fps and 98%+ speed -> `movies = 1`.  `resident` =
+the machine check's RAM rule (256 at 1.5 GB+).  The config gets `lite`,
+`liteopts`, `water`, `movies`, `resident` -- the keys PowerPCube reads --
+and `benchmark = DATE verdict`, `benchoffer = done`.  Then the result for
+the overlay (`benchmark-result.txt` in Application Support) and **the
+report**, `~/Desktop/MarioParty4-benchmark-DATE.txt`: the machine model,
+the CPUs and their clock and family, the RAM, the GL renderer, vendor,
+version, VRAM and texture units, the OS, the port's version, each scene's
+fps and tenth percentile and speed, the verdict and the settings; nothing
+personal (no user or host names, no paths but the config's `~/...`).  The
+game then starts again with `--benchresult` and shows the result.
+
+**Two things found on the way.**  (1) Mac OS X 10.4/10.5 refuse `execve`
+in a process with more than one thread (ENOTSUP): the first driver's
+`execv` back to the game failed silently (the game has its render thread,
+workers and the log writer; the driver has the log writer).  Both
+hand-overs are now fork (whose child has one thread) + exec, the parent
+leaving.  (2) **The MacBook bench could not play a board or a minigame**:
+every scene past the movie died at its first drawn frame, SIGBUS, pc 0,
+the link register in `objCall` after `C_MTXCopy` -- a store into a page the
+vertex cache's write barrier (M42, `gx_wb.c`) had protected; under Rosetta
+the fault reaches the handler without its address, so the barrier could
+not recognise its own fault.  0.9.18 does the same (checked on the bench).
+The machine check now applies `--nowb` when the binary runs translated
+(the cache re-hashes instead; native machines are unchanged), and the
+crash report prints the link register and `ctr` (it found this).
+
+**On the G4** (`BENCH:` of the chain, the lab's config saved and put back;
+`docs/soak/m50/bench-g4/`): **5 min 28 s**; "This Mac is as fast as the
+reference machine"; **`lite = auto`, `water = auto`, `movies = 1`,
+`resident = 256`** -- today's defaults, as the brief requires.  The whole
+hand-over from the menu (`--menu 300/start`: the game quits, the driver
+runs, the game comes back with the result on screen) was run too.  On the
+final build: XX.
+
+**On the MacBook** (`open -a MarioParty4-m50.app --args --benchmark
+--force`; `docs/soak/m50/bench-mbp/`): 7 min 46 s; the movie 30.0, the board
+20.1, Butterfly Blitz 10.1 with Lite off and 15.0 with it, Makin' Waves
+24.8; **"This Mac is slower than the reference machine"**: **`lite = on`,
+`liteopts = ref,extras`, `water = off`, `movies = 1`, `resident = 256`**.
+(Rosetta's numbers say nothing about speed on a PowerPC Mac -- §0 -- only
+that the rules pick more Lite on a slower machine and say so.)  The
+report's first lines:
+
+```
+Mario Party 4 PowerPC Edition 0.9.19 -- Benchmark Mode report
+Date:      2026-09-30 09:14 (466 s)
+Game:      0.9.19 (milestone M50)
+Machine:   PowerMac
+CPU:       4 x 2300 MHz, 7400 (G4), AltiVec yes (under Rosetta)
+Memory:    4096 MB
+Graphics:  Intel HD Graphics 3000 (Intel Inc.), 416 MB VRAM, 8 texture units, OpenGL 2.1 APPLE-1.6.30
+System:    Mac OS X 10.6.6
+```
+
+**The pictures**: `docs/screenshots/m50-menu.jpg` (the menu over the
+title), `m50-offer.jpg` (the first-launch offer), `m50-bench-result-g4.jpg`
+and `m50-bench-result-mbp.jpg` (the result screens).
+
+**Scripted runs unaffected**: every chain run of this milestone is
+scripted and none drew the menu; the md5 walks and the picture checks on
+the final build (65.6) are the references.
+
+### 65.5 The scoreboard (item 4)
+
+XX
+
+### 65.6 The md5s, the picture checks, the soak, the disk image
+
+XX
+
+### 65.7 What M50 shipped (0.9.19)
+
+| | |
+|---|---|
+| `port/src/debug/lite.c` | the user's set (`ref` + `m441.nshadow`, `m441.rings`), the `extra` column (class 0), `extras` in `liteopts`; `m441.blob` (`port_lite_blob_net`, `port_lite_layer_end`), `--blobr`, `--bloba` |
+| `port/patches.txt` (M50 block) | m441's net point and net model to lite.c; the nets' shadow set skipped under the blob too; `Hu3DExec`'s per-layer call |
+| `port/src/ui/overlay.c`, `ui_font16.h` | the overlay menu (F1 / M, the pad, the first-launch offer, `--menu`, `--nomenu`) |
+| `port/src/ui/bench.c` | Benchmark Mode (`--benchmark`, `--benchchild`, `--benchresult`; the scenes, the rules, the config, the result, the report; fork + exec hand-overs) |
+| `port/src/platform/machine.c` | the report's machine lines, the RAM rule's resident set, the one-line machine; `--nowb` under Rosetta |
+| `port/src/gx/gl13.c`, `port/src/pad/pad.c`, `port/src/debug/crash.c`, `port/src/platform/main.c`, `port/include/port.h`, `port/Makefile` | the menu's hooks (the present, the keys, the pad), `lr`/`ctr` in the crash report, the flags, 0.9.19 / M50 |
+| `port/tools/m50_chain.sh` | M49's chain + `BENCH:ARM:TAG` (and `go*`: from the menu) |
+| `port/dist/Read Me.txt`, `Licences/Terminus Font (OFL 1.1).txt`, `docs/release-checklist.md`, `docs/fps-scoreboard.md` | BENCHMARK MODE, Lite's new set and the round shadow; the font's licence; the checklist; the scoreboard (M49's kept as `fps-scoreboard-m49-after.md`) |
+| `port/docs/screenshots/m50-*.jpg`, `port/docs/soak/m50/` | the pictures; the logs |
+
+### 65.8 What is left running, and what M51 starts with
+
+XX

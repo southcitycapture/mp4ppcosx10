@@ -248,6 +248,25 @@ Class 0 (below the reference) now gets the reference's set, not every option; `-
 is refused on the m1 games (m3 never proved).  m436/m435's charring pass keeps the eyes of the
 file Lite loaded (`docs/screenshots/m49b-eyes-m436.jpg`).
 
+**Where M50 left it** (**0.9.19**, PLAN.md 65 -- the user's Lite picks and Benchmark Mode):
+**Lite's default set** on the reference = M49b's + `m441.nshadow` + `m441.rings` (the nets'
+shadows and every other fence flower; Butterfly Blitz 30.0); **the extras** (`m401.fish`,
+`m401.bubbles`, `m436.plates`, `m436.pillars`, `m435.pillars`) auto-on only below the reference
+class; `m441.char` out.  Every change proved with `--gamehash` to the minigame's end on both
+casts.  **The round shadow** (`m441.blob`, the user's N64-style disc under each net) is built
+and pictured (`docs/screenshots/m50-blob-m441.jpg`); it costs nothing measurable (drawn frame
+24.1 against 24.2 ms) but read 30.0 / 29.9 / 29.9 -- not 30.0 three times, so by the user's
+rule it is an option (`liteopts = ref,m441.blob`), not in the default set.  **m433** is not
+short: 29.9 in five runs on 0.9.18 and on 0.9.16.  **Benchmark Mode** (F1 or M in the game;
+offered once on the first launch): five scenes as child runs (the movie, a board, Butterfly
+Blitz Lite off and on, Makin' Waves), about 6 minutes on the G4, the settings written to the
+config (lite, liteopts, water, movies, resident) and a report on the Desktop; on the G4 it picks
+today's defaults, on the MacBook under Rosetta "slower" (Lite + extras, water off).  The MacBook
+could not play a board or a minigame since M42 (Rosetta's faults carry no address: `--nowb`
+there now).  **The scoreboard: XX of 82** (XX).  The final build: both md5 walks the references,
+the picture checks 636 of 638 identical to 0.9.16's with Lite off (the 2 m427's known second
+river state), 0 blips; XX soak.
+
 ## Done
 
 | area | the claim | the evidence |
@@ -359,7 +378,8 @@ none is a known fault.
    the upstairs switch dropped littlejelly's link at the same second; with
    `autorestart` 0 it came back within a minute -- a brown-out reads best.
    Worth a look at the upstairs power if it happens again.
-17. **Lite mode's options (M49) -- the user's approval.**  Fifteen pictures,
+17. **Lite mode's options (M49) -- the user's approval -- taken in M50** (the user kept every
+   option: the default set, the extras below the reference, `m441.char` out; PLAN.md 65.2).  Fifteen pictures,
    `docs/screenshots/m49-lite-*.jpg` (console-exact / Lite, the same lockstep frame, the most
    changed patch enlarged).  On at auto on the reference: the lighter character file in the
    seven (m1 -> m2; m2 -> m3 in m401 and m463: at the size played, a little blockier in the
@@ -373,4 +393,12 @@ none is a known fault.
    casts, PLAN.md 64b.4; the pictures are among the fifteen), or leave m441 short.
 18. **m433 Beach Volley Folly (M49)**: 29.4 on the count, 29.9-30.0 in A/Bs -- the one screen
    short; no Lite option is allowed there (the game reads the hand joint a lighter file moves).
+   **M50: not short** -- five runs each, 0.9.18 29.9 x5, 0.9.16 29.9 (PLAN.md 65.3); XX.
+19. **The round shadow (M50)**: `m441.blob`, the user's request, built and proved; 30.0 / 29.9 /
+   29.9 against the rule's 30.0 three times -- an option, not the default.  The user's call to
+   put it in `ref` anyway (it is no dearer to draw: PLAN.md 65.2).
+20. **Benchmark Mode (M50)**: tested on the G4 (the reference's defaults, twice) and the MacBook
+   under Rosetta (slower); never on a real Mac faster or slower than the reference, on Tiger, or
+   on one CPU.  The menu keys F1 and M could collide with a PowerPCube controls file that maps
+   M or F1 to a button.
 

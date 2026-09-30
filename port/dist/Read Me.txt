@@ -561,7 +561,8 @@ The game's code comes from the mariopartyrd/marioparty4 decompilation,
 compiled as is.  The MusyX audio library is Axiomatic Data Laboratories'
 reimplementation (MIT).  The movie decoder's inverse DCT and Huffman
 tables follow Sean Barrett's stb_image (MIT).  SDL2 is under the zlib
-licence.  The licence texts
+licence.  The menu's letters are the Terminus Font (SIL Open Font
+License 1.1).  The licence texts
 are in the Licences folder beside this file, with a note on the port layer
 itself.
 

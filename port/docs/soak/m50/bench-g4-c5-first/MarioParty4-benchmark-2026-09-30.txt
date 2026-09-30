@@ -1,5 +1,5 @@
 Mario Party 4 PowerPC Edition 0.9.19 -- Benchmark Mode report
-Date:      2026-09-30 11:04 (355 s)
+Date:      2026-09-30 10:53 (329 s)
 Game:      0.9.19 (milestone M50)
 Machine:   PowerMac3,5
 CPU:       2 x 1000 MHz, 7450 (G4), AltiVec yes
@@ -8,23 +8,25 @@ Graphics:  ATI Radeon 9000 (ATI Technologies Inc.), 64 MB VRAM, 6 texture units,
 System:    Mac OS X 10.5.4
 Check:     ok -- the reference class (dual 1 GHz G4, 64 MB Radeon 9000 or better), whose promise is 30 fps everywhere: measured screen by screen in docs/fps-scoreboard.md (0.9.19, Lite at auto)
 
-Scenes (the median of the frames presented each second at real time, from the
-scene's start; 30 is the console's rate):
+Scenes (the median of the frames presented each second at real time; 30 is the
+console's rate, 29.5 the bar):
   1. The opening movie                  30.0 fps (the slowest tenth 30.0), game speed 100%
-  2. Toad's Midway Madness (board)      30.0 fps (the slowest tenth 29.3), game speed 100%
-  3. Butterfly Blitz, Lite off          26.9 fps (the slowest tenth 25.2), game speed 100%
-  4. Butterfly Blitz, Lite on           30.0 fps (the slowest tenth 27.8), game speed 100%
-  5. Makin' Waves (the water)           30.0 fps (the slowest tenth 29.4), game speed 100%
+  2. Toad's Midway Madness (board)      30.0 fps (the slowest tenth 28.9), game speed 100%
+  3. Butterfly Blitz, Lite off          27.0 fps (the slowest tenth 22.3), game speed 100%
+  4. Butterfly Blitz, Lite on           29.2 fps (the slowest tenth 27.8), game speed 100%
+  5. Makin' Waves (the water)           30.0 fps (the slowest tenth 28.6), game speed 100%
 
-Verdict:   as fast as the reference machine (a dual 1 GHz Power Mac G4 with a Radeon 9000).
+Verdict:   slower than the reference machine (a dual 1 GHz Power Mac G4 with a Radeon 9000).
 
 Settings chosen (written to the game's config):
-  lite     = auto
+  lite     = on, liteopts = ref,extras
              Lite changes only what is drawn on the heaviest screens:
              Butterfly Blitz (no butterfly or net shadows and fewer fence
              flowers), and the lighter character models in Manta Rings,
              Fruits of Doom, Darts of Doom, Order Up, Reversal of Fortune
-             and Panel Panic.
+             and Panel Panic, plus fewer fish and no drifting bubbles in
+             Manta Rings, and no pillar or fruit-stand shadows in the Bowser
+             arena (Fruits of Doom, Darts of Doom).
   water    = auto
   movies   = 1
   resident = 256 (MB of game files kept in memory)

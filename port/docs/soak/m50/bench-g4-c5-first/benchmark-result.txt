@@ -1,14 +1,14 @@
-+ This Mac is as fast as the reference machine
-+ (a dual 1 GHz Power Mac G4 with a Radeon 9000).
+! This Mac is slower than the reference machine
+! (a dual 1 GHz Power Mac G4 with a Radeon 9000).
  
   The opening movie                30.0 fps
   Toad's Midway Madness (board)    30.0 fps
-  Butterfly Blitz, Lite off        26.9 fps
-  Butterfly Blitz, Lite on         30.0 fps
+  Butterfly Blitz, Lite off        27.0 fps
+  Butterfly Blitz, Lite on         29.2 fps
   Makin' Waves (the water)         30.0 fps
  
 Chosen and saved:
-  Lite mode: on for the heaviest screens (the reference set)
+  Lite mode: on, the reference set and the extras
   Water: ripples (auto) - movies: on - memory for loading: 256 MB
  
 The report is on your Desktop:
