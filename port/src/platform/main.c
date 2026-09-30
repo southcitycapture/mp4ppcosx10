@@ -412,6 +412,7 @@ static void usage(const char* argv0) {
             "  --litechar 4|8    M49: the char options' model file (default one step lighter)\n"
             "  --notrim          M49: the exact trims' old path (m431 sparkles, m444 table)\n"
             "  --gamehash N      M49: the determinism hash (RNG, models, players) every N frames\n"
+            "  --jointaudit      M49b: at m441 (--minigame m441), each character file's hook joints; exit\n"
             "  --modelcost A,B   M49 (make M49X=1): each model's game-thread cost, entry +A..+B\n"
             "  --novcpos         M44: no positions refresh of a cached run (the whole run decoded)\n"
             "  --norastermemo    M44: the transform and raster state applied at every draw\n"
@@ -1506,6 +1507,8 @@ int port_parse_args(int argc, char** argv) {
             port_opt.notrim = 1;
         } else if (!strcmp(a, "--gamehash") && i + 1 < argc) {
             port_opt.gamehash = atoi(argv[++i]);
+        } else if (!strcmp(a, "--jointaudit")) {
+            port_opt.jointaudit = 1;
         } else if (!strcmp(a, "--modelcost") && i + 1 < argc) {
             if (sscanf(argv[++i], "%d,%d", &port_opt.modelcost_from, &port_opt.modelcost_to) != 2) {
                 port_opt.modelcost_from = port_opt.modelcost_to = 0;

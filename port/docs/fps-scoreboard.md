@@ -1,5 +1,11 @@
 # 30 fps scoreboard
 
+**M49b (2026-09-30, 0.9.18):** `m441.char` left Lite's auto set (PLAN.md 64b.1: the lighter
+file moves the net joint m441's catches are computed from).  m441 with Lite at auto on 0.9.18
+reads **29.1** (29.1 / 29.0 / 29.2; the A/B, PLAN.md 64b.4) -- the table below is 0.9.17's
+(m441 30.0 there); on 0.9.18 the count is **80 of 82** (m441 and m433 short).  Every other row
+stands: 0.9.18's code on the other screens is 0.9.17's but the m436/m435 eye names (Lite only).
+
 M49 (2026-09-29), on the final build of M49 -- **0.9.17** (`isle` `d375aa32`, candidate
 `l3`), **Lite at its auto default** (PLAN.md 64): on this machine, the reference class, the
 lighter character file in m441, m401, m436, m435, m431, m444 and m463 and no butterfly

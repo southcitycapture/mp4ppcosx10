@@ -26177,3 +26177,157 @@ Lite against off -- m433's file passed every picture and coin and still
 failed the hash; and look at what the scoreboard's window shows: m435's and
 m436's are Bowser's introduction, with the players drawn behind the camera
 (8 ms of the frame, none of the pixels).
+
+## 64b. M49b log: the review's follow-up *(2026-09-30, littlejelly)*
+
+An independent read-only review of M49 raised one risk and two loose ends:
+(1) m441 computes its net's position every frame from the character's
+`a-itemhook-r` joint (main.c:1013-1016: the hook matrix x (0, 0, 170) ->
+`work->unk28`) and tests the butterflies against it (main.c:1534-1536: the
+catch, the score), and reads the same hook for the net drop (1080-1087) and
+the basket (1196); M49's proof ran the default cast only, and m433 had
+shown a lighter file can move a hand joint.  (2) m436:1421 and m435:2110 ask
+`CharModelEyeBmpGet(char, 2)` -- m1's eye texture names -- so with the m2
+file the charring pass darkened the eyes too.  (3) `--litechar 8` on the m1
+games (m3) and class 0's `all` options were never proved to a minigame's
+end.
+
+**The short answer.**  **The hooks differ, and the hash split: `m441.char`
+is out of the auto set** (64b.1).  The other six Lite games with the second
+cast: identical to each minigame's end (64b.2).  m441 with Lite at auto
+(the butterflies' shadows alone) now reads **29.1** -- short; the nets'
+shadows and every other fence flower on top read 30.0 in the A/B (64b.4) and
+are the user's call.  The eyes: fixed with the m2 files' own names (64b.3).
+The untested paths: **restricted** -- class 0 gets the reference's set,
+`--litechar 8` is refused on the m1 games (64b.5).  **0.9.18.**
+
+### 64b.1 The joint audit: `--jointaudit` (item 1a)
+
+`port_joint_audit` (lite.c), called by the patched m441 player setup with
+m441's own motion table (`lbl_1_data_B0`, the eleven motions each character
+plays there: the idle, the run, the net swings, the catches, the win/lose):
+for each of the eight characters and each file (m1, m2, m3 --
+`CharModelCreate` 2, 4, 8), each motion at six times (0, 1/5 ... 5/5 of its
+length), `Hu3DMotionExec` then `Hu3DModelObjMtxGet` for every hook the
+Lite games and chrman's effects read on a character (`a-itemhook-r/-l/-fr/
+-fl/-body`, `test11_tex_we-itemhook-r`, `test11_tex_we-ske_R_shoe1`), the
+twelve floats' bits printed; then the run ends.  `tools/m49b_joints.py`
+compares (`docs/soak/m49b/jointaudit-summary.txt`, the logs beside it).
+**m1 against m2** (66 poses a hook; "exact" = every bit of the matrix):
+
+| character | itemhook-r (the net) | m441's net point, hook x (0,0,170) | the other hooks |
+|---|---|---|---|
+| Mario | 38/66 exact | 48/66 the same; the rest the last float bit | -l, -fr, -fl, -body exact |
+| Luigi | 36/66 | 36/66; the last bit | -l exact; -fr/-fl 0/66, -body 42/66 (last bit) |
+| Peach | **exact** | **66/66** | -r, -l exact; -fr/-fl 0.01 |
+| Yoshi | 42/66 | 42/66; **up to 0.22 units** | -l 0.22, -fr/-fl/-body last bits |
+| Wario | 36/66 | 41/66; the last bit | -body exact; -l/-fr/-fl last bits |
+| Donkey Kong | 0/66 | **0/66; up to 25.2 units** | every hook 0/66, 8-18.5 units |
+| Daisy | 36/66 | 37/66; the last bit | -l exact; -fr/-fl 0.01 |
+| Waluigi | 36/66 | 38/66; the last bit | -fr exact; the rest last bits |
+
+m2 against m3 (m401, m463's step, and what `--litechar 8` would load on
+the m1 games): no character's hooks all exact -- Mario up to 3.5 units, Wario
+0.96, Donkey Kong 18.5.  **The hooks differ**, so by the brief `m441.char`
+leaves the auto set (below).  (Only m441 among the seven reads a character
+joint for game logic: m436/m435's `g000m0-itemhook_M/_R` are Bowser's, m431
+only hangs its tray on `test11_tex_we-itemhook-r` (`Hu3DModelHookSet`, drawn
+there, not read), m401/m444/m463 read none; chrman's own reads -- the punch
+dots, the smoke at `-body` -- are effects, and the hash below covers them.)
+
+### 64b.2 The second cast to the end (item 1b)
+
+`--gamehash` now also mixes in, every frame, m441's net point for each
+player (a patched line after main.c:1016, `port_gamehash_mix`; a no-op
+without `--gamehash`).  `H:` runs (`tools/m49_chain.sh`, lockstep,
+`--mgend 9000`), `--cast 4,5,6,7` (Wario, Donkey Kong, Daisy, Waluigi), the
+M49b build `b1` (0.9.17's Lite set, `m441.char` still in it), Lite at auto
+against `--nolite`, compared line by line (`tools/m49b_hash.py`,
+`docs/soak/m49b/h/`):
+
+| game | Lite auto vs off, second cast | lines, the last chain | left the minigame |
+|---|---|---|---|
+| m441 (with `m441.char`) | **SPLIT at f15,060** (entry +503; the RNG seeds move from +563) | 392 / 392 | **+5,397 against +5,295**; results frame 19,994 against 19,892 (coins after the same, 13/10/10/13) |
+| m441, `m441.bshadow` alone (the new auto) | identical | 392, `14864195` | +5,295, both |
+| m401 | identical | 392, `99a73570` | +3,727, both; results `1237a8aa` both |
+| m436 | identical | 387, `e454ac8a` | +8,710 |
+| m435 | identical | 387, `3deba122` | +5,953 |
+| m431 | identical | 392, `c5345b64` | +6,835 |
+| m444 | identical | 387, `e246889e` | +3,787 |
+| m463 | identical | 392, `2b24001d` | +2,949 |
+
+With the default cast, the net point hashed, m441 stays identical with
+`m441.char` too (391 lines, `8e1116da`, both arms and `m441.bshadow`
+alone): Mario/Luigi/Peach/Yoshi's differences are the last bit and Yoshi's
+0.22, which never flipped a catch in that run -- which is why M49's proof
+passed; Donkey Kong's 25 units do.  **`m441.char` is out of `ref`** (lite.c:
+still an option by name, `liteopts = m441.char`, the Read Me saying what it
+costs).
+
+### 64b.3 The eyes (item 2)
+
+The patch the review proposed (pass the file Lite used) is not enough: the
+game's own table (`charEyeBmpNameTbl`, chrman.c) names, for the m2 files,
+textures only Mario's and Luigi's m2 files have (the audit's material list:
+Peach's m2 eyes are `c002m2_r_eye`/`c002m2_l_eye`, the table says
+`s3c002m2_r_eye`; Wario's `s3c004m3_eye`, the table `Clswario_eye_l1_AUTO12`;
+Daisy's `s3c006m2_eye`/`_eye_R`, Waluigi's `s3c007_m2_eye`/`s3c008_m2_eye`).
+So `port_lite_eyebmp(char, model)` (lite.c): the game's call for the m1 file,
+the m2 file's own names otherwise; the two patched lines pass
+`port_lite_charmodel(id, 2)` -- the file Lite actually loaded.  Yoshi's pass
+goes by material index (untouched); Donkey Kong's m2 file has no eye
+texture of its own and his eyes stay lit through the pass anyway.
+
+**The pictures** (lockstep `T:` runs to the charring, second cast):
+`docs/screenshots/m49b-eyes-m436.jpg` -- m436 frame 22,720 (entry +8,496),
+Wario charred on camera: console-exact (Lite off) / Lite as 0.9.17 draws it
+(`b2`: eyes black) / Lite on 0.9.18 (`b3`: eyes white as on the console);
+the two Lite frames differ only in a 23x8 box at the eyes.
+`docs/screenshots/m49b-eyes-m435-dk.jpg` -- m435 frame 20,060, Donkey Kong
+charred: console-exact / 0.9.18 Lite, his eyes lit in both.
+
+### 64b.4 m441 without the lighter file
+
+The A/B on the final build (`b3`; `A:m441`, the scoreboard's teleport at
+real time, three runs an arm, interleaved; `tools/m44_ab.py`,
+`docs/soak/m49b/ab/`):
+
+| arm | fps (runs) | drawn frame, ms | rt replay, ms |
+|---|---|---:|---:|
+| Lite at auto (0.9.18: `m441.bshadow`) | **29.1** (29.1 / 29.0 / 29.2) | 25.8 | 17.6 |
+| `m441.bshadow` + `m441.nshadow` + `m441.rings` | **30.0** (30.0 / 30.0 / 30.0) | 23.9 | 17.1 |
+
+What else would take it to 29.5: the nets' and baskets' shadows and every
+other big flower by the fence, both already in M49's fifteen pictures
+(`m49-lite-m441-nshadow.jpg`, `-rings.jpg`); M49 proved each for the first
+1,300 frames only.  **Not shipped**: {{ALTPROOF}}  The user's call (the
+checklist's item 17).
+
+### 64b.5 The untested paths (item 3): restricted
+
+* **Class 0** (below the reference) now gets the reference's set, as the
+  reference does -- M49 gave it every option, proved to the end only for the
+  reference's set.  The other options stay the user's (`liteopts`).
+* **`--litechar 8` on the m1 games** is refused (one log line; the game gets
+  m2): m3 would move more joints (64b.1) and was never proved.  `--litechar
+  4|8` on m401/m463 (whose own file is m2) is unchanged.
+* (`--lite` alone, `lite = on`, was always the reference's set, not every
+  option as the Read Me said; the Read Me now says so.)
+
+### 64b.6 The final build, the pictures, the md5s, the soak
+
+{{FINAL}}
+
+### 64b.7 What M49b shipped (0.9.18)
+
+| | |
+|---|---|
+| `port/src/debug/lite.c` | `m441.char` out of `ref`; class 0 the reference's set; `--litechar 8` refused on m1 games; `port_lite_eyebmp` (the m2 files' eye names); `port_gamehash_mix`; `--jointaudit` (`port_joint_audit`) |
+| `port/patches.txt` (M49b block) | m441's net point into the hash, the audit's call; m436/m435's eye names through `port_lite_eyebmp` |
+| `port/src/platform/main.c`, `port/include/port.h` | `--jointaudit`; 0.9.18 / M49b |
+| `port/tools/m49b_joints.py`, `m49b_hash.py` | the audit's comparison; the hash logs' comparison |
+| `port/docs/screenshots/m49b-eyes-*.jpg` | the eye pictures |
+| `port/docs/soak/m49b/` | the audit, the hash runs, the A/B, the soak |
+| `port/dist/Read Me.txt`, `release-checklist.md`, `fps-scoreboard.md` | Lite's set, m441, the eyes; 80 of 82 on 0.9.18 |
+
+{{LEFT}}

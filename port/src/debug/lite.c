@@ -23,9 +23,9 @@
  *   lite = auto|on|off   (the config key; --lite, --nolite, --liteauto)
  *     auto (the default): on only for the screens this machine class needs
  *       it on -- the reference class (a dual 1 GHz G4 + Radeon 9000) the
- *       table's `ref` set, below the reference every option, faster
+ *       table's `ref` set, below the reference the same set (M49b), faster
  *       machines and machines not judged none;
- *     on: every option of every Lite screen (or --liteopts's list);
+ *     on: the reference's set on any machine (or --liteopts's list);
  *     off: console-exact everywhere.
  *   liteopts = LIST      (--liteopts): the options Lite turns on, by name
  *     (m441.bshadow,m401.fish,...), `ref` the reference's set, `all`.
@@ -37,6 +37,7 @@
 
 #include "game/hu3d.h"
 #include "game/gamework_data.h"
+#include "game/chrman.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -58,7 +59,10 @@ static const LiteOpt lite_opts[] = {
     {44101, "m441.bshadow", 1, "Butterfly Blitz: the butterflies cast no shadow"},
     {44102, "m441.nshadow", 0, "Butterfly Blitz: the nets and baskets cast no shadow"},
     {44103, "m441.rings", 0, "Butterfly Blitz: every other flower around the field hidden"},
-    {44104, "m441.char", 1, "Butterfly Blitz: the lighter character models"},
+    /* M49b (PLAN.md 64b.1): not in the reference's set -- the lighter file's
+     * net hook joint is not the m1 file's (--jointaudit) and m441 computes its
+     * catches from it (main.c:1016) */
+    {44104, "m441.char", 0, "Butterfly Blitz: the lighter character models"},
     {40101, "m401.fish", 0, "Manta Rings: each fish school drawn to its first 10 fish"},
     {40102, "m401.bubbles", 0, "Manta Rings: the ambient bubbles not drawn"},
     {40103, "m401.char", 1, "Manta Rings: the lighter character models"},
@@ -93,10 +97,13 @@ static void lite_fill(void) {
     int cls = port_machine_class();
     lite_ready = 1;
     if (!s || !*s || !strcmp(s, "ref") || !strcmp(s, "default")) {
-        /* auto below the reference: every option; otherwise the reference's */
-        int all = port_opt.lite < 0 && cls == 0;
+        /* the reference's set, on every machine Lite is on for.  M49b (PLAN.md
+         * 64b.3): below the reference too -- M49 gave class 0 every option,
+         * proved to the minigame's end only for the reference's set; the
+         * others stay the user's choice (--liteopts) */
+        (void)cls;
         for (i = 0; i < N_LITE; i++) {
-            lite_on[i] = all ? 1 : (unsigned char)lite_opts[i].ref;
+            lite_on[i] = (unsigned char)lite_opts[i].ref;
         }
         return;
     }
@@ -176,13 +183,46 @@ int port_lite_fishk(void) {
  * lighter when the screen's char option is on (2 -> 4, 4 -> 8; --litechar N
  * forces the file) */
 int port_lite_charmodel(int id, int model) {
+    static int refused;
     if (!port_lite_opt(id)) {
         return model;
+    }
+    /* M49b (PLAN.md 64b.3): never two steps -- --litechar 8 on a game whose
+     * own file is m1 (2) would load m3, whose joints were never proved; it
+     * gets the one step (m2) */
+    if (port_opt.litechar == 8 && model == 2) {
+        if (!refused) {
+            refused = 1;
+            port_log("port> lite: --litechar 8 refused on this game (its own file is m1; m3 not proved): m2\n");
+        }
+        return 4;
     }
     if (port_opt.litechar == 4 || port_opt.litechar == 8) {
         return port_opt.litechar;
     }
     return model == 2 ? 4 : model == 4 ? 8 : model;
+}
+
+/* M49b (PLAN.md 64b.2): the eye textures of the file Lite loaded, for m436's
+ * and m435's darkening pass (the loser charred, all but the eyes).  The game
+ * asks CharModelEyeBmpGet(char, 2) -- m1's names; the m2 files' names, read
+ * from each file (--jointaudit's material list), where the game's own table
+ * (chrman.c charEyeBmpNameTbl) names textures the m2 file does not have
+ * (Peach, Wario, Daisy, Waluigi).  Yoshi's pass goes by material index (not
+ * here); Donkey Kong's m2 file has no eye texture of its own (the game's
+ * table kept, matching nothing) and his eyes stay lit through the pass
+ * anyway (docs/screenshots/m49b-eyes-m435-dk.jpg). */
+static char* lite_eye_m2[8][2] = {
+    {"s3c000m2_eyes", "s3c000m2_eyes"}, {"c001m3_eye", "c001m3_eye"},       {"c002m2_r_eye", "c002m2_l_eye"},
+    {NULL, NULL},                       {"s3c004m3_eye", "s3c004m3_eye"},   {NULL, NULL},
+    {"s3c006m2_eye", "s3c006m2_eye_R"}, {"s3c007_m2_eye", "s3c008_m2_eye"},
+};
+
+char** port_lite_eyebmp(s16 charNo, s16 model) {
+    if (model == 4 && charNo >= 0 && charNo < 8 && lite_eye_m2[charNo][0]) {
+        return lite_eye_m2[charNo];
+    }
+    return CharModelEyeBmpGet(charNo, model);
 }
 
 /* ---- particle models whose quads are not drawn ------------------------------
@@ -269,6 +309,16 @@ static unsigned gh_mix(unsigned h, const void* p, size_t n) {
     return h;
 }
 
+/* M49b: a value game logic computes outside Hu3DData / GWPlayer (m441's net
+ * position, main.c:1016), mixed into this frame's hash by the patched game
+ * line; a no-op without --gamehash */
+static unsigned gh_extra = 2166136261u;
+void port_gamehash_mix(const void* p, unsigned n) {
+    if (port_opt.gamehash) {
+        gh_extra = gh_mix(gh_extra, p, n);
+    }
+}
+
 void port_lite_tick(unsigned frame) {
     static unsigned chain = 2166136261u;
     unsigned h = 2166136261u, fs, i;
@@ -290,9 +340,122 @@ void port_lite_tick(unsigned frame) {
         }
     }
     h = gh_mix(h, GWPlayer, sizeof(GWPlayer));
+    h = gh_mix(h, &gh_extra, sizeof(gh_extra));
+    gh_extra = 2166136261u;
     chain = gh_mix(chain, &h, sizeof(h));
     if (frame % (unsigned)port_opt.gamehash == 0u) {
         port_log("port> gamehash f%u mg %d frand %08x rand8 %08x frame %08x chain %08x\n", frame,
                  port_cur_mg_number(), fs, (unsigned)rs, h, chain);
     }
+}
+
+/* ---- --jointaudit: the character files' hook joints (M49b, PLAN.md 64b.1) ----
+ * Called by the patched m441 player setup (the first player) with m441's own
+ * motion table; with --jointaudit set, for each of the eight characters and
+ * each file (m1, m2, m3: CharModelCreate 2, 4, 8) every hook joint the Lite
+ * games (and chrman's effects) read is printed -- Hu3DModelObjMtxGet, the
+ * twelve floats' bits -- at five times of each of the character's m441
+ * motions (the idle, the net swings, the catches); then the run ends.
+ * tools/m49b_joints.py compares the files.  Also each file's eye materials
+ * (m436/m435's darkening pass keeps them lit). */
+static const char* ja_hooks[] = {"a-itemhook-r", "a-itemhook-l", "a-itemhook-fr", "a-itemhook-fl", "a-itemhook-body",
+                                 "test11_tex_we-itemhook-r", "test11_tex_we-ske_R_shoe1"};
+#define N_JA_HOOKS ((int)(sizeof(ja_hooks) / sizeof(ja_hooks[0])))
+
+static void ja_mtx(int c, int file, int m, int k, float t, int mdl) {
+    int h, j, r;
+    for (h = 0; h < N_JA_HOOKS; h++) {
+        Mtx mtx;
+        unsigned b[12];
+        if (!Hu3DModelObjPtrGet(mdl, (char*)ja_hooks[h])) {
+            continue;
+        }
+        Hu3DModelObjMtxGet(mdl, (char*)ja_hooks[h], mtx);
+        for (r = 0; r < 3; r++) {
+            for (j = 0; j < 4; j++) {
+                memcpy(&b[r * 4 + j], &mtx[r][j], 4);
+            }
+        }
+        port_log("joint c%d m%d mot%02d k%d t%.2f %s %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x"
+                 " pos %.3f %.3f %.3f\n",
+                 c, file, m, k, t, ja_hooks[h], b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10],
+                 b[11], mtx[0][3], mtx[1][3], mtx[2][3]);
+    }
+}
+
+void port_joint_audit(const s32 (*mot)[16]) {
+    static const s16 files[3] = {2, 4, 8};
+    int c, f, m, k, h, i, j;
+    if (!port_opt.jointaudit) {
+        return;
+    }
+    port_log("port> jointaudit (M49b): 8 characters x m1/m2/m3, m441's motions\n");
+    for (c = 0; c < 8; c++) {
+        for (f = 0; f < 3; f++) {
+            int mdl = CharModelCreate(c, files[f]);
+            HU3DMODEL* mp = &Hu3DData[mdl];
+            HSFDATA* hsf = mp->hsf;
+            char** eye = CharModelEyeBmpGet(c, files[f]);
+            char line[256];
+            size_t n = 0;
+            line[0] = 0;
+            for (h = 0; h < N_JA_HOOKS; h++) {
+                n += (size_t)snprintf(line + n, sizeof(line) - n, " %s=%d", ja_hooks[h],
+                                      Hu3DModelObjPtrGet(mdl, (char*)ja_hooks[h]) != NULL);
+            }
+            port_log("joint c%d m%d file objects %d materials %d hooks%s\n", c, f + 1, (int)hsf->objectNum,
+                     (int)hsf->materialNum, line);
+            /* the materials carrying the file's eye textures, and 1/2 (Yoshi's branch) */
+            for (i = 0; i < (int)hsf->materialNum; i++) {
+                HSFMATERIAL* mat = &hsf->material[i];
+                int eyes = 0;
+                for (j = 0; j < (int)mat->attrNum; j++) {
+                    HSFATTRIBUTE* a = &hsf->attribute[mat->attr[j]];
+                    if (a->bitmap && a->bitmap->name
+                        && (!strcmp(a->bitmap->name, eye[0]) || !strcmp(a->bitmap->name, eye[1]))) {
+                        eyes = 1;
+                    }
+                }
+                {
+                    /* every texture of every material (M49b: the m2/m3 files' eye names) */
+                    char nb[400];
+                    size_t q = 0;
+                    nb[0] = 0;
+                    for (j = 0; j < (int)mat->attrNum && q < sizeof(nb) - 40; j++) {
+                        HSFATTRIBUTE* a = &hsf->attribute[mat->attr[j]];
+                        q += (size_t)snprintf(nb + q, sizeof(nb) - q, " %s",
+                                              a->bitmap && a->bitmap->name ? a->bitmap->name : "-");
+                    }
+                    port_log("joint c%d m%d matnames %d:%s\n", c, f + 1, i, nb);
+                }
+                if (eyes || i == 1 || i == 2) {
+                    const char* bn = "-";
+                    if (mat->attrNum && hsf->attribute[mat->attr[0]].bitmap && hsf->attribute[mat->attr[0]].bitmap->name) {
+                        bn = hsf->attribute[mat->attr[0]].bitmap->name;
+                    }
+                    port_log("joint c%d m%d material %d eye %d (m1 names %s / %s) first bitmap %s\n", c, f + 1, i, eyes,
+                             CharModelEyeBmpGet(c, 2)[0], CharModelEyeBmpGet(c, 2)[1], bn);
+                }
+            }
+            for (m = 0; m < 16; m++) {
+                int motId;
+                float max;
+                if (!mot[c][m]) {
+                    continue;
+                }
+                motId = CharMotionCreate(c, mot[c][m]);
+                Hu3DMotionSet(mdl, motId);
+                max = Hu3DMotionMaxTimeGet(mdl);
+                for (k = 0; k <= 5; k++) {
+                    float t = max * (float)k / 5.0f;
+                    Hu3DMotionExec(mdl, motId, t, 0);
+                    ja_mtx(c, f + 1, m, k, t, mdl);
+                }
+            }
+            CharModelKill(c);
+            CharModelDataClose(c);
+        }
+    }
+    port_log("port> jointaudit done\n");
+    port_shutdown(0);
 }

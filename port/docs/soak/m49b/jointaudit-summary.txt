@@ -1,0 +1,139 @@
+== m1 vs m2
+c0 Mario:
+    a-itemhook-r: 38/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot00 k0
+    a-itemhook-l: EXACT (66 poses)
+    a-itemhook-fr: EXACT (66 poses)
+    a-itemhook-fl: EXACT (66 poses)
+    a-itemhook-body: EXACT (66 poses)
+    test11_tex_we-itemhook-r: 38/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot00 k0
+    test11_tex_we-ske_R_shoe1: EXACT (66 poses)
+c1 Luigi:
+    a-itemhook-r: 36/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot07 k2
+    a-itemhook-l: EXACT (66 poses)
+    a-itemhook-fr: 0/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot00 k0
+    a-itemhook-fl: 0/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot00 k0
+    a-itemhook-body: 42/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot00 k0
+    test11_tex_we-itemhook-r: 36/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot07 k2
+    test11_tex_we-ske_R_shoe1: EXACT (66 poses)
+c2 Peach:
+    a-itemhook-r: EXACT (66 poses)
+    a-itemhook-l: EXACT (66 poses)
+    a-itemhook-fr: 0/66 poses exact, first differing mot00 k0, max |dpos| 0.01 at mot02 k0
+    a-itemhook-fl: 0/66 poses exact, first differing mot00 k0, max |dpos| 0.01 at mot08 k1
+    a-itemhook-body: 42/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot00 k0
+    test11_tex_we-itemhook-r: EXACT (66 poses)
+    test11_tex_we-ske_R_shoe1: EXACT (66 poses)
+c3 Yoshi:
+    a-itemhook-r: 42/66 poses exact, first differing mot00 k0, max |dpos| 0.22 at mot10 k3
+    a-itemhook-l: 0/66 poses exact, first differing mot00 k0, max |dpos| 0.22 at mot07 k0
+    a-itemhook-fr: 0/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot00 k0
+    a-itemhook-fl: 0/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot00 k0
+    a-itemhook-body: 42/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot00 k0
+    test11_tex_we-itemhook-r: 42/66 poses exact, first differing mot00 k0, max |dpos| 0.22 at mot10 k3
+    test11_tex_we-ske_R_shoe1: EXACT (66 poses)
+c4 Wario:
+    a-itemhook-r: 36/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot00 k0
+    a-itemhook-l: 0/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot10 k4
+    a-itemhook-fr: 0/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot05 k1
+    a-itemhook-fl: 0/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot00 k0
+    a-itemhook-body: EXACT (66 poses)
+    test11_tex_we-itemhook-r: 36/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot00 k0
+    test11_tex_we-ske_R_shoe1: absent
+c5 DK:
+    a-itemhook-r: 0/66 poses exact, first differing mot00 k0, max |dpos| 17.51 at mot09 k4
+    a-itemhook-l: 0/66 poses exact, first differing mot00 k0, max |dpos| 18.53 at mot10 k2
+    a-itemhook-fr: 0/66 poses exact, first differing mot00 k0, max |dpos| 8.25 at mot03 k2
+    a-itemhook-fl: 0/66 poses exact, first differing mot00 k0, max |dpos| 8.30 at mot03 k0
+    a-itemhook-body: 0/66 poses exact, first differing mot00 k0, max |dpos| 8.39 at mot10 k2
+    test11_tex_we-itemhook-r: 0/66 poses exact, first differing mot00 k0, max |dpos| 17.51 at mot09 k4
+    test11_tex_we-ske_R_shoe1: absent
+c6 Daisy:
+    a-itemhook-r: 36/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot00 k0
+    a-itemhook-l: EXACT (66 poses)
+    a-itemhook-fr: 0/66 poses exact, first differing mot00 k0, max |dpos| 0.01 at mot02 k0
+    a-itemhook-fl: 0/66 poses exact, first differing mot00 k0, max |dpos| 0.01 at mot01 k3
+    a-itemhook-body: 42/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot00 k0
+    test11_tex_we-itemhook-r: 36/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot00 k0
+    test11_tex_we-ske_R_shoe1: EXACT (66 poses)
+c7 Waluigi:
+    a-itemhook-r: 36/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot00 k0
+    a-itemhook-l: 5/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot00 k0
+    a-itemhook-fr: EXACT (66 poses)
+    a-itemhook-fl: 0/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot00 k0
+    a-itemhook-body: 30/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot00 k0
+    test11_tex_we-itemhook-r: 36/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot00 k0
+    test11_tex_we-ske_R_shoe1: EXACT (66 poses)
+== m2 vs m3
+c0 Mario:
+    a-itemhook-r: 21/66 poses exact, first differing mot00 k0, max |dpos| 2.59 at mot09 k5
+    a-itemhook-l: 0/66 poses exact, first differing mot00 k0, max |dpos| 2.26 at mot10 k1
+    a-itemhook-fr: 0/66 poses exact, first differing mot00 k0, max |dpos| 3.53 at mot03 k2
+    a-itemhook-fl: 0/66 poses exact, first differing mot00 k0, max |dpos| 3.52 at mot02 k5
+    a-itemhook-body: 1/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot02 k5
+    test11_tex_we-itemhook-r: 21/66 poses exact, first differing mot00 k0, max |dpos| 2.59 at mot09 k5
+    test11_tex_we-ske_R_shoe1: 7/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot01 k1
+c1 Luigi:
+    a-itemhook-r: 36/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot00 k0
+    a-itemhook-l: EXACT (66 poses)
+    a-itemhook-fr: 0/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot04 k1
+    a-itemhook-fl: 0/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot02 k2
+    a-itemhook-body: 42/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot00 k0
+    test11_tex_we-itemhook-r: 36/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot00 k0
+    test11_tex_we-ske_R_shoe1: EXACT (66 poses)
+c2 Peach:
+    a-itemhook-r: EXACT (66 poses)
+    a-itemhook-l: EXACT (66 poses)
+    a-itemhook-fr: 0/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot00 k0
+    a-itemhook-fl: 0/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot00 k0
+    a-itemhook-body: 42/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot00 k0
+    test11_tex_we-itemhook-r: EXACT (66 poses)
+    test11_tex_we-ske_R_shoe1: EXACT (66 poses)
+c3 Yoshi:
+    a-itemhook-r: EXACT (66 poses)
+    a-itemhook-l: 0/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot00 k0
+    a-itemhook-fr: 0/66 poses exact, first differing mot00 k0, max |dpos| 0.03 at mot02 k4
+    a-itemhook-fl: 0/66 poses exact, first differing mot00 k0, max |dpos| 0.03 at mot01 k3
+    a-itemhook-body: 42/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot00 k0
+    test11_tex_we-itemhook-r: EXACT (66 poses)
+    test11_tex_we-ske_R_shoe1: EXACT (66 poses)
+c4 Wario:
+    a-itemhook-r: 37/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot00 k0
+    a-itemhook-l: 0/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot01 k1
+    a-itemhook-fr: 0/66 poses exact, first differing mot00 k0, max |dpos| 0.96 at mot01 k0
+    a-itemhook-fl: 0/66 poses exact, first differing mot00 k0, max |dpos| 0.96 at mot01 k0
+    a-itemhook-body: EXACT (66 poses)
+    test11_tex_we-itemhook-r: 37/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot00 k0
+    test11_tex_we-ske_R_shoe1: absent
+c5 DK:
+    a-itemhook-r: 0/66 poses exact, first differing mot00 k0, max |dpos| 17.51 at mot09 k4
+    a-itemhook-l: 0/66 poses exact, first differing mot00 k0, max |dpos| 18.53 at mot10 k2
+    a-itemhook-fr: 0/66 poses exact, first differing mot00 k0, max |dpos| 8.25 at mot03 k2
+    a-itemhook-fl: 0/66 poses exact, first differing mot00 k0, max |dpos| 8.55 at mot03 k0
+    a-itemhook-body: 0/66 poses exact, first differing mot00 k0, max |dpos| 8.39 at mot10 k2
+    test11_tex_we-itemhook-r: 0/66 poses exact, first differing mot00 k0, max |dpos| 17.51 at mot09 k4
+    test11_tex_we-ske_R_shoe1: absent
+c6 Daisy:
+    a-itemhook-r: 36/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot00 k0
+    a-itemhook-l: EXACT (66 poses)
+    a-itemhook-fr: 0/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot00 k0
+    a-itemhook-fl: 0/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot00 k0
+    a-itemhook-body: 42/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot00 k0
+    test11_tex_we-itemhook-r: 36/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot00 k0
+    test11_tex_we-ske_R_shoe1: EXACT (66 poses)
+c7 Waluigi:
+    a-itemhook-r: 36/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot00 k0
+    a-itemhook-l: 27/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot00 k0
+    a-itemhook-fr: 0/66 poses exact, first differing mot00 k0, max |dpos| 0.23 at mot08 k1
+    a-itemhook-fl: 0/66 poses exact, first differing mot00 k0, max |dpos| 0.23 at mot09 k4
+    a-itemhook-body: 30/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot00 k0
+    test11_tex_we-itemhook-r: 36/66 poses exact, first differing mot00 k0, max |dpos| 0.00 at mot00 k0
+    test11_tex_we-ske_R_shoe1: EXACT (66 poses)
+== m441 net point (a-itemhook-r x (0,0,170)), m1 vs m2
+c0 Mario: 48/66 poses the same net point, max |d| 0.000; differing matrix elements by column {3: 38}
+c1 Luigi: 36/66 poses the same net point, max |d| 0.000; differing matrix elements by column {0: 65, 1: 22, 2: 35, 3: 84}
+c2 Peach: 66/66 poses the same net point, max |d| 0.000; differing matrix elements by column {}
+c3 Yoshi: 42/66 poses the same net point, max |d| 0.221; differing matrix elements by column {0: 72, 1: 57, 2: 72, 3: 72}
+c4 Wario: 41/66 poses the same net point, max |d| 0.000; differing matrix elements by column {3: 65}
+c5 DK: 0/66 poses the same net point, max |d| 25.206; differing matrix elements by column {0: 198, 1: 198, 2: 198, 3: 198}
+c6 Daisy: 37/66 poses the same net point, max |d| 0.000; differing matrix elements by column {3: 70}
+c7 Waluigi: 38/66 poses the same net point, max |d| 0.000; differing matrix elements by column {3: 62}

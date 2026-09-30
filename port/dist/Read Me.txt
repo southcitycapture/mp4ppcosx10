@@ -1,6 +1,6 @@
 Mario Party 4 PowerPC Edition
 =============================
-Version 0.9.17
+Version 0.9.18
 
 
 WHAT THIS IS
@@ -132,7 +132,7 @@ LITE MODE
 Seven minigames draw more than the reference machine (a dual 1 GHz G4
 with a Radeon 9000) can finish in a thirtieth of a second, however the
 drawing is done.  Since 0.9.17 those seven draw a little less there, and
-reach 30 frames a second: this is Lite mode.  What changes is only what is
+six of them reach 30 frames a second: this is Lite mode.  What changes is only what is
 drawn -- never what the game does.  The characters move, score, collide
 and are dealt their luck exactly as with Lite off; the port checks that
 frame by frame (the game's random numbers, every model's position and the
@@ -140,8 +140,7 @@ players' records are the same with Lite on and off).
 
 What Lite changes, by default ("auto") on the reference machine:
 
-    Butterfly Blitz        the lighter character models; the butterflies
-                           cast no shadow
+    Butterfly Blitz        the butterflies cast no shadow
     Manta Rings            the lighter character models
     Fruits of Doom         the lighter character models
     Darts of Doom          the lighter character models
@@ -157,8 +156,16 @@ the same animations, fewer polygons.  Side by side the difference is in
 the hands, the hair and the rounder parts of the face.
 
 Every other screen is drawn exactly as before.  A faster Mac than the
-reference gets no Lite at all; a slower one gets every Lite option on
-those seven screens (the list below).
+reference gets no Lite at all; a slower one gets the same set.
+
+Butterfly Blitz keeps its own character models since 0.9.18: the game
+works out where each net is -- and so which butterflies are caught --
+from a joint of the character's hand, and in the lighter models that
+joint sits a little elsewhere (for Donkey Kong a good way off).  With
+the lighter models the game would play differently, so Lite leaves them
+out there; Butterfly Blitz reaches about 29 frames a second instead of
+30.  (m441.char below still turns them on, for anyone who prefers the
+speed -- knowing the catches can then differ from the console's.)
 
 To turn it off -- the console's drawing everywhere, the seven slower --
 run the game once from the Terminal with --nolite, or put
@@ -166,11 +173,13 @@ run the game once from the Terminal with --nolite, or put
     lite = off
 
 in the config file (WHERE YOUR THINGS LIVE).  --lite (lite = on) turns
-every option on; --liteauto (lite = auto) is the default.  All three are
+the same set on whatever the Mac; --liteauto (lite = auto) is the
+default.  All three are
 remembered.  The options can also be picked one by one with --liteopts
 and their names (liteopts = ... in the config file):
 
-    m441.char      Butterfly Blitz: the lighter character models
+    m441.char      Butterfly Blitz: the lighter character models (not
+                   in the default set: changes the catches)
     m441.bshadow   Butterfly Blitz: the butterflies cast no shadow
     m441.nshadow   Butterfly Blitz: the nets and baskets cast no shadow
     m441.rings     Butterfly Blitz: every other big flower by the fence
@@ -187,7 +196,9 @@ and their names (liteopts = ... in the config file):
     m463.char      Panel Panic: the lighter character models
 
 (ref is the default set, all is every one.)  0.9.17 also draws Order Up's
-sparkles faster with the same pixels, for everyone.
+sparkles faster with the same pixels, for everyone.  0.9.18 fixes the
+lighter models' eyes in Fruits of Doom and Darts of Doom: when Bowser
+chars the loser, the eyes stay white, as on the console.
 
 
 LOADING
@@ -394,10 +405,11 @@ left is the disk itself holding the game.  (0.9.8 had about two or three
 an hour on the reference machine; the project's notes, PLAN.md section 55,
 have what 0.9.9 measured.)
 
-With 0.9.17's Lite mode (LITE MODE) 81 of the 82 screens measured reach
-30 frames a second on the reference machine, the seven slowest minigames
-among them (Butterfly Blitz from about 27 to 30).  The one short is Beach
-Volley Folly, which lands on 29.4-30.0 from run to run -- the machine's
+With Lite mode (LITE MODE) 80 of the 82 screens measured reach 30 frames
+a second on the reference machine, six of the seven slowest minigames
+among them; Butterfly Blitz is at about 29 (27 with Lite off) since
+0.9.18 keeps its character models (LITE MODE).  The other one short is
+Beach Volley Folly, which lands on 29.4-30.0 from run to run -- the machine's
 edge, not a Lite screen; with Lite off the seven are back at 27 to 29.7.
 The game's own speed is the console's everywhere; only the picture is
 slower where it is.  0.9.17 also draws Order Up's sparkles more cheaply,
