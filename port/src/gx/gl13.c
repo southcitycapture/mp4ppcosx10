@@ -59,6 +59,9 @@ static unsigned frame_no;
 static const char* pending_shot;
 static int title_plain; /* M25: the window title is the verdict until the first present */
 static void fs_setup(void); /* M25: --fullscreen, below gl13_present */
+void port_ui_frame(void);           /* M50: src/ui/overlay.c */
+int port_ui_key(int sym);
+int port_ui_ffto_frame(unsigned frame);
 
 /* ---- --glcheck ------------------------------------------------------------ */
 /* Everything GL this backend is allowed to call.  GL 1.3 core plus the four
@@ -1026,9 +1029,15 @@ void gl13_present(void) {
         gl13_write_png(pending_shot);
         pending_shot = NULL;
     }
+    if (gl_on && draw_off && port_ui_ffto_frame(frame_no)) {
+        /* M50: Benchmark Mode's child says what it is doing while --ffto
+         * runs ahead undrawn (a black screen and a line, every 60 frames) */
+        rt_present(frame_no);
+    }
     if (!gl_on || draw_off) {
         return; /* nothing was drawn, so there is nothing to show */
     }
+    port_ui_frame(); /* M50: the overlay menu, over the picture, before the present */
     if (fs_on) {
         fs_blit_out();
     }
@@ -1059,6 +1068,9 @@ void gl13_present(void) {
                      * the MacBook delivered the keystroke and no SDL_QUIT) */
                     gl13_quit_asked();
                     continue;
+                }
+                if (port_ui_key(e.key.keysym.sym)) {
+                    continue; /* M50: F1 / M, and Esc while the menu is open */
                 }
                 switch (e.key.keysym.sym) {
                     case SDLK_ESCAPE:

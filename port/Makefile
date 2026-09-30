@@ -74,7 +74,8 @@ GAME_C   := $(patsubst $(ROOT)/%,%,$(wildcard $(ROOT)/src/game/*.c $(ROOT)/src/g
             src/dolphin/mtx/mtx.c src/dolphin/mtx/mtxvec.c src/dolphin/mtx/mtx44.c \
             src/dolphin/mtx/vec.c src/dolphin/mtx/quat.c src/dolphin/thp/THPAudio.c
 PORT_C   := $(wildcard src/platform/*.c src/os/*.c src/gx/*.c src/dvd/*.c \
-                       src/card/*.c src/pad/*.c src/audio/*.c src/debug/*.c src/thp/*.c)
+                       src/card/*.c src/pad/*.c src/audio/*.c src/debug/*.c src/thp/*.c \
+                       src/ui/*.c)
 # ---- MusyX (extern/musyx, MIT) -----------------------------------------------
 # AxioDL's MusyX reimplementation, compiled from the decomp's own checkout with
 # MUSY_TARGET=MUSY_TARGET_PC, which GAME_DEFS already sets.  Everything above

@@ -1,0 +1,13 @@
+# chain1 m433 5-run A/B
+# m49 chain start Wed Sep 30 07:30:52 EDT 2026  isle md5 d0e16c40776f4cf5a55c0e2f93ee89b3
+A-m433-base-1 EXIT=0 wall=95s fault=0 isle=d0e16c40 md5 args='--com4 --rtc dolphin --freshcard --noconfig --perf --status --ovllog --play board-start-com4.play --nomovies --realtime --minigame m433 --turns 1 --ffto 14000 --frames 20000 --mgend 1800'
+A-m433-old-1 EXIT=0 wall=100s fault=0 isle=d7da16eb md5 args='--com4 --rtc dolphin --freshcard --noconfig --perf --status --ovllog --play board-start-com4.play --nomovies --realtime --minigame m433 --turns 1 --ffto 14000 --frames 20000 --mgend 1800'
+A-m433-base-2 EXIT=0 wall=101s fault=0 isle=d0e16c40 md5 args='--com4 --rtc dolphin --freshcard --noconfig --perf --status --ovllog --play board-start-com4.play --nomovies --realtime --minigame m433 --turns 1 --ffto 14000 --frames 20000 --mgend 1800'
+A-m433-old-2 EXIT=0 wall=101s fault=0 isle=d7da16eb md5 args='--com4 --rtc dolphin --freshcard --noconfig --perf --status --ovllog --play board-start-com4.play --nomovies --realtime --minigame m433 --turns 1 --ffto 14000 --frames 20000 --mgend 1800'
+A-m433-base-3 EXIT=0 wall=101s fault=0 isle=d0e16c40 md5 args='--com4 --rtc dolphin --freshcard --noconfig --perf --status --ovllog --play board-start-com4.play --nomovies --realtime --minigame m433 --turns 1 --ffto 14000 --frames 20000 --mgend 1800'
+A-m433-old-3 EXIT=0 wall=101s fault=0 isle=d7da16eb md5 args='--com4 --rtc dolphin --freshcard --noconfig --perf --status --ovllog --play board-start-com4.play --nomovies --realtime --minigame m433 --turns 1 --ffto 14000 --frames 20000 --mgend 1800'
+A-m433-base-4 EXIT=0 wall=101s fault=0 isle=d0e16c40 md5 args='--com4 --rtc dolphin --freshcard --noconfig --perf --status --ovllog --play board-start-com4.play --nomovies --realtime --minigame m433 --turns 1 --ffto 14000 --frames 20000 --mgend 1800'
+A-m433-old-4 EXIT=0 wall=101s fault=0 isle=d7da16eb md5 args='--com4 --rtc dolphin --freshcard --noconfig --perf --status --ovllog --play board-start-com4.play --nomovies --realtime --minigame m433 --turns 1 --ffto 14000 --frames 20000 --mgend 1800'
+A-m433-base-5 EXIT=0 wall=101s fault=0 isle=d0e16c40 md5 args='--com4 --rtc dolphin --freshcard --noconfig --perf --status --ovllog --play board-start-com4.play --nomovies --realtime --minigame m433 --turns 1 --ffto 14000 --frames 20000 --mgend 1800'
+A-m433-old-5 EXIT=0 wall=101s fault=0 isle=d7da16eb md5 args='--com4 --rtc dolphin --freshcard --noconfig --perf --status --ovllog --play board-start-com4.play --nomovies --realtime --minigame m433 --turns 1 --ffto 14000 --frames 20000 --mgend 1800'
+DONE

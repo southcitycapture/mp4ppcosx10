@@ -31,8 +31,8 @@ extern "C" {
 /* ---- settings, from argv ------------------------------------------------- */
 /* M32: the shipped version (the dmg's name, the plist, the --defaults header)
  * and the milestone that built it. */
-#define PORT_VERSION_STRING "0.9.18"
-#define PORT_MILESTONE "M49b"
+#define PORT_VERSION_STRING "0.9.19"
+#define PORT_MILESTONE "M50"
 /* M48 (PLAN.md 63.10): the milestone's levers and diagnostics -- the compiled
  * draws, --glists, --repeatstat, --drawhash, --texmtxlog, --maxbatchverts,
  * --skinreadwatch -- are built only with M48X=1 (make): their hooks sit in
@@ -483,6 +483,14 @@ typedef struct PortOptions {
     const char* liteopts;   /* --liteopts LIST  M49: the options Lite turns on (names, ref, all) */
     int litefishk;          /* --litefishk K  M49: m401.fish's fish drawn per school (10) */
     int litechar;           /* --litechar 4|8  M49: the char options' file (default one step lighter) */
+    int blobr, bloba;       /* --blobr R --bloba A  M50: m441.blob's radius (80) and darkness (150/255) */
+    int benchmark;          /* --benchmark  M50: Benchmark Mode's driver (src/ui/bench.c): the scenes
+                             *   one by one as child runs, the settings chosen, the report written */
+    const char* benchchild; /* --benchchild K/N:NAME  M50: a child run of Benchmark Mode (its banner) */
+    const char* benchresult; /* --benchresult FILE  M50: open the overlay on Benchmark Mode's result */
+    const char* menu;       /* --menu N[:PAGE]  M50: open the overlay at drawn frame N (main, offer,
+                             *   confirm, result) -- the lab's pictures of it */
+    int nomenu;             /* --nomenu  M50: no overlay menu, no first-launch offer */
     int notrim;             /* --notrim  M49: the exact trims' old path (m431's sparkle list whole,
                              *   m444's table re-evaluated while paused) */
     int gamehash;           /* --gamehash N  M49: the determinism hash every N frames (0 off) */

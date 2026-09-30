@@ -326,6 +326,12 @@ u32 PADRead(PADStatus* status) {
         status[i].err = PAD_ERR_NONE;
         chan_bits |= PAD_CHAN0_BIT >> i;
     }
+    {
+        /* M50: the overlay menu reads the four slots, and while it is open
+         * the game reads them at rest (src/ui/overlay.c) */
+        void port_ui_pad(void* status4);
+        port_ui_pad(status);
+    }
 
     return chan_bits;
 }

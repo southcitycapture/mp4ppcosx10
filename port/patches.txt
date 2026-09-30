@@ -958,3 +958,17 @@ src/REL/m463Dll/main.c	#include "game/audio.h"\n	#include "game/audio.h"\n\n/* p
 src/REL/m441Dll/main.c	    MTXMultVec(hookMtx, &netOfs, &work->unk28);\n}	    MTXMultVec(hookMtx, &netOfs, &work->unk28);\n    port_gamehash_mix(&work->unk28, sizeof(work->unk28));\n}
 src/REL/m436Dll/main.c	        temp_r26 = CharModelEyeBmpGet(temp_r30->unk14, 2);	        temp_r26 = port_lite_eyebmp(temp_r30->unk14, port_lite_charmodel(43603, 2));
 src/REL/m435Dll/main.c	        temp_r27 = CharModelEyeBmpGet(temp_r30->unk34, 2);	        temp_r27 = port_lite_eyebmp(temp_r30->unk34, port_lite_charmodel(43502, 2));
+
+# ------------------------------------------------------------ M50: the user's Lite picks
+# M50 (PLAN.md 65): m441.blob -- the user's "very basic circular shadow... like
+# it's from the N64" under each net instead of its projected shadow.  The
+# player update hands the net point it has just computed (read only) and the
+# net model's id to lite.c; Hu3DExec calls port_lite_layer_end after each
+# layer (lite.c draws the discs after camera 0's floor layer, and returns at
+# once otherwise); with the blob on the net casts no projected shadow, as
+# with m441.nshadow.
+src/REL/m441Dll/main.c	void port_gamehash_mix(const void *p, unsigned n);\n	void port_gamehash_mix(const void *p, unsigned n);\n/* port (M50, PLAN.md 65): m441.blob */\nvoid port_lite_blob_net(int player, const void *p, int netMdl);\n
+src/REL/m441Dll/main.c	    port_gamehash_mix(&work->unk28, sizeof(work->unk28));\n}	    port_gamehash_mix(&work->unk28, sizeof(work->unk28));\n    port_lite_blob_net(work->unkB0, &work->unk28, object->mdlId[1]);\n}
+src/REL/m441Dll/main.c	        if (i == 0 || !port_lite_opt(44102)) {	        if (i == 0 || !(port_lite_opt(44102) || port_lite_opt(44105))) {
+src/game/hsfman.c	void port_vc_foreign(int on);\n	void port_vc_foreign(int on);\nvoid port_lite_layer_end(int cam, int layer); /* M50: m441.blob (lite.c) */\n
+src/game/hsfman.c	                    Hu3DDrawPost();\n                }\n            }\n        }\n    }\n	                    Hu3DDrawPost();\n                }\n                port_lite_layer_end(Hu3DCameraNo, j);\n            }\n        }\n    }\n

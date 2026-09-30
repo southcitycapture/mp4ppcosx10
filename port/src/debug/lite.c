@@ -23,7 +23,8 @@
  *   lite = auto|on|off   (the config key; --lite, --nolite, --liteauto)
  *     auto (the default): on only for the screens this machine class needs
  *       it on -- the reference class (a dual 1 GHz G4 + Radeon 9000) the
- *       table's `ref` set, below the reference the same set (M49b), faster
+ *       table's `ref` set, below the reference that set and the `extra`
+ *       options (M50: the user's picks; M49b gave class 0 the ref set), faster
  *       machines and machines not judged none;
  *     on: the reference's set on any machine (or --liteopts's list);
  *     off: console-exact everywhere.
@@ -42,6 +43,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 int port_cur_mg_number(void);
 int port_machine_class(void);
@@ -51,29 +53,39 @@ typedef struct {
     const char* name;   /* for --liteopts and the log */
     int ref;            /* on at `auto` on the reference class */
     const char* what;   /* what changes on screen */
+    int extra;          /* M50: on at `auto` below the reference class too (the user's extras) */
 } LiteOpt;
 
 /* `ref`: the set that takes each screen over 29.5 on the reference, measured
- * option by option (PLAN.md 64.4) */
+ * option by option (PLAN.md 64.4).  M50 (PLAN.md 65, the user's picks of
+ * 2026-09-30): m441's nets without their projected shadow -- a round blob
+ * under each instead (m441.blob) -- and every other fence flower join the
+ * butterflies' shadows; the `extra` options are on at auto only below the
+ * reference class, where the reference's set is not enough. */
 static const LiteOpt lite_opts[] = {
-    {44101, "m441.bshadow", 1, "Butterfly Blitz: the butterflies cast no shadow"},
-    {44102, "m441.nshadow", 0, "Butterfly Blitz: the nets and baskets cast no shadow"},
-    {44103, "m441.rings", 0, "Butterfly Blitz: every other flower around the field hidden"},
+    {44101, "m441.bshadow", 1, "Butterfly Blitz: the butterflies cast no shadow", 0},
+    {44102, "m441.nshadow", 1, "Butterfly Blitz: the nets and baskets cast no shadow", 0},
+    {44103, "m441.rings", 1, "Butterfly Blitz: every other flower around the field hidden", 0},
     /* M49b (PLAN.md 64b.1): not in the reference's set -- the lighter file's
      * net hook joint is not the m1 file's (--jointaudit) and m441 computes its
      * catches from it (main.c:1016) */
-    {44104, "m441.char", 0, "Butterfly Blitz: the lighter character models"},
-    {40101, "m401.fish", 0, "Manta Rings: each fish school drawn to its first 10 fish"},
-    {40102, "m401.bubbles", 0, "Manta Rings: the ambient bubbles not drawn"},
-    {40103, "m401.char", 1, "Manta Rings: the lighter character models"},
-    {43601, "m436.plates", 0, "Fruits of Doom: the plates cast no shadow (hidden under them)"},
-    {43602, "m436.pillars", 0, "Fruits of Doom: the two side pillars cast no shadow"},
-    {43603, "m436.char", 1, "Fruits of Doom: the lighter character models"},
-    {43501, "m435.pillars", 0, "Darts of Doom: the two side pillars cast no shadow"},
-    {43502, "m435.char", 1, "Darts of Doom: the lighter character models"},
-    {43101, "m431.char", 1, "Order Up: the lighter character models"},
-    {44401, "m444.char", 1, "Reversal of Fortune: the lighter character models"},
-    {46301, "m463.char", 1, "Panel Panic: the lighter character models"},
+    {44104, "m441.char", 0, "Butterfly Blitz: the lighter character models", 0},
+    /* M50: the user's "very basic circular shadow... like it's from the N64":
+     * a flat dark disc on the floor under each net, drawn by the port after
+     * the floor's layer (port_lite_layer_end); the net casts no projected
+     * shadow while it is on (as m441.nshadow) */
+    {44105, "m441.blob", 1, "Butterfly Blitz: a round N64-style shadow under each net instead of its projected one", 0},
+    {40101, "m401.fish", 0, "Manta Rings: each fish school drawn to its first 10 fish", 1},
+    {40102, "m401.bubbles", 0, "Manta Rings: the ambient bubbles not drawn", 1},
+    {40103, "m401.char", 1, "Manta Rings: the lighter character models", 0},
+    {43601, "m436.plates", 0, "Fruits of Doom: the fruit stands cast no shadow", 1},
+    {43602, "m436.pillars", 0, "Fruits of Doom: the two side pillars cast no shadow", 1},
+    {43603, "m436.char", 1, "Fruits of Doom: the lighter character models", 0},
+    {43501, "m435.pillars", 0, "Darts of Doom: the two side pillars cast no shadow", 1},
+    {43502, "m435.char", 1, "Darts of Doom: the lighter character models", 0},
+    {43101, "m431.char", 1, "Order Up: the lighter character models", 0},
+    {44401, "m444.char", 1, "Reversal of Fortune: the lighter character models", 0},
+    {46301, "m463.char", 1, "Panel Panic: the lighter character models", 0},
 };
 #define N_LITE ((int)(sizeof(lite_opts) / sizeof(lite_opts[0])))
 
@@ -101,9 +113,10 @@ static void lite_fill(void) {
          * 64b.3): below the reference too -- M49 gave class 0 every option,
          * proved to the minigame's end only for the reference's set; the
          * others stay the user's choice (--liteopts) */
-        (void)cls;
+        /* M50 (PLAN.md 65): below the reference (class 0) the user's extras
+         * too, each proved to its minigame's end on both casts */
         for (i = 0; i < N_LITE; i++) {
-            lite_on[i] = (unsigned char)lite_opts[i].ref;
+            lite_on[i] = (unsigned char)(lite_opts[i].ref || (cls == 0 && lite_opts[i].extra));
         }
         return;
     }
@@ -127,6 +140,12 @@ static void lite_fill(void) {
         if (!strcmp(name, "ref")) {
             for (i = 0; i < N_LITE; i++) {
                 lite_on[i] |= (unsigned char)lite_opts[i].ref;
+            }
+            continue;
+        }
+        if (!strcmp(name, "extras")) { /* M50: the below-the-reference extras */
+            for (i = 0; i < N_LITE; i++) {
+                lite_on[i] |= (unsigned char)lite_opts[i].extra;
             }
             continue;
         }
@@ -270,6 +289,133 @@ int port_lite_nodraw(void* model) {
         }
     }
     return 0;
+}
+
+/* ---- m441.blob: the round shadow under each net (M50, PLAN.md 65) ----------
+ * The user's request: instead of no shadow under Butterfly Blitz's nets, "a
+ * very basic circular shadow... kinda looking like it's from the N64".  The
+ * patched m441 player update hands over, each frame, the net point the game
+ * has just computed (main.c:1016, work->unk28 -- read, never written) and the
+ * net model's id (its DISPOFF bit says whether the net is out); after the
+ * floor's layer of camera 0 Hu3DExec calls port_lite_layer_end, which draws
+ * one flat dark disc per visible net on the floor (y = 0) under the point:
+ * GX direct vertices, colour only (no texture, no light), blended, depth
+ * tested against the floor and never written, so the players and the nets
+ * drawn after it cover it as the console's shadow would be covered.  A disc
+ * is a 16-triangle fan at full darkness and a 32-triangle rim fading to
+ * nothing (the soft edge of the N64's blob texture).  Nothing the game reads
+ * changes: no model, no motion, no RNG, no Hu3DData slot (--gamehash). */
+#define BLOB_SEG 16
+static struct {
+    int mdl;
+    float x, y, z;
+} blob_net[4];
+static int blob_armed, blob_mg;
+
+void port_lite_blob_net(int player, const void* p, int netMdl) {
+    const float* v = (const float*)p;
+    if (player < 0 || player > 3 || !port_lite_opt(44105)) {
+        return;
+    }
+    if (blob_mg != port_cur_mg_number()) {
+        memset(blob_net, 0, sizeof(blob_net));
+        blob_mg = port_cur_mg_number();
+    }
+    blob_net[player].mdl = netMdl + 1; /* 0 = not registered */
+    blob_net[player].x = v[0];
+    blob_net[player].y = v[1];
+    blob_net[player].z = v[2];
+    blob_armed = 1;
+}
+
+void port_vc_foreign(int on);
+
+static void blob_vtx(float x, float z, u8 a) {
+    GXPosition3f32(x, 1.0f, z);
+    GXColor4u8(0, 0, 0, a);
+}
+
+void port_lite_layer_end(int cam, int layer) {
+    static float cs[BLOB_SEG + 1], sn[BLOB_SEG + 1];
+    int i, k, n = 0;
+    if (!blob_armed || cam != 0 || layer != 0) {
+        return;
+    }
+    if (blob_mg != port_cur_mg_number() || !port_lite_opt(44105)) {
+        blob_armed = 0;
+        return;
+    }
+    for (i = 0; i < 4; i++) {
+        int m = blob_net[i].mdl - 1;
+        if (m >= 0 && m < HU3D_MODEL_MAX && Hu3DData[m].hsf && !(Hu3DData[m].attr & HU3D_ATTR_DISPOFF)) {
+            n++;
+        }
+    }
+    if (!n) {
+        return;
+    }
+    if (cs[0] == 0.0f) {
+        for (k = 0; k <= BLOB_SEG; k++) {
+            float t = 6.2831853f * (float)(k % BLOB_SEG) / (float)BLOB_SEG;
+            cs[k] = cosf(t);
+            sn[k] = sinf(t);
+        }
+    }
+    port_vc_foreign(1);
+    GXSetNumChans(1);
+    GXSetChanCtrl(GX_COLOR0A0, GX_FALSE, GX_SRC_VTX, GX_SRC_VTX, GX_LIGHT_NULL, GX_DF_NONE, GX_AF_NONE);
+    GXSetNumTexGens(0);
+    GXSetNumIndStages(0);
+    GXSetNumTevStages(1);
+    GXSetTevDirect(GX_TEVSTAGE0);
+    GXSetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, GX_COLOR0A0);
+    GXSetTevOp(GX_TEVSTAGE0, GX_PASSCLR);
+    GXSetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_NOOP);
+    GXSetAlphaCompare(GX_ALWAYS, 0, GX_AOP_AND, GX_ALWAYS, 0);
+    GXSetZCompLoc(GX_TRUE);
+    GXSetZMode(GX_TRUE, GX_LEQUAL, GX_FALSE);
+    GXSetCullMode(GX_CULL_NONE);
+    GXLoadPosMtxImm(Hu3DCameraMtx, GX_PNMTX0);
+    GXSetCurrentMtx(GX_PNMTX0);
+    GXClearVtxDesc();
+    GXSetVtxDesc(GX_VA_POS, GX_DIRECT);
+    GXSetVtxDesc(GX_VA_CLR0, GX_DIRECT);
+    GXSetVtxAttrFmt(GX_VTXFMT7, GX_VA_POS, GX_POS_XYZ, GX_F32, 0);
+    GXSetVtxAttrFmt(GX_VTXFMT7, GX_VA_CLR0, GX_CLR_RGBA, GX_RGBA8, 0);
+    GXBegin(GX_TRIANGLES, GX_VTXFMT7, (u16)(n * BLOB_SEG * 9));
+    for (i = 0; i < 4; i++) {
+        int m = blob_net[i].mdl - 1;
+        float x, z, h, r, ri;
+        u8 a;
+        if (m < 0 || m >= HU3D_MODEL_MAX || !Hu3DData[m].hsf || (Hu3DData[m].attr & HU3D_ATTR_DISPOFF)) {
+            continue;
+        }
+        x = blob_net[i].x;
+        z = blob_net[i].z;
+        /* higher = a little smaller and fainter, as the N64's blobs did */
+        h = blob_net[i].y < 0.0f ? 0.0f : blob_net[i].y > 400.0f ? 400.0f : blob_net[i].y;
+        r = (port_opt.blobr > 0 ? (float)port_opt.blobr : 80.0f) * (1.0f - h * 0.0006f);
+        ri = r * 0.78f;
+        a = (u8)((port_opt.bloba > 0 ? port_opt.bloba : 150) * (1.0f - h * 0.0008f));
+        for (k = 0; k < BLOB_SEG; k++) {
+            /* the core */
+            blob_vtx(x, z, a);
+            blob_vtx(x + ri * cs[k], z + ri * sn[k], a);
+            blob_vtx(x + ri * cs[k + 1], z + ri * sn[k + 1], a);
+            /* the rim: a quad as two triangles, darkness to nothing */
+            blob_vtx(x + ri * cs[k], z + ri * sn[k], a);
+            blob_vtx(x + r * cs[k], z + r * sn[k], 0);
+            blob_vtx(x + r * cs[k + 1], z + r * sn[k + 1], 0);
+            blob_vtx(x + ri * cs[k], z + ri * sn[k], a);
+            blob_vtx(x + r * cs[k + 1], z + r * sn[k + 1], 0);
+            blob_vtx(x + ri * cs[k + 1], z + ri * sn[k + 1], a);
+        }
+    }
+    GXEnd();
+    /* the engine's usual state back (each material sets its own anyway) */
+    GXSetZMode(GX_TRUE, GX_LEQUAL, GX_TRUE);
+    GXSetCullMode(GX_CULL_BACK);
+    port_vc_foreign(0);
 }
 
 /* the exact trims' old path */

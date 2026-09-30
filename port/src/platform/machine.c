@@ -698,7 +698,7 @@ static void print_inventory(void) {
  * game's core.  Machines this port has never run on are marked untested. */
 /* the scoreboard's count on the reference at the last milestone that ran it;
  * the promise is "30 fps everywhere", the count is where the port is */
-#define MACH_SCOREBOARD "measured screen by screen in docs/fps-scoreboard.md (0.9.17, Lite at auto)"
+#define MACH_SCOREBOARD "measured screen by screen in docs/fps-scoreboard.md (0.9.19, Lite at auto)"
 /* M44 (PLAN.md 59): the class as a number, for the settings chosen per
  * machine (the water): 0 below the reference, 1 the reference (a dual 1 GHz
  * G4 + Radeon 9000), 2 faster than it; -1 not judged */
@@ -775,6 +775,44 @@ int port_machine_reasons(const char** out, int cap) {
         out[i] = reasons[i];
     }
     return i;
+}
+
+/* M50 (PLAN.md 65): Benchmark Mode's report -- the machine in plain lines,
+ * nothing personal (no names, no host name, no paths) */
+int port_machine_report(char* out, size_t n) {
+    char ren[128];
+    char* e;
+    snprintf(ren, sizeof(ren), "%s", mach.gl ? mach.gl_renderer : "no OpenGL context");
+    e = strstr(ren, " OpenGL Engine");
+    if (e) {
+        *e = '\0';
+    }
+    return snprintf(out, n,
+                    "Machine:   %s\n"
+                    "CPU:       %d x %u MHz, %s, AltiVec %s%s\n"
+                    "Memory:    %u MB\n"
+                    "Graphics:  %s (%s), %d MB VRAM, %d texture units, OpenGL %s\n"
+                    "System:    Mac OS X %d.%d.%d\n"
+                    "Check:     %s -- %s\n",
+                    mach.model[0] ? mach.model : "?", mach.ncpu, mach.mhz, cpu_family(),
+                    mach.altivec > 0 ? "yes" : "no", !mach.native && !mach.host_build ? " (under Rosetta)" : "",
+                    mach.ram_mb, ren, mach.gl ? mach.gl_vendor : "?", mach.vram_mb, mach.texunits,
+                    mach.gl ? mach.gl_version : "?", mach.os_major, mach.os_minor, mach.os_bugfix, verdict_word(),
+                    tier_text());
+}
+/* the resident set the RAM rule gives (MB) */
+int port_machine_resident_rule(void) { return want_resident < 0 ? 0 : want_resident; }
+/* a one-line machine for the overlay */
+int port_machine_line(char* out, size_t n) {
+    char ren[64];
+    char* e;
+    snprintf(ren, sizeof(ren), "%s", mach.gl ? mach.gl_renderer : "no GL");
+    e = strstr(ren, " OpenGL Engine");
+    if (e) {
+        *e = '\0';
+    }
+    return snprintf(out, n, "%s, %d x %u MHz, %u MB, %s %d MB", mach.model[0] ? mach.model : "?", mach.ncpu,
+                    mach.mhz, mach.ram_mb, ren, mach.vram_mb);
 }
 
 void gx_tex_set_budget_mb(int mb);

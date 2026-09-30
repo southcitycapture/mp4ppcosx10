@@ -408,6 +408,12 @@ static void usage(const char* argv0) {
             "  --nolite          M49: Lite off: console-exact everywhere (remembered)\n"
             "  --liteauto        M49: Lite by machine and screen (the default; remembered)\n"
             "  --liteopts LIST   M49: Lite's options by name (m441.bshadow,...), ref, all\n"
+            "  --blobr R, --bloba A  M50: m441.blob's radius (80) and darkness (150 of 255)\n"
+            "  --benchmark       M50: Benchmark Mode (about five minutes): measures the\n"
+            "                    heaviest scenes, picks this Mac's settings, writes the\n"
+            "                    config and ~/Desktop/MarioParty4-benchmark-DATE.txt\n"
+            "  --menu N[:PAGE]   M50: open the overlay menu (F1 or M) at drawn frame N\n"
+            "  --nomenu          M50: no overlay menu and no first-launch offer\n"
             "  --litefishk K     M49: m401.fish: fish drawn per school (10)\n"
             "  --litechar 4|8    M49: the char options' model file (default one step lighter)\n"
             "  --notrim          M49: the exact trims' old path (m431 sparkles, m444 table)\n"
@@ -1499,6 +1505,20 @@ int port_parse_args(int argc, char** argv) {
         } else if (!strcmp(a, "--liteopts") && i + 1 < argc) {
             port_opt.liteopts = argv[++i];
             liteopts_set = 1;
+        } else if (!strcmp(a, "--blobr") && i + 1 < argc) {
+            port_opt.blobr = atoi(argv[++i]);
+        } else if (!strcmp(a, "--bloba") && i + 1 < argc) {
+            port_opt.bloba = atoi(argv[++i]);
+        } else if (!strcmp(a, "--benchmark")) {
+            port_opt.benchmark = 1;
+        } else if (!strcmp(a, "--benchchild") && i + 1 < argc) {
+            port_opt.benchchild = argv[++i];
+        } else if (!strcmp(a, "--benchresult") && i + 1 < argc) {
+            port_opt.benchresult = argv[++i];
+        } else if (!strcmp(a, "--menu")) {
+            port_opt.menu = (i + 1 < argc && argv[i + 1][0] >= '0' && argv[i + 1][0] <= '9') ? argv[++i] : "1";
+        } else if (!strcmp(a, "--nomenu")) {
+            port_opt.nomenu = 1;
         } else if (!strcmp(a, "--litefishk") && i + 1 < argc) {
             port_opt.litefishk = atoi(argv[++i]);
         } else if (!strcmp(a, "--litechar") && i + 1 < argc) {
@@ -1898,6 +1918,12 @@ int main(int argc, char** argv) {
             }
             return 0;
         }
+    }
+    if (port_opt.benchmark) {
+        /* M50 (PLAN.md 65): Benchmark Mode's driver -- no window of its own;
+         * it runs the scenes as child runs and starts the game again */
+        void port_bench_driver(void);
+        port_bench_driver();
     }
     if (port_opt.reltest) {
         port_opt.reldlclose = 1; /* the self-test is *about* the unload path */
