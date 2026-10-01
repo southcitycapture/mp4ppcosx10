@@ -997,3 +997,23 @@ src/REL/m441Dll/main.c	        if (i == 0 || !(port_lite_opt(44102) || port_lite
 src/REL/m441Dll/main.c	void port_lite_blob_net(int player, const void *p, int netMdl);\n	void port_lite_blob_net(int player, const void *p, int netMdl);\n/* port (M51, PLAN.md 66.6): m441.bloball */\nvoid port_lite_blob_caster(int mdlId, int kind);\n
 src/game/hsfdraw.c	                MTXConcat(drawObj->matrix, mtx, MTXBuf[MTXIdx]);\n                scale = &scaleBuf[MTXIdx];	                MTXConcat(drawObj->matrix, mtx, MTXBuf[MTXIdx]);\n                port_lite_hook_mtx(constData->hookMdlId, MTXBuf[MTXIdx]); /* M51: m441.bloball */\n                scale = &scaleBuf[MTXIdx];
 src/game/hsfdraw.c	void port_envelope_sync(HSFDATA *hsf);\n	void port_envelope_sync(HSFDATA *hsf);\nvoid port_lite_hook_mtx(int hookMdlId, Mtx m); /* M51 (PLAN.md 66.6): lite.c */\n
+
+# ------------------------------------------- M52: the round shadows, any game
+# M52 (PLAN.md 67): <game>.blob -- the round shadows as a speed-only choice
+# for machines below the reference (Benchmark Mode's, bench.c).  Hu3DExec
+# asks lite.c at its start (port_lite_shadow_begin: with the screen's blob
+# option on, the frame's casters are collected) and at its end
+# (port_lite_shadow_end); Hu3DShadowExec's caster loop skips the casters'
+# draws while the option stands in (port_lite_shadow_skip) and draws a round
+# blob for each into the shadow map after the loop (port_lite_shadow_blobs) --
+# the floor projects them as it projects the console's; and the shadow pass
+# is called through perf.c's port_shadow_exec, the same call timed for
+# --perfdump's shd_ms / shd_rt_ms columns.  Without the option and --perf
+# all return at once to the game's own path.
+src/game/hsfman.c	void port_lite_layer_end(int cam, int layer); /* M50: m441.blob (lite.c) */\n	void port_lite_layer_end(int cam, int layer); /* M50: m441.blob (lite.c) */\nvoid port_lite_shadow_begin(void); /* M52 (lite.c) */\nvoid port_lite_shadow_end(void);\nint port_lite_shadow_skip(void);\nvoid port_lite_shadow_blobs(void);\nvoid port_shadow_exec(void); /* M52 (perf.c) */\n
+src/game/hsfman.c	    HuSprBegin();\n    var_r24 = 0;\n    port_vc_foreign(0);\n	    HuSprBegin();\n    var_r24 = 0;\n    port_vc_foreign(0);\n    port_lite_shadow_begin();\n
+src/game/hsfman.c	                if (Hu3DCameraNo == 0 && Hu3DShadowF != 0 && Hu3DShadowCamBit != 0) {\n                    Hu3DShadowExec();\n	                if (Hu3DCameraNo == 0 && Hu3DShadowF != 0 && Hu3DShadowCamBit != 0) {\n                    port_shadow_exec();\n
+src/game/hsfman.c	            } else if (Hu3DCameraNo == 0 && Hu3DShadowF != 0 && Hu3DShadowCamBit != 0) {\n                Hu3DShadowExec();\n	            } else if (Hu3DCameraNo == 0 && Hu3DShadowF != 0 && Hu3DShadowCamBit != 0) {\n                port_shadow_exec();\n
+src/game/hsfman.c	    Hu3DAnimExec();\n    HuPerfEnd(3);\n	    Hu3DAnimExec();\n    port_lite_shadow_end();\n    HuPerfEnd(3);\n
+src/game/hsfman.c	        if (var_r31->hsf != 0 && (var_r31->attr & HU3D_ATTR_SHADOW) != 0 && (var_r31->attr & HU3D_ATTR_DISPOFF) == 0 && (var_r31->attr & HU3D_ATTR_HOOK) == 0) {	        if (var_r31->hsf != 0 && (var_r31->attr & HU3D_ATTR_SHADOW) != 0 && (var_r31->attr & HU3D_ATTR_DISPOFF) == 0 && (var_r31->attr & HU3D_ATTR_HOOK) == 0 && !port_lite_shadow_skip()) {
+src/game/hsfman.c	    Hu3DDrawPost();\n    shadowModelDrawF = 0;	    port_lite_shadow_blobs();\n    Hu3DDrawPost();\n    shadowModelDrawF = 0;

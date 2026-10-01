@@ -329,6 +329,10 @@ static unsigned long st_reader_sleeps, st_writer_wakes;
 static unsigned long st_names;
 static unsigned long st_owned_frees, st_stash_bytes;
 static double st_last_dec_ms, st_dec_ms_sum, st_dec_ms_max;
+/* M52 (PLAN.md 67): the projected shadow pass's replay in the frame (the
+ * markers perf.c's port_shadow_exec queues around Hu3DShadowExec), published
+ * at the present as st_last_shadow_ms; the render thread's alone */
+static double shd_rt_t0, shd_rt_acc, st_last_shadow_ms;
 #define JOIN_KINDS 12
 static struct { const char* why; unsigned long n; double s, max; } joins[JOIN_KINDS];
 static int njoins;
@@ -1276,6 +1280,20 @@ void rt_call(void (*fn)(void*), const void* args, size_t n, int sync) {
         rt_join("call");
     }
 }
+
+/* M52 (PLAN.md 67): the shadow pass's two markers, run in stream order */
+static void shadow_mark_fn(void* a) {
+    if (*(const int*)a) {
+        shd_rt_t0 = now();
+    } else if (shd_rt_t0 > 0.0) {
+        shd_rt_acc += now() - shd_rt_t0;
+        shd_rt_t0 = 0.0;
+    }
+}
+void rt_shadow_mark(int begin) {
+    rt_callq(shadow_mark_fn, &begin, sizeof(begin));
+}
+double rt_last_shadow_ms(void) { return st_last_shadow_ms; }
 
 /* ---- M29: the decode records (PLAN.md 44) ---------------------------------- */
 
@@ -2556,6 +2574,8 @@ static void replay_upto(u32 to) {
                 st_dec_ms_max = st_last_dec_ms;
             }
             st_frame_dec_s = 0.0;
+            st_last_shadow_ms = shd_rt_acc * 1000.0;
+            shd_rt_acc = 0.0;
         }
         RT_ACQ_REL(); /* release: a read-back's pixels before the position */
         rd += len;
@@ -2920,6 +2940,8 @@ unsigned rt_pos(void) { return 0; }
 void rt_decode_join(const char* why) { (void)why; }
 void rt_decode_join_pos(unsigned pos, const char* why) { (void)pos; (void)why; }
 double rt_last_dec_ms(void) { return 0.0; }
+void rt_shadow_mark(int begin) { (void)begin; }
+double rt_last_shadow_ms(void) { return 0.0; }
 void port_vtx_rewrite(const char* who) { (void)who; gx_vc_epoch++; }
 void rt_vtx_rewrite_range(const void* p, unsigned long n, const char* who) { (void)p; (void)n; (void)who; }
 void port_vtx_rewrite_done(void) { gx_vc_epoch++; }

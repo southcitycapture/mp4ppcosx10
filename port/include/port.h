@@ -31,8 +31,8 @@ extern "C" {
 /* ---- settings, from argv ------------------------------------------------- */
 /* M32: the shipped version (the dmg's name, the plist, the --defaults header)
  * and the milestone that built it. */
-#define PORT_VERSION_STRING "0.9.20"
-#define PORT_MILESTONE "M51"
+#define PORT_VERSION_STRING "0.9.21"
+#define PORT_MILESTONE "M52"
 /* M51 (PLAN.md 66.2): the console's clock at HuSysInit's frand() is its RTC +
  * 2,702,265 ticks (Dolphin, measured at two RTCs); the port's deterministic
  * clock reads RTC + 4 retraces = 2,700,000 there.  A session recording starts
@@ -489,6 +489,7 @@ typedef struct PortOptions {
     int litefishk;          /* --litefishk K  M49: m401.fish's fish drawn per school (10) */
     int litechar;           /* --litechar 4|8  M49: the char options' file (default one step lighter) */
     int blobr, bloba;       /* --blobr R --bloba A  M50: m441.blob's radius (80) and darkness (150/255) */
+    int blobaudit;          /* --blobaudit  M52: the shadow casters and receivers, every 300 frames of a minigame */
     int benchmark;          /* --benchmark  M50: Benchmark Mode's driver (src/ui/bench.c): the scenes
                              *   one by one as child runs, the settings chosen, the report written */
     const char* benchchild; /* --benchchild K/N:NAME  M50: a child run of Benchmark Mode (its banner) */
@@ -781,6 +782,7 @@ int port_prc_stack_mul(void);                /* os_misc.c: the coroutine stacks'
 const char* port_machine_title(void);
 const char* port_machine_summary(void);
 const char* port_machine_verdict(void);   /* "ok" / "degraded" / "unsupported" */
+int port_display_asleep(void);            /* M52: the main display asleep (CGDisplayIsAsleep) */
 int port_machine_degraded(void);
 int port_machine_reasons(const char** out, int cap);
 
@@ -1085,6 +1087,10 @@ unsigned rt_pos(void);
 void rt_decode_join(const char* why);
 void rt_decode_join_pos(unsigned pos, const char* why); /* up to a stamped position */
 double rt_last_dec_ms(void);
+/* M52 (PLAN.md 67): the shadow pass's replay in the last presented frame
+ * (rt_shadow_mark's two markers around Hu3DShadowExec, perf.c) */
+double rt_last_shadow_ms(void);
+void rt_shadow_mark(int begin);
 /* M40 (PLAN.md 55): the records the game thread has written (every GL call,
  * for --perfdump), and a join that leaves the GPU idle -- every record
  * replayed, then glFinish -- for the vertex cache's reset */

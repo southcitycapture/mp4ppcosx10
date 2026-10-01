@@ -56,6 +56,11 @@ static float s_audio[PERF_MAX];
  * static-geometry cache served without a decode */
 static unsigned s_calls[PERF_MAX], s_verts[PERF_MAX], s_recs[PERF_MAX], s_vchit[PERF_MAX];
 static float s_wall[PERF_MAX];      /* with the sleep: real elapsed time */
+/* M52 (PLAN.md 67): the projected shadow pass (Hu3DShadowExec) -- the game
+ * thread's time in it this frame, and the render thread's replay of it in the
+ * last presented frame (rt.c's markers) */
+static float s_shd[PERF_MAX], s_shdrt[PERF_MAX];
+static double t_shd;
 static unsigned char s_drawn[PERF_MAX];
 static int n_samples;
 static unsigned long n_frames_seen; /* every frame, past the sample cap too */
@@ -275,6 +280,8 @@ void port_perf_frame(int drawn) {
         s_rt[n_samples] = (float)rt_last_frame_ms();
         s_dec[n_samples] = (float)rt_last_dec_ms();
         s_gdec[n_samples] = (float)rt_auto_frame_gdec_ms();
+        s_shd[n_samples] = (float)(t_shd * 1000.0);
+        s_shdrt[n_samples] = (float)rt_last_shadow_ms();
         {
             static unsigned long l_calls, l_verts, l_recs, l_vchit;
             unsigned long c, v, r, h;
@@ -290,6 +297,7 @@ void port_perf_frame(int drawn) {
     }
     t_frame_start = now;
     t_gx = t_present = t_audio = t_sleep = 0.0;
+    t_shd = 0.0;
     {
         extern unsigned port_frame_frees;
         extern double port_frame_dll_s;
@@ -424,6 +432,25 @@ static void perf_windows(void) {
     }
 }
 
+/* M52 (PLAN.md 67): the patched Hu3DExec calls this in place of
+ * Hu3DShadowExec -- the same call, timed (game thread) and bracketed by two
+ * render-thread markers (its replay); returns at once to the game's own
+ * function without --perf */
+void Hu3DShadowExec(void);
+void rt_shadow_mark(int begin);
+void port_shadow_exec(void) {
+    double t0;
+    if (!port_opt.perf) {
+        Hu3DShadowExec();
+        return;
+    }
+    t0 = port_now_seconds();
+    rt_shadow_mark(1);
+    Hu3DShadowExec();
+    rt_shadow_mark(0);
+    t_shd += port_now_seconds() - t0;
+}
+
 /* --perfdump FILE: every per-frame sample as CSV, so a stall can be found by
  * frame number rather than guessed at from a mean (PLAN.md 32). */
 static void perf_dump(void) {
@@ -438,11 +465,11 @@ static void perf_dump(void) {
         return;
     }
     fprintf(f, "frame,wall_ms,work_ms,game_ms,gx_ms,present_ms,aud_ms,drawn,rt_ms,dec_ms,gdec_ms,"
-               "calls,verts,recs,vchit\n");
+               "calls,verts,recs,vchit,shd_ms,shd_rt_ms\n");
     for (i = 0; i < n_samples; i++) {
-        fprintf(f, "%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%d,%.3f,%.3f,%.3f,%u,%u,%u,%u\n", i, s_wall[i],
+        fprintf(f, "%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%d,%.3f,%.3f,%.3f,%u,%u,%u,%u,%.3f,%.3f\n", i, s_wall[i],
                 s_frame[i], s_game[i], s_gx[i], s_present[i], s_audio[i], s_drawn[i], s_rt[i],
-                s_dec[i], s_gdec[i], s_calls[i], s_verts[i], s_recs[i], s_vchit[i]);
+                s_dec[i], s_gdec[i], s_calls[i], s_verts[i], s_recs[i], s_vchit[i], s_shd[i], s_shdrt[i]);
     }
     fclose(f);
     port_log("port> --perfdump: %d frames written to %s\n", n_samples, port_opt.perfdump);

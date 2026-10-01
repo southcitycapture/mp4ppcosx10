@@ -19,7 +19,8 @@
  *     -- 29.0, not 29.5: one run at the edge spreads half a frame (below);
  *   neither  -> slower than the reference: Lite on, the reference's set and
  *     the user's extras (m401's fish and bubbles, the Bowser arena's pillars
- *     and fruit stands);
+ *     and fruit stands); and M52 (PLAN.md 67): the round shadows, game by
+ *     game -- see blob_choose below;
  *   Makin' Waves (m417) holds 29.0 with the water at the reference's level ->
  *     water auto (cheap on a machine below the reference), else off;
  *   the opening movie at full speed and 27+ frames a second -> movies on;
@@ -85,6 +86,9 @@ static const BenchScene scenes[] = {
     {"m441off", "Butterfly Blitz, Lite off", "m441dll", 300, 1, MG(441) "--nolite"},
     {"m441lite", "Butterfly Blitz, Lite on", "m441dll", 300, 1, MG(441) "--lite --liteopts ref"},
     {"m417", "Makin' Waves (the water)", "m417dll", 300, 1, MG(417) "--water cheap"},
+    /* M52: only when the round shadows were chosen -- Butterfly Blitz with
+     * the chosen set (the args are made at run time) */
+    {"m441chosen", "Butterfly Blitz, the chosen set", "m441dll", 300, 1, ""},
 };
 #define N_SCENES ((int)(sizeof(scenes) / sizeof(scenes[0])))
 #define COMMON "--rtc dolphin --freshcard --noconfig --realtime --perf --status --ovllog --nomenu "
@@ -243,7 +247,7 @@ static void read_log(const char* path, const BenchScene* sc, BenchResult* r) {
             q--;
         }
         fps = atof(q);
-        if (speed > 110.0) {
+        if (speed > 110.0 || strstr(line, "DISPLAY-ASLEEP")) { /* M52: a sleeping display's second */
             continue;
         }
         sp[n] = speed;
@@ -393,6 +397,72 @@ static void run_scene_judged(const char* exe, int k, int nsc, const BenchScene* 
     }
 }
 
+/* ---- M52 (PLAN.md 67): the round shadows, per game, below the reference ----
+ * The user's decision: the round N64-style shadows are a speed-only fallback,
+ * never on by preference, and Benchmark Mode decides them per machine and per
+ * game.  Only a Mac judged slower than the reference gets any.  The driver
+ * measures one Lite screen (Butterfly Blitz with the reference's set,
+ * scene 4); the others are predicted from it with the reference's own
+ * numbers: each game's frame cost on the reference with Lite's reference set
+ * and the extras (the scoreboard's: the larger of the game thread's drawn +
+ * consumed frame and the render thread's frame, ms) and what its round
+ * shadows take off it (the A/B's).  This Mac's slowness k is Butterfly
+ * Blitz's: k = (33.4 ms x 30 / its fps) / its reference cost.  A game whose
+ * predicted cost k x cost does not fit a frame pair at 29.5 fps gets its
+ * round shadows; the options are walked cheapest visual cost first (the mean
+ * pixel change of its picture pair, docs/screenshots/m52-blob-*.jpg), so the
+ * list in the result reads from the least visible change to the most. */
+typedef struct {
+    const char* opt;  /* the Lite option */
+    const char* name; /* the game, in plain words */
+    double cost;      /* the reference: frame-pair cost with ref + extras, ms */
+    double saving;    /* the round shadows' saving on the reference, ms */
+    double vis;       /* the visual cost: mean pixel change, console vs round (0-255) */
+} BlobChoice;
+static const BlobChoice blob_choices[] = {
+    /* filled from M52's measurements (PLAN.md 67.2), in visual-cost order */
+    {"m441.bloball", "Butterfly Blitz", 30.0, 3.9, 0.0},
+    {"m401.blob", "Manta Rings", 30.0, 0.0, 0.0},
+    {"m436.blob", "Fruits of Doom", 30.0, 0.0, 0.0},
+    {"m435.blob", "Darts of Doom", 30.0, 0.0, 0.0},
+    {"m431.blob", "Order Up", 30.0, 0.0, 0.0},
+    {"m444.blob", "Reversal of Fortune", 30.0, 0.0, 0.0},
+    {"m463.blob", "Panel Panic", 30.0, 0.0, 0.0},
+};
+#define N_BLOB ((int)(sizeof(blob_choices) / sizeof(blob_choices[0])))
+#define PAIR_MS (2000.0 / 59.94)   /* one presented frame at 30: two retraces */
+#define M441_REF_COST 30.0         /* Butterfly Blitz's reference cost with the set scene 4 runs */
+
+/* -> how many chosen; their names into names (", "-separated), the options
+ * appended to opts */
+static int blob_choose(double f441, char* opts, size_t on, char* names, size_t nn) {
+    int i, n = 0;
+    double k;
+    names[0] = 0;
+    if (f441 <= 0.0) {
+        return 0;
+    }
+    if (f441 > 30.0) {
+        f441 = 30.0;
+    }
+    k = (PAIR_MS * 30.0 / f441) / M441_REF_COST;
+    port_log("port> benchmark (M52): this Mac's slowness against the reference %.2f (Butterfly Blitz %.1f fps)\n",
+             k, f441);
+    for (i = 0; i < N_BLOB; i++) {
+        double pred = k * blob_choices[i].cost;
+        int want = pred > PAIR_MS * 30.0 / BENCH_BAR;
+        port_log("port> benchmark (M52):   %-14s predicted %.1f ms a frame pair%s\n", blob_choices[i].opt, pred,
+                 want ? " -> round shadows" : "");
+        if (!want) {
+            continue;
+        }
+        n++;
+        snprintf(opts + strlen(opts), on - strlen(opts), ",%s", blob_choices[i].opt);
+        snprintf(names + strlen(names), nn - strlen(names), "%s%s", n > 1 ? ", " : "", blob_choices[i].name);
+    }
+    return n;
+}
+
 static const char* lite_names_ref =
     "Butterfly Blitz (no butterfly or net shadows and fewer fence flowers), and the lighter character models in Manta Rings, Fruits of Doom, Darts of Doom, "
     "Order Up, Reversal of Fortune and Panel Panic";
@@ -418,6 +488,8 @@ void port_bench_driver(void) {
     BenchResult res[N_SCENES];
     int k, cls = port_machine_class();
     int fast, ref, slow, water_ok, movies_ok, resident;
+    int nblob = 0;                /* M52: the round shadows chosen */
+    char blob_names[400];
     const char* verdict;
     const char *lite, *liteopts, *water;
     time_t t = time(NULL);
@@ -425,6 +497,7 @@ void port_bench_driver(void) {
     FILE* f;
     double t0 = now_s();
     memset(res, 0, sizeof(res));
+    blob_names[0] = 0;
     localtime_r(&t, &tmv);
     strftime(date, sizeof(date), "%Y-%m-%d", &tmv);
     strftime(stamp, sizeof(stamp), "%Y-%m-%d %H:%M", &tmv);
@@ -487,9 +560,22 @@ void port_bench_driver(void) {
         lite = cls == 1 ? "auto" : "on";
         liteopts = cls == 1 ? "" : "ref";
     } else {
+        static char lo[512];
         verdict = "slower than the reference machine (a dual 1 GHz Power Mac G4 with a Radeon 9000)";
         lite = "on";
-        liteopts = "ref,extras";
+        snprintf(lo, sizeof(lo), "ref,extras");
+        /* M52: the round shadows, game by game (blob_choose) */
+        nblob = blob_choose(res[3].lines >= 3 ? res[3].median : 0.0, lo, sizeof(lo), blob_names, sizeof(blob_names));
+        liteopts = lo;
+        if (nblob && strstr(lo, "m441.bloball")) {
+            /* Butterfly Blitz with the chosen set: measured, for the report */
+            static char a[600];
+            static BenchScene sc;
+            sc = scenes[5];
+            snprintf(a, sizeof(a), MG(441) "--lite --liteopts %s", lo);
+            sc.args = a;
+            run_scene_judged(exe, 5, N_SCENES, &sc, dir, &res[5]);
+        }
     }
     water = water_ok ? (cls >= 1 ? "auto" : "cheap") : "off";
     /* the config: the keys the game and PowerPCube read */
@@ -538,6 +624,26 @@ void port_bench_driver(void) {
         fprintf(f, "  Lite mode: %s\n", fast ? "off (every screen as on the console)"
                                      : ref ? "on for the heaviest screens (the reference set)"
                                            : "on, the reference set and the extras");
+        if (nblob) {
+            /* M52: the round shadows, wrapped for the overlay's lines */
+            char w[480];
+            const char* p = w;
+            snprintf(w, sizeof(w), "Round shadows (for speed) in %s", blob_names);
+            while (*p) {
+                size_t n = strlen(p), cut = n;
+                if (n > 46) {
+                    cut = 46;
+                    while (cut > 10 && p[cut] != ' ') {
+                        cut--;
+                    }
+                }
+                fprintf(f, "  %s%.*s\n", p == w ? "" : "  ", (int)cut, p);
+                p += cut;
+                while (*p == ' ') {
+                    p++;
+                }
+            }
+        }
         fprintf(f, "  Water: %s - movies: %s - memory for loading: %d MB\n",
                 !strcmp(water, "off") ? "flat" : !strcmp(water, "cheap") ? "ripples (cheap)" : "ripples (auto)",
                 movies_ok ? "on" : "off", resident);
@@ -590,6 +696,30 @@ void port_bench_driver(void) {
                 p += cut;
                 while (*p == ' ') {
                     p++;
+                }
+            }
+        }
+        if (nblob) {
+            fprintf(f, "             Round shadows (M52, for speed only): a flat round shadow under each\n"
+                       "             character and object instead of the projected one, in %d game%s:\n",
+                    nblob, nblob > 1 ? "s" : "");
+            {
+                char w[480];
+                const char* p = w;
+                snprintf(w, sizeof(w), "%s.", blob_names);
+                while (*p) {
+                    size_t n = strlen(p), cut = n;
+                    if (n > 63) {
+                        cut = 63;
+                        while (cut > 10 && p[cut] != ' ') {
+                            cut--;
+                        }
+                    }
+                    fprintf(f, "             %.*s\n", (int)cut, p);
+                    p += cut;
+                    while (*p == ' ') {
+                        p++;
+                    }
                 }
             }
         }

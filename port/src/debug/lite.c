@@ -47,6 +47,7 @@
 
 int port_cur_mg_number(void);
 int port_machine_class(void);
+u32 port_mg_entry(void);
 
 typedef struct {
     int id;             /* mg * 100 + n: the id the patched game code asks for */
@@ -94,6 +95,16 @@ static const LiteOpt lite_opts[] = {
     {43101, "m431.char", 1, "Order Up: the lighter character models", 0},
     {44401, "m444.char", 1, "Reversal of Fortune: the lighter character models", 0},
     {46301, "m463.char", 1, "Panel Panic: the lighter character models", 0},
+    /* M52 (PLAN.md 67): the round shadows as a speed-only fallback -- never
+     * in `ref`, never an `extra`: Benchmark Mode turns them on per game on a
+     * machine below the reference (bench.c), or the player by name
+     * (`blobs` = all of them).  m441's is m441.bloball (M51) */
+    {40190, "m401.blob", 0, "Manta Rings: every shadow a round N64-style blob", 0},
+    {43690, "m436.blob", 0, "Fruits of Doom: every shadow a round N64-style blob", 0},
+    {43590, "m435.blob", 0, "Darts of Doom: every shadow a round N64-style blob", 0},
+    {43190, "m431.blob", 0, "Order Up: every shadow a round N64-style blob", 0},
+    {44490, "m444.blob", 0, "Reversal of Fortune: every shadow a round N64-style blob", 0},
+    {46390, "m463.blob", 0, "Panel Panic: every shadow a round N64-style blob", 0},
 };
 #define N_LITE ((int)(sizeof(lite_opts) / sizeof(lite_opts[0])))
 
@@ -148,6 +159,12 @@ static void lite_fill(void) {
         if (!strcmp(name, "ref")) {
             for (i = 0; i < N_LITE; i++) {
                 lite_on[i] |= (unsigned char)lite_opts[i].ref;
+            }
+            continue;
+        }
+        if (!strcmp(name, "blobs")) { /* M52: every round-shadow option */
+            for (i = 0; i < N_LITE; i++) {
+                lite_on[i] |= (unsigned char)(lite_opts[i].id % 100 == 90 || lite_opts[i].id == 44106);
             }
             continue;
         }
@@ -437,6 +454,305 @@ static int blob_disc(BlobDisc* d, float x, float y, float z, float r0, int a0) {
     d->ri = d->r * 0.78f;
     d->a = (u8)((float)a0 * (1.0f - h * 0.0008f));
     return 1;
+}
+
+/* ---- <game>.blob (M52, PLAN.md 67): every shadow a round blob, any game ---
+ * The user's decision (M52): the round shadows are a fallback for machines
+ * below the reference, never on by preference -- Benchmark Mode picks them
+ * per machine and per game (bench.c).  m441's blobs (M50/M51) were discs on
+ * Butterfly Blitz's flat floor, each caster patched by hand; a floor at one
+ * height is not every game's (Manta Rings' seabed), so this one works inside
+ * the engine's own projected shadow: Hu3DShadowExec draws every caster into
+ * the shadow map from the shadow camera and the floor (the receivers) takes
+ * the map -- with the option on, the casters are not drawn into the map
+ * (the patched loop asks port_lite_shadow_skip) and a soft round blob for
+ * each is drawn there instead (port_lite_shadow_blobs: a disc facing the
+ * shadow camera at the caster's centre, the size of its model's width, the
+ * map's own darkness at the core fading to nothing at the rim).  The floor
+ * then projects the blobs exactly where the console's shadows fall, on any
+ * surface; what is saved is the casters' second draw -- their object walks,
+ * skins and vertices on both threads.
+ *
+ * The casters are the models the game gave a shadow (HU3D_ATTR_SHADOW),
+ * shown, not hooked -- exactly the shadow loop's -- collected at the start of
+ * Hu3DExec (port_lite_shadow_begin).  Nothing the game's logic reads changes:
+ * no attribute, position, motion, counter or random number is touched; the
+ * map is a texture the floor samples.  Two cases keep the console's pass: a
+ * shown caster with HU3D_ATTR_MOTION_OFF (a shadow-only model whose motion
+ * only the shadow loop evaluates) leaves that frame alone, and Stamp Out!
+ * (m415, whose game reads the shadow map back as its canvas) has no option. */
+typedef struct {
+    int id;     /* the option */
+    float rmul; /* the blob's radius: the model's half-width x scale x rmul */
+} BlobGame;
+static const BlobGame blob_games[] = {
+    {40190, 0.7f}, {43690, 0.7f}, {43590, 0.7f}, {43190, 0.7f}, {44490, 0.7f}, {46390, 0.7f},
+};
+#define N_BLOB_GAMES ((int)(sizeof(blob_games) / sizeof(blob_games[0])))
+
+static const BlobGame* gblob; /* the frame's game, while its blobs are on */
+static int gblob_n;
+static struct {
+    float x, y, z, r;
+} gblob_c[N_CASTER];
+
+/* the model-space extent of a model's meshes (cached by hsf) */
+static struct {
+    const void* hsf;
+    float cx, cy, cz, hw;
+} gblob_ext[N_CASTER];
+static int gblob_next;
+
+static int blob_extent(HSFDATA* hsf, float* cx, float* cy, float* cz, float* hw) {
+    int i, k, any = 0;
+    float x0 = 0, x1 = 0, y0 = 0, y1 = 0, z0 = 0, z1 = 0;
+    for (k = 0; k < N_CASTER; k++) {
+        if (gblob_ext[k].hsf == hsf) {
+            *cx = gblob_ext[k].cx;
+            *cy = gblob_ext[k].cy;
+            *cz = gblob_ext[k].cz;
+            *hw = gblob_ext[k].hw;
+            return 1;
+        }
+    }
+    for (i = 0; i < (int)hsf->objectNum; i++) {
+        HSFOBJECT* o = &hsf->object[i];
+        if (o->type != HSF_OBJ_MESH) {
+            continue;
+        }
+        if (!any || o->mesh.mesh.min.x < x0) x0 = o->mesh.mesh.min.x;
+        if (!any || o->mesh.mesh.max.x > x1) x1 = o->mesh.mesh.max.x;
+        if (!any || o->mesh.mesh.min.y < y0) y0 = o->mesh.mesh.min.y;
+        if (!any || o->mesh.mesh.max.y > y1) y1 = o->mesh.mesh.max.y;
+        if (!any || o->mesh.mesh.min.z < z0) z0 = o->mesh.mesh.min.z;
+        if (!any || o->mesh.mesh.max.z > z1) z1 = o->mesh.mesh.max.z;
+        any = 1;
+    }
+    if (!any) {
+        return 0;
+    }
+    *cx = (x0 + x1) * 0.5f;
+    *cy = (y0 + y1) * 0.5f;
+    *cz = (z0 + z1) * 0.5f;
+    *hw = (x1 - x0) > (z1 - z0) ? (x1 - x0) * 0.5f : (z1 - z0) * 0.5f;
+    k = gblob_next++ % N_CASTER;
+    gblob_ext[k].hsf = hsf;
+    gblob_ext[k].cx = *cx;
+    gblob_ext[k].cy = *cy;
+    gblob_ext[k].cz = *cz;
+    gblob_ext[k].hw = *hw;
+    return 1;
+}
+
+static const BlobGame* blob_game_now(void) {
+    int i, mg = port_cur_mg_number();
+    for (i = 0; i < N_BLOB_GAMES; i++) {
+        if (blob_games[i].id / 100 == mg) {
+            return port_lite_opt(blob_games[i].id) ? &blob_games[i] : NULL;
+        }
+    }
+    return NULL;
+}
+
+static void blob_audit(void);
+
+void port_lite_shadow_begin(void) {
+    static int told_motoff;
+    const BlobGame* g;
+    int i;
+    gblob = NULL;
+    if (port_opt.blobaudit) {
+        blob_audit();
+    }
+    if (!Hu3DShadowF || !Hu3DShadowCamBit || !(g = blob_game_now())) {
+        return;
+    }
+    gblob_n = 0;
+    for (i = 0; i < HU3D_MODEL_MAX; i++) {
+        HU3DMODEL* m = &Hu3DData[i];
+        float cx, cy, cz, hw, sx, sz, c, sn, ry, sc;
+        if (!m->hsf || !(m->attr & HU3D_ATTR_SHADOW) || (m->attr & (HU3D_ATTR_DISPOFF | HU3D_ATTR_HOOK))) {
+            continue;
+        }
+        if (m->attr & HU3D_ATTR_MOTION_OFF) {
+            if (!told_motoff) {
+                told_motoff = 1;
+                port_log("port> lite (M52): a shadow-only caster (model %d, motion off) in mg %d: the console's "
+                         "shadow pass kept for those frames\n", i, port_cur_mg_number());
+            }
+            return;
+        }
+        if (gblob_n >= N_CASTER) {
+            break;
+        }
+        if (m->attr & HU3D_ATTR_HOOKFUNC) {
+            /* a hook-function model (its `hsf` is the function: a particle
+             * system, a drawn effect) with a shadow: a small blob at its
+             * position */
+            gblob_c[gblob_n].x = m->pos.x;
+            gblob_c[gblob_n].y = m->pos.y;
+            gblob_c[gblob_n].z = m->pos.z;
+            gblob_c[gblob_n].r = 24.0f * g->rmul;
+            gblob_n++;
+            continue;
+        }
+        if (!blob_extent(m->hsf, &cx, &cy, &cz, &hw)) {
+            continue;
+        }
+        sx = m->scale.x * cx;
+        sz = m->scale.z * cz;
+        ry = m->rot.y * 0.017453293f;
+        c = cosf(ry);
+        sn = sinf(ry);
+        gblob_c[gblob_n].x = m->pos.x + sx * c + sz * sn;
+        gblob_c[gblob_n].y = m->pos.y + m->scale.y * cy;
+        gblob_c[gblob_n].z = m->pos.z - sx * sn + sz * c;
+        sc = m->scale.x > m->scale.z ? m->scale.x : m->scale.z;
+        gblob_c[gblob_n].r = hw * sc * g->rmul;
+        if (gblob_c[gblob_n].r < 8.0f) {
+            gblob_c[gblob_n].r = 8.0f;
+        }
+        gblob_n++;
+    }
+    gblob = g;
+}
+
+void port_lite_shadow_end(void) {
+    gblob = NULL;
+}
+
+/* the patched shadow loop: skip the casters' draws while the blobs stand in */
+int port_lite_shadow_skip(void) {
+    return gblob != NULL;
+}
+
+void port_vc_foreign(int on);
+
+/* inside Hu3DShadowExec, after its caster loop: the blobs, into the map.
+ * Hu3DCameraMtx is the shadow camera's look-at here and the projection the
+ * shadow pass's; a caster's blob is a disc in the camera's own plane at its
+ * centre (a sphere's outline), in the map's caster colour (the TEV register
+ * the casters write: Hu3DShadowData.alpha in all three channels) */
+#define GBLOB_SEG 16
+void port_lite_shadow_blobs(void) {
+    static float cs[GBLOB_SEG + 1], sn[GBLOB_SEG + 1];
+    Mtx id;
+    int i, k;
+    u8 s;
+    if (!gblob || !gblob_n) {
+        return;
+    }
+    if (cs[0] == 0.0f) {
+        for (k = 0; k <= GBLOB_SEG; k++) {
+            float t = 6.2831853f * (float)(k % GBLOB_SEG) / (float)GBLOB_SEG;
+            cs[k] = cosf(t);
+            sn[k] = sinf(t);
+        }
+    }
+    s = Hu3DShadowData.alpha;
+    port_vc_foreign(1);
+    GXSetNumChans(1);
+    GXSetChanCtrl(GX_COLOR0A0, GX_FALSE, GX_SRC_VTX, GX_SRC_VTX, GX_LIGHT_NULL, GX_DF_NONE, GX_AF_NONE);
+    GXSetNumTexGens(0);
+    GXSetNumIndStages(0);
+    GXSetNumTevStages(1);
+    GXSetTevDirect(GX_TEVSTAGE0);
+    GXSetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, GX_COLOR0A0);
+    GXSetTevOp(GX_TEVSTAGE0, GX_PASSCLR);
+    GXSetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_NOOP);
+    GXSetAlphaCompare(GX_ALWAYS, 0, GX_AOP_AND, GX_ALWAYS, 0);
+    GXSetZMode(GX_FALSE, GX_LEQUAL, GX_FALSE);
+    GXSetCullMode(GX_CULL_NONE);
+    MTXIdentity(id);
+    GXLoadPosMtxImm(id, GX_PNMTX0);
+    GXSetCurrentMtx(GX_PNMTX0);
+    GXClearVtxDesc();
+    GXSetVtxDesc(GX_VA_POS, GX_DIRECT);
+    GXSetVtxDesc(GX_VA_CLR0, GX_DIRECT);
+    GXSetVtxAttrFmt(GX_VTXFMT7, GX_VA_POS, GX_POS_XYZ, GX_F32, 0);
+    GXSetVtxAttrFmt(GX_VTXFMT7, GX_VA_CLR0, GX_CLR_RGBA, GX_RGBA8, 0);
+    GXBegin(GX_TRIANGLES, GX_VTXFMT7, (u16)(gblob_n * GBLOB_SEG * 9));
+    for (i = 0; i < gblob_n; i++) {
+        Vec w, v;
+        float r = gblob_c[i].r, ri = r * 0.7f;
+        w.x = gblob_c[i].x;
+        w.y = gblob_c[i].y;
+        w.z = gblob_c[i].z;
+        MTXMultVec(Hu3DCameraMtx, &w, &v);
+        for (k = 0; k < GBLOB_SEG; k++) {
+#define GV(px, py, a) (GXPosition3f32((px), (py), v.z), GXColor4u8(s, s, s, (a)))
+            /* the core, full; the rim, fading to nothing (the N64 blob's soft edge) */
+            GV(v.x, v.y, 255);
+            GV(v.x + ri * cs[k], v.y + ri * sn[k], 255);
+            GV(v.x + ri * cs[k + 1], v.y + ri * sn[k + 1], 255);
+            GV(v.x + ri * cs[k], v.y + ri * sn[k], 255);
+            GV(v.x + r * cs[k], v.y + r * sn[k], 0);
+            GV(v.x + r * cs[k + 1], v.y + r * sn[k + 1], 0);
+            GV(v.x + ri * cs[k], v.y + ri * sn[k], 255);
+            GV(v.x + r * cs[k + 1], v.y + r * sn[k + 1], 0);
+            GV(v.x + ri * cs[k + 1], v.y + ri * sn[k + 1], 255);
+#undef GV
+        }
+    }
+    GXEnd();
+    GXSetZMode(GX_TRUE, GX_LEQUAL, GX_TRUE);
+    GXSetCullMode(GX_CULL_BACK);
+    port_vc_foreign(0);
+}
+
+/* --blobaudit (M52): the casters and the receivers, every 300 frames of a
+ * minigame's first 1,500 -- what the radii come from */
+static void blob_audit(void) {
+    static long last = -1;
+    unsigned long e = port_mg_entry();
+    unsigned long f;
+    int i, j;
+    if (!e) {
+        return;
+    }
+    f = VIGetRetraceCount() - e;
+    if (f > 1500 || (long)(f / 300) == last) {
+        return;
+    }
+    last = (long)(f / 300);
+    for (i = 0; i < HU3D_MODEL_MAX; i++) {
+        HU3DMODEL* m = &Hu3DData[i];
+        float cx, cy, cz, hw;
+        int recv = 0;
+        const char* nm = "-";
+        if (!m->hsf || (m->attr & HU3D_ATTR_HOOK)) {
+            continue;
+        }
+        if (m->attr & HU3D_ATTR_HOOKFUNC) {
+            if (m->attr & HU3D_ATTR_SHADOW) {
+                port_log("port> blobaudit mg %d f+%lu model %d CASTER hookfunc%s layer %d pos %.1f %.1f %.1f\n",
+                         port_cur_mg_number(), f, i, (m->attr & HU3D_ATTR_DISPOFF) ? " dispoff" : "",
+                         (int)m->layerNo, m->pos.x, m->pos.y, m->pos.z);
+            }
+            continue;
+        }
+        for (j = 0; j < (int)m->hsf->objectNum; j++) {
+            HSFOBJECT* o = &m->hsf->object[j];
+            if (o->constData && (((HSFCONSTDATA*)o->constData)->attr & HU3D_CONST_SHADOW_MAP)) {
+                recv = 1;
+            }
+            if (nm[0] == '-' && o->type == HSF_OBJ_MESH && o->name) {
+                nm = o->name;
+            }
+        }
+        if (!(m->attr & HU3D_ATTR_SHADOW) && !recv) {
+            continue;
+        }
+        if (!blob_extent(m->hsf, &cx, &cy, &cz, &hw)) {
+            cx = cy = cz = hw = 0.0f;
+        }
+        port_log("port> blobaudit mg %d f+%lu model %d %s%s%s%s layer %d pos %.1f %.1f %.1f roty %.0f scale %.2f %.2f %.2f "
+                 "extent c %.1f %.1f %.1f halfwidth %.1f objs %d %s\n",
+                 port_cur_mg_number(), f, i, (m->attr & HU3D_ATTR_SHADOW) ? "CASTER" : "", recv ? " RECEIVER" : "",
+                 (m->attr & HU3D_ATTR_DISPOFF) ? " dispoff" : "", (m->attr & HU3D_ATTR_MOTION_OFF) ? " motionoff" : "",
+                 (int)m->layerNo, m->pos.x, m->pos.y, m->pos.z, m->rot.y, m->scale.x, m->scale.y, m->scale.z, cx, cy, cz,
+                 hw, (int)m->hsf->objectNum, nm);
+    }
 }
 
 void port_lite_layer_end(int cam, int layer) {

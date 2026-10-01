@@ -85,7 +85,8 @@ def read(paths, fastcut=110):
                     marks.append((int(a.group(1)), None))
                 continue
             f, ovl, _, _, _, _, _, speed, fps, rt, dec = m.groups()
-            if int(speed) > fastcut:
+            # M52 (PLAN.md 67): a second with the display asleep is not counted
+            if int(speed) > fastcut or 'DISPLAY-ASLEEP' in line:
                 marks.append((int(f), None))
                 continue
             marks.append((int(f), ovl))

@@ -54,6 +54,9 @@ run() {
     mkdir -p "$D/$name"
     rm -f "$D/$name"/*.ppm
     echo "fps-board: $name start $(date)"
+    # M52: the guard (tools/m52_guard.sh as ~/m52guard.sh, when present): the
+    # display awake and nothing else busy before the run, read again after
+    g1=""; g2=""; [ -f "$HOME/m52guard.sh" ] && g1=$(sh "$HOME/m52guard.sh" pre)
     t0=$(date +%s)
     "$APP" --shotdir "$D/$name" --perfdump "$D/$name.csv" "$@" $X > "$D/$name.log" 2>&1 &
     pid=$!
@@ -65,12 +68,13 @@ run() {
         fi
     done
     wait $pid; e=$?
+    [ -n "$g1" ] && g2=$(sh "$HOME/m52guard.sh" post)
     fault=$(grep -c '^\*\*\* port' "$D/$name.log")
     m=""
     for f in "$D/$name"/*.ppm; do
         [ -f "$f" ] && m="$m $(basename "$f" .ppm):$(md5 -q "$f" | cut -c1-8)"
     done
-    echo "$name EXIT=$e wall=$(( $(date +%s) - t0 ))s fault=$fault md5$m args='$*'" >> "$IDX"
+    echo "$name EXIT=$e wall=$(( $(date +%s) - t0 ))s fault=$fault md5$m args='$*'${g1:+ guard='$g1 | $g2'}" >> "$IDX"
     sleep 3
 }
 

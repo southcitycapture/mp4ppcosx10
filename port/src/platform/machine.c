@@ -766,6 +766,21 @@ static const char* const REQUIREMENTS =
 const char* port_machine_title(void) { return title[0] ? title : "Mario Party 4"; }
 const char* port_machine_summary(void) { return summary[0] ? summary : "?"; }
 const char* port_machine_verdict(void) { return title[0] ? verdict_word() : "?"; }
+
+/* M52 (PLAN.md 67): is the main display asleep?  M51 lost a timed set to a
+ * reading of 10-15 fps that a sleeping display is the likeliest cause of.
+ * The game keeps the display awake as any game does (SDL's event pump calls
+ * UpdateSystemActivity every 30 s); this says when it is asleep anyway, on
+ * the status line (" DISPLAY-ASLEEP"), so a timed run can be discarded.
+ * Asked once a status line (a second); changes nothing. */
+#if defined(__APPLE__) && !defined(PORT_NO_SDL)
+#include <ApplicationServices/ApplicationServices.h>
+int port_display_asleep(void) {
+    return CGDisplayIsAsleep(CGMainDisplayID()) ? 1 : 0;
+}
+#else
+int port_display_asleep(void) { return 0; }
+#endif
 int port_machine_degraded(void) { return verdict != V_OK; }
 
 /* Lines for a first-run message: one per reason, then the requirements. */

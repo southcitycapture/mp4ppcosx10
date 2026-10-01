@@ -410,6 +410,7 @@ static void usage(const char* argv0) {
             "  --liteauto        M49: Lite by machine and screen (the default; remembered)\n"
             "  --liteopts LIST   M49: Lite's options by name (m441.bshadow,...), ref, all\n"
             "  --blobr R, --bloba A  M50: m441.blob's radius (80) and darkness (150 of 255)\n"
+            "  --blobaudit       M52: log the shadow casters and receivers (the <game>.blob table's source)\n"
             "  --benchmark       M50: Benchmark Mode (about five minutes): measures the\n"
             "                    heaviest scenes, picks this Mac's settings, writes the\n"
             "                    config and ~/Desktop/MarioParty4-benchmark-DATE.txt\n"
@@ -1510,6 +1511,8 @@ int port_parse_args(int argc, char** argv) {
             port_opt.blobr = atoi(argv[++i]);
         } else if (!strcmp(a, "--bloba") && i + 1 < argc) {
             port_opt.bloba = atoi(argv[++i]);
+        } else if (!strcmp(a, "--blobaudit")) {
+            port_opt.blobaudit = 1;
         } else if (!strcmp(a, "--benchmark")) {
             port_opt.benchmark = 1;
         } else if (!strcmp(a, "--benchchild") && i + 1 < argc) {
