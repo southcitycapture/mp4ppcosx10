@@ -31,8 +31,13 @@ extern "C" {
 /* ---- settings, from argv ------------------------------------------------- */
 /* M32: the shipped version (the dmg's name, the plist, the --defaults header)
  * and the milestone that built it. */
-#define PORT_VERSION_STRING "0.9.19"
-#define PORT_MILESTONE "M50"
+#define PORT_VERSION_STRING "0.9.20"
+#define PORT_MILESTONE "M51"
+/* M51 (PLAN.md 66.2): the console's clock at HuSysInit's frand() is its RTC +
+ * 2,702,265 ticks (Dolphin, measured at two RTCs); the port's deterministic
+ * clock reads RTC + 4 retraces = 2,700,000 there.  A session recording starts
+ * the clock this much later so the engine RNG seeds as the console's does. */
+#define PORT_CONSOLE_BOOT_SKEW 2265
 /* M48 (PLAN.md 63.10): the milestone's levers and diagnostics -- the compiled
  * draws, --glists, --repeatstat, --drawhash, --texmtxlog, --maxbatchverts,
  * --skinreadwatch -- are built only with M48X=1 (make): their hooks sit in
@@ -716,6 +721,31 @@ typedef struct PortOptions {
                              *   movie frame only if the queued audio covers
                              *   the work left + MS (default 60; 0 = always,
                              *   M38)                                         */
+    /* ---- M51: Developer Mode and the playtest rig (PLAN.md 66) ---- */
+    const char* session_record; /* --sessionrec FILE  record the session (src/debug/session.c):
+                             *   the four pads each retrace, the start state, the harness's
+                             *   writes, the board seeds, the game's signature */
+    const char* replay;     /* --replay FILE  play a session recording back (the four pads
+                             *   from the file, every frame checked against its signature) */
+    int replay_exit;        /* --replayexit  leave at the recording's end              */
+    int replay_from;        /* --replayfrom N  (video) the first retrace drawn: --ffto N  */
+    const char* framedump;  /* --framedump FILE  every presented frame, deflated, to FILE
+                             *   (src/debug/framedump.c) -- the G4 video              */
+    int framedump_from;     /* --framedumpfrom N  presented frames before N not written  */
+    int humans;             /* --humans N  M51: inside a minigame players 1..N are human
+                             *   (pads 1..N), the rest COM -- the marathon            */
+    int mgexit;             /* --mgexit  M51: leave when the results after the (first)
+                             *   minigame are over (the marathon's child)            */
+    const char* marathon;   /* --marathon FILE  M51: the marathon's driver (src/ui/marathon.c) */
+    const char* marathonchild; /* --marathonchild TEXT  a child run's banner          */
+    const char* marathonresult; /* --marathonresult FILE  open the overlay on the summary */
+    const char* soakplan;   /* --soakplan FILE  M51: a soak planned in Developer Mode   */
+    int devmode;            /* --devmode  M51: the overlay's Developer Mode pages      */
+    long long clockskew;    /* --clockskew TICKS  M51: added to the deterministic clock's
+                             *   origin; a session recording's default is the console's own
+                             *   (PORT_CONSOLE_BOOT_SKEW), so the engine RNG's boot seed is
+                             *   Dolphin's to the tick                                */
+    int clockskew_set;
 } PortOptions;
 
 extern PortOptions port_opt;

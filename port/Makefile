@@ -43,7 +43,7 @@ ifeq ($(TARGET),ppc-darwin)
   SDL_CFLAGS  := -I$(SDL2_PREFIX)/include/SDL2 -D_THREAD_SAFE
   SDL_LIBS    := -L$(SDL2_PREFIX)/lib -lSDL2 -framework OpenGL -framework Cocoa \
                  -framework Carbon -framework IOKit -framework AGL -framework QuickTime \
-                 -framework AudioToolbox -framework AudioUnit
+                 -framework AudioToolbox -framework AudioUnit -lz
 else ifeq ($(TARGET),host)
   BUILD    := build-host
   CC       := clang

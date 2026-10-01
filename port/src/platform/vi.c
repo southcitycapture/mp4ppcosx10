@@ -258,6 +258,11 @@ void VIWaitForRetrace(void) {
         last_exit_at = now_seconds();
     }
 
+    {
+        /* M51 (PLAN.md 66): the frame's signature, for the session recording */
+        void port_session_frame_end(u32 next);
+        port_session_frame_end(retrace_count + 1);
+    }
     retrace_count++;
     field ^= 1;
     if (post_cb) {
@@ -265,8 +270,14 @@ void VIWaitForRetrace(void) {
     }
     /* The self-play harness parks game state here, after the game's own
      * PadReadVSync post-callback, so that what it writes is the last word on
-     * the frame the game is about to run. */
-    port_selfplay_tick(retrace_count);
+     * the frame the game is about to run.  M51: what it writes is recorded. */
+    {
+        void port_session_harness_before(void);
+        void port_session_harness_after(u32 frame);
+        port_session_harness_before();
+        port_selfplay_tick(retrace_count);
+        port_session_harness_after(retrace_count);
+    }
     {
         void port_lite_tick(unsigned frame);
         port_lite_tick(retrace_count); /* M49: --gamehash */

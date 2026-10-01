@@ -79,6 +79,10 @@ static const LiteOpt lite_opts[] = {
      * 24.1 ms against 24.2 without it -- no dearer, but not 30.0 three times;
      * PLAN.md 65.2) */
     {44105, "m441.blob", 0, "Butterfly Blitz: a round N64-style shadow under each net instead of its projected one", 0},
+    /* M51 (PLAN.md 66.6): the user's follow-up -- every shadow of the game a
+     * round blob (the characters, the nets, the baskets, the butterflies);
+     * the projected shadow pass has no caster left */
+    {44106, "m441.bloball", 0, "Butterfly Blitz: every shadow a round N64-style blob (characters, nets, baskets, butterflies)", 0},
     {40101, "m401.fish", 0, "Manta Rings: each fish school drawn to its first 10 fish", 1},
     {40102, "m401.bubbles", 0, "Manta Rings: the ambient bubbles not drawn", 1},
     {40103, "m401.char", 1, "Manta Rings: the lighter character models", 0},
@@ -318,7 +322,7 @@ static int blob_armed, blob_mg;
 
 void port_lite_blob_net(int player, const void* p, int netMdl) {
     const float* v = (const float*)p;
-    if (player < 0 || player > 3 || !port_lite_opt(44105)) {
+    if (player < 0 || player > 3 || !(port_lite_opt(44105) || port_lite_opt(44106))) {
         return;
     }
     if (blob_mg != port_cur_mg_number()) {
@@ -332,6 +336,86 @@ void port_lite_blob_net(int player, const void* p, int netMdl) {
     blob_armed = 1;
 }
 
+/* ---- m441.bloball (M51, PLAN.md 66.6): every caster a blob ---------------- */
+#define N_CASTER 64
+static struct {
+    int mdl;
+    void* hsf;
+    int kind; /* 0 character, 1 net (drawn from the net point), 2 basket, 3 butterfly, 4 the small butterfly */
+} caster[N_CASTER];
+static int ncaster, caster_mg;
+static struct {
+    int mdl;
+    float x, y, z;
+} hookw[4];
+
+static void caster_reset_if_new_screen(void) {
+    if (caster_mg != port_cur_mg_number()) {
+        ncaster = 0;
+        memset(hookw, 0, sizeof(hookw));
+        caster_mg = port_cur_mg_number();
+    }
+}
+
+void port_lite_blob_caster(int mdl, int kind) {
+    int i;
+    if (mdl < 0 || mdl >= HU3D_MODEL_MAX) {
+        return;
+    }
+    caster_reset_if_new_screen();
+    for (i = 0; i < ncaster; i++) {
+        if (caster[i].mdl == mdl) {
+            break;
+        }
+    }
+    if (i == ncaster) {
+        if (ncaster >= N_CASTER) {
+            return;
+        }
+        ncaster++;
+    }
+    caster[i].mdl = mdl;
+    caster[i].hsf = Hu3DData[mdl].hsf;
+    caster[i].kind = kind;
+    blob_armed = 1;
+    blob_mg = port_cur_mg_number();
+    if (kind == 2) {
+        int k;
+        for (k = 0; k < 4; k++) {
+            if (!hookw[k].mdl || hookw[k].mdl == mdl + 1) {
+                hookw[k].mdl = mdl + 1;
+                break;
+            }
+        }
+    }
+}
+
+/* hsfdraw.c (patched): a hooked model's matrix as the draw built it (camera
+ * space); the baskets' is kept, in world space, for the next frame's blobs */
+void port_lite_hook_mtx(int hookMdl, Mtx m) {
+    int k;
+    if (!ncaster || caster_mg != 441 || port_cur_mg_number() != 441) {
+        return;
+    }
+    for (k = 0; k < 4; k++) {
+        if (hookw[k].mdl == hookMdl + 1) {
+            Mtx inv;
+            Vec c, w;
+            c.x = m[0][3];
+            c.y = m[1][3];
+            c.z = m[2][3];
+            if (!MTXInverse(Hu3DCameraMtx, inv)) {
+                return;
+            }
+            MTXMultVec(inv, &c, &w);
+            hookw[k].x = w.x;
+            hookw[k].y = w.y;
+            hookw[k].z = w.z;
+            return;
+        }
+    }
+}
+
 void port_vc_foreign(int on);
 
 static void blob_vtx(float x, float z, u8 a) {
@@ -339,20 +423,71 @@ static void blob_vtx(float x, float z, u8 a) {
     GXColor4u8(0, 0, 0, a);
 }
 
+typedef struct {
+    float x, z, r, ri;
+    u8 a;
+} BlobDisc;
+
+static int blob_disc(BlobDisc* d, float x, float y, float z, float r0, int a0) {
+    /* higher = a little smaller and fainter, as the N64's blobs did */
+    float h = y < 0.0f ? 0.0f : y > 400.0f ? 400.0f : y;
+    d->x = x;
+    d->z = z;
+    d->r = r0 * (1.0f - h * 0.0006f);
+    d->ri = d->r * 0.78f;
+    d->a = (u8)((float)a0 * (1.0f - h * 0.0008f));
+    return 1;
+}
+
 void port_lite_layer_end(int cam, int layer) {
     static float cs[BLOB_SEG + 1], sn[BLOB_SEG + 1];
-    int i, k, n = 0;
+    static BlobDisc disc[4 + N_CASTER];
+    int i, k, n = 0, all;
     if (!blob_armed || cam != 0 || layer != 0) {
         return;
     }
-    if (blob_mg != port_cur_mg_number() || !port_lite_opt(44105)) {
+    all = port_lite_opt(44106);
+    if (blob_mg != port_cur_mg_number() || !(port_lite_opt(44105) || all)) {
         blob_armed = 0;
         return;
     }
-    for (i = 0; i < 4; i++) {
-        int m = blob_net[i].mdl - 1;
-        if (m >= 0 && m < HU3D_MODEL_MAX && Hu3DData[m].hsf && !(Hu3DData[m].attr & HU3D_ATTR_DISPOFF)) {
-            n++;
+    {
+        float nr = port_opt.blobr > 0 ? (float)port_opt.blobr : 80.0f;
+        int na = port_opt.bloba > 0 ? port_opt.bloba : 150;
+        for (i = 0; i < 4; i++) {
+            int m = blob_net[i].mdl - 1;
+            if (m >= 0 && m < HU3D_MODEL_MAX && Hu3DData[m].hsf && !(Hu3DData[m].attr & HU3D_ATTR_DISPOFF)) {
+                n += blob_disc(&disc[n], blob_net[i].x, blob_net[i].y, blob_net[i].z, all ? nr * 0.8f : nr, na);
+            }
+        }
+    }
+    if (all && caster_mg == port_cur_mg_number()) {
+        for (i = 0; i < ncaster; i++) {
+            int m = caster[i].mdl;
+            HU3DMODEL* d = &Hu3DData[m];
+            if (!d->hsf || d->hsf != caster[i].hsf || (d->attr & HU3D_ATTR_DISPOFF)) {
+                continue;
+            }
+            switch (caster[i].kind) {
+                case 0:
+                    n += blob_disc(&disc[n], d->pos.x, d->pos.y, d->pos.z, 70.0f, 160);
+                    break;
+                case 2:
+                    for (k = 0; k < 4; k++) {
+                        if (hookw[k].mdl == m + 1 && (hookw[k].x != 0.0f || hookw[k].z != 0.0f)) {
+                            n += blob_disc(&disc[n], hookw[k].x, hookw[k].y, hookw[k].z, 36.0f, 130);
+                        }
+                    }
+                    break;
+                case 3:
+                    n += blob_disc(&disc[n], d->pos.x, d->pos.y, d->pos.z, 34.0f, 130);
+                    break;
+                case 4:
+                    n += blob_disc(&disc[n], d->pos.x, d->pos.y, d->pos.z, 24.0f, 120);
+                    break;
+                default:
+                    break;
+            }
         }
     }
     if (!n) {
@@ -387,20 +522,9 @@ void port_lite_layer_end(int cam, int layer) {
     GXSetVtxAttrFmt(GX_VTXFMT7, GX_VA_POS, GX_POS_XYZ, GX_F32, 0);
     GXSetVtxAttrFmt(GX_VTXFMT7, GX_VA_CLR0, GX_CLR_RGBA, GX_RGBA8, 0);
     GXBegin(GX_TRIANGLES, GX_VTXFMT7, (u16)(n * BLOB_SEG * 9));
-    for (i = 0; i < 4; i++) {
-        int m = blob_net[i].mdl - 1;
-        float x, z, h, r, ri;
-        u8 a;
-        if (m < 0 || m >= HU3D_MODEL_MAX || !Hu3DData[m].hsf || (Hu3DData[m].attr & HU3D_ATTR_DISPOFF)) {
-            continue;
-        }
-        x = blob_net[i].x;
-        z = blob_net[i].z;
-        /* higher = a little smaller and fainter, as the N64's blobs did */
-        h = blob_net[i].y < 0.0f ? 0.0f : blob_net[i].y > 400.0f ? 400.0f : blob_net[i].y;
-        r = (port_opt.blobr > 0 ? (float)port_opt.blobr : 80.0f) * (1.0f - h * 0.0006f);
-        ri = r * 0.78f;
-        a = (u8)((port_opt.bloba > 0 ? port_opt.bloba : 150) * (1.0f - h * 0.0008f));
+    for (i = 0; i < n; i++) {
+        float x = disc[i].x, z = disc[i].z, r = disc[i].r, ri = disc[i].ri;
+        u8 a = disc[i].a;
         for (k = 0; k < BLOB_SEG; k++) {
             /* the core */
             blob_vtx(x, z, a);

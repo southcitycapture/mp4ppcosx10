@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <time.h>
 
 #if defined(__APPLE__)
 #include <mach-o/dyld.h>
@@ -1640,6 +1641,37 @@ int port_parse_args(int argc, char** argv) {
             port_opt.pad_play = argv[++i];
         } else if (!strcmp(a, "--record") && i + 1 < argc) {
             port_opt.pad_record = argv[++i];
+        } else if (!strcmp(a, "--sessionrec") && i + 1 < argc) {
+            port_opt.session_record = argv[++i]; /* M51 (PLAN.md 66) */
+        } else if (!strcmp(a, "--replay") && i + 1 < argc) {
+            port_opt.replay = argv[++i];
+        } else if (!strcmp(a, "--replayexit")) {
+            port_opt.replay_exit = 1;
+        } else if (!strcmp(a, "--replayfrom") && i + 1 < argc) {
+            port_opt.replay_from = atoi(argv[++i]);
+        } else if (!strcmp(a, "--framedump") && i + 1 < argc) {
+            port_opt.framedump = argv[++i];
+        } else if (!strcmp(a, "--framedumpfrom") && i + 1 < argc) {
+            port_opt.framedump_from = atoi(argv[++i]);
+        } else if (!strcmp(a, "--wavdump") && i + 1 < argc) {
+            port_opt.wav = argv[++i]; /* M51: the mixer's output exactly as played (--wav) */
+        } else if (!strcmp(a, "--humans") && i + 1 < argc) {
+            port_opt.humans = atoi(argv[++i]);
+        } else if (!strcmp(a, "--mgexit")) {
+            port_opt.mgexit = 1;
+        } else if (!strcmp(a, "--marathon") && i + 1 < argc) {
+            port_opt.marathon = argv[++i];
+        } else if (!strcmp(a, "--marathonchild") && i + 1 < argc) {
+            port_opt.marathonchild = argv[++i];
+        } else if (!strcmp(a, "--marathonresult") && i + 1 < argc) {
+            port_opt.marathonresult = argv[++i];
+        } else if (!strcmp(a, "--soakplan") && i + 1 < argc) {
+            port_opt.soakplan = argv[++i];
+        } else if (!strcmp(a, "--devmode")) {
+            port_opt.devmode = 1;
+        } else if (!strcmp(a, "--clockskew") && i + 1 < argc) {
+            port_opt.clockskew = strtoll(argv[++i], NULL, 0);
+            port_opt.clockskew_set = 1;
         } else if (!strcmp(a, "--verbose") || !strcmp(a, "-v")) {
             port_opt.verbose = 1;
         } else if (!strcmp(a, "--help") || !strcmp(a, "-h")) {
@@ -1779,6 +1811,20 @@ static void run_game(void) {
 }
 
 int main(int argc, char** argv) {
+    {
+        /* M51 (PLAN.md 66): --replay FILE brings its recording's own flags
+         * (the header's `replay` line) in front of the command line's; a
+         * --soakplan FILE its plan's */
+        int port_session_replay_argv(int argc, char** argv, int* out_argc, char*** out_argv);
+        int port_soakplan_argv(int argc, char** argv, int* out_argc, char*** out_argv);
+        int nargc;
+        char** nargv;
+        if (port_session_replay_argv(argc, argv, &nargc, &nargv) ||
+            port_soakplan_argv(argc, argv, &nargc, &nargv)) {
+            argc = nargc;
+            argv = nargv;
+        }
+    }
     if (!port_parse_args(argc, argv)) {
         return 1;
     }
@@ -1877,6 +1923,31 @@ int main(int argc, char** argv) {
         }
         port_config_save();
     }
+    /* M51 (PLAN.md 66): "Record this session" (the overlay's Developer Mode,
+     * the config's `record = 1`): a player's run records from the boot, with
+     * the deterministic clock started at the calendar's reading (so the game
+     * is as random as ever, and the recording can say how) */
+    if (!port_opt.noconfig && !port_opt.session_record && !port_opt.replay && !port_opt.benchmark &&
+        !port_opt.marathon && !port_opt.benchchild && !port_opt.marathonchild && port_config_get("record") &&
+        atoi(port_config_get("record")) != 0) {
+        const char* port_session_default_path(const char* tag);
+        port_opt.session_record = strdup(port_session_default_path(NULL));
+    }
+    if (port_opt.session_record && !port_opt.rtc_set) {
+        port_opt.rtc = (long long)time(NULL);
+        port_opt.rtc_set = 1;
+        port_opt.deterministic = 1;
+        port_opt.seed = (long long)((double)(port_opt.rtc - PORT_GC_EPOCH_UNIX) * (double)PORT_TIMER_CLOCK);
+    }
+    /* M51 (PLAN.md 66.2): a recording's clock is the console's to the tick
+     * at the engine RNG's seeding (PORT_CONSOLE_BOOT_SKEW) */
+    if (port_opt.session_record && !port_opt.clockskew_set) {
+        port_opt.clockskew = PORT_CONSOLE_BOOT_SKEW;
+        port_opt.clockskew_set = 1;
+    }
+    if (port_opt.clockskew_set && port_opt.rtc_set) {
+        port_opt.seed += port_opt.clockskew;
+    }
     if (port_opt.print_keys) {
         port_print_keys(stdout);
         return 0;
@@ -1971,6 +2042,10 @@ int main(int argc, char** argv) {
         }
     }
     port_selfplay_init();
+    {
+        void port_session_open(int argc, char** argv);
+        port_session_open(argc, argv); /* M51: --sessionrec (the header needs the settings resolved) */
+    }
     /* After every subsystem, because --ffto asks the GX backend to switch the
      * renderer off and the snapshot registry has to see the buffers the audio
      * and card layers just allocated. */

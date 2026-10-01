@@ -330,7 +330,11 @@ u32 PADRead(PADStatus* status) {
         /* M50: the overlay menu reads the four slots, and while it is open
          * the game reads them at rest (src/ui/overlay.c) */
         void port_ui_pad(void* status4);
+        void port_session_pad(u32 frame, void* status4);
         port_ui_pad(status);
+        /* M51 (PLAN.md 66): the session recording takes the four slots as
+         * the game will see them -- or a replay replaces them */
+        port_session_pad(frame, status);
     }
 
     return chan_bits;

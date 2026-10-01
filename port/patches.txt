@@ -972,3 +972,28 @@ src/REL/m441Dll/main.c	    port_gamehash_mix(&work->unk28, sizeof(work->unk28));
 src/REL/m441Dll/main.c	        if (i == 0 || !port_lite_opt(44102)) {	        if (i == 0 || !(port_lite_opt(44102) || port_lite_opt(44105))) {
 src/game/hsfman.c	void port_vc_foreign(int on);\n	void port_vc_foreign(int on);\nvoid port_lite_layer_end(int cam, int layer); /* M50: m441.blob (lite.c) */\n
 src/game/hsfman.c	                    Hu3DDrawPost();\n                }\n            }\n        }\n    }\n	                    Hu3DDrawPost();\n                }\n                port_lite_layer_end(Hu3DCameraNo, j);\n            }\n        }\n    }\n
+
+# ------------------------------------------------ M51: the session recording
+# M51 (PLAN.md 66): the board RNG's seed as BoardRandInit reads it, for the
+# session recording (src/debug/session.c): the console reads its own clock
+# here, which the port cannot know, so a Dolphin replay is handed the port's
+# seeds (tools/rec2dtm.py: a Gecko C2 hook at the same store).  Read, never
+# written: the game's value is the game's.
+src/game/board/main.c	void BoardRandInit(void)\n{\n    boardRandSeed = OSGetTime();\n}	void port_session_board_seed(u32 *seed); /* port (M51, PLAN.md 66) */\nvoid BoardRandInit(void)\n{\n    boardRandSeed = OSGetTime();\n    port_session_board_seed(&boardRandSeed);\n}
+
+# ---------------------------------------------- M51: m441.bloball, the round shadows
+# M51 (PLAN.md 66.6): the user's follow-up to m441.blob -- "so it's easier to
+# see the shadows... we could even make all shadows in that game like that":
+# with m441.bloball every caster of Butterfly Blitz (the four characters,
+# their nets and baskets, both kinds of butterfly) casts no projected shadow
+# and is registered with lite.c instead, which draws a round N64-style blob
+# under each after the floor's layer (port_lite_layer_end, as m441.blob).
+# The butterflies and the characters are read from their models' positions,
+# the nets from the net point (M50), the baskets -- hooked to a hand -- from
+# the draw's hook matrix (hsfdraw.c below: read, never written).
+src/REL/m441Dll/main.c	    if (!port_lite_opt(44101)) {\n        Hu3DModelShadowSet(object->mdlId[0]);\n    }\n    scale = &lbl_1_data_32C[object->work[0]];\n    omSetTra(object, work->unk0.x, work->unk0.y, work->unk0.z);\n    omSetRot(object, 0, work->unk18.x + 180, 0);	    if (port_lite_opt(44106)) {\n        port_lite_blob_caster(object->mdlId[0], 3);\n    } else if (!port_lite_opt(44101)) {\n        Hu3DModelShadowSet(object->mdlId[0]);\n    }\n    scale = &lbl_1_data_32C[object->work[0]];\n    omSetTra(object, work->unk0.x, work->unk0.y, work->unk0.z);\n    omSetRot(object, 0, work->unk18.x + 180, 0);
+src/REL/m441Dll/main.c	    if (!port_lite_opt(44101)) {\n        Hu3DModelShadowSet(object->mdlId[0]);\n    }\n    scale = &lbl_1_data_32C[object->work[0]];\n    omSetTra(object, work->unk0.x, work->unk0.y, work->unk0.z);\n    omSetRot(object, 90, 0, work->unk18.x);	    if (port_lite_opt(44106)) {\n        port_lite_blob_caster(object->mdlId[0], 4);\n    } else if (!port_lite_opt(44101)) {\n        Hu3DModelShadowSet(object->mdlId[0]);\n    }\n    scale = &lbl_1_data_32C[object->work[0]];\n    omSetTra(object, work->unk0.x, work->unk0.y, work->unk0.z);\n    omSetRot(object, 90, 0, work->unk18.x);
+src/REL/m441Dll/main.c	        if (i == 0 || !(port_lite_opt(44102) || port_lite_opt(44105))) {\n            Hu3DModelShadowSet(object->mdlId[i]);\n        }	        if (port_lite_opt(44106)) {\n            port_lite_blob_caster(object->mdlId[i], i);\n        } else if (i == 0 || !(port_lite_opt(44102) || port_lite_opt(44105))) {\n            Hu3DModelShadowSet(object->mdlId[i]);\n        }
+src/REL/m441Dll/main.c	void port_lite_blob_net(int player, const void *p, int netMdl);\n	void port_lite_blob_net(int player, const void *p, int netMdl);\n/* port (M51, PLAN.md 66.6): m441.bloball */\nvoid port_lite_blob_caster(int mdlId, int kind);\n
+src/game/hsfdraw.c	                MTXConcat(drawObj->matrix, mtx, MTXBuf[MTXIdx]);\n                scale = &scaleBuf[MTXIdx];	                MTXConcat(drawObj->matrix, mtx, MTXBuf[MTXIdx]);\n                port_lite_hook_mtx(constData->hookMdlId, MTXBuf[MTXIdx]); /* M51: m441.bloball */\n                scale = &scaleBuf[MTXIdx];
+src/game/hsfdraw.c	void port_envelope_sync(HSFDATA *hsf);\n	void port_envelope_sync(HSFDATA *hsf);\nvoid port_lite_hook_mtx(int hookMdlId, Mtx m); /* M51 (PLAN.md 66.6): lite.c */\n

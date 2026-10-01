@@ -341,7 +341,31 @@ static void park_players(void) {
      * (m406Dll/player.c:562) and an idle pad reads zero; outside the overlay
      * (the board, instDll, resultDll) the --com4 rule below holds as before. */
     int hold = port_opt.mghold && (int)omcurovl >= 0 && omMgIndexGet((s16)omcurovl) >= 0;
+    /* M51 (PLAN.md 66): --humans N -- from the minigame's instruction card
+     * on, players 1..N are the people at the controllers (pads 1..N), the
+     * rest COM; the board before it is the walk's, all COM */
+    int humans = port_opt.humans > 0 && forced_mg >= 0 &&
+                 ((int)omcurovl == DLL_instdll || ((int)omcurovl >= 0 && omMgIndexGet((s16)omcurovl) >= 0));
+    if (humans) {
+        void pad_play_stop(void);
+        static int told;
+        pad_play_stop();
+        if (!told) {
+            told = 1;
+            port_log("port> humans (M51): %d player%s at the controllers from %s on\n", port_opt.humans,
+                     port_opt.humans > 1 ? "s" : "", screen_name((int)omcurovl));
+        }
+    }
     for (i = 0; i < 4; i++) {
+        if (humans) {
+            if (cast_char[i] >= 0) {
+                GWPlayerCfg[i].character = cast_char[i];
+            }
+            GWPlayerCfg[i].pad_idx = (s16)i;
+            GWPlayerCfg[i].iscom = i < port_opt.humans ? 0 : 1;
+            GWPlayer[i].com = i < port_opt.humans ? 0 : 1;
+            continue;
+        }
         if (hold) {
             GWPlayerCfg[i].pad_idx = (s16)i;
             GWPlayerCfg[i].iscom = 0;
@@ -985,6 +1009,57 @@ static void board_gallery_watch(u32 frame) {
              frame, port_opt.dumpframe);
 }
 
+/* M51 (PLAN.md 66): the minigame's entry, its end and its results, as notes
+ * in the session recording and, under --mgexit (the marathon's child), the
+ * run's end once the results are over: one line the driver reads,
+ *
+ *   port> marathon: result m441 coins +10 +0 +0 +0 frames 3123
+ *
+ * -- the coins each player gained from the minigame's entry to the results'
+ * end (the minigame's prize; ties give several winners). */
+static void mg_marathon_watch(u32 frame) {
+    static int last = -2, state; /* 0 before, 1 in the minigame, 2 after it, 3 in the results */
+    static int mg_ovl, coins0[4];
+    static u32 t_in, t_out;
+    int cur = (int)omcurovl, i;
+    int in_mg = cur >= 0 && omMgIndexGet((s16)cur) >= 0;
+    void port_session_note(const char* fmt, ...);
+    if (cur == last && !(state == 2 && port_opt.mgexit && frame > t_out + 900)) {
+        return;
+    }
+    last = cur;
+    if (state == 0 && in_mg) {
+        state = 1;
+        mg_ovl = cur;
+        t_in = frame;
+        for (i = 0; i < 4; i++) {
+            coins0[i] = GWPlayer[i].coins;
+        }
+        port_session_note("minigame %s entered", screen_name(cur));
+    } else if (state == 1 && !in_mg) {
+        state = 2;
+        t_out = frame;
+        port_session_note("minigame %s left (entry +%u)", screen_name(mg_ovl), frame - t_in);
+    } else if (state == 2 && cur == DLL_resultdll) {
+        state = 3;
+        port_session_note("results");
+    } else if ((state == 3 && cur != DLL_resultdll) || (state == 2 && frame > t_out + 900)) {
+        char name[16];
+        snprintf(name, sizeof(name), "%.4s", screen_name(mg_ovl));
+        port_log("port> marathon: result %s coins %+d %+d %+d %+d frames %u\n", name,
+                 GWPlayer[0].coins - coins0[0], GWPlayer[1].coins - coins0[1], GWPlayer[2].coins - coins0[2],
+                 GWPlayer[3].coins - coins0[3], frame - t_in);
+        port_session_note("results over: coins %+d %+d %+d %+d", GWPlayer[0].coins - coins0[0],
+                          GWPlayer[1].coins - coins0[1], GWPlayer[2].coins - coins0[2],
+                          GWPlayer[3].coins - coins0[3]);
+        state = 4;
+        if (port_opt.mgexit) {
+            port_log("port> --mgexit: the minigame and its results are over; leaving\n");
+            port_shutdown(0);
+        }
+    }
+}
+
 /* ---- entry points ------------------------------------------------------------ */
 
 void port_selfplay_init(void) {
@@ -1174,6 +1249,9 @@ static void give_items(u32 frame) {
 }
 
 void port_selfplay_tick(u32 frame) {
+    if (port_opt.mgexit || port_opt.session_record) {
+        mg_marathon_watch(frame);
+    }
     if (!port_opt.com4 && !port_opt.turns && !port_opt.minigame &&
         !port_opt.status && !port_opt.stuckwatch && !port_opt.soak &&
         !port_opt.mgdump && !port_opt.mgend && !port_opt.board &&
