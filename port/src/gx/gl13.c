@@ -1026,11 +1026,12 @@ void gl13_present(void) {
     if (port_opt.framedump && gl_on && !draw_off) {
         /* M51 (PLAN.md 66): the G4 video's frames (src/debug/framedump.c) */
         void port_framedump_frame(unsigned frame, int w, int h, const unsigned char* rgb_bottom_up);
+        extern unsigned int VIGetRetraceCount(void);
         static unsigned char* fdbuf;
         if (!fdbuf) {
             fdbuf = (unsigned char*)malloc((size_t)EFB_W * EFB_H * 3);
         }
-        if (fdbuf && frame_no >= (unsigned)port_opt.framedump_from) {
+        if (fdbuf && VIGetRetraceCount() >= (unsigned)port_opt.framedump_from) {
             GL(glPixelStorei)(GL_PACK_ALIGNMENT, 1);
             GL(glReadPixels)(0, 0, EFB_W, EFB_H, GL_RGB, GL_UNSIGNED_BYTE, fdbuf);
             port_framedump_frame(frame_no, EFB_W, EFB_H, fdbuf);

@@ -7,9 +7,10 @@
  * frame.  Written by the game thread; a run that wants its speed does not
  * ask for it.
  *
- *   "MP4FD1\n", then per frame: "FRM1", u32 frame, u16 w, u16 h, u32 n,
- *   n bytes of zlib (RGB, top row first); at the end "END!", u32 count --
- *   all big endian. */
+ *   "MP4FD2\n", then per frame: "FRM2", u32 frame, u32 retrace, u16 w, u16 h,
+ *   u32 n, n bytes of zlib (RGB, top row first); at the end "END!", u32
+ *   count -- all big endian.  The retrace is the game's frame (the video's
+ *   clock: 59.94 a second, the --wavdump's 32,000 samples a second). */
 #include "port.h"
 
 #include <stdio.h>
@@ -45,12 +46,13 @@ void port_framedump_close(void) {
 
 /* `rgb` is w*h*3 bottom-up (glReadPixels); the file's frames are top-down */
 void port_framedump_frame(unsigned frame, int w, int h, const unsigned char* rgb_bottom_up) {
-    unsigned char hdr[16];
+    unsigned char hdr[20];
     size_t row = (size_t)w * 3;
     int y;
     uLongf zn;
-    if (!port_opt.framedump || frame < (unsigned)port_opt.framedump_from) {
-        return;
+    extern unsigned int VIGetRetraceCount(void);
+    if (!port_opt.framedump || VIGetRetraceCount() < (unsigned)port_opt.framedump_from) {
+        return; /* --framedumpfrom counts retraces (the recording's frames) */
     }
     if (!fd) {
         fd = fopen(port_opt.framedump, "wb");
@@ -60,7 +62,7 @@ void port_framedump_frame(unsigned frame, int w, int h, const unsigned char* rgb
             return;
         }
         setvbuf(fd, NULL, _IOFBF, 1 << 18);
-        fwrite("MP4FD1\n", 1, 7, fd);
+        fwrite("MP4FD2\n", 1, 7, fd);
         atexit(port_framedump_close);
         fd_rgb = (unsigned char*)malloc(row * (size_t)h);
         fd_zcap = compressBound((uLong)(row * (size_t)h));
@@ -74,14 +76,15 @@ void port_framedump_frame(unsigned frame, int w, int h, const unsigned char* rgb
     if (compress2(fd_z, &zn, fd_rgb, (uLong)(row * (size_t)h), 1) != Z_OK) {
         return;
     }
-    memcpy(hdr, "FRM1", 4);
+    memcpy(hdr, "FRM2", 4);
     be32(hdr + 4, frame);
-    hdr[8] = (unsigned char)(w >> 8);
-    hdr[9] = (unsigned char)w;
-    hdr[10] = (unsigned char)(h >> 8);
-    hdr[11] = (unsigned char)h;
-    be32(hdr + 12, zn);
-    fwrite(hdr, 1, 16, fd);
+    be32(hdr + 8, VIGetRetraceCount());
+    hdr[12] = (unsigned char)(w >> 8);
+    hdr[13] = (unsigned char)w;
+    hdr[14] = (unsigned char)(h >> 8);
+    hdr[15] = (unsigned char)h;
+    be32(hdr + 16, zn);
+    fwrite(hdr, 1, 20, fd);
     fwrite(fd_z, 1, zn, fd);
     fd_count++;
     if ((fd_count % 60u) == 0u) {

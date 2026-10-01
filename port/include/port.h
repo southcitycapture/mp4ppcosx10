@@ -746,6 +746,8 @@ typedef struct PortOptions {
                              *   (PORT_CONSOLE_BOOT_SKEW), so the engine RNG's boot seed is
                              *   Dolphin's to the tick                                */
     int clockskew_set;
+    int keepplay;           /* --keepplay  M51: a --play script goes on when --humans take over (the
+                             *   lab's stand-in for the person at controller 1)        */
 } PortOptions;
 
 extern PortOptions port_opt;

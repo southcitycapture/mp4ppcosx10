@@ -45,10 +45,12 @@
 #include "game/object.h"
 #include "game/pad.h"
 #include "game/board/main.h"
+#include "game/window.h"
 
 #include <dolphin/pad.h>
 
 #include <errno.h>
+#include <stddef.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -61,14 +63,19 @@ extern s32 rnd_seed;
 u32 port_frand_seed(void);
 int port_machine_line(char* out, size_t n);
 
+/* the console's layout, which the Dolphin replay watches at its addresses */
+_Static_assert(sizeof(WindowData) == 0x180, "WindowData is the console's 0x180 bytes");
+_Static_assert(offsetof(WindowData, num_chars) == 0x80, "num_chars at the console's 0x80");
+
 /* ---- the recorder -------------------------------------------------------- */
 static FILE* rec;
 static PADStatus rec_last[PAD_CHANMAX];
 static int rec_have_last;
-static u32 sig_last[5];
+static u32 sig_last[11];
 static int sig_have;
 static u32 rec_frame;
 static char rec_path[1024];
+static char card_copy[1100];
 
 /* the harness's regions */
 typedef struct {
@@ -181,7 +188,38 @@ void port_session_open(int argc, char** argv) {
     rec_printf("rtc %lld\n", (long long)port_opt.rtc);
     rec_printf("seed %lld\n", (long long)port_opt.seed);
     rec_printf("clockskew %lld\n", port_opt.clockskew);
-    rec_printf("card %s\n", port_opt.freshcard ? "fresh" : port_opt.card ? port_opt.card : "player");
+    {
+        /* the card as it was at the boot, beside the recording (the port's card
+         * is Dolphin's layout: tools/rec2dtm.py hands it to Dolphin as is) */
+        const char* src = port_opt.freshcard ? NULL : port_opt.card;
+        char srcbuf[1024];
+        if (!port_opt.freshcard && !src) {
+            snprintf(srcbuf, sizeof(srcbuf), "%s/memcard-slot-a.raw", port_app_support_dir());
+            src = srcbuf;
+        }
+        card_copy[0] = 0;
+        if (src) {
+            FILE *in = fopen(src, "rb"), *out;
+            snprintf(card_copy, sizeof(card_copy), "%s.card.raw", rec_path);
+            out = in ? fopen(card_copy, "wb") : NULL;
+            if (in && out) {
+                char buf[65536];
+                size_t n;
+                while ((n = fread(buf, 1, sizeof(buf), in)) > 0) {
+                    fwrite(buf, 1, n, out);
+                }
+            } else {
+                card_copy[0] = 0;
+            }
+            if (in) {
+                fclose(in);
+            }
+            if (out) {
+                fclose(out);
+            }
+        }
+        rec_printf("card %s\n", port_opt.freshcard ? "fresh" : card_copy[0] ? card_copy : "player (not copied)");
+    }
     rec_printf("args");
     for (i = 1; i < argc; i++) {
         rec_printf(" %s", argv[i]);
@@ -214,8 +252,8 @@ void port_session_open(int argc, char** argv) {
             rec_printf(" %s", a);
         }
     }
-    if (!port_opt.freshcard && !port_opt.card) {
-        rec_printf(" --card \"%s/memcard-slot-a.raw\"", port_app_support_dir());
+    if (card_copy[0]) {
+        rec_printf(" --card \"%s\"", card_copy); /* a replay plays on a scratch copy of it */
     }
     rec_printf(" %s", port_opt.nomovies ? "--nomovies" : "--movies");
     rec_printf(" %s", port_opt.lite == 0 ? "--nolite" : port_opt.lite == 1 ? "--lite" : "--liteauto");
@@ -406,7 +444,7 @@ void port_session_board_seed(u32* seed) {
 /* the end of a frame (VIWaitForRetrace, before the next retrace's PADRead
  * numbered `next`): the signature */
 void port_session_frame_end(u32 next) {
-    u32 v[5];
+    u32 v[11];
     int i;
     if (!rec && !port_opt.replay) {
         return;
@@ -416,11 +454,21 @@ void port_session_frame_end(u32 next) {
     v[2] = port_frand_seed();
     v[3] = (u32)rnd_seed;
     v[4] = boardRandSeed;
+    /* the first six message windows' typing (num_chars, max_chars): the
+     * dialogs move it where nothing random happens -- the board's opening,
+     * the menus' messages (PLAN.md 66.3) */
+    for (i = 0; i < 6; i++) {
+        v[5 + i] = ((u32)(u16)winData[i].num_chars << 16) | (u16)winData[i].max_chars;
+    }
     if (rec) {
-        if (!sig_have || v[1] != sig_last[1] || v[2] != sig_last[2] || v[3] != sig_last[3] || v[4] != sig_last[4] ||
-            v[0] - next != sig_last[0]) {
-            rec_printf("s %u %x %x %x %x %x\n", next, (unsigned)v[0], (unsigned)v[1], (unsigned)v[2],
-                       (unsigned)v[3], (unsigned)v[4]);
+        int changed = !sig_have || v[0] - next != sig_last[0];
+        for (i = 1; i < 11 && !changed; i++) {
+            changed = v[i] != sig_last[i];
+        }
+        if (changed) {
+            rec_printf("s %u %x %x %x %x %x %x %x %x %x %x %x\n", next, (unsigned)v[0], (unsigned)v[1],
+                       (unsigned)v[2], (unsigned)v[3], (unsigned)v[4], (unsigned)v[5], (unsigned)v[6],
+                       (unsigned)v[7], (unsigned)v[8], (unsigned)v[9], (unsigned)v[10]);
             memcpy(sig_last, v, sizeof(v));
             sig_last[0] = v[0] - next;
             sig_have = 1;
@@ -517,6 +565,29 @@ int port_session_replay_argv(int argc, char** argv, int* out_argc, char*** out_a
         }
     }
     fclose(f);
+    for (i = 0; i + 1 < n; i++) {
+        if (!strcmp(toks[i], "--card")) {
+            /* the recording's card is copied, so a replay never writes to it */
+            static char scratch[1100];
+            FILE *in = fopen(toks[i + 1], "rb"), *out;
+            snprintf(scratch, sizeof(scratch), "%s/replay-card.raw", port_app_support_dir());
+            out = in ? fopen(scratch, "wb") : NULL;
+            if (in && out) {
+                char buf[65536];
+                size_t k2;
+                while ((k2 = fread(buf, 1, sizeof(buf), in)) > 0) {
+                    fwrite(buf, 1, k2, out);
+                }
+                toks[i + 1] = scratch;
+            }
+            if (in) {
+                fclose(in);
+            }
+            if (out) {
+                fclose(out);
+            }
+        }
+    }
     nv = calloc((size_t)(argc + n + 2), sizeof(char*));
     k = 0;
     nv[k++] = argv[0];

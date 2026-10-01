@@ -377,7 +377,7 @@ u32 pad_play_press_count(void) { return script_presses; }
 /* M51 (PLAN.md 66): the marathon's players take controller 1 back from the
  * walk's script when their minigame comes (selfplay.c, --humans) */
 void pad_play_stop(void) {
-    if (have_script) {
+    if (have_script && !port_opt.keepplay) {
         have_script = 0;
         port_log("port> pad: --play stopped: the players have the controllers\n");
     }

@@ -61,8 +61,9 @@ def parse_rec(path):
         if t[0] == 'p' and len(t) == 11:
             pads.append((int(t[1]), int(t[2]), int(t[3]), int(t[4], 16), int(t[5]), int(t[6]), int(t[7]),
                          int(t[8]), int(t[9]), int(t[10])))
-        elif t[0] == 's' and len(t) == 7:
-            sigs.append((int(t[1]),) + tuple(int(x, 16) for x in t[2:7]))
+        elif t[0] == 's' and len(t) in (7, 13):
+            v = tuple(int(x, 16) for x in t[2:])
+            sigs.append((int(t[1]),) + v + (0,) * (11 - len(v)))
         elif t[0] == 'b' and len(t) == 3:
             boards.append((int(t[1]), int(t[2], 16)))
         elif t[0] == 'w' and len(t) == 5:

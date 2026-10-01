@@ -37,7 +37,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from rec2dtm import parse_rec, sig_timeline, pad_timeline, build_dtm, write_gecko  # noqa: E402
 
-WATCH = ['801D3CE0:ovl', '801D3D10:frand', '801D342C:rnd8', '801D3F14:brand']
+WATCH = ['801D3CE0:ovl', '801D3D10:frand', '801D342C:rnd8', '801D3F14:brand'] + \
+        [f'{0x801923C0 + i * 0x180 + 0x80:08X}:win{i}' for i in range(6)]  # winData[i].num_chars/max_chars
 
 
 def log(wd, s):
@@ -59,16 +60,18 @@ def run_dolphin(wd, tag, dtm, gecko, until_vc, timeout, extra=()):
 
 def dolphin_trace(path):
     """per VCounter: (gc, ovl, frand, rnd8, brand), forward-filled"""
-    st = {'gc': 0, 'ovl': 0, 'frand': 0, 'rnd8': 0xD9ED, 'brand': 0}
+    names = ['gc', 'ovl', 'frand', 'rnd8', 'brand'] + [f'win{i}' for i in range(6)]
+    st = {n: 0 for n in names}
+    st['rnd8'] = 0xD9ED
     at = {}
     vmax = 0
     for r in csv.DictReader(open(path)):
         st[r['name']] = int(r['value'], 16)
         v = int(r['vc'])
-        at[v] = (st['gc'], st['ovl'], st['frand'], st['rnd8'], st['brand'])
+        at[v] = tuple(st[n] for n in names)
         vmax = max(vmax, v)
     out = []
-    cur = (0, 0, 0, 0xD9ED, 0)
+    cur = tuple(st0 for st0 in [0, 0, 0, 0xD9ED, 0] + [0] * 6)
     for v in range(vmax + 1):
         if v in at:
             cur = at[v]
@@ -101,6 +104,8 @@ def match(pe, de, look=400):
         if jj < len(de) and de[jj][1] == key:
             pairs.append((r, de[jj][0]))
             j = jj + 1
+        elif r < 100:
+            continue  # the boot's first samples: Dolphin's watcher may start a field late
         else:
             return pairs, (r, key)
     return pairs, None
@@ -137,7 +142,12 @@ def build_vmap(rec, ps, dtr, pairs, fail_r, strategy):
             for r in range(ra + 1, rb):
                 if st[r] != st[r - 1]:
                     last_change = r
-            sw = last_change + 1 if strategy == 'after-last-input' else ra + 1
+            # GlobalCounter does not move in a disc stall, so a change of D
+            # between two events is a wait of the game's own -- most often for
+            # this very input: it keeps the earlier offset ('before-next');
+            # the other placements are the retries
+            sw = (rb if strategy == 'before-next' else last_change + 1 if strategy == 'after-last-input'
+                  else ra + 1)
             sw = min(max(sw, ra + 1), rb)
         for r in range(ra, rb):
             D[r] = da if r < sw else db
@@ -168,12 +178,28 @@ def first_input_change(st, lo, hi):
     return None
 
 
+def field_of(pairs, r):
+    """the field Dolphin's game was at for the port's retrace r, from the matched events"""
+    best = None
+    for (rp, vp) in pairs:
+        if rp <= r:
+            best = (rp, vp)
+        else:
+            break
+    return best[1] + (r - best[0]) if best else r
+
+
 def place(rec, ps, dtr, pairs, base_vmap, r_from, shift):
-    """the map: base_vmap below r_from, the trace's GlobalCounter offsets from it"""
-    new = build_vmap(rec, ps, dtr, pairs, None, 'after-last-input')
-    vmap = list(base_vmap) if base_vmap else list(new)
+    """the map: base_vmap below r_from; from it, by the game's state: the
+    matched events say on which field Dolphin's game was in the state the
+    port's was in before PADRead r (its `s` line), and Dolphin's watcher
+    samples a field after the frame that read that field's input has run --
+    so the input of r goes on the field whose state is the port's at r + 1
+    (PLAN.md 66.3).  Between events, one field a frame from the last; past
+    the last matched event, the same."""
+    vmap = list(base_vmap) if base_vmap else [r for r in range(rec['end'] + 1)]
     for r in range(r_from, rec['end'] + 1):
-        vmap[r] = new[r] + shift
+        vmap[r] = field_of(pairs, r + 1) + shift
     for r in range(max(r_from, 1), rec['end'] + 1):
         if vmap[r] < vmap[r - 1]:
             vmap[r] = vmap[r - 1]
@@ -190,6 +216,8 @@ def main():
     ap.add_argument('--margin', type=int, default=600, help='fields past the first unmatched event')
     ap.add_argument('--window', type=int, default=90, help='frames before a divergence whose input is re-placed')
     ap.add_argument('--start-trace', help='a watch.csv of an earlier run of this recording to start from')
+    ap.add_argument('--first-horizon', type=int, default=0, help='fields the first run goes to (0: the end)')
+    ap.add_argument('--resume', help='an earlier iteration (WORKDIR/itNN): its movie, map and trace are the best so far')
     a = ap.parse_args()
     os.makedirs(a.wd, exist_ok=True)
     rec = parse_rec(a.rec)
@@ -211,6 +239,21 @@ def main():
         vmap = [r - 4 for r in range(rec['end'] + 1)]
     frozen_body, frozen_v = None, 0
     best = None           # (fail_r, vmap, body, trace, pairs)
+    if a.resume:
+        m = json.load(open(a.resume + '.map.json'))
+        rv = [None] * (rec['end'] + 1)
+        for k, v in m['vmap'].items():
+            if int(k) <= rec['end']:
+                rv[int(k)] = v
+        rbody = open(a.resume + '.dtm', 'rb').read()[256:]
+        rtr = dolphin_trace(os.path.join(a.resume, 'watch.csv'))
+        rp, rf = match(pe, events(rtr))
+        best = ((rf[0] if rf else rec['end'] + 1), rv, rbody, rtr, rp)
+        log(a.wd, f'resume {a.resume}: {len(rp)} events matched, first unmatched {rf[0] if rf else "none"}')
+        r_c = first_input_change(st, best[0] - a.window, best[0]) or max(1, best[0] - a.window)
+        frozen_v = max(0, field_of(rp, r_c) - 4)
+        frozen_body = rbody
+        vmap = place(rec, ps, rtr, rp, rv, r_c, 0)
     shifts = [0, -1, 1, -2, 2, -3, 3]
     tries = 0
     window = a.window
@@ -219,6 +262,8 @@ def main():
         info = build_dtm(rec, vmap, dtm, prefix=frozen_body, prefix_fields=frozen_v)
         body = info['body']
         horizon = vmap[rec['end']] + 120
+        if best is None and a.first_horizon:
+            horizon = min(horizon, a.first_horizon)
         if best is not None:
             horizon = min(horizon, vmap[min(best[0] + 3000, rec['end'])] + a.margin)
         t0 = time.time()
@@ -253,7 +298,7 @@ def main():
                     return 2
         bfail, bvmap, bbody, btr, bpairs = best
         r_c = first_input_change(st, bfail - window, bfail) or max(1, bfail - window)
-        frozen_v = max(0, bvmap[r_c] - 4)
+        frozen_v = max(0, field_of(bpairs, r_c) - 4)
         frozen_body = bbody
         vmap = place(rec, ps, btr, bpairs, bvmap, r_c, shifts[tries % len(shifts)])
     return 1

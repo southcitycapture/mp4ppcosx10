@@ -278,6 +278,90 @@ does by default (Lite at auto, the water at auto, the movies on, 256 MB
 kept), so running it there changes nothing.
 
 
+DEVELOPER MODE
+
+The tools the game was tested with, for anyone playtesting it: open the
+menu (F1 or M) and choose Developer Mode.
+
+  Minigame marathon
+    Plays every minigame one after another -- or a range of them (From /
+    To), or one kind (4-player, 1-vs-3, 2-vs-2, Battle, the rest), or your
+    own list (the minigame numbers, 401 to 463, in a file named
+    marathon-list.txt next to the config).  Choose how many of you play
+    (1 to 4; the computer plays the rest) and who plays whom, then Start.
+    The game closes and opens again for each minigame: it hurries there by
+    itself (about a minute and a half on a 1 GHz G4: the board is played
+    undrawn by four computer players and the roulette is set to the
+    minigame), stops at the minigame's instruction card for you -- press
+    START when you are ready (Z for the practice round) -- and after its
+    results the next one loads.  Your
+    memory card is not touched.  F1 or M during a minigame offers "Stop
+    the marathon here"; closing the window stops it too.  Either way the
+    results so far are kept, and Developer Mode offers "Resume the stopped
+    marathon".  At the end (or at a stop) the game opens with a summary:
+    every minigame played, the coins each player won in it, who won most.
+    The summary is also saved in Documents/MarioParty4 Recordings.
+    "Record each minigame" records every one of them (below).
+
+  Record this session
+    Turn it on and every launch of the game is recorded from the start:
+    the four controllers, every frame, and what the game started from (its
+    clock, the memory card as it was, the settings).  A recording starts
+    at the boot, so turning it on offers "Restart now and record".  It
+    stays on until you turn it off here (the recording in progress is
+    closed and kept).  Recordings go to Documents/MarioParty4 Recordings,
+    named by the date and time (a few megabytes an hour), with a copy of
+    the memory card beside each one.  Recording costs nothing you can see:
+    Butterfly Blitz and a board both played at 30.0 frames a second, three
+    times each, with it on and off.
+
+    What a recording is for: played back on the Mac (the G4 video below)
+    it is the same game frame for frame, and turned into a Dolphin movie it
+    plays in Dolphin (WATCHING A RECORDING IN DOLPHIN).
+
+  Soak planner
+    For the developers: the game playing itself for hours with four
+    computer players, logging every fault, stall and frame rate.  Choose
+    the board (or every board in turn), the turns, the minigames (the
+    roulette's, or the marathon's choice), Lite, the water, snapshots and
+    the length, and start it -- or only save the plan, soak-plan.txt next
+    to the config, which the lab's tools read too (isle --soakplan FILE
+    plays it from the Terminal).
+
+
+WATCHING A RECORDING IN DOLPHIN
+
+A session recording (.rec) becomes a Dolphin input movie (.dtm) on a
+computer that has Dolphin: port/tools/rec2dtm.py and
+port/tools/dolphin_sync.py (in the project's source) run Dolphin a number
+of times to find, for every frame you played, the moment the console
+reaches it -- the console waits on its disc where the Mac does not -- and
+write session.dtm and GMPE01.ini.  To watch it on a Mac:
+
+  1. Dolphin 2506 or later (dolphin-emu.org), and your own disc image of
+     Mario Party 4 (USA, Rev 1, GMPE01).
+  2. Copy GMPE01.ini into Dolphin's GameSettings folder
+     (~/Library/Application Support/Dolphin/GameSettings/GMPE01.ini; if
+     one is there already, add its [Gecko] and [Gecko_Enabled] lines to
+     yours), and turn on Config > General > Enable Cheats.  The code it
+     holds hands the game the board's random seeds the Mac used (the
+     console takes them from its clock, which no movie can set).
+  3. Graphics: any.  Config > Advanced: CPU emulation engine JIT,
+     dual core off, and leave "Enable Custom RTC" off -- the movie carries
+     the date and time the recording started from.
+  4. The memory card: a recording made on a fresh card needs nothing (the
+     movie asks Dolphin for a new, empty card and leaves yours alone).  A
+     recording made on your own card comes with NAME.rec.card.raw: put it
+     in Slot A (Config > GameCube > Slot A: Memory Card, the folder icon)
+     for the replay, and put your own card back after.
+  5. Movie > Play Input Recording... > session.dtm, and choose the disc
+     image.  Leave Movie > Read-Only Mode on.
+
+Dolphin then plays the session by itself.  Lite mode does not matter:
+the console has none, and Lite never changes what the game does, so a
+session played with Lite on replays the same game in Dolphin.
+
+
 LOADING
 
 Loading a minigame or a board is a read of your disc image, and on a slow

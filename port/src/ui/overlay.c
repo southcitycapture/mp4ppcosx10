@@ -52,8 +52,8 @@ int port_bench_child_banner(char* out, size_t n);
 void port_request_reset(void);
 
 /* ---- the frame's drawing: rectangles and strings ------------------------- */
-#define UI_MAX_RECT 12
-#define UI_MAX_TEXT 34
+#define UI_MAX_RECT 14
+#define UI_MAX_TEXT 48
 #define UI_COLS 76
 typedef struct {
     short x0, y0, x1, y1;
@@ -275,11 +275,15 @@ static void ui_submit(void) {
 }
 
 /* ---- the pages ------------------------------------------------------------ */
-enum { PG_NONE, PG_MAIN, PG_OFFER, PG_CONFIRM, PG_RESULT };
-enum { ACT_CLOSE = 1, ACT_BENCH_ASK, ACT_BENCH_GO, ACT_RESULT, ACT_BACK, ACT_OFFER_NO };
+enum { PG_NONE, PG_MAIN, PG_OFFER, PG_CONFIRM, PG_RESULT,
+       /* M51 (PLAN.md 66): Developer Mode */
+       PG_DEV, PG_MARATHON, PG_MRESULT, PG_RECORD, PG_SOAK, PG_SOAKSAVED, PG_MCHILD };
+enum { ACT_CLOSE = 1, ACT_BENCH_ASK, ACT_BENCH_GO, ACT_RESULT, ACT_BACK, ACT_OFFER_NO,
+       ACT_DEV, ACT_MARATHON, ACT_MSTART, ACT_MRESUME, ACT_RECORD, ACT_REC_RESTART, ACT_REC_LATER, ACT_SOAK,
+       ACT_SOAK_GO, ACT_SOAK_SAVE, ACT_OPT, ACT_MSTOP, ACT_DEVBACK };
 
 #define UI_MAX_LINES 18
-#define UI_MAX_ITEMS 4
+#define UI_MAX_ITEMS 13
 static struct {
     int page;
     int cursor;
@@ -289,6 +293,9 @@ static struct {
     unsigned color[UI_MAX_LINES];
     char item[UI_MAX_ITEMS][UI_COLS + 1];
     int act[UI_MAX_ITEMS];
+    int* opt[UI_MAX_ITEMS];          /* M51: an option row's value (left/right), or NULL */
+    int optn[UI_MAX_ITEMS];
+    const char* (*optname[UI_MAX_ITEMS])(int);
     char foot[UI_COLS + 1];
 } ui;
 static int ui_allowed = -1;   /* the menu at all in this run */
@@ -340,7 +347,20 @@ static void add_item(int act, const char* s) {
         return;
     }
     snprintf(ui.item[ui.nitems], sizeof(ui.item[0]), "%s", s);
+    ui.opt[ui.nitems] = NULL;
     ui.act[ui.nitems++] = act;
+}
+
+/* M51: an option row -- "Label:  < value >", left/right change it */
+static void add_opt(const char* label, int* val, int n, const char* (*name)(int)) {
+    if (ui.nitems >= UI_MAX_ITEMS) {
+        return;
+    }
+    snprintf(ui.item[ui.nitems], sizeof(ui.item[0]), "%s", label);
+    ui.opt[ui.nitems] = val;
+    ui.optn[ui.nitems] = n;
+    ui.optname[ui.nitems] = name;
+    ui.act[ui.nitems++] = ACT_OPT;
 }
 
 static const char* cfg_or(const char* k, const char* dflt) {
@@ -357,6 +377,143 @@ static void settings_lines(void) {
     add_line(C_DIM, "Now: Lite %s%s%s%s, water %s, movies %s, memory for loading %s%s", lite, *opts ? " (" : "",
              *opts ? opts : "", *opts ? ")" : "", cfg_or("water", "auto"), atoi(cfg_or("movies", "1")) ? "on" : "off",
              cfg_or("resident", "auto"), strcmp(cfg_or("resident", "auto"), "auto") ? " MB" : "");
+}
+
+/* ---- M51 (PLAN.md 66): Developer Mode's choices ---------------------------- */
+const char* port_mg_name(int num);
+const char* port_mg_kind(int num);
+int port_mg_exists(int num);
+int port_mg_type(int num);
+int port_marathon_begin(const int* list, int n, int humans, const char* cast, int record);
+int port_marathon_resume(void);
+int port_marathon_progress(int* done, int* total);
+void port_marathon_stop_request(void);
+const char* port_marathon_result_path(void);
+int port_marathon_child_banner(char* out, size_t n);
+int port_handover(int nargs, const char* const* args);
+void port_handover_tick(void);
+int port_session_recording(void);
+const char* port_session_record_path(void);
+void port_session_close(void);
+const char* port_soakplan_path(void);
+
+static int mg_all[64], mg_nall;
+static int dm_which, dm_from, dm_to = -1, dm_humans, dm_char[4] = {0, 1, 2, 3}, dm_record;
+static int sk_board = 6, sk_turns = 1, sk_mg, sk_lite, sk_water, sk_snap, sk_len = 2;
+static char dm_note[UI_COLS + 1];
+
+static void mg_all_fill(void) {
+    int n;
+    if (mg_nall) {
+        return;
+    }
+    for (n = 401; n <= 463; n++) {
+        if (port_mg_exists(n)) {
+            mg_all[mg_nall++] = n;
+        }
+    }
+    if (dm_to < 0) {
+        dm_to = mg_nall - 1;
+    }
+}
+
+static const char* CHAR_NAMES[8] = {"Mario", "Luigi", "Peach", "Yoshi", "Wario", "Donkey Kong", "Daisy", "Waluigi"};
+static const char* CHAR_ARGS[8] = {"mario", "luigi", "peach", "yoshi", "wario", "donkey", "daisy", "waluigi"};
+static const char* nm_which(int v) {
+    static const char* const w[] = {"all of them", "a range (below)", "4-player", "1-vs-3", "2-vs-2",
+                                    "Battle",      "Bowser, item, story and extra", "my list (marathon-list.txt)"};
+    return v >= 0 && v < 8 ? w[v] : "?";
+}
+static const char* nm_mg(int i) {
+    static char b[2][64];
+    static int k;
+    k ^= 1;
+    if (i < 0 || i >= mg_nall) {
+        return "?";
+    }
+    snprintf(b[k], sizeof(b[k]), "m%d %s", mg_all[i], port_mg_name(mg_all[i]));
+    return b[k];
+}
+static const char* nm_humans(int v) {
+    static const char* const h[] = {"1 (the rest COM)", "2 (the rest COM)", "3 (the rest COM)", "4"};
+    return v >= 0 && v < 4 ? h[v] : "?";
+}
+static const char* nm_char(int v) { return v >= 0 && v < 8 ? CHAR_NAMES[v] : "?"; }
+static const char* nm_onoff(int v) { return v ? "on" : "off"; }
+static const char* nm_board(int v) {
+    static const char* const b[] = {"Toad's Midway Madness", "Goomba's Greedy Gala", "Shy Guy's Jungle Jam",
+                                    "Boo's Haunted Bash",    "Koopa's Seaside Soiree", "Bowser's Gnarly Party",
+                                    "every board in turn"};
+    return v >= 0 && v < 7 ? b[v] : "?";
+}
+static const int SK_TURNS[] = {10, 20, 30, 50};
+static const char* nm_turns(int v) {
+    static char b[16];
+    snprintf(b, sizeof(b), "%d", SK_TURNS[v & 3]);
+    return b;
+}
+static const char* nm_skmg(int v) { return v ? "the marathon's selection (in turn)" : "the roulette's"; }
+static const char* nm_lite(int v) { return v == 1 ? "on" : v == 2 ? "off" : "auto"; }
+static const char* nm_water(int v) {
+    static const char* const w[] = {"auto", "off", "cheap", "full"};
+    return w[v & 3];
+}
+static const int SK_SNAP[] = {0, 5000, 20000};
+static const char* nm_snap(int v) { return v == 1 ? "every 5,000 frames" : v == 2 ? "every 20,000 frames" : "off"; }
+static const int SK_LEN[] = {30, 60, 120, 240, 480, 0};
+static const char* nm_len(int v) {
+    static const char* const l[] = {"30 minutes", "1 hour", "2 hours", "4 hours", "8 hours", "until stopped"};
+    return v >= 0 && v < 6 ? l[v] : "?";
+}
+
+/* the marathon's minigames from the choices */
+static int dm_list(int* out) {
+    int i, n = 0;
+    mg_all_fill();
+    if (dm_which == 7) {
+        char path[1100], buf[2048];
+        FILE* f;
+        snprintf(path, sizeof(path), "%s/marathon-list.txt", port_app_support_dir());
+        f = fopen(path, "r");
+        if (f) {
+            size_t k = fread(buf, 1, sizeof(buf) - 1, f);
+            char* t;
+            buf[k] = 0;
+            fclose(f);
+            for (t = strtok(buf, ", \n\r\tm"); t && n < 64; t = strtok(NULL, ", \n\r\tm")) {
+                int num = atoi(t);
+                if (port_mg_exists(num)) {
+                    out[n++] = num;
+                }
+            }
+        }
+        return n;
+    }
+    for (i = 0; i < mg_nall; i++) {
+        int t = port_mg_type(mg_all[i]);
+        int take = dm_which == 0 || (dm_which == 1 && i >= dm_from && i <= dm_to) || (dm_which == 2 && t == 0) ||
+                   (dm_which == 3 && t == 1) || (dm_which == 4 && t == 2) || (dm_which == 5 && t == 4) ||
+                   (dm_which == 6 && (t == 3 || t >= 5));
+        if (take) {
+            out[n++] = mg_all[i];
+        }
+    }
+    return n;
+}
+
+static void page_set(int pg);
+static void dev_marathon_lines(void) {
+    int list[64], n = dm_list(list), d, t;
+    if (n) {
+        add_line(C_TEXT, "%d minigame%s: m%d %s ... m%d %s", n, n > 1 ? "s" : "", list[0], port_mg_name(list[0]),
+                 list[n - 1], port_mg_name(list[n - 1]));
+    } else {
+        add_line(C_WARN, "No minigames chosen%s", dm_which == 7 ? " (marathon-list.txt is missing or empty)" : "");
+    }
+    add_line(C_DIM, "Each one: the game runs to its instruction card by itself, you play, the next loads.");
+    if (port_marathon_progress(&d, &t)) {
+        add_line(C_GOOD, "A marathon was stopped after %d of %d -- Resume picks it up.", d, t);
+    }
 }
 
 static void page_set(int pg) {
@@ -379,9 +536,103 @@ static void page_set(int pg) {
                     add_item(ACT_RESULT, "Show the last result");
                 }
             }
+            add_item(ACT_DEV, "Developer Mode");
             add_item(ACT_CLOSE, "Back to the game");
             snprintf(ui.foot, sizeof(ui.foot), "Up/Down choose - A or Return select - B or Esc back");
             break;
+        case PG_DEV:
+            snprintf(ui.title, sizeof(ui.title), "Developer Mode");
+            add_line(C_TEXT, "The playtest rig: play every minigame one after another, record what "
+                             "you play, plan a soak.");
+            add_line(port_session_recording() ? C_GOOD : C_DIM, "Recording: %s",
+                     port_session_recording() ? "on -- this session is being recorded"
+                     : (port_config_get("record") && atoi(port_config_get("record"))) ? "on from the next launch"
+                                                                                     : "off");
+            if (dm_note[0]) {
+                add_line(C_GOOD, "%s", dm_note);
+                dm_note[0] = 0;
+            }
+            add_item(ACT_MARATHON, "Minigame marathon");
+            add_item(ACT_RECORD, (port_session_recording() || (port_config_get("record") &&
+                                                               atoi(port_config_get("record"))))
+                                     ? "Record this session: ON  (select to turn off)"
+                                     : "Record this session: OFF (select to turn on)");
+            add_item(ACT_SOAK, "Soak planner");
+            add_item(ACT_BACK, "Back");
+            snprintf(ui.foot, sizeof(ui.foot), "Up/Down choose - A or Return select - B back");
+            break;
+        case PG_MARATHON: {
+            int d, t;
+            mg_all_fill();
+            snprintf(ui.title, sizeof(ui.title), "Minigame marathon");
+            dev_marathon_lines();
+            add_opt("Minigames", &dm_which, 8, nm_which);
+            if (dm_which == 1) {
+                add_opt("From", &dm_from, mg_nall, nm_mg);
+                add_opt("To", &dm_to, mg_nall, nm_mg);
+            }
+            add_opt("Players at the controllers", &dm_humans, 4, nm_humans);
+            add_opt("Player 1", &dm_char[0], 8, nm_char);
+            add_opt("Player 2", &dm_char[1], 8, nm_char);
+            add_opt("Player 3", &dm_char[2], 8, nm_char);
+            add_opt("Player 4", &dm_char[3], 8, nm_char);
+            add_opt("Record each minigame", &dm_record, 2, nm_onoff);
+            add_item(ACT_MSTART, "Start the marathon");
+            if (port_marathon_progress(&d, &t)) {
+                add_item(ACT_MRESUME, "Resume the stopped marathon");
+            }
+            add_item(ACT_DEVBACK, "Back");
+            snprintf(ui.foot, sizeof(ui.foot), "Up/Down choose - Left/Right change - A select - B back");
+            break;
+        }
+        case PG_RECORD:
+            snprintf(ui.title, sizeof(ui.title), "Record this session");
+            add_line(C_TEXT, "Recording is on. A recording starts at the boot -- the start state and "
+                             "every controller's every frame -- so it can be played back exactly, "
+                             "on this Mac or in Dolphin.");
+            add_line(C_DIM, "Recordings go to Documents/MarioParty4 Recordings (a few MB an hour).");
+            add_line(C_DIM, "Every launch records until you turn it off here.");
+            add_item(ACT_REC_RESTART, "Restart now and record");
+            add_item(ACT_REC_LATER, "Keep playing (record from the next launch)");
+            snprintf(ui.foot, sizeof(ui.foot), "Up/Down choose - A or Return select");
+            break;
+        case PG_SOAK:
+            snprintf(ui.title, sizeof(ui.title), "Soak planner");
+            add_line(C_TEXT, "The game plays itself (four COMs, no controller needed) and logs every "
+                             "fault, stall and frame rate. The plan is saved as soak-plan.txt, which "
+                             "the lab's chain tools read too.");
+            add_opt("Board", &sk_board, 7, nm_board);
+            add_opt("Turns", &sk_turns, 4, nm_turns);
+            add_opt("Minigames", &sk_mg, 2, nm_skmg);
+            add_opt("Lite", &sk_lite, 3, nm_lite);
+            add_opt("Water", &sk_water, 4, nm_water);
+            add_opt("Snapshots", &sk_snap, 3, nm_snap);
+            add_opt("Length", &sk_len, 6, nm_len);
+            add_item(ACT_SOAK_GO, "Start the soak");
+            add_item(ACT_SOAK_SAVE, "Save the plan only");
+            add_item(ACT_DEVBACK, "Back");
+            snprintf(ui.foot, sizeof(ui.foot), "Up/Down choose - Left/Right change - A select - B back");
+            break;
+        case PG_SOAKSAVED:
+            snprintf(ui.title, sizeof(ui.title), "Soak planner");
+            add_line(C_GOOD, "The plan is saved:");
+            add_line(C_DIM, "%s", port_soakplan_path());
+            add_line(C_TEXT, "Start it later from here, or on the command line: isle --soakplan FILE");
+            add_item(ACT_DEVBACK, "OK");
+            break;
+        case PG_MCHILD: {
+            char b[160];
+            snprintf(ui.title, sizeof(ui.title), "Minigame marathon");
+            (void)b;
+            if (port_opt.marathonchild) {
+                add_line(C_TEXT, "Now playing %s", port_opt.marathonchild);
+            }
+            add_line(C_DIM, "Stopping keeps the results so far; Developer Mode resumes from the next one.");
+            add_item(ACT_CLOSE, "Back to the minigame");
+            add_item(ACT_MSTOP, "Stop the marathon here");
+            snprintf(ui.foot, sizeof(ui.foot), "Up/Down choose - A or Return select - B back");
+            break;
+        }
         case PG_OFFER:
             snprintf(ui.title, sizeof(ui.title), "Welcome!");
             add_line(C_TEXT, "Mario Party 4 can measure this Mac and choose its settings for you.");
@@ -410,10 +661,14 @@ static void page_set(int pg) {
             add_item(ACT_BACK, "Cancel");
             snprintf(ui.foot, sizeof(ui.foot), "Up/Down choose - A or Return select - B back");
             break;
+        case PG_MRESULT:
         case PG_RESULT: {
-            FILE* f = fopen(port_opt.benchresult ? port_opt.benchresult : port_bench_result_path(), "r");
+            FILE* f = fopen(pg == PG_MRESULT ? (port_opt.marathonresult ? port_opt.marathonresult
+                                                                        : port_marathon_result_path())
+                            : port_opt.benchresult ? port_opt.benchresult : port_bench_result_path(), "r");
             char buf[256];
-            snprintf(ui.title, sizeof(ui.title), "Benchmark Mode: the result");
+            snprintf(ui.title, sizeof(ui.title), pg == PG_MRESULT ? "Minigame marathon: the summary"
+                                                                 : "Benchmark Mode: the result");
             if (!f) {
                 add_line(C_WARN, "No result found.");
             } else {
@@ -478,7 +733,137 @@ static void ui_act(int act) {
         case ACT_BACK:
             page_set(PG_MAIN);
             break;
+        /* ---- M51 (PLAN.md 66): Developer Mode ---- */
+        case ACT_DEV:
+        case ACT_DEVBACK:
+            page_set(PG_DEV);
+            break;
+        case ACT_MARATHON:
+            page_set(PG_MARATHON);
+            break;
+        case ACT_OPT:
+            if (ui.opt[ui.cursor]) {
+                int c = ui.cursor;
+                *ui.opt[ui.cursor] = (*ui.opt[ui.cursor] + 1) % ui.optn[ui.cursor];
+                page_set(ui.page);
+                ui.cursor = c < ui.nitems ? c : ui.nitems - 1;
+            }
+            break;
+        case ACT_MSTART: {
+            int list[64], n = dm_list(list);
+            char cast[96];
+            snprintf(cast, sizeof(cast), "%s,%s,%s,%s", CHAR_ARGS[dm_char[0]], CHAR_ARGS[dm_char[1]],
+                     CHAR_ARGS[dm_char[2]], CHAR_ARGS[dm_char[3]]);
+            if (n && port_marathon_begin(list, n, dm_humans + 1, cast, dm_record)) {
+                page_set(PG_NONE);
+            }
+            break;
+        }
+        case ACT_MRESUME:
+            if (port_marathon_resume()) {
+                page_set(PG_NONE);
+            }
+            break;
+        case ACT_MSTOP:
+            page_set(PG_NONE);
+            port_marathon_stop_request();
+            break;
+        case ACT_RECORD:
+            if (port_session_recording() || (port_config_get("record") && atoi(port_config_get("record")))) {
+                const char* rp = port_session_record_path();
+                const char* slash = rp ? strrchr(rp, '/') : NULL;
+                if (!port_opt.noconfig) {
+                    port_config_set("record", "0");
+                    port_config_save();
+                }
+                if (port_session_recording()) {
+                    snprintf(dm_note, sizeof(dm_note), "Recording off; kept %.50s", slash ? slash + 1 : "");
+                    port_session_close();
+                } else {
+                    snprintf(dm_note, sizeof(dm_note), "Recording off.");
+                }
+                page_set(PG_DEV);
+            } else {
+                if (!port_opt.noconfig) {
+                    port_config_set("record", "1");
+                    port_config_save();
+                }
+                page_set(PG_RECORD);
+            }
+            break;
+        case ACT_REC_RESTART: {
+            const char* none[1] = {"--nomenu"};
+            (void)none;
+            page_set(PG_NONE);
+            port_handover(0, none);
+            break;
+        }
+        case ACT_REC_LATER:
+            snprintf(dm_note, sizeof(dm_note), "Recording from the next launch.");
+            page_set(PG_DEV);
+            break;
+        case ACT_SOAK:
+            page_set(PG_SOAK);
+            break;
+        case ACT_SOAK_GO:
+        case ACT_SOAK_SAVE: {
+            FILE* f = fopen(port_soakplan_path(), "w");
+            if (f) {
+                int list[64], n = 0, i;
+                fprintf(f, "# Mario Party 4 PowerPC Edition -- a soak plan (Developer Mode, M51; PLAN.md 66.1)\n");
+                fprintf(f, "# isle --soakplan THIS_FILE plays it; tools/m51_soakplan.sh reads it too\n");
+                if (sk_board == 6) {
+                    fprintf(f, "boards = 1+\n");
+                } else {
+                    fprintf(f, "boards = %d\n", sk_board + 1);
+                }
+                fprintf(f, "turns = %d\n", SK_TURNS[sk_turns & 3]);
+                if (sk_mg) {
+                    n = dm_list(list);
+                }
+                fprintf(f, "minigames = ");
+                if (!n) {
+                    fprintf(f, "all");
+                }
+                for (i = 0; i < n && i < 16; i++) {
+                    fprintf(f, "%s%d", i ? "," : "", list[i]);
+                }
+                fprintf(f, "\nlite = %s\nwater = %s\nsnapshots = %d\nminutes = %d\n", nm_lite(sk_lite),
+                        nm_water(sk_water), SK_SNAP[sk_snap % 3], SK_LEN[sk_len % 6]);
+                fclose(f);
+            }
+            if (act == ACT_SOAK_GO && f) {
+                const char* args[2];
+                args[0] = "--soakplan";
+                args[1] = port_soakplan_path();
+                page_set(PG_NONE);
+                port_handover(2, args);
+            } else {
+                page_set(PG_SOAKSAVED);
+            }
+            break;
+        }
         default:
+            break;
+    }
+}
+
+/* B / Esc: one page up */
+static void ui_back(void) {
+    switch (ui.page) {
+        case PG_CONFIRM:
+        case PG_RESULT:
+        case PG_DEV:
+            page_set(PG_MAIN);
+            break;
+        case PG_MARATHON:
+        case PG_RECORD:
+        case PG_SOAK:
+        case PG_SOAKSAVED:
+            page_set(PG_DEV);
+            break;
+        default:
+            ui_close();
             break;
     }
 }
@@ -491,11 +876,16 @@ static int ui_scripted(void) {
 
 static int allowed(void) {
     if (ui_allowed < 0) {
-        ui_allowed = !port_opt.nomenu && !port_opt.benchchild && !port_opt.headless &&
-                     (!ui_scripted() || port_opt.menu || port_opt.benchresult);
-        ui_offer_due = ui_allowed && !ui_scripted() && !port_opt.benchresult && !port_config_get("benchoffer");
+        ui_allowed = !port_opt.nomenu && !port_opt.benchchild && !port_opt.headless && !port_opt.replay &&
+                     (!ui_scripted() || port_opt.menu || port_opt.benchresult || port_opt.marathonchild ||
+                      port_opt.marathonresult);
+        ui_offer_due = ui_allowed && !ui_scripted() && !port_opt.benchresult && !port_opt.marathonresult &&
+                       !port_opt.marathonchild && !port_opt.session_record && !port_config_get("benchoffer");
         if (port_opt.benchresult) {
             page_set(PG_RESULT);
+        }
+        if (port_opt.marathonresult) {
+            page_set(PG_MRESULT); /* M51: the marathon's summary */
         }
     }
     return ui_allowed;
@@ -511,7 +901,7 @@ int port_ui_key(int sym) {
     }
     if (sym == SDLK_F1 || sym == SDLK_m) {
         if (ui.page == PG_NONE) {
-            page_set(PG_MAIN);
+            page_set(port_opt.marathonchild ? PG_MCHILD : PG_MAIN);
             port_log("port> menu (M50): opened (%s)\n", sym == SDLK_F1 ? "F1" : "M");
         } else {
             ui_close();
@@ -519,11 +909,7 @@ int port_ui_key(int sym) {
         return 1;
     }
     if (ui.page != PG_NONE && sym == SDLK_ESCAPE) {
-        if (ui.page == PG_CONFIRM || ui.page == PG_RESULT) {
-            page_set(PG_MAIN);
-        } else {
-            ui_close();
-        }
+        ui_back();
         return 1;
     }
 #else
@@ -538,6 +924,7 @@ void port_ui_pad(void* status4) {
     PADStatus* st = (PADStatus*)status4;
     u16 b = 0, edge;
     int i, up = 0, down = 0;
+    int lr_seen[PAD_CHANMAX] = {0, 0, 0, 0};
     if (ui.page == PG_NONE) {
         return;
     }
@@ -546,6 +933,7 @@ void port_ui_pad(void* status4) {
             continue;
         }
         b |= st[i].button;
+        lr_seen[i] = st[i].stickX;
         if (st[i].stickY > 48) {
             up = 1;
         } else if (st[i].stickY < -48) {
@@ -561,6 +949,14 @@ void port_ui_pad(void* status4) {
     }
     if (down) {
         b |= PAD_BUTTON_DOWN;
+    }
+    for (i = 0; i < PAD_CHANMAX; i++) {
+        /* M51: left/right for the option rows (read before the slots were zeroed) */
+        if (lr_seen[i] > 48) {
+            b |= PAD_BUTTON_RIGHT;
+        } else if (lr_seen[i] < -48) {
+            b |= PAD_BUTTON_LEFT;
+        }
     }
     edge = (u16)(b & ~pad_prev);
     pad_prev = b;
@@ -585,21 +981,24 @@ void port_ui_pad(void* status4) {
             ui.cursor = (ui.cursor + 1) % ui.nitems;
         }
     }
-    if ((edge & (PAD_BUTTON_A | PAD_BUTTON_START)) && ui.nitems) {
+    if ((edge & (PAD_BUTTON_LEFT | PAD_BUTTON_RIGHT)) && ui.nitems && ui.opt[ui.cursor]) {
+        /* M51: an option row */
+        int c = ui.cursor, n = ui.optn[c];
+        *ui.opt[c] = (*ui.opt[c] + ((edge & PAD_BUTTON_RIGHT) ? 1 : n - 1)) % n;
+        page_set(ui.page);
+        ui.cursor = c < ui.nitems ? c : ui.nitems - 1;
+    } else if ((edge & (PAD_BUTTON_A | PAD_BUTTON_START)) && ui.nitems) {
         ui_act(ui.act[ui.cursor]);
     } else if (edge & PAD_BUTTON_B) {
-        if (ui.page == PG_CONFIRM || ui.page == PG_RESULT) {
-            page_set(PG_MAIN);
-        } else {
-            ui_close();
-        }
+        ui_back();
     }
 }
 
 /* ---- each presented frame (gl13_present, the game thread) ------------------ */
 static void ui_layout(void) {
     int i, y, x0 = 36, x1 = 604, top, h;
-    h = 70 + ui.nlines * 17 + 14 + ui.nitems * 24 + 34;
+    int ih = ui.nitems > 9 ? 21 : 24; /* M51: the Developer Mode pages' longer lists */
+    h = 70 + ui.nlines * 17 + 14 + ui.nitems * ih + 34;
     top = (480 - h) / 2;
     if (top < 8) {
         top = 8;
@@ -614,12 +1013,17 @@ static void ui_layout(void) {
         d_text(x0 + 18, y, 1, ui.color[i], ui.line[i]);
     }
     y += 14;
-    for (i = 0; i < ui.nitems; i++, y += 24) {
+    for (i = 0; i < ui.nitems; i++, y += ih) {
         char s[UI_COLS + 4];
         if (i == ui.cursor) {
-            d_rect(x0 + 12, y - 4, x1 - 12, y + 20, 60, 90, 170, 255);
+            d_rect(x0 + 12, y - 3, x1 - 12, y + ih - 4, 60, 90, 170, 255);
         }
-        snprintf(s, sizeof(s), "%s %s", i == ui.cursor ? ">" : " ", ui.item[i]);
+        if (ui.opt[i]) {
+            snprintf(s, sizeof(s), "%s %-26s < %s >", i == ui.cursor ? ">" : " ", ui.item[i],
+                     ui.optname[i](*ui.opt[i]));
+        } else {
+            snprintf(s, sizeof(s), "%s %s", i == ui.cursor ? ">" : " ", ui.item[i]);
+        }
         d_text(x0 + 20, y, 1, i == ui.cursor ? 0xFFFFFFu : C_TEXT, s);
     }
     d_text(x0 + 18, top + h - 24, 1, C_DIM, ui.foot);
@@ -630,6 +1034,7 @@ void port_ui_frame(void) {
     char banner[160];
     unsigned f = gl13_frame_number();
     port_bench_tick();
+    port_handover_tick();
     memset(&ui_d, 0, offsetof(UiDraw, rect));
     if (port_opt.benchchild) {
         /* Benchmark Mode's child run: one strip at the top */
@@ -658,11 +1063,20 @@ void port_ui_frame(void) {
                 ui_act(ACT_BENCH_GO);
                 return;
             }
-            page_set(!pg                        ? PG_MAIN
-                     : !strcmp(pg + 1, "offer")   ? PG_OFFER
-                     : !strcmp(pg + 1, "confirm") ? PG_CONFIRM
-                     : !strcmp(pg + 1, "result")  ? PG_RESULT
-                                                  : PG_MAIN);
+            page_set(!pg                         ? PG_MAIN
+                     : !strcmp(pg + 1, "offer")    ? PG_OFFER
+                     : !strcmp(pg + 1, "confirm")  ? PG_CONFIRM
+                     : !strcmp(pg + 1, "result")   ? PG_RESULT
+                     : !strcmp(pg + 1, "dev")      ? PG_DEV      /* M51 */
+                     : !strcmp(pg + 1, "marathon") ? PG_MARATHON
+                     : !strcmp(pg + 1, "record")   ? PG_RECORD
+                     : !strcmp(pg + 1, "soak")     ? PG_SOAK
+                     : !strcmp(pg + 1, "mresult")  ? PG_MRESULT
+                     : !strcmp(pg + 1, "mchild")   ? PG_MCHILD
+                                                   : PG_MAIN);
+            if (ui.page == PG_MARATHON || ui.page == PG_SOAK) {
+                ui.cursor = 1; /* a row with its value, for the picture */
+            }
             port_log("port> menu (M50): --menu opened page %d at drawn frame %u\n", ui.page, f);
         }
     }
@@ -682,6 +1096,20 @@ void port_ui_frame(void) {
  * black screen now and then while it fast-forwards (gl13.c) */
 int port_ui_ffto_frame(unsigned frame) {
     char banner[160];
+    if (port_opt.marathonchild && (frame % 60u) == 1u && port_marathon_child_banner(banner, sizeof(banner))) {
+        /* M51: the marathon's child on its way to the minigame */
+        unsigned left = frame < (unsigned)port_opt.ffto ? ((unsigned)port_opt.ffto - frame) / 150u : 0u;
+        char eta[64];
+        memset(&ui_d, 0, offsetof(UiDraw, rect));
+        ui_d.clear = 1;
+        d_text(40, 180, 2, C_TITLE, "Minigame marathon");
+        d_text(40, 230, 1, C_TEXT, banner);
+        snprintf(eta, sizeof(eta), "Getting to the minigame -- about %u s.", left);
+        d_text(40, 256, 1, C_DIM, eta);
+        d_text(40, 282, 1, C_DIM, "Get ready: press START on the instruction card. F1 or M: the menu.");
+        ui_submit();
+        return 1;
+    }
     if (!port_opt.benchchild || (frame % 60u) != 1u || !port_bench_child_banner(banner, sizeof(banner))) {
         return 0;
     }

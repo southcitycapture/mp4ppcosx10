@@ -1669,6 +1669,8 @@ int port_parse_args(int argc, char** argv) {
             port_opt.soakplan = argv[++i];
         } else if (!strcmp(a, "--devmode")) {
             port_opt.devmode = 1;
+        } else if (!strcmp(a, "--keepplay")) {
+            port_opt.keepplay = 1;
         } else if (!strcmp(a, "--clockskew") && i + 1 < argc) {
             port_opt.clockskew = strtoll(argv[++i], NULL, 0);
             port_opt.clockskew_set = 1;
@@ -1989,6 +1991,11 @@ int main(int argc, char** argv) {
             }
             return 0;
         }
+    }
+    if (port_opt.marathon) {
+        /* M51 (PLAN.md 66.1): the minigame marathon's driver (src/ui/marathon.c) */
+        void port_marathon_driver(void);
+        port_marathon_driver();
     }
     if (port_opt.benchmark) {
         /* M50 (PLAN.md 65): Benchmark Mode's driver -- no window of its own;
