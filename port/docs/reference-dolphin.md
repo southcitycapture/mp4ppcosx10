@@ -185,7 +185,26 @@ with no CLI trigger. Ignore them; the frame dump is strictly better for this pur
 
 ## 5. Input movies (`.dtm`)
 
-### 5.1 `-m` does not work in this build
+### 5.1 M51 (2026-09-30): `-m` works -- the header's `tickCount` was 0
+
+**Superseded by PLAN.md 66.3.**  Dolphin ends a movie the moment the
+emulated tick count passes the header's `tickCount` (`MovieManager::
+CheckInputEnd`), and `mkdtm.py` wrote 0 there, so every movie below ended at
+its first poll -- in read-write mode Dolphin then simply went on recording,
+which is everything the tests below saw (the RTC, read with the header,
+had already been applied).  With `tickCount` past the end
+(`port/tools/rec2dtm.py` writes (fields + 600) / 59.94 x 486 MHz x 1.5) the
+movie plays, on the Linux Flatpak 2606a at least.  Facts measured with it:
+two SI polls a field, and **the game's PADRead at VCounter v reads poll
+2v + 53** (2v + 9 with "fast disc speed"); the console's clock at
+HuSysInit's `frand()` is the RTC + **2,702,265 ticks** (the port's
+recordings start their deterministic clock 2,265 ticks later to match);
+Dolphin's frame dump lags its timestamps: a dumped frame at time t shows
+field round(t x 59.94) + 10.
+
+The original section, kept for the record:
+
+### 5.1 (M10) `-m` does not work in this build
 
 In principle:
 

@@ -26786,3 +26786,574 @@ barrier) must be off there -- the MacBook had not played a board since
 M42 and nobody had run one on it; presented-frame numbers step over
 consumed frames, so a lab switch keyed to frame N must fire at the first
 frame >= N.
+
+## 66. M51 log: Developer Mode and the playtest rig *(2026-09-30/10-01, littlejelly)*
+
+M50 left 0.9.19 at 81 of 82 (Manta Rings at the edge), Benchmark Mode in
+the overlay menu, and `m441.blob` (the N64-style disc under each net) as an
+option.  M51's brief: the last tools before RC1, where the user plays every
+minigame himself -- read M50's soak (item 0); **Developer Mode** in the
+overlay menu next to Benchmark Mode: a minigame marathon, session
+recording, a soak planner (item 1); **the Dolphin replay**: a recording as a
+Dolphin input movie that plays the session exactly, proved on a whole
+minigame and a board turn (item 2); **the G4 video**: a recording
+re-rendered on the G4 in lockstep with its sound, and the G4 beside Dolphin
+(item 3); the user's follow-up to the round shadow -- **every** shadow of
+Butterfly Blitz a blob, `m441.bloball` (item 4); the scoreboard, Manta
+Rings' five-run A/B, the picture checks and the md5 walks on the final
+build (item 5); 0.9.20 after a soak of two hours or more.
+
+**The short answer.**  **Developer Mode** is in the overlay menu (F1 or M,
+under Benchmark Mode): the **minigame marathon** (all 63 minigames, a range,
+a kind or your own list; 1-4 people, the rest COM, each player's character;
+each minigame a child run of the game that hurries to the instruction card
+and waits for START; results saved as they come, stop and resume, a summary
+page and text file -- tested end to end on the G4), **Record this session**
+(every launch recorded from the boot: the four controllers each retrace, the
+start state, a copy of the card; **no measurable cost**, 30.0 x3 with and
+without on m441 and a board; a recording replays on the G4 **in step to the
+end**), and the **soak planner** (`soak-plan.txt`, `--soakplan`).  **The G4
+video**: `tools/session_video.sh REC` replays a recording on the G4 in
+lockstep with every frame dumped and the mixer's sound, then makes
+`~/mp4-videos/NAME-g4.mp4` and, with Dolphin's run of the same session,
+`NAME-side.mp4` (both made for the session `t4`).  **The Dolphin replay**
+works -- `.dtm` playback had only ever failed on a zero `tickCount` -- and
+is **exact from the boot through the human's first turn and the first
+computer player's** (10,302 frames, every random draw in order): from there
+the console's computer player starts its turn 49 frames later (the
+console's own waits) and the boards part; **re-joined at the instruction
+card** by a one-frame Gecko hand-over of the RNG states, **Tree Stomp plays
+with every random draw in step for 34 s** while the characters' positions
+drift (the port's float rounding is not the console's to the last bit) and
+the minigame's result differs -- what holds, what does not and why, in
+66.3; the movie for the user's Mac in `~/mp4-videos/t4-dolphin/`.
+**`m441.bloball`** (every Butterfly Blitz shadow a round blob): the same
+game on both casts, **30.0 x3, the drawn frame 20.2 ms against 24.1** --
+off until the user approves `docs/screenshots/m51-blob-all-m441.jpg`.
+**The scoreboard: 80 of 82** (m401 30.0; m409 and m433 29.1 on the count,
+m433 29.9 on both builds in the A/B, m409 at the edge on both (0.9.19 28.9, 0.9.20 29.4)); the md5 walks the references, the picture checks 636 of 638
+(m427's known river state), a 2 h 05 min soak with 0 faults and no lock-up.
+**0.9.20**, `littlejelly:~/MarioParty4-PowerPC-0.9.20.dmg`.
+
+### 66.1 M50's soak, read (item 0)
+
+M50's leave-behind (`isle --soak --com4 --rtc dolphin --freshcard --status
+--perf` on 0.9.19, `eaa9c87f`, pid 50540, from 17:55) was read and stopped
+by pid at 19:10 G4 time (one SIGINT, `EXITCODE=0`;
+`docs/soak/m51/m51-soak-m50-leave.log.gz`): **4,711.0 s of game against
+4,711.1 s of wall (100.0%)**, 282,360 retraces, the whole 20-turn board and
+the first turn of the next, 22 minigame modules; **0 faults, 0 resyncs, no
+lock-up**, the worst frame 687 ms behind, 113 `stall:` lines, 35 underruns
+(all in the boot, the character select and the board's first turn); three
+`STUCK` lines at the board's end, the mode select and the character select
+(the soak's own navigation -- as every soak's).  One thing on littlejelly
+instead: a `make -j4` container of M50's (`docker` 59e7635e, started 09:03)
+had spun on one core for eleven hours over three zombie compilers; it was
+stopped by its container id (it halved Dolphin's speed, 66.3).
+
+### 66.2 Developer Mode (item 1)
+
+The overlay menu (F1 or M, M50) gains **Developer Mode** under Benchmark
+Mode: a page with the three tools, each a page of option rows -- the
+overlay learned left/right (`< value >` rows, the stick or the D-pad or the
+arrow keys), up to 13 rows, the rows a little closer when there are more
+than nine.  `--menu N/dev|marathon|record|soak|mchild|mresult` opens each for
+the lab's pictures (`docs/screenshots/m51-*.jpg`).
+
+**The minigame marathon** (`src/ui/marathon.c`).  Choose the minigames --
+all 63 entries of `mgInfoTbl` (`m452`/`m454` are m450's variants, listed by
+number), a range (From / To), a kind (4-player, 1-vs-3, 2-vs-2, Battle, the
+rest) or your own list (`marathon-list.txt`, numbers) -- the players at the
+controllers (1-4, the rest COM), each player's character, and whether each
+minigame is recorded; Start leaves the game through its quit path and the
+game starts again as the driver, `isle --marathon PLAN`, which opens no
+window and plays the list as child runs of the same program, Benchmark
+Mode's shape (fork + exec, Leopard's rule): each child is the scoreboard's
+teleport -- `--minigame N --turns 1 --com4 --cast ... --play
+board-start-com4.play --nomovies --rtc dolphin --freshcard --ffto 14000` --
+plus the two new flags, **`--humans N`** (from the instruction card on, the
+first N players are the people at pads 1..N and the rest COM; the walk's
+script lets go of controller 1 then, `pad_play_stop`) and **`--mgexit`**
+(the child leaves when the minigame's results are over; one log line,
+`marathon: result m441 coins +a +b +c +d frames F`, the coins each player
+gained from the minigame's entry to the results' end), and
+`--marathonchild "K of N: NAME"`, its banner on the black screen while
+`--ffto` runs ahead ("Getting to the minigame -- about N s"; 57 s on the
+G4: 14,000 frames at 246 a second) and the child's own menu page ("Stop
+the marathon here").  The instruction card waits for **START** (Z for the
+practice round) -- with people playing it is not auto-started; the banner
+says so.  Each result goes into the plan file at once
+(`marathon.txt`: `list`, `humans`, `cast`, `record`, `next`, `rNNN = ...`),
+so a stop -- the child's "Stop the marathon here", a closed window, a child
+that ends without its results -- keeps what was played and Developer Mode
+offers "Resume the stopped marathon".  At the end (or a stop) the driver
+starts the game again with `--marathonresult`: the summary page (each
+minigame, the coins each player won in it, the time, who won most) -- also
+written as `Documents/MarioParty4 Recordings/Marathon DATE.txt`.  The
+children read the player's config (Lite, the water, fullscreen, the
+controls file) and play on the scratch card.
+
+On the G4 (`d5`..`d7`, the job `marathon1..3`): a two-minigame marathon
+(m401, m441) with one person and `record = 1`.  The first two attempts
+stopped at m401's card -- correctly: nobody pressed START (the lab has no
+person; the plan's `childflags = --keepplay --play mg-human.play` then gave
+"player 1" a scripted stand-in, `--keepplay` keeping the script after the
+handover) -- and showed the stop path whole: the summary "! The marathon
+was stopped", `next = 0` kept.  The third played both: **m401 +0 +0 +10
++0 in 2:01, m441 +0 +0 +0 +0 in 2:42** (Butterfly Blitz is a Battle
+minigame: its coins move at the board's results, not in the minigame's,
+which the summary's column reads as no change), 412 s from Start to the
+summary, two recordings in `Documents/MarioParty4 Recordings`
+(`... marathon m401.rec`, `... marathon m441.rec`).
+
+**Session recording** (`src/debug/session.c`; `--sessionrec FILE`,
+`--replay FILE`, `--replayexit`).  What a session is: from the boot, with
+the deterministic clock (`--rtc`), everything the game can see that does
+not come from the disc --
+
+* the four PADStatus as `PADRead` hands them over each retrace (after the
+  overlay menu has taken what it reads, after the harness's own thumb):
+  `p R PORT ERR BTN SX SY CX CY TL TR`, written when a controller changes;
+* the start state: the clock's origin (`rtc`, `seed`), the card (fresh,
+  or a copy of the player's beside the recording, `NAME.rec.card.raw` --
+  the port's card is Dolphin's layout), the settings the config resolved
+  (movies, Lite and its options, the water), the harness's flags, the
+  whole command line -- the header's `replay` line is what `--replay`
+  puts in front of the command line;
+* the harness's writes (`w R REGION OFF HEX`: GWPlayerCfg, GWPlayer and
+  GWSystem diffed around `port_selfplay_tick` -- a marathon child's parks);
+* `b R SEED`: the board RNG's seed as BoardRandInit reads it (patches.txt
+  M51, read only);
+* `s R GC OVL FRAND RND8 BRAND W0..W5`: the game's signature at the end of
+  each frame, written when it moves -- GlobalCounter, the overlay, the
+  engine RNG, rand8's LCG, the board RNG and the first six message windows'
+  typing (`winData[i].num_chars/max_chars`, the console's layout --
+  `_Static_assert`s on it); `m R TEXT` notes (minigame entered / left /
+  results / the coins).
+
+`--replay` replaces the four PADStatus from the file every retrace and
+checks the live signature against the recording's each frame, then says
+"in step to the end" or the first retrace out of step.
+
+**"Record this session"** in Developer Mode sets `record = 1` in the
+config: every launch records from the boot to `~/Documents/MarioParty4
+Recordings/DATE TIME.rec` (turning it on offers "Restart now and record";
+turning it off closes the recording in progress and keeps it).  A
+recording needs the deterministic clock, so a recording launch starts it at
+the calendar's reading (`--rtc NOW`) -- the game as random as ever, and the
+recording says how -- and **2,265 ticks later than `--rtc` alone**
+(`--clockskew`, `PORT_CONSOLE_BOOT_SKEW`): the console's clock at
+HuSysInit's `frand()` is its RTC + 2,702,265 ticks (Dolphin, two RTCs, the
+RNG step inverted), the port's deterministic clock RTC + 4 retraces =
+2,700,000 -- with the skew the engine RNG's first state is the console's
+(`db27ffb1` at the pinned RTC, both rigs).  A replay of a recording, a
+marathon child and every lab run are unaffected (the skew is the
+recording's, in its header).
+
+The proofs on the G4: a session of `board-start.play` (1 human + 3 COM,
+the A metronome) recorded undrawn (`--turbo --nodraw`) replayed **in step
+for 21,996 frames**; a session played **at real time, drawn** (the human
+walk with `humanlike.py`'s player from frame 13,000: the stick wandering,
+A/B/X/Y at uneven intervals, now and then A mashed), 22,000 frames, the
+first turn of Toad's Midway Madness and Tree Stomp (m419), replayed **in
+step to the end in lockstep, drawn, and undrawn** -- the real-time frame
+mode (consumed frames, the render thread) changes nothing the game sees.
+
+**What it costs** (`docs/soak/m51/rcost/`, the scoreboard's teleport at
+real time, interleaved, three runs each):
+
+| scene | arm | presented fps (runs) | median | drawn frame | consumed | rt | dec |
+|---|---|---|---:|---:|---:|---:|---:|
+| m441 Butterfly Blitz | no recording | 30.0 / 29.9 / 30.0 | **30.0** | 24.1 | 6.0 | 17.2 | 8.8 |
+| m441 | `--sessionrec` | 30.0 / 30.0 / 30.0 | **30.0** | 24.1 | 6.1 | 17.0 | 8.8 |
+| b1 Toad's Midway Madness | no recording | 30.0 / 30.0 / 30.0 | **30.0** | 18.5 | 5.8 | 13.1 | 5.4 |
+| b1 | `--sessionrec` | 30.0 / 30.0 / 30.0 | **30.0** | 18.9 | 5.8 | 13.3 | 5.0 |
+
+No measurable cost (the board's drawn frame within its run-to-run spread).
+A recording is ~190 KB for a 90-s minigame run, ~570 KB for 22,000 frames
+of play (mostly the `s` lines; a human's controller changes add a few KB a
+minute).
+
+**The soak planner** (`src/ui/soakplan.c`): board (one of six or every
+board in turn), turns (10/20/30/50), minigames (the roulette's, or the
+marathon's selection, up to 16 in turn), Lite, the water, snapshots,
+length (30 min .. 8 h, or until stopped); "Start the soak" writes
+`soak-plan.txt` and starts the game again as `isle --soakplan FILE`, which
+main() expands into the release soak's line (`--soak --com4 --rtc dolphin
+--freshcard --status --perf --stuckwatch 200 --ovllog` + the plan's flags);
+"Save the plan only" just writes it.  `tools/m51_soakplan.sh PLAN` prints the
+same flags for the chain tools.
+
+### 66.3 The Dolphin replay (item 2)
+
+**What Dolphin needs, found one by one** (`tools/rec2dtm.py`,
+`tools/dolphin_watch.py`, `tools/dolphin_sync.py`; Dolphin 2606a, the
+Flatpak on littlejelly; the format from Dolphin's own `Movie.h` /
+`Movie.cpp`, fetched to `~/dolphin-src`):
+
+1. **`.dtm` playback works -- once `tickCount` is set.**  Dolphin ends a
+   movie the moment the emulated tick count passes the header's
+   `tickCount` (`CheckInputEnd`), and `mkdtm.py` (M10) left it 0: every
+   movie ended at its first poll and Dolphin went on recording (read-write
+   mode), which is the whole of reference-dolphin.md's "-m does nothing"
+   (the RTC from the header had already taken effect, which is why it
+   looked half-working).  With the tick count past the end the movie plays
+   (a stick ramp and button patterns read back through MemoryWatcher).
+2. **Two SI polls a field; the game's PADRead at VCounter v reads poll
+   2v + 53** -- measured by encoding the poll's index in twelve buttons and
+   reading `_PadBtn` back, 2,999 of 3,000 fields (the first is the boot);
+   2v + 9 with "fast disc speed".  So the port's retrace r goes to a
+   console field v(r) and both of that field's polls carry its input; a
+   field no retrace maps to (a stall) repeats the last.
+3. **The engine RNG's seed**: the console's clock at HuSysInit's `frand()`
+   is its RTC + 2,702,265 ticks (`db27ffb1` at the pinned RTC, `e2de3861`
+   at RTC 1,790,000,000 -- the RNG step inverted, the same offset), the
+   port's RTC + 2,700,000: hence `--clockskew 2265` in every recording (66.2).
+4. **The board RNG's seeds**: BoardRandInit reads the console's clock at
+   board setup, which no port can predict, so the recording keeps the
+   port's seeds (`b` lines) and `GMPE01.ini` carries a **Gecko C2 hook** at
+   its store (0x8005FB08, `stw r4, boardRandSeed`): a `bl` over a counter
+   and the seeds, `lwzx` of the next one, the original store; when they run
+   out the console's own clock again.  Verified: Dolphin's board RNG took
+   `ae4b44f1`, the port's.
+5. **The timeline.**  The port reads its disc image at once; the console
+   waits on its disc (the main loop stalls while VCounter runs on) and on
+   the game's own waits (a load polled every frame, the logos timed on the
+   clock).  `dolphin_sync.py` runs Dolphin with MemoryWatcher on
+   GlobalCounter, VCounter, the overlay, the three RNGs and the six windows,
+   and aligns the two traces: the port's events (a change of the overlay,
+   the engine RNG or rand8's LCG) must appear in Dolphin's trace in the same
+   order; a missing sample is allowed when the following states follow (the
+   RNG chain rejoins only if the same numbers were drawn); the board RNG's
+   values must come in the same order, a few frames apart allowed; the
+   windows' typing places inputs inside RNG-quiet stretches (the board's
+   opening dialogs).  **Each input goes on the field where Dolphin's game is
+   in the state the port's was in after it** (`s` at r + 1: the watcher
+   samples a field after the frame that read that field's input) -- placing
+   by GlobalCounter offsets failed because an offset measured in a run where
+   a press came late already contains the wait that press caused.  Each run
+   keeps the verified start of the movie byte for byte and re-places the
+   inputs before the first divergence; ~12-17 minutes a run on littlejelly
+   (Dolphin runs this game at ~22 fields a second there, CPU-bound: the
+   Null renderer is no faster).
+
+**The proof** (the session `t4`: recorded on the G4 at real time and drawn,
+`d8`, `board-start-human.play`: the boot, the menus, the character and the
+board, Toad's Midway Madness turn 1 with one person -- the A metronome to
+frame 13,000, then `humanlike.py`'s player -- and three COMs, the roulette's
+Tree Stomp (m419, entry 13,076, left at 15,738), its results; replayed in
+step on the G4 itself; 16,400 frames aligned; `docs/soak/m51/rec/`):
+
+* **From the boot, exactly, for 10,302 frames** (2 min 52 s): every event of
+  the recording -- 3,847 changes of the overlay, the engine RNG and rand8's
+  LCG -- in the same order in Dolphin's run, the board RNG's values in the
+  same order, the human's whole first turn (the dice block's number, the
+  walk, the space) and the first computer player's turn.  The pictures
+  agree frame for frame (`docs/screenshots/m51-side-board.jpg`: the dice
+  block's cycling 2, Toad's "Everybody do your best!" on the same frame, a
+  COM's 6 with the same positions).
+* **Then the console's computer player starts its turn 49 frames later**
+  (the third player's dice block: port frame 10,219, Dolphin field 11,176
+  against the 11,127 the engine RNG matches): a wait the console's game
+  makes longer -- on its disc (an async read the port completes at once) or
+  its sound -- while an ambient effect draws from the engine RNG every
+  frame, so the COM's next draws come from other numbers and the two boards
+  part.  No input is involved (none changes in that stretch) and none can
+  fix it: it is the console's own timing.  With Dolphin's "fast disc speed"
+  (the movie's flag; the poll offset is then 2v + 9) the first parting comes
+  earlier instead (8,620: another COM's dice a frame off).
+* **The hand-over at the instruction card**: the recording's first frame of
+  `instDll` + 30 (nothing random moves on the card) is handed to Dolphin's
+  own card at the same point by a one-frame Gecko write (`GlobalCounter ==`
+  Dolphin's card frame: the engine RNG, rand8's LCG and the board RNG to the
+  port's) -- Dolphin had dealt the same minigame with the same teams on its
+  own.  **Tree Stomp then plays in step for 2,050 frames** (34 s, 299
+  events: every draw of the engine RNG in the same order, the four-frame
+  cadence of its ambient draws on the same frames): the intro, the timer
+  (42 at frame 14,000 on both), the players' stumps.  The characters'
+  positions, which draw nothing from the RNG, **drift apart from about
+  frame 14,000** (`docs/screenshots/m51-side-minigame.jpg`, 14,800: Luigi
+  and Peach's stump elsewhere), and at **15,126** the port's game ends (its
+  ending's draws come two frames off the cadence) where the console's goes
+  on: the results differ.  Inputs are not the cause (every press lands on
+  the matched field; seven re-placements found nothing); the console's
+  game code is MWCC's with `-fp_contract on` and its MSL sin/cos/atan2, the
+  port's GCC 14's contractions and the port's own sin/cos (M42) -- the
+  same arithmetic to a rounding, which a physics minigame accumulates
+  until a collision falls the other way.
+* **The video says the same** (`~/mp4-videos/t4-side.mp4`, 40x30 grey
+  mean difference per sampled frame, 60 frames apart): the in-step
+  minigame stays at **15.7** levels (the two renderers' difference; p90 16.4),
+  the in-step board at 20.2 (the board's opening flyover, which draws no
+  random number, is aligned only to a frame or two), the stretches out of
+  step at p90 105.9.
+
+**What this means for a player's recording.**  Dolphin replays a session
+exactly as long as the people are the only clock: the menus, the board's
+dialogs, a person's turns; it parts where a computer player acts on the
+console's own waits, and inside a long physics minigame the float
+rounding parts the positions after tens of seconds.  The Gecko hand-over
+at each instruction card re-joins the two at every minigame, which makes a
+marathon of short minigames watchable in Dolphin minigame by minigame;
+the exact Dolphin replay of a whole session needs the port to compute
+floats as the console does and to wait on its disc as the console does --
+neither is in 0.9.20 (the open line in the checklist).  Lite never
+mattered: the console has none, and a Lite session's game is the Lite-off
+game (66.6's proofs; the marathon recording's replay with `--nolite`,
+66.4).
+
+**For the user's Mac**: `littlejelly:~/mp4-videos/t4-dolphin/` --
+`session-mac.dtm` (Vulkan), `session.dtm`, `GMPE01.ini` (the board seeds'
+C2 hook and the card's hand-over), `t4.rec` and a README with the steps:
+Dolphin 2506 or later, the USA Rev 1 disc image, GMPE01.ini into
+`~/Library/Application Support/Dolphin/GameSettings/` and Enable Cheats,
+Skip Main Menu on, Custom RTC off, Movie > Play Input Recording; the
+movie makes its own fresh card.  The Read Me says the same for any
+recording.
+
+**Limits of the tools** (for the next milestone): a recording with the
+harness's writes (a marathon child: the teleport parks GWPlayerCfg /
+GWSystem) is refused by `rec2dtm.py` -- the console would need those parks
+as Gecko writes held over their spans (M26b's way), not written yet; the
+work areas themselves (GWPlayerCfg, GWPlayer, GWSystem, GWGameStat,
+mgNext) can be handed over at a card by `gecko_resync` once the recorder
+writes them (built and taken out again: it missed the soaked build, 66.8);
+the alignment runs Dolphin from the boot each time, 12-17 minutes a run
+on littlejelly.
+
+### 66.4 The G4 video (item 3)
+
+**`--framedump FILE`** (`src/debug/framedump.c`): every presented frame of
+a run read back where `--dumpframe` reads it (the game's picture, before
+the overlay), deflated (zlib level 1, `-lz` from the 10.4u SDK) and written
+one after another -- `MP4FD2`, per frame its presented number, **its
+retrace** (the game's frame: the video's clock), the size and the bytes;
+`--framedumpfrom R` counts retraces.  **`--wavdump FILE`** is `--wav`
+(M6's writer at the mixer's queue: the 32 kHz stereo exactly as mixed), and
+**`--mute` with it** now mixes into the WAV and silences only the speakers
+(before, `--mute` silenced the voices themselves: the first video's track
+was silent after the boot -- found by `volumedetect`, fixed in
+`musyx_sal.c` / `audio_out_sdl.c`).
+
+**`tools/session_video.sh REC [--from R] [--to R]`**, on littlejelly:
+sends REC to the G4 and runs the replay there through the lab's job
+runner -- `--replay REC --lockstep` (every frame drawn, nothing dropped)
+`--framedump --framedumpfrom R --wavdump --mute`, `--ffto R-60` to get
+there undrawn -- while littlejelly streams the growing frame file
+(`ssh g4 tail -c +1 -f`) through `framedump_read.py` (one frame per
+retrace, a retrace with no new picture repeating the last, as the
+console's XFB) into a lossless FFV1 file; then ffmpeg makes
+**`~/mp4-videos/NAME-g4.mp4`** (H.264, CRF 18, 59.94 fps, AAC from the
+WAV cut at retrace R); then Dolphin's side: `dolphin_sync.py` if there is
+no map yet, a Dolphin run of the movie with the frame dump on
+(`dolphin_watch.py --dump`), `dolphin_fields.py` (each dumped frame's
+field: its timestamp x 59.94 **+ 10** -- the dump lags the timestamps, 36
+fields against the boot estimate, found by matching pictures), and
+`side_by_side.py` (the G4 left, Dolphin's 640x528 active rows 17-510 scaled
+to 480 on the right, the frame for the field the map puts each retrace on)
+piped into **`NAME-side.mp4`** with the G4's sound.
+
+**On the G4** (the session `t4`, retraces 5,300-16,400: the board's turn,
+Tree Stomp, its results): the replay in lockstep with every frame dumped
+ran at **7.7 frames a second** (the read-back and the deflate on the game
+thread; 11,101 frames in 24 min), ~350 KB a frame (3.9 GB on the G4's
+disk, deleted after), no `OUT OF STEP` line.  **`~/mp4-videos/t4-g4.mp4`**:
+640x480, 185.2 s, 11,101 frames, the G4's mix (max -0.8 dB);
+**`~/mp4-videos/t4-side.mp4`**: 1280x480, 185.2 s.  The sound: the first
+render's track was the silent one above; the WAV was made again by an
+undrawn replay (the mixer's output is a function of the retraces alone)
+and muxed onto the frames.  Pictures: `docs/screenshots/m51-side-board.jpg`,
+`m51-side-minigame.jpg` (stills from the same pipeline, not the video).
+
+### 66.5 The scoreboard, Manta Rings, the edge (item 5)
+
+On the final build (**`f1`, 0.9.20, `isle` `b1186af5`** with 0.9.19's modules -- 66.7 --, Lite at
+auto -- the user's set; `m441.bloball` off) -- `port/docs/fps-scoreboard.md`, M50's
+kept as `fps-scoreboard-m50-after.md`, the logs `docs/soak/m51/board/`: the
+whole chain (`FB:front,title,boards,mg,menus`, three-run mode auto),
+22:54-02:5x G4 time, 123 runs, every run exit 0 but `goto-mstorydll`
+(exit 2, every milestone's), **all 82 screens at 100% game speed**.
+**80 of 82 pass.**
+
+| screen | M49 | M50 (0.9.19) | M51 (0.9.20, runs) | game drawn / consumed, rt / dec (ms) | verdict |
+|---|---:|---:|---|---|---|
+| m401 Manta Rings | 29.9 | 29.1 (29.1 / 28.9 / 29.9) | **30.0** (29.9 / 30.0 / 30.0) | 21.1 / 7.3, 18.0 / 6.8 | PASS |
+| m441 Butterfly Blitz | 30.0 | 30.0 | **30.0** (one run) | 23.6 / 5.5, 16.8 / 8.5 | PASS |
+| w01 | 29.5 pooled | 29.5 | 29.5 (one run, pooled) | 19.6 / 5.8, 13.9 / 4.8 | PASS |
+| **m409 Toad's Quick Draw** | 29.6 | 29.8 (29.8 / 29.8 / 28.9) | **29.1** (29.0 / 29.1 / 29.9) | 26.3 / 6.3, 20.6 / 4.6 (M50: 26.4 / 6.3, 20.6 / 4.5) | **short by 0.4** |
+| **m433 Beach Volley Folly** | 29.4 | 29.8 (29.8 / 29.9 / 29.8) | **29.1** (29.0 / 29.1 / 29.9) | 25.4 / 5.6, 17.9 / 4.4 (M50: 25.4 / 5.7, 18.0 / 4.4) | **short by 0.4** |
+
+**m409 and m433 against 0.9.19** (five runs each, interleaved, the
+scoreboard's teleport at real time; `docs/soak/m51/abedge/`):
+
+| screen | build | presented fps (runs) | median | drawn frame | consumed | rt | dec |
+|---|---|---|---:|---:|---:|---:|---:|
+| m409 | 0.9.19 (`c6`) | 29.9 / 28.9 / 28.9 / 28.9 / 28.9 | **28.9** | 27.2 | 6.0 | 21.1 | 3.8 |
+| m409 | 0.9.20 (`f1`) | 29.1 / 29.2 / 29.4 / 29.9 / 29.9 | **29.4** | 27.1 | 5.9 | 20.9 | 3.7 |
+| m433 | 0.9.19 (`c6`) | 30.0 / 30.0 / 29.9 / 29.9 / 29.3 | **29.9** | 25.6 | 6.0 | 18.0 | 4.4 |
+| m433 | 0.9.20 (`f1`) | 29.9 / 30.0 / 29.9 / 29.9 / 29.8 | **29.9** | 25.7 | 6.0 | 17.9 | 4.4 |
+
+**m433: not short** -- 29.9 on both builds; the count's 29.1 was an unlucky
+first run (as M49's 29.4).  **m409 is at the edge on both builds today**:
+0.9.19 reads 28.9 and 0.9.20 29.4 with the same work to 0.2 ms (27.2 /
+27.1 drawn, 21.1 / 20.9 on the render thread) -- M49 counted it 29.6, M50
+29.8, M51 29.1: Toad's Quick Draw sits on the bar and the run decides.
+(A first try of this A/B, 05:50-06:25, read 10-15 fps on both builds --
+discarded, 66.9.)  **Screens meeting 29.5 on the count: 80 of 82**
+(M50 81); by the A/Bs, 81 with m409 at the edge.
+
+**Manta Rings' five-run A/B** (as M50's: the scoreboard's teleport at real
+time, interleaved, 0.9.20 `f1` against 0.9.19 `c6`, `docs/soak/m51/ab401/`):
+
+| build | presented fps (runs) | median | drawn frame | consumed | rt | dec |
+|---|---|---:|---:|---:|---:|---:|
+| 0.9.19 (`c6`) | 30.0 / 30.0 / 29.9 / 30.0 / 30.0 | **30.0** | 22.1 | 7.4 | 18.6 | 6.6 |
+| 0.9.20 (`f1`) | 29.9 / 29.9 / 29.9 / 29.9 / 29.1 | **29.9** | 22.3 | 7.4 | 18.6 | 6.5 |
+
+Honestly: at the edge, both ways -- on the count it passed (30.0) where
+M50's count was short (29.1); in the A/B 0.9.20 read 29.9 and one 29.1
+against 0.9.19's 30.0 x4; the drawn frame 0.2 ms apart, the consumed frame
+and the render thread the same.  Nothing in 0.9.20's game path changed
+(the recorder's hooks return at once without `--sessionrec`; the basket's
+hook matrix returns at once off Butterfly Blitz with `m441.bloball` off).
+
+### 66.6 Every shadow a round one: `m441.bloball` (item 4)
+
+The user, after M50's picture: "so it's easier to see the shadows... we
+could even make all shadows in that game like that".  **`m441.bloball`**
+(lite.c, patches.txt M51 block): every caster of Butterfly Blitz -- the four
+characters, their nets and baskets, both kinds of butterfly -- skips its
+`Hu3DModelShadowSet` and registers with lite.c instead
+(`port_lite_blob_caster(mdl, kind)`: the model id and its HSF pointer, so a
+recycled slot is never mistaken for it), and after camera 0's floor layer
+(`port_lite_layer_end`, M50's) the port draws one round blob per visible
+caster: the character's under its model's position (70 units, 160/255),
+the net's under the net point (M50's, 64 units in this set), the basket's
+under the basket -- hooked to a hand, so its world position is taken from
+the draw's own hook matrix (`hsfdraw.c`: `port_lite_hook_mtx` after the
+hooked model's matrix is built, read only; camera space x the inverse
+camera, a frame behind, which no one can see) at 36 units -- and the
+butterflies' (34 and 24 units, the smaller kind) under them, smaller and
+fainter the higher they fly.  With no caster left the shadow pass draws
+nothing.  Nothing the game reads changes: no model, no motion, no RNG, no
+Hu3DData slot.
+
+**The proof** (`H:` runs, lockstep to entry +9,000, `--gamehash 60`,
+`docs/soak/m51/h/`): `ref,m441.bloball` against `--nolite` -- **identical,
+391 lines to f23460, `8e1116da`** (Mario, Luigi, Peach, Yoshi; the chain
+M50's m441 proof ended with) and **identical, 392 lines to f23520,
+`14864195`** (Wario, Donkey Kong, Daisy, Waluigi); the minigame left at
+entry +5,337 and +5,295 in both arms.
+
+**The speed** (`A:`, the scoreboard's teleport at real time, interleaved,
+three runs each, `docs/soak/m51/ab441/`):
+
+| m441 arm | presented fps (runs) | median | drawn frame | consumed | rt replay | decode |
+|---|---|---|---:|---:|---:|---:|
+| `ref` (today's default set) | 30.0 / 30.0 / 30.0 | **30.0** | 24.1 | 6.1 | 17.2 | 8.9 |
+| `ref,m441.bloball` | 30.0 / 30.0 / 30.0 | **30.0** | **20.2** | 6.7 | **13.3** | **5.9** |
+
+Cheaper than the shadows it replaces by 3.9 ms of the drawn frame (the
+render thread's replay 3.9 ms less, its decode 3.0) -- the projected
+shadow pass (every caster drawn again into the shadow map, the map copied,
+the floor drawn again with it) is gone, and ~40 blobs of 48 triangles each
+are a few thousand vertices.  It held 30.0 three runs out of three, so by
+the user's rule it may go into the default set -- **if the user approves
+the picture**: `docs/screenshots/m51-blob-all-m441.jpg` (lockstep frame
+15,677 = entry +1,200: the console's projected shadows, today's Lite with
+no shadow under the nets and butterflies, and the blobs; the players
+enlarged below).  Until then it is an option (`liteopts = ref,m441.bloball`),
+default off, as the brief says.
+
+### 66.7 The md5s, the picture checks, the soak, the disk image
+
+**Two builds, one executable.**  `f1` (`isle` **`b1186af5`**, commit
+`c900b764`) ran the scoreboard, the md5 walks, the picture checks, the
+A/Bs and the first soak -- **with 0.9.19's 99 modules**: the lab's push
+helper (`m51push`) copies the last release's bundle and replaces only the
+executable unless asked for the modules, and the M51 modules went to the
+G4 only with `d3` (the `m441.bloball` proofs).  Stripped of their debug
+information, 98 of the 99 are byte-identical to the build's own; the one
+that differs is **m441's** -- the `m441.bloball` patches (with the option
+off: the same calls as 0.9.19's).  The shipped build is therefore **`f2`**
+= `f1`'s executable with its own 99 modules, and the checks that touch
+m441 and the soak were run again on it (below).  (The committed source is
+`c900b764`'s for the port: a recorder addition made after it -- the work
+areas at every overlay change, for `gecko_resync` -- was taken out again;
+rebuilt, the executable differs from `f1` only in nine bytes of object
+timestamps in the debug symbols.)  The chain (`~/m51/final`,
+`tools/m50_chain.sh` as `~/m51fchain.sh` with `~/m51f.env`;
+`docs/soak/m51/final/index.txt.gz`):
+
+* **The md5 walks**: `--nomovies` **`0b58c5ee` / `2b99c60a` / `4a9a640c`**,
+  movies **`d2d40344` / `59008ce4` / `3f98f882`** -- the references.
+* **The picture checks with Lite off** (`PC:@f1,--nolite` against M48's
+  `@p` set, 0.9.16's frames, `tools/m48_pccmp.py`): **636 of 638
+  identical, the 2 the real-time m427's known second river state**
+  (`R-m427-2`, 14777 and 15677: the pair M47-M50's indexes hold), 24 runs,
+  every run exit 0, 0 faults; `--halfwatch 1`: 49,837 frames, **0
+  half-black, 0 blips**.
+* **The soak** (`SOAK:125`: `--soak --com4 --rtc dolphin --freshcard
+  --status --perf --stuckwatch 200 --ovllog --frames 449500`, 03:20-05:25 G4
+  time, Lite at auto; `docs/soak/m51/m51-soak-final-125.log.gz`): **7,499.2 s
+  of game against 7,499.8 s of wall (100.0%)**, 449,500 retraces, the whole
+  20-turn board and 13 turns of the next, 28 minigame modules; **0
+  faults, 0 resyncs, 0 skin guard hits, no lock-up**, the worst frame 669 ms
+  behind, 186 `stall:` lines, 38 underruns (the boot, the character select,
+  the board's first turn -- as every soak's); **three `STUCK` lines at frames
+  270,513, 283,066 and 297,284 -- the same three frames as M47's, M49's and
+  M50's release soaks** (the soak's own navigation across the board's end,
+  the mode select and the character select).
+
+**On `f2`** (the shipped build: `isle` `b1186af5`, m441's module
+`ff063ee4`; `docs/soak/m51/f2/`): m441 with Lite's default set against
+`--nolite` in lockstep to entry +9,000 **identical, 391 lines, `8e1116da`**;
+the scoreboard's teleport at real time **30.0 / 30.0 / 30.0** (drawn frame
+24.1 ms); the md5 walks and the soak to come.
+* **The disk image**: to come (after the soak on `f2`).
+
+### 66.8 What M51 shipped (0.9.20)
+
+| | |
+|---|---|
+| `port/src/debug/session.c` | session recordings: `--sessionrec`, `--replay`, `--replayexit`; the four pads, the start state (the card copied), the harness's writes, the board seeds, the signature (+ six windows); "Record this session" (`record = 1`, `--rtc NOW`, `--clockskew`) |
+| `port/src/ui/marathon.c`, `port/src/ui/soakplan.c`, `port/src/ui/overlay.c` | Developer Mode: the marathon (`--marathon`, child runs, `--marathonchild`, `--marathonresult`, the plan file, stop/resume, the summary), the soak planner (`--soakplan`), the recording toggle; the overlay's option rows (left/right), `--menu N/dev|marathon|record|soak|mchild|mresult` |
+| `port/src/debug/selfplay.c`, `port/src/pad/pad_play.c` | `--humans N`, `--mgexit` (the result line), `--keepplay`; the minigame notes |
+| `port/src/debug/framedump.c`, `port/src/gx/gl13.c`, `port/src/audio/*` | `--framedump`, `--framedumpfrom`; `--wavdump` (= `--wav`), `--mute` with it mixes into the WAV only |
+| `port/src/debug/lite.c`, `port/patches.txt` (M51 blocks) | `m441.bloball` (every caster a blob; `port_lite_blob_caster`, the basket's hook matrix from `hsfdraw.c`); BoardRandInit's seed to the recorder |
+| `port/src/platform/main.c`, `vi.c`, `pad.c`, `include/port.h`, `Makefile` | the flags, the hooks, `PORT_CONSOLE_BOOT_SKEW`, `-lz`, 0.9.20 / M51 |
+| `port/tools/rec2dtm.py`, `dolphin_sync.py`, `dolphin_watch.py`, `dolphin_map.py`, `dolphin_fields.py` | the Dolphin replay: the .dtm, the Gecko codes (the board seeds' C2 hook, the hand-over), the alignment, the frame map |
+| `port/tools/session_video.sh`, `framedump_read.py`, `side_by_side.py` | the G4 video and the side-by-side |
+| `port/tools/humanlike.py`, `m51_job.sh`, `m51_soakplan.sh`; `port/ref/movies/board-start-human.play`; `port/ref/tools/mkdtm.py` (tickCount) | the lab's |
+| `port/dist/Read Me.txt`, `docs/release-checklist.md`, `docs/reference-dolphin.md`, `docs/fps-scoreboard.md` | DEVELOPER MODE, WATCHING A RECORDING IN DOLPHIN, MAKING A VIDEO, `m441.bloball`, where the files live; the checklist; Dolphin's `-m` corrected; the scoreboard (M50's kept) |
+| `port/docs/screenshots/m51-*.jpg`, `port/docs/soak/m51/` | the pictures; the logs (gzipped), the recordings `t2`-`t4` |
+
+
+### 66.9 What is left running, and what M52 (RC1) starts with
+
+(to come)
+
+**M52 / RC1 starts with**: the user's own marathon (Developer Mode ->
+Minigame marathon, "Record each minigame" on: every minigame played by
+the user, a recording of each, the summary); the user's look at
+`docs/screenshots/m51-blob-all-m441.jpg` (`m441.bloball` into the default
+set if approved: 30.0 x3, 3.9 ms cheaper); m409 and m433 at the edge
+(66.5).  For the Dolphin replay beyond the first minigame, the two
+projects of 66.3: the console's float arithmetic in the port (MWCC's
+contractions, MSL's sin/cos/atan2) and its disc/sound timing -- or, the
+cheap way, the recorder writing the work areas at each card for
+`gecko_resync` (built in M51, taken out of the soaked build).
+
+**Rules learnt**: a Dolphin movie needs its `tickCount` (0 ends it at once,
+silently, in read-write mode -- the M10 rig's "-m does nothing" for 41
+milestones); aligning an emulator on a native port is a matter of the
+game's state, not its frame counters (a wait the press itself caused hides
+in every counter-based offset); the engine RNG's agreement is not the
+positions' -- a physics minigame keeps drawing the same numbers while its
+floats drift; a hung `docker` build can spin on a core for half a day (look
+before blaming the emulator's speed); a timed set can read 10-15 fps on
+every build for reasons outside the game (05:50-06:25 G4 time, both
+builds, the render thread at 17-25 ms; a screenshot at 06:28 found the
+screen awake and the rerun at 30.0 -- the display's 60-minute sleep the
+likeliest, not proved): compare both arms of an A/B before believing a
+slowdown, and discard a set where both moved.

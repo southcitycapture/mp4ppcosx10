@@ -95,7 +95,10 @@ def build_header(game_id, n_polls, n_frames, rtc, author=b'mp4-ref-rig',
     h[161] = 0   # GBAControllers
     h[162] = 0   # bWidescreen
     h[163] = 0   # countryCode
-    # 169 discChange, 209 revision, 229/233 DSP hashes, 237 tickCount: left zero
+    # 169 discChange, 209 revision, 229/233 DSP hashes: left zero.
+    # M51 (PLAN.md 66.3): tickCount past the end -- Dolphin ends a movie the
+    # moment the emulated ticks pass it, and 0 ended every movie at once
+    struct.pack_into('<Q', h, 237, int((n_frames + 600) / 59.94 * 486e6 * 1.5))
     return bytes(h)
 
 

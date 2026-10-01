@@ -304,7 +304,7 @@ menu (F1 or M) and choose Developer Mode.
     marathon-list.txt next to the config).  Choose how many of you play
     (1 to 4; the computer plays the rest) and who plays whom, then Start.
     The game closes and opens again for each minigame: it hurries there by
-    itself (about a minute and a half on a 1 GHz G4: the board is played
+    itself (about a minute on a 1 GHz G4: the board is played
     undrawn by four computer players and the roulette is set to the
     minigame), stops at the minigame's instruction card for you -- press
     START when you are ready (Z for the practice round) -- and after its
