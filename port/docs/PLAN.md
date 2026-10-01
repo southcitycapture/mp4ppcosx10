@@ -26958,6 +26958,10 @@ A/B/X/Y at uneven intervals, now and then A mashed), 22,000 frames, the
 first turn of Toad's Midway Madness and Tree Stomp (m419), replayed **in
 step to the end in lockstep, drawn, and undrawn** -- the real-time frame
 mode (consumed frames, the render thread) changes nothing the game sees.
+And a marathon child's recording (Butterfly Blitz, recorded with Lite at
+auto -- on there -- through the teleport's parks) replays **in step for all
+24,070 frames both as recorded and with `--nolite`**: a Lite session is the
+Lite-off game (`docs/soak/m51/post/`).
 
 **What it costs** (`docs/soak/m51/rcost/`, the scoreboard's teleport at
 real time, interleaved, three runs each):
@@ -27162,7 +27166,8 @@ disk, deleted after), no `OUT OF STEP` line.  **`~/mp4-videos/t4-g4.mp4`**:
 **`~/mp4-videos/t4-side.mp4`**: 1280x480, 185.2 s.  The sound: the first
 render's track was the silent one above; the WAV was made again by an
 undrawn replay (the mixer's output is a function of the retraces alone)
-and muxed onto the frames.  Pictures: `docs/screenshots/m51-side-board.jpg`,
+and muxed onto the frames -- checked: 6,000 retraces of `t4` replayed
+undrawn and drawn give **byte-identical WAVs** (md5 `4d3b82d3`).  Pictures: `docs/screenshots/m51-side-board.jpg`,
 `m51-side-minigame.jpg` (stills from the same pipeline, not the video).
 
 ### 66.5 The scoreboard, Manta Rings, the edge (item 5)
@@ -27171,7 +27176,7 @@ On the final build (**`f1`, 0.9.20, `isle` `b1186af5`** with 0.9.19's modules --
 auto -- the user's set; `m441.bloball` off) -- `port/docs/fps-scoreboard.md`, M50's
 kept as `fps-scoreboard-m50-after.md`, the logs `docs/soak/m51/board/`: the
 whole chain (`FB:front,title,boards,mg,menus`, three-run mode auto),
-22:54-02:5x G4 time, 123 runs, every run exit 0 but `goto-mstorydll`
+22:54 to about 03:00 G4 time, 123 runs, every run exit 0 but `goto-mstorydll`
 (exit 2, every milestone's), **all 82 screens at 100% game speed**.
 **80 of 82 pass.**
 
@@ -27309,8 +27314,21 @@ timestamps in the debug symbols.)  The chain (`~/m51/final`,
 `ff063ee4`; `docs/soak/m51/f2/`): m441 with Lite's default set against
 `--nolite` in lockstep to entry +9,000 **identical, 391 lines, `8e1116da`**;
 the scoreboard's teleport at real time **30.0 / 30.0 / 30.0** (drawn frame
-24.1 ms); the md5 walks and the soak to come.
-* **The disk image**: to come (after the soak on `f2`).
+24.1 ms); **the md5 walks the references** (`0b58c5ee` / `2b99c60a` /
+`4a9a640c`, `d2d40344` / `59008ce4` / `3f98f882`); **the soak** (`SOAK:125`,
+the same line, 07:33-09:38 G4 time; `docs/soak/m51/m51-soak-f2-125.log.gz`):
+**7,499.2 s of game against 7,499.7 s of wall (100.0%)**, 449,500 retraces,
+the whole board and 13 turns of the next, 28 minigame modules (m441 among
+them), **0 faults, 0 resyncs, 0 guard hits, no lock-up**, the worst frame
+688 ms behind, 188 `stall:` lines, 36 underruns, the three `STUCK` lines at
+the same three frames.
+* **The disk image**: **`littlejelly:~/MarioParty4-PowerPC-0.9.20.dmg`**
+  (`tools/make_dmg.sh` from the `f2` bundle -- `isle` `b1186af5`, m441's
+  module `ff063ee4` -- 4,536,377 bytes, md5 **`e048f6b6...`**; the G4 keeps
+  `~/Mario Party 4 PowerPC Edition 0.9.20.dmg`; the Read Me's new sections
+  inside).  Installed on the G4 from the image: **`~/MarioParty4.app` is
+  0.9.20** (the executable and m441's module checked against the build),
+  0.9.19 kept as `~/MarioParty4-0.9.19.app`.
 
 ### 66.8 What M51 shipped (0.9.20)
 
@@ -27331,7 +27349,28 @@ the scoreboard's teleport at real time **30.0 / 30.0 / 30.0** (drawn frame
 
 ### 66.9 What is left running, and what M52 (RC1) starts with
 
-(to come)
+On the G4 since 09:40 on 2026-10-01, on 0.9.20 (`~/MarioParty4.app`, `isle`
+`b1186af5`; the runner slot `~/isle.app` -> `MarioParty4.app`):
+
+```
+isle --soak --com4 --rtc dolphin --freshcard --status --perf
+```
+
+log `~/isle-log.txt`, **pid 47341**, Lite at auto (the lab's config has no
+Lite, water, Benchmark or `record` keys; the marathon tests saved and put
+it back).  The player's card and `~/memcard-backup.raw` untouched (every
+run `--freshcard` or the marathon's scratch card).  M51's bundles on the
+G4: `~/mp4-d1.app` .. `~/mp4-d8.app`, `~/mp4-f1.app` (the executable with
+0.9.19's modules), `~/mp4-f2.app` (the shipped build); the chain
+`~/MarioParty4-chain.app` = `tools/m51_job.sh` (a job a time:
+`~/m51/job.sh`, `~/m51/index.txt`); `~/m51chain.sh`/`~/m51fchain.sh` =
+`tools/m50_chain.sh` reading `~/m51.env`/`~/m51f.env`; the scoreboard
+`~/fps-board-m51f1` with `~/fps-board-m51.env`; two marathon recordings in
+`~/Documents/MarioParty4 Recordings` (the lab's).  On littlejelly: the
+videos `~/mp4-videos/t4-g4.mp4`, `t4-side.mp4`, their work files
+(`work/t4/`: the G4's frames as FFV1, 3.9 GB, Dolphin's dump, the map);
+the Dolphin package `~/mp4-videos/t4-dolphin/`; the alignment runs in
+`~/m51/sync-*` (scratch).
 
 **M52 / RC1 starts with**: the user's own marathon (Developer Mode ->
 Minigame marathon, "Record each minigame" on: every minigame played by

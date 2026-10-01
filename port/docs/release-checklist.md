@@ -269,6 +269,31 @@ The final build: both md5 walks the references, the picture checks 636 of 638 id
 0.9.16's with Lite off (the 2 m427's known second river state), 0 blips; a 2 h 05 min soak,
 0 faults, 0 resyncs, no lock-up; `littlejelly:~/MarioParty4-PowerPC-0.9.19.dmg` (md5 ef548665).
 
+
+**Where M51 left it** (**0.9.20**, PLAN.md 66 -- Developer Mode and the playtest rig):
+**Developer Mode** in the overlay menu (F1 or M, under Benchmark Mode): the **minigame
+marathon** (all 63, a range, a kind or your own list; 1-4 people, the rest COM, each player's
+character; each minigame a child run that hurries to the instruction card and waits for START;
+results saved as they come, stop/resume, a summary page and text file -- tested end to end on
+the G4 with a scripted stand-in), **Record this session** (every launch recorded from the boot
+to `Documents/MarioParty4 Recordings`: the four controllers each frame, the start state, a copy
+of the card; no measurable cost: m441 and a board 30.0 x3 with and without), the **soak
+planner** (`soak-plan.txt`, `--soakplan`).  A recording replays on the G4 in step to the end
+(lockstep, drawn or not: real-time play changes nothing the game sees).  **The G4 video**:
+`tools/session_video.sh` -- the replay in lockstep with every frame dumped and the mixer's sound,
+MP4 and the side-by-side with Dolphin (`~/mp4-videos/t4-g4.mp4`, `t4-side.mp4`).  **The Dolphin
+replay** (`rec2dtm.py` + `dolphin_sync.py`): exact from the boot through the human's first turn
+and the first COM's (10,302 frames); a COM's turn then starts 49 frames later on the console
+(its own waits) and the boards part; re-joined at the instruction card by a one-frame Gecko
+hand-over, Tree Stomp plays with every random draw in step for 34 s while the characters'
+positions drift (float rounding: the port's GCC and sin/cos against the console's MWCC/MSL) and
+the results differ.  `m441.bloball` (every Butterfly Blitz shadow a round blob): identical game
+on both casts, 30.0 x3, the drawn frame 20.2 against 24.1 ms -- off until the user approves the
+picture (`docs/screenshots/m51-blob-all-m441.jpg`).  **The scoreboard: 80 of 82** (m401 30.0;
+m409 and m433 29.1 at the edge (the A/Bs: m433 29.9 on 0.9.19 and 0.9.20 alike; m409 28.9 on 0.9.19, 29.4 on 0.9.20 -- the screen's edge)).  Both md5 walks the references; the picture checks
+636 of 638 identical to 0.9.16's with Lite off (m427's known river state), 0 blips;
+a 2 h 05 min soak on the shipped build, 0 faults, 0 resyncs, no lock-up; `littlejelly:~/MarioParty4-PowerPC-0.9.20.dmg` (md5 e048f6b6).
+
 ## Done
 
 | area | the claim | the evidence |
@@ -405,4 +430,16 @@ none is a known fault.
    under Rosetta (slower); never on a real Mac faster or slower than the reference, on Tiger, or
    on one CPU.  The menu keys F1 and M could collide with a PowerPCube controls file that maps
    M or F1 to a button.
-
+21. **m441.bloball (M51)** -- the user's picture to approve: every Butterfly Blitz shadow a round
+   blob, 30.0 x3, 3.9 ms cheaper than today's set; `liteopts = ref,m441.bloball` now, into the
+   default set if the user says so (`docs/screenshots/m51-blob-all-m441.jpg`).
+22. **The Dolphin replay is exact only where people are the clock (M51, PLAN.md 66.3).**  Exact
+   over a whole session would need the port to (a) compute floats as the console does (MWCC's
+   fused multiply-adds and MSL's sin/cos/atan2, to the last bit -- the positions in a physics
+   minigame drift after ~15 s and a collision falls the other way after ~34 s) and (b) wait on
+   its disc and sound as the console does (a COM's turn starts 49 frames later on the console).
+   Both are projects; until then the Gecko hand-over at each instruction card makes each
+   minigame start in step.  Marathon recordings (the teleport's parks) do not convert yet.
+23. **The marathon with real people**: tested on the G4 with a scripted player 1; never with the
+   user's own pads in a long run (a child per minigame: the window closes and opens between
+   minigames, about a minute of fast-forward each on the G4 (57 s measured)).
