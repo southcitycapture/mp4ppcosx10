@@ -143,6 +143,9 @@ void port_audio_out_queue(const void* samples, unsigned bytes) {
 
     if (wav) {
         port_audio_wav_write(samples, bytes);
+        if (port_opt.mute) {
+            return; /* M51: the mix to the WAV, nothing to the speakers */
+        }
     }
     if (!opened) {
         return;

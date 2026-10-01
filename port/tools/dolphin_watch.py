@@ -37,6 +37,7 @@ ap.add_argument('--timeout', type=float, default=600)
 ap.add_argument('--dump', action='store_true')
 ap.add_argument('--audio', help='dump the DSP audio to this WAV')
 ap.add_argument('--rtc', type=int)
+ap.add_argument('--video', default='OGL')
 ap.add_argument('--card', help='a raw card image for slot A (else a fresh one)')
 ap.add_argument('--user', default=f'{HOME}/mp4-m51-dolphin', help='the scratch user dir (short: sun_path)')
 ap.add_argument('-C', dest='conf', action='append', default=[])
@@ -97,7 +98,7 @@ before = set(dolphins())
 env = dict(os.environ, DISPLAY=os.environ.get('DISPLAY', ':0'),
            XAUTHORITY=f'{HOME}/.Xauthority', LC_ALL='C.UTF-8')
 cmd = ['flatpak', 'run', '--filesystem=home', 'org.DolphinEmu.dolphin-emu', '-u', U, '-b',
-       '-e', ISO, '-v', 'OGL', '-C', 'Dolphin.Movie.DumpFrames=' + ('True' if a.dump else 'False'),
+       '-e', ISO, '-v', a.video, '-C', 'Dolphin.Movie.DumpFrames=' + ('True' if a.dump else 'False'),
        '-C', 'GFX.Settings.FrameDumpsUseFFV1=True']
 if a.gecko:
     cmd += ['-C', 'Dolphin.Core.EnableCheats=True']

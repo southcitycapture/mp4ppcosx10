@@ -379,7 +379,9 @@ bool salStartAi(void) {
      * started, decoded, advanced and retired, and the frame still costs what
      * it costs.  That is the point -- it makes "is the audio path what broke
      * this" a one-flag question without changing the game's timing. */
-    port_musyx_mix_mute = port_opt.mute;
+    port_musyx_mix_mute = port_opt.mute && !port_opt.wav;
+    /* M51 (PLAN.md 66.5): --mute with --wavdump (the G4 video) mixes -- into
+     * the WAV -- and only the speakers are quiet (audio_out_sdl.c) */
     port_musyx_mix_init();
     port_log("port> MusyX SAL: mixing started\n");
     return TRUE;
