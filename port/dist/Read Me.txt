@@ -1,6 +1,6 @@
 Mario Party 4 PowerPC Edition
 =============================
-Version 0.9.19
+Version 0.9.20
 
 
 WHAT THIS IS
@@ -171,6 +171,18 @@ it, put
 
 in the config file.
 
+Since 0.9.20 there is also the whole idea (m441.bloball): every shadow in
+Butterfly Blitz a round blob -- under each character, net, basket and
+butterfly -- so the shadows are easy to see and the game's shadow pass has
+nothing left to draw.  It is cheaper than the shadows it replaces (the
+reference machine's drawn frame 20.2 ms against 24.1 with the default set;
+30.0 frames a second in three runs out of three) and, like every Lite
+option, changes nothing the game does.  It is off until you choose it --
+the picture is docs/screenshots/m51-blob-all-m441.jpg in the project, the
+console's shadows, today's Lite and the blobs side by side.  To have it:
+
+    liteopts = ref,m441.bloball
+
 Every other screen is drawn exactly as before.  A faster Mac than the
 reference gets no Lite at all.  A slower one gets the same set and a few
 extras on top, which the reference machine does not need: fewer fish and
@@ -202,6 +214,8 @@ and their names (liteopts = ... in the config file):
     m441.nshadow   Butterfly Blitz: the nets and baskets cast no shadow
     m441.blob      Butterfly Blitz: a round shadow under each net instead
                    (with or without m441.nshadow, the nets' own shadows go)
+    m441.bloball   Butterfly Blitz: every shadow a round blob (the
+                   characters, nets, baskets and butterflies)
     m441.rings     Butterfly Blitz: every other big flower by the fence
     m401.char      Manta Rings: the lighter character models
     m401.fish      Manta Rings: each fish school drawn to 10 fish
@@ -346,20 +360,39 @@ write session.dtm and GMPE01.ini.  To watch it on a Mac:
      yours), and turn on Config > General > Enable Cheats.  The code it
      holds hands the game the board's random seeds the Mac used (the
      console takes them from its clock, which no movie can set).
-  3. Graphics: any.  Config > Advanced: CPU emulation engine JIT,
-     dual core off, and leave "Enable Custom RTC" off -- the movie carries
-     the date and time the recording started from.
+  3. Use session-mac.dtm (it asks Dolphin for the Vulkan renderer; the
+     movie sets the emulation settings that matter by itself: one CPU
+     thread, the JIT, the DSP's HLE, the console's disc speed, English).
+     Config > GameCube: "Skip Main Menu" on (the console's boot animation
+     would put every frame late), and leave "Enable Custom RTC" off -- the
+     movie carries the date and time the recording started from.
   4. The memory card: a recording made on a fresh card needs nothing (the
      movie asks Dolphin for a new, empty card and leaves yours alone).  A
      recording made on your own card comes with NAME.rec.card.raw: put it
      in Slot A (Config > GameCube > Slot A: Memory Card, the folder icon)
      for the replay, and put your own card back after.
-  5. Movie > Play Input Recording... > session.dtm, and choose the disc
-     image.  Leave Movie > Read-Only Mode on.
+  5. Movie > Play Input Recording... > session-mac.dtm, and choose the
+     disc image.  Leave Movie > Read-Only Mode on.
 
 Dolphin then plays the session by itself.  Lite mode does not matter:
 the console has none, and Lite never changes what the game does, so a
 session played with Lite on replays the same game in Dolphin.
+
+
+MAKING A VIDEO OF A RECORDING
+
+For the developers (the tools are in the project's source, port/tools, and
+expect the lab's setup: a Linux machine with ffmpeg that reaches the G4 over
+ssh, and Dolphin for the second half):
+
+    port/tools/session_video.sh NAME.rec [--from FRAME] [--to FRAME]
+
+plays the recording again on the G4 at the game's own pace frame by frame
+(nothing dropped, every frame drawn and saved, the sound mixed exactly as it
+was heard), and makes NAME-g4.mp4; then, once tools/dolphin_sync.py has
+found the console's timeline for it, NAME-side.mp4: the G4 on the left,
+Dolphin on the right, in step, with the G4's sound.  FRAME counts the
+game's frames from the boot (the recording's own numbering).
 
 
 LOADING
@@ -536,6 +569,16 @@ WHERE YOUR THINGS LIVE
         benchmark-result.txt  Benchmark Mode's last result (and its
         benchmark/            scenes' logs)
         MarioParty4.log       the log of the last run
+        marathon.txt          Developer Mode's marathon: the minigames, who
+        marathon-result.txt   plays, the results so far; its last summary;
+        marathon-logs/        each minigame's log
+        marathon-list.txt     (yours, if you write it) a marathon's own list
+        soak-plan.txt         the soak planner's plan
+
+    ~/Documents/MarioParty4 Recordings/
+        DATE TIME.rec         a session recording (Record this session),
+        DATE TIME.rec.card.raw   with the memory card as it was at the start
+        Marathon DATE.txt     each marathon's summary
 
 Deleting the folder loses your save file, so that is the folder to back up.
 The disc image stays wherever you keep it.

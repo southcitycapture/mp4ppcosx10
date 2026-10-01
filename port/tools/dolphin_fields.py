@@ -5,11 +5,11 @@ frame dump shows (M51, PLAN.md 66.5).
   dolphin_fields.py FRAMES.avi [--offset K] > FIELDS
 
 Dolphin stamps each dumped frame with the emulated time since the boot; the
-game's VCounter counts fields from its PADInit, K = 26 fields after the boot
+game's VCounter counts fields from its PADInit, the frame dump lags it: field = round(t x 59.94) + 10, measured by matching pictures (PLAN.md 66.5)
 (the poll calibration: PADRead at VCounter v reads poll 2v + 53, two polls a
 field from the boot).  field = round(t x 59.94) - K."""
 import os, subprocess, sys
-off = 26
+off = -10
 args = sys.argv[1:]
 if '--offset' in args:
     i = args.index('--offset')
