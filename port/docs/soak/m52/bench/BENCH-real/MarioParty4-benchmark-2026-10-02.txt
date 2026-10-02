@@ -1,0 +1,34 @@
+Mario Party 4 PowerPC Edition 0.9.21 -- Benchmark Mode report
+Date:      2026-10-02 00:12 (539 s)
+Game:      0.9.21 (milestone M52)
+Machine:   PowerMac3,5
+CPU:       2 x 1000 MHz, 7450 (G4), AltiVec yes
+Memory:    1536 MB
+Graphics:  ATI Radeon 9000 (ATI Technologies Inc.), 64 MB VRAM, 6 texture units, OpenGL 1.3 ATI-1.5.28
+System:    Mac OS X 10.5.4
+Check:     ok -- the reference class (dual 1 GHz G4, 64 MB Radeon 9000 or better), whose promise is 30 fps everywhere: measured screen by screen in docs/fps-scoreboard.md (0.9.21, Lite at auto)
+
+Scenes (the median of the frames presented each second at real time, from the
+scene's start; 30 is the console's rate):
+  1. The opening movie                  30.0 fps (the slowest tenth 30.0), game speed 100%
+  2. Toad's Midway Madness (board)      30.0 fps (the slowest tenth 29.9), game speed 100%
+  3. Butterfly Blitz, Lite off          26.2 fps (the slowest tenth 25.1), game speed 100%
+  4. Butterfly Blitz, Lite on           29.9 fps (three runs: 29.4 / 29.9 / 29.9), game speed 100%
+  5. Makin' Waves (the water)           30.0 fps (the slowest tenth 29.4), game speed 100%
+  6. Butterfly Blitz, the chosen set    not needed
+
+Verdict:   as fast as the reference machine (a dual 1 GHz Power Mac G4 with a Radeon 9000).
+
+Settings chosen (written to the game's config):
+  lite     = auto
+             Lite changes only what is drawn on the heaviest screens:
+             Butterfly Blitz (no butterfly or net shadows and fewer fence
+             flowers), and the lighter character models in Manta Rings,
+             Fruits of Doom, Darts of Doom, Order Up, Reversal of Fortune
+             and Panel Panic.
+  water    = auto
+  movies   = 1
+  resident = 256 (MB of game files kept in memory)
+
+Change them any time: run Benchmark Mode again (F1 or M in the game), or edit
+~/Library/Application Support/MarioParty4/config (the Read Me lists the keys).

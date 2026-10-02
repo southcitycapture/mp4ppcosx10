@@ -1,0 +1,14 @@
++ The marathon is over
+10 of 10 minigames played, 1 player at the controllers
+  Wins: Mario 2, Luigi 5, Peach 3, Yoshi 4 (most coins from the minigame)
+ 
+  m409 Toad's Quick Draw       +0  +0 +10  +0  1:54
+  m410 Three Throw             +0  +0  +0 +10  0:51
+  m411 Photo Finish            +0  +0  +0 +10  1:26
+  m412 Mr. Blizzard's Brigade +10  +0  +0  +0  0:35
+  m413 Bob-omb Breakers        +0 +10  +0  +0  2:27
+  m414 Long Claw of the Law    +0 +10  +0  +0  0:48
+  m415 Stamp Out!              +0 +10  +0  +0  0:52
+  m416 Candlelight Flight      +0 +10 +10 +10  0:39
+  m417 Makin' Waves            +0 +10 +10 +10  0:26
+  m418 Hide and Go BOOM!      +10  +0  +0  +0  1:00

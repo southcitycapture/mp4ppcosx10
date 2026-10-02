@@ -1,0 +1,7 @@
+# Mario Party 4 PowerPC Edition -- a minigame marathon (Developer Mode, M52 dry run)
+list = 409,410,411,412,413,414,415,416,417,418
+humans = 1
+cast = mario,luigi,peach,yoshi
+record = 1
+next = 0
+childflags = --keepplay --play /Users/zach/m52/mg-human-m52.play

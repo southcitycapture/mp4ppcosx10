@@ -1,0 +1,2 @@
+display=4 others=1.4% top=sleep:1.0 waited=10s ok
+display=4 others=27.8% top=mdworker:14.1 waited=0s BAD

@@ -1,0 +1,8 @@
+# m52 chain start Fri Oct  2 00:12:53 EDT 2026  isle md5 b1186af53ad85a9fedf1aca3e5190073
+BENCH-real-@f1 EXIT=0 wall=544s fault=0 isle=d6ec5b14 md5 args='--benchmark'
+BENCH-real config restored
+DONE
+# m52 chain start Fri Oct  2 00:22:43 EDT 2026  isle md5 b1186af53ad85a9fedf1aca3e5190073
+BENCH-lab-@f1 EXIT=0 wall=90s fault=0 isle=d6ec5b14 md5 args='--benchmark'
+BENCH-lab config restored
+DONE

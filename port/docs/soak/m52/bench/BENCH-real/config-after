@@ -1,0 +1,12 @@
+# Mario Party 4 -- settings remembered from the command line and the
+# dialogs.  One `key = value' a line; `#' starts a comment.
+fullscreen = 0
+machine = ok: PowerMac3,5, 2 x 1000 MHz 7450 (G4), 1536 MB RAM, ATI Radeon 9000 OpenGL Engine, 64 MB VRAM, 6 units, OS 10.5.4
+image = /Users/zach/MarioParty4/mp4.nkit.iso
+lite = auto
+liteopts = 
+water = auto
+movies = 1
+resident = 256
+benchmark = 2026-10-02 00:12 reference
+benchoffer = done

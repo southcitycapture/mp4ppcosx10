@@ -1,0 +1,22 @@
+total 19288
+-rw-r--r--  1 zach  staff   327891 Sep 30 21:09 2026-09-30 21.05.20 marathon m401.rec
+-rw-r--r--  1 zach  staff   369199 Sep 30 21:39 2026-09-30 21.19.14 marathon m401.rec
+-rw-r--r--  1 zach  staff   483092 Sep 30 21:44 2026-09-30 21.41.26 marathon m401.rec
+-rw-r--r--  1 zach  staff   587364 Sep 30 21:48 2026-09-30 21.44.32 marathon m441.rec
+-rw-r--r--  1 zach  staff   734101 Oct  2 00:43 2026-10-02 00.26.45 marathon m409.rec
+-rw-r--r--  1 zach  staff   717190 Oct  2 00:47 2026-10-02 00.44.03 marathon m409.rec
+-rw-r--r--  1 zach  staff   643908 Oct  2 00:48 2026-10-02 00.47.01 marathon m410.rec
+-rw-r--r--  1 zach  staff   747242 Oct  2 00:51 2026-10-02 00.48.56 marathon m411.rec
+-rw-r--r--  1 zach  staff   635726 Oct  2 00:53 2026-10-02 00.51.27 marathon m412.rec
+-rw-r--r--  1 zach  staff  1276780 Oct  2 00:56 2026-10-02 00.53.06 marathon m413.rec
+-rw-r--r--  1 zach  staff   625876 Oct  2 00:59 2026-10-02 00.57.12 marathon m414.rec
+-rw-r--r--  1 zach  staff   623971 Oct  2 01:01 2026-10-02 00.59.04 marathon m415.rec
+-rw-r--r--  1 zach  staff   776210 Oct  2 01:02 2026-10-02 01.01.00 marathon m416.rec
+-rw-r--r--  1 zach  staff   627389 Oct  2 01:04 2026-10-02 01.02.43 marathon m417.rec
+-rw-r--r--  1 zach  staff   636623 Oct  2 01:06 2026-10-02 01.04.13 marathon m418.rec
+-rw-r--r--  1 zach  staff      267 Sep 30 21:09 Marathon 2026-09-30 21.09.txt
+-rw-r--r--  1 zach  staff      267 Sep 30 21:39 Marathon 2026-09-30 21.39.txt
+-rw-r--r--  1 zach  staff      338 Sep 30 21:48 Marathon 2026-09-30 21.48.txt
+-rw-r--r--  1 zach  staff      268 Oct  2 00:43 Marathon 2026-10-02 00.43.txt
+-rw-r--r--  1 zach  staff      528 Oct  2 00:56 Marathon 2026-10-02 00.56.txt
+-rw-r--r--  1 zach  staff      756 Oct  2 01:06 Marathon 2026-10-02 01.06.txt

@@ -2,7 +2,7 @@
 # M52 (PLAN.md 67): the RC1 flow's dry run, ON THE G4 (a job of the lab's
 # runner: tools/m52_job.sh).  The user's marathon as Developer Mode starts it
 # -- `isle --marathon PLAN` -- over MT_LIST (ten minigames in a row), one
-# person (a scripted stand-in for player 1: mg-human.play, the plan's
+# person (a scripted stand-in for player 1: ref/movies/mg-human-m52.play, the plan's
 # childflags) and three COMs, every minigame recorded; after MT_STOPAT
 # results the child then playing is stopped the way "Stop the marathon here"
 # stops it (the plan's .stop file, the child closed -- by its pid), the
@@ -27,7 +27,7 @@ humans = 1
 cast = mario,luigi,peach,yoshi
 record = 1
 next = 0
-childflags = --keepplay --play $HOME/m51/mg-human.play
+childflags = --keepplay --play $HOME/m52/mg-human-m52.play
 P
 cp "$PLAN" "$D/plan-start.txt"
 log() { echo "$(date +%H:%M:%S) $*" >> "$D/dry.txt"; }

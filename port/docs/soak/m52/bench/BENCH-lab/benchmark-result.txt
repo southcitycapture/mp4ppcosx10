@@ -1,0 +1,17 @@
+! This Mac is slower than the reference machine
+! (a dual 1 GHz Power Mac G4 with a Radeon 9000).
+ 
+  Butterfly Blitz, Lite on         22.0 fps
+  Butterfly Blitz, the chosen set  29.9 fps
+ 
+Chosen and saved:
+  Lite mode: on, the reference set and the extras
+  Round shadows (for speed) in Manta Rings,
+    Order Up, Hide and Go BOOM!, Reversal of
+    Fortune, Panel Panic, Toad's Quick Draw, Darts
+    of Doom, Fruits of Doom, Butterfly Blitz,
+    Beach Volley Folly
+  Water: flat - movies: off - memory for loading: 256 MB
+ 
+The report is on your Desktop:
+  MarioParty4-benchmark-2026-10-02.txt

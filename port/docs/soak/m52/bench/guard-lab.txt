@@ -1,0 +1,2 @@
+display=4 others=0.3% top=sleep:0.2 waited=0s ok
+display=4 others=0.7% top=sleep:0.3 waited=0s ok
