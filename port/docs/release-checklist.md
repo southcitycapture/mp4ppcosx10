@@ -7,6 +7,52 @@ numbers are the long form. The machine is the reference G4 throughout — a
 dual 1 GHz Power Mac G4 (PowerMac3,5), 1.5 GB, 64 MB Radeon 9000, Mac OS X
 10.5 — unless a line says otherwise.
 
+## RC1 = 0.9.21 (M52, 2026-10-01): what it is and what it is not
+
+**It is** the build the user plays the whole minigame marathon on (Developer
+Mode, every minigame recorded; `docs/RC1-guide.md`).  Nothing is renamed RC
+or 1.0 -- that is the user's call after the playtest.  **The 30-fps line**:
+@SCORE@ of 82 screens on the final build's count (`docs/fps-scoreboard.md`,
+Lite at auto); m409 Toad's Quick Draw passes at exactly the bar by five runs
+on 0.9.20 (29.9 / 29.7 / 28.9 / 29.0 / 29.5, median 29.5), m433 and m401 at
+29.9.  **Round shadows** (`<game>.blob`, ten games): a speed-only fallback
+Benchmark Mode picks per game on a Mac below the reference; never on on the
+G4.  **Its evidence**: both md5 walks the references, the picture checks with
+Lite off 0.9.16's set but m427's known river, a soak of two hours or more with
+0 faults, the RC1 flow dry-run on the G4 (PLAN.md 67).
+
+**Every open line below, with its status for RC1** (the numbers are the
+list's own):
+
+| # | line | RC1 status |
+|---|---|---|
+| 1 | the pauses | **closed** (0.9.9: 0 resyncs; every soak since, M52's 8 h 18 min read included: 0 resyncs) |
+| 2 | a real single-processor Mac | **not tested; known limit** -- the Read Me says what one CPU gets; nothing in RC1 changes it |
+| 3 | Mac OS X 10.4 Tiger | **not tested** -- built for 10.4, every run is Leopard; booting Tiger is the user's |
+| 4 | controllers 3 and 4; one card slot | **not tested** (one pad) / **by design** |
+| 5 | other cards than the Radeon 9000 64 MB | **not tested** -- the drivers' lists only |
+| 6 | the Read Me's Terminal lines typed by hand | **not tested by a person** -- the lab's runner makes the same launch daily |
+| 7 | the name | **the user's call** -- a rename of `PORT_VERSION_STRING` + a rebuild; this is 0.9.21 |
+| 8 | Cheep Cheep Sweep's pond look | **the user's call** -- "sky" ships; RC1's marathon shows it |
+| 9 | m427's black left half | **closed** (fixed M46) |
+| 10 | the pillar lights at 30 fps | **the user's eye** -- RC1's marathon plays all three Bowser games |
+| 11 | PowerPCube's controls | **partly tested** -- the lab's `--keytest`; no real pad remap |
+| 12 | w01's pooled rule | **the user's rule**; the count passes it |
+| 13 | a card-side skin | **not built** (measured: no screen reaches the bar by it) |
+| 14 | the skin at the decode | **opt-in, not shipped on** |
+| 15 | m427's river, two states at real time | **known, not a regression**; the picture checks pair it |
+| 16 | the G4 restarted once on its own | **not seen again** (M47-M52) |
+| 17 | Lite's options | **closed** (the user's picks, M50) |
+| 18 | m433 / m401 at the edge | **closed** -- five runs each on 0.9.20 with the display guarded: m433 29.9, m401 29.9 (M52) |
+| 19 | the round shadow `m441.blob` | **superseded** -- the user's M52 decision: round shadows are a speed-only fallback, `m441.bloball` and nine `<game>.blob` for Benchmark Mode to pick below the reference |
+| 20 | Benchmark Mode on other Macs | **G4 + MacBook (Rosetta) only**; M52 adds the round-shadow choice, seen on the MacBook (slower) |
+| 21 | `m441.bloball`'s picture | **settled by the user's decision** (line 19): never on by preference |
+| 22 | the Dolphin replay | **known limit** -- exact where people are the clock; the float/disc projects not started; marathon recordings do not convert (the Read Me says so) |
+| 23 | the marathon with real people | **RC1 is this test**; the lab's dry run (10 minigames, a stop and a resume, two videos) passed, PLAN.md 67.4 |
+| 24 | **m409 Toad's Quick Draw (M52)** | **at the bar** -- passes on its five-run median (29.5); its shadow pass costs 4 ms of the game thread (PLAN.md 67.2), a lever for a later milestone if the user wants it off the edge |
+| 25 | **the soak's memory (M52)** | **watch** -- an 8 h 18 min soak's rss climbed 262 -> 315 MB after the first board (~7 MB an hour); a party is 1-2 h, a marathon child minutes |
+| 26 | **the shadow passes elsewhere (M52)** | **measured, not built** -- the sweep names other minigames whose shadow pass is heavy (m407, m420, m445, m449, m461, ...; PLAN.md 67.2); each would be a table line and a proof |
+
 ## The v1.0 line, amended at M40 (2026-09-23): "30 fps overall"
 
 The user's one requirement for 1.0, in their words: **"30fps everything"** --

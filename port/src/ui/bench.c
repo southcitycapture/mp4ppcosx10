@@ -150,7 +150,7 @@ static unsigned bench_asked_at;
 
 static void bench_exec_driver(void) {
     char exe[2048];
-    char* argv[4];
+    char* argv[5];
     int k = 0;
     if (!bench_pending || !self_path(exe, sizeof(exe))) {
         return;
@@ -160,6 +160,9 @@ static void bench_exec_driver(void) {
     argv[k++] = (char*)"--benchmark";
     if (port_opt.force) {
         argv[k++] = (char*)"--force";
+    }
+    if (port_opt.mute) {
+        argv[k++] = (char*)"--mute";
     }
     argv[k] = NULL;
     spawn(exe, argv); /* the game's own exit goes on */
@@ -270,6 +273,7 @@ static void read_log(const char* path, const BenchScene* sc, BenchResult* r) {
 }
 
 static int bench_rep; /* the three-run rule's repeat, 0 1 2 (the log's name) */
+static double bench_f441_lab; /* M52: the lab's stand-in for scene 4 (MP4_BENCH_F441), 0 if none */
 static int run_scene(const char* exe, int k, int nsc, const BenchScene* sc, const char* dir, BenchResult* r) {
     char logp[1200], banner[160], args[1024];
     char* argv[64];
@@ -296,6 +300,9 @@ static int run_scene(const char* exe, int k, int nsc, const BenchScene* sc, cons
     argv[argc++] = banner;
     if (port_opt.force) {
         argv[argc++] = (char*)"--force";
+    }
+    if (port_opt.mute) {
+        argv[argc++] = (char*)"--mute"; /* M52: a muted driver's scenes are muted too */
     }
     argv[argc] = NULL;
     port_log("port> benchmark (M50): scene %d of %d, %s:", k + 1, nsc, sc->name);
@@ -420,14 +427,22 @@ typedef struct {
     double vis;       /* the visual cost: mean pixel change, console vs round (0-255) */
 } BlobChoice;
 static const BlobChoice blob_choices[] = {
-    /* filled from M52's measurements (PLAN.md 67.2), in visual-cost order */
-    {"m441.bloball", "Butterfly Blitz", 30.0, 3.9, 0.0},
-    {"m401.blob", "Manta Rings", 30.0, 0.0, 0.0},
-    {"m436.blob", "Fruits of Doom", 30.0, 0.0, 0.0},
-    {"m435.blob", "Darts of Doom", 30.0, 0.0, 0.0},
-    {"m431.blob", "Order Up", 30.0, 0.0, 0.0},
-    {"m444.blob", "Reversal of Fortune", 30.0, 0.0, 0.0},
-    {"m463.blob", "Panel Panic", 30.0, 0.0, 0.0},
+    /* PLAN.md 67.3: cost = the M51 scoreboard's run on the reference (0.9.20,
+     * Lite at auto; entry +300..+1,500: max(drawn + consumed, render thread +
+     * decode)); saving = the drawn frame the round shadows take off in
+     * lockstep (console vs round shadows; m441: today's set vs m441.bloball,
+     * M51); vis = the mean pixel change of docs/screenshots/m52-blob-*.jpg.
+     * Walked in this order: the least visible change first */
+    {"m401.blob", "Manta Rings", 30.0, 4.1, 0.28},
+    {"m431.blob", "Order Up", 29.1, 5.8, 0.40},
+    {"m418.blob", "Hide and Go BOOM!", 28.5, 9.6, 0.42},
+    {"m444.blob", "Reversal of Fortune", 27.7, 2.1, 0.65},
+    {"m463.blob", "Panel Panic", 25.7, 9.3, 0.75},
+    {"m409.blob", "Toad's Quick Draw", 33.2, 3.2, 0.87},
+    {"m435.blob", "Darts of Doom", 26.4, 13.5, 1.46},
+    {"m436.blob", "Fruits of Doom", 26.9, 15.4, 1.76},
+    {"m441.bloball", "Butterfly Blitz", 30.0, 3.9, 1.81},
+    {"m433.blob", "Beach Volley Folly", 31.3, 3.3, 2.00},
 };
 #define N_BLOB ((int)(sizeof(blob_choices) / sizeof(blob_choices[0])))
 #define PAIR_MS (2000.0 / 59.94)   /* one presented frame at 30: two retraces */
@@ -537,6 +552,21 @@ void port_bench_driver(void) {
         /* (BENCH_BAR for "faster": a wrong "faster" turns Lite off) */
         if (!fast && WANT(3)) {
             run_scene_judged(exe, 3, N_SCENES, &scenes[3], dir, &res[3]); /* Lite as needed */
+        }
+        {
+            /* M52, the lab's: MP4_BENCH_F441=FPS stands in for scene 4's
+             * reading (a slower Mac's, on the G4: the round-shadow choice and
+             * its result screen and report shown on real hardware); the log
+             * and the report say so.  Never set on a player's Mac */
+            const char* f441 = getenv("MP4_BENCH_F441");
+            if (f441 && *f441 && !fast) {
+                bench_f441_lab = atof(f441);
+                port_log("port> benchmark (M52): the lab's MP4_BENCH_F441 = %.1f stands in for scene 4 (%.1f measured)\n",
+                         bench_f441_lab, res[3].median);
+                res[3].ran = 1;
+                res[3].lines = res[3].lines >= 3 ? res[3].lines : 3;
+                res[3].median = bench_f441_lab;
+            }
         }
         if (WANT(4)) run_scene_judged(exe, 4, N_SCENES, &scenes[4], dir, &res[4]);
 #undef WANT
@@ -675,6 +705,10 @@ void port_bench_driver(void) {
             fmt_fps(a, sizeof(a), &res[k]);
             fprintf(f, "  %d. %-34s %s\n", k + 1, scenes[k].name, a);
         }
+        if (bench_f441_lab > 0.0) {
+            fprintf(f, "  (the lab's test: scene 4's reading was replaced by %.1f fps -- MP4_BENCH_F441)\n",
+                    bench_f441_lab);
+        }
         fprintf(f, "\nVerdict:   %s.\n", verdict);
         fprintf(f, "\nSettings chosen (written to the game's config):\n");
         fprintf(f, "  lite     = %s%s%s\n", lite, *liteopts ? ", liteopts = " : "", liteopts);
@@ -743,6 +777,9 @@ void port_bench_driver(void) {
         argv[n++] = (char*)port_bench_result_path();
         if (port_opt.force) {
             argv[n++] = (char*)"--force";
+        }
+        if (port_opt.mute) {
+            argv[n++] = (char*)"--mute"; /* M52: and the game that comes back */
         }
         {
             /* the lab's: flags for the game that comes back (a picture of the

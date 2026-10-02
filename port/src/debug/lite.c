@@ -491,8 +491,8 @@ typedef struct {
     float rmul; /* the blob's radius: the model's half-width x scale x rmul */
 } BlobGame;
 static const BlobGame blob_games[] = {
-    {40190, 0.7f}, {43690, 0.7f}, {43590, 0.7f}, {43190, 0.7f}, {44490, 0.7f}, {46390, 0.7f},
-    {40990, 0.7f}, {43390, 0.7f}, {41890, 0.7f},
+    {40190, 0.8f}, {43690, 0.8f}, {43590, 0.8f}, {43190, 0.8f}, {44490, 0.8f}, {46390, 0.8f},
+    {40990, 0.8f}, {43390, 0.8f}, {41890, 0.8f},
 };
 #define N_BLOB_GAMES ((int)(sizeof(blob_games) / sizeof(blob_games[0])))
 
@@ -554,7 +554,15 @@ static int blob_extent(HSFDATA* hsf, float* cx, float* cy, float* cz, float* hw)
         *cx = (x0 + x1) * 0.5f;
         *cy = (y0 + y1) * 0.5f;
         *cz = (z0 + z1) * 0.5f;
-        *hw = (x1 - x0) > (z1 - z0) ? (x1 - x0) * 0.5f : (z1 - z0) * 0.5f;
+        /* the disc's half-width: the geometric mean of the casting meshes'
+         * two horizontal half-extents, at least 0.3 of the larger -- a
+         * character as wide as deep keeps its width, a thin wide thing (m433's
+         * net, m409's train) is not a lake */
+        float hx = (x1 - x0) * 0.5f, hz = (z1 - z0) * 0.5f, hm = hx > hz ? hx : hz;
+        *hw = sqrtf(hx * hz);
+        if (*hw < 0.3f * hm) {
+            *hw = 0.3f * hm;
+        }
     } else {
         *cx = *cy = *cz = *hw = 0.0f;
     }

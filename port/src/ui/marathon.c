@@ -538,9 +538,12 @@ void port_marathon_driver(void) {
             static char cf[256];
             char* t;
             snprintf(cf, sizeof(cf), "%s", p.childflags);
-            for (t = strtok(cf, " "); t && argc < 44; t = strtok(NULL, " ")) {
+            for (t = strtok(cf, " "); t && argc < 43; t = strtok(NULL, " ")) {
                 argv[argc++] = t;
             }
+        }
+        if (port_opt.mute) {
+            argv[argc++] = (char*)"--mute"; /* M52: a muted driver's children are muted too */
         }
         argv[argc++] = (char*)"--log";
         argv[argc++] = logp;
