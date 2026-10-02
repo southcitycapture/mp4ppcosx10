@@ -1,0 +1,97 @@
+# RC1: playing the whole minigame marathon on the G4
+
+One page for the release-candidate playtest (M52, PLAN.md 67).  The build is
+**0.9.21** (`~/MarioParty4.app` on the G4, or the disk image
+`MarioParty4-PowerPC-0.9.21.dmg`).  Nothing is named RC or 1.0 — that is
+your call after this run.
+
+## 1. Before you start
+
+* The G4 as it is every day (Leopard, two CPUs, the Radeon 9000).  Close the
+  leave-behind soak first if it is still running (the lab's notes give its
+  pid; or just quit the game window).
+* A pad on port 1 (the Xbox pad), or the keyboard (Z = A, X = B, Return =
+  START; F5 = screenshot; F1 or M = the port's menu).
+* About **3½–4 hours** for all 63 minigames (each one: about a minute of the
+  game hurrying there by itself, then the minigame, then its results).  You
+  can stop and resume at any point, so three sittings of ~21 minigames work
+  just as well (From / To below).
+
+## 2. Running it
+
+1. Open the game, press **F1** (or **M**) → **Developer Mode** →
+   **Minigame marathon**.
+2. Set the rows (left/right on the stick, the D-pad or the arrow keys):
+   * **Minigames**: *All* — or *From/To* for a sitting (e.g. m401 → m421,
+     m422 → m442, m443 → m463);
+   * **Players at the controllers**: 1 (the computer plays the other three);
+   * **Player 1 … 4**: who plays whom (any; your pick is remembered);
+   * **Record each minigame**: **On**.
+3. **Start the marathon**.  The window closes and a new one opens for each
+   minigame: a black screen with "Getting to the minigame — about 60 s",
+   then the instruction card, which **waits for you: press START** (Z for
+   the practice round).  Play.  After the results the next one loads.
+4. To stop: **F1/M → Stop the marathon here** (the current minigame is not
+   counted; it is first on resume).  To resume later: **Developer Mode →
+   Resume the stopped marathon**.
+5. At the end (or a stop) the game opens on the **summary**: every
+   minigame, the coins each player won in it, the time, who won most.  It
+   is also saved as `~/Documents/MarioParty4 Recordings/Marathon DATE.txt`.
+
+## 3. What to note
+
+For each minigame, only what is *off*: a wrong or missing picture (shadow,
+water, colour, a model, black where there should be picture), the frame
+rate visibly dropping or stuttering, the sound breaking up or out of step,
+a control that does not answer, a hang (no progress for a minute), a crash
+(the window vanishes; the marathon stops and says so).  Lite mode is on for
+seven heavy minigames (LITE MODE in the Read Me says what it changes) —
+that is expected, not a finding.
+
+## 4. Reporting a finding
+
+1. **Press F5 at the moment.**  The picture goes to the Desktop as
+   `Mario Party 4 NNNNN (frame F).png` — **F is the game's frame**, the
+   number the recording uses.  (The log of that minigame says the same:
+   `screenshot (F5): … the game's frame F, recording …`, and the recording
+   itself marks the moment.)
+2. Note the minigame and the **recording's file name** — in
+   `~/Documents/MarioParty4 Recordings/`, named
+   `DATE TIME marathon mNNN.rec` (one per minigame, with its memory card
+   beside it).
+3. The report is three things: **the minigame, the screenshot (its frame F),
+   the recording's name.**  With those the lab replays the exact moment on
+   the G4, frame for frame (`--replay`), and can video it.  The minigame's
+   own log is `~/Library/Application Support/MarioParty4/marathon-logs/mNNN.log`
+   (attach it if anything crashed).
+
+## 5. Making the videos
+
+On littlejelly (the lab's tools; the G4 does the work, one job at a time —
+do not run it while you are playing):
+
+```sh
+scp "g4:Documents/MarioParty4 Recordings/DATE TIME marathon mNNN.rec" ~/rc1/
+port/tools/session_video.sh ~/rc1/"DATE TIME marathon mNNN.rec" \
+    --from $((F - 600)) --to $((F + 600)) --nodolphin --name mNNN-finding
+```
+
+→ `~/mp4-videos/mNNN-finding-g4.mp4`: the G4 replaying those 20 seconds
+(F ± 10 s) in lockstep, every frame, with the game's own sound.  Leave out
+`--from/--to` for the whole recording (the minigame starts near frame
+14,000; the replay draws ~8 frames a second, so a 3-minute minigame takes
+~25 minutes).  `--nodolphin`: marathon recordings carry the lab's teleport
+and do not turn into Dolphin movies yet (Read Me, WHAT IS NOT QUITE RIGHT
+YET); a session recorded from the boot with **Record this session** does.
+
+## 6. Known before you start
+
+* Toad's Quick Draw (m409) sits exactly on the 29.5 line on the reference
+  machine (five runs: 29.9 / 29.7 / 28.9 / 29.0 / 29.5): a dip to 29 there
+  is the machine's edge, not a finding.
+* The Dolphin replay of a recording is exact through the menus, the
+  board's dialogs and people's turns; inside a long physics minigame the
+  two part after tens of seconds (float rounding), and a computer player's
+  board turn can start later on the console.
+* The round shadows (`<game>.blob`) are **not** on on the G4 — Benchmark
+  Mode turns them on only on a Mac slower than this one.

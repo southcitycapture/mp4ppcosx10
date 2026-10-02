@@ -150,7 +150,7 @@ void port_print_keys(FILE* f) {
     emitf(f, "%s  Q  E                    L  R\n", pre);
     emitf(f, "%s  Shift or Tab            Z\n", pre);
     emitf(f, "%s  Return                  Start (the game's own pause, in a minigame)\n", pre);
-    emitf(f, "%s  F5 (or F12)             screenshot -> ~/Desktop/Mario Party 4 NNNNN.png\n", pre);
+    emitf(f, "%s  F5 (or F12)             screenshot -> ~/Desktop/Mario Party 4 NNNNN (frame F).png\n", pre);
     emitf(f, "%s                          (Leopard gives F12 to Dashboard unless you change it)\n", pre);
     emitf(f, "%s  Escape, Cmd-Q           quit (through the game's reset: the save is written)\n", pre);
     emitf(f, "%sXbox One pads over USB (no driver needed), then any pads SDL knows,\n", pre);

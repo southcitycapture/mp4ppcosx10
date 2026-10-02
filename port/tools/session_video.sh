@@ -19,8 +19,10 @@
 # (WORK/sync/map.json and session.dtm): made here by tools/dolphin_sync.py if
 # it is not there yet (an hour or more for a board's worth of play).
 #
-# Runs on littlejelly: the G4 through the lab's job runner (~/bin/m51job: one
-# G4 job at a time), Dolphin through tools/dolphin_watch.py (one at a time).
+# Runs on littlejelly: the G4 through the lab's job runner (~/bin/m52job and
+# m52wait since M52 -- JOBRUN / JOBWAIT name others; one G4 job at a time),
+# Dolphin through tools/dolphin_watch.py (one at a time).  APP: the G4 bundle
+# in its home (default MarioParty4.app, the installed release).
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 export PATH="$HOME/bin:$PATH"
@@ -43,7 +45,9 @@ OUT=$HOME/mp4-videos
 W=$OUT/work/$NAME
 mkdir -p "$W"
 FFMPEG=${FFMPEG:-$HOME/bin/ffmpeg}
-APP=${M51_APP:-mp4-d4.app}
+APP=${APP:-${M51_APP:-MarioParty4.app}}
+JOBRUN=${JOBRUN:-m52job}
+JOBWAIT=${JOBWAIT:-m52wait}
 say() { echo "$(date +%H:%M:%S) session_video $NAME: $*"; }
 
 # ---- 1. the G4: the replay in lockstep, every frame dumped ----
@@ -52,7 +56,7 @@ ssh g4 "mkdir -p ~/m51/video && rm -f ~/m51/video/$NAME.fd ~/m51/video/$NAME.wav
 scp -q "$REC" "g4:m51/video/$NAME.rec"
 FF=""
 if [ "$FROM" -gt 120 ]; then FF="--ffto $((FROM - 60))"; fi
-m51job "video-$NAME" <<EOF
+$JOBRUN "video-$NAME" <<EOF
 \$HOME/$APP/Contents/MacOS/isle --replay \$HOME/m51/video/$NAME.rec --lockstep --nomenu --mute \
   --framedump \$HOME/m51/video/$NAME.fd --framedumpfrom $FROM --wavdump \$HOME/m51/video/$NAME.wav \
   $FF --frames $((TO + 2)) --status --log \$HOME/m51/video/$NAME.log
@@ -67,7 +71,8 @@ python3 "$here/framedump_read.py" "$W/fd.fifo" --from "$FROM" --to "$TO" --index
   "$FFMPEG" -y -v error -f rawvideo -pix_fmt rgb24 -s 640x480 -framerate 60000/1001 -i - -c:v ffv1 "$W/g4.mkv"
 kill $SPID 2>/dev/null || true
 rm -f "$W/fd.fifo"
-m51wait 3600 60 >/dev/null || true
+# the job runner's own wait, repeated past its limit (a long replay)
+until $JOBWAIT 3600 60 >/dev/null; do :; done
 ssh g4 "rm -f ~/m51/video/$NAME.fd"
 scp -q "g4:m51/video/$NAME.wav" "$W/g4.wav"
 scp -q "g4:m51/video/$NAME.log" "$W/g4.log"

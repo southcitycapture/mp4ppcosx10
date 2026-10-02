@@ -1097,19 +1097,34 @@ void gl13_present(void) {
                          * picture (--shotdir points it elsewhere).  F5 as
                          * well as F12 because Leopard gives F12 to Dashboard
                          * by default and the key never reaches the game. */
+                        /* M52 (PLAN.md 67): the name carries the game's
+                         * frame too -- the retrace count from the boot, the
+                         * number a session recording and session_video.sh's
+                         * --from use -- and with a recording on, the moment
+                         * is noted in it ("m R screenshot ...") and the log
+                         * names the recording: a playtest finding is then the
+                         * picture, the recording and the frame */
                         static char path[1024];
                         const char* home = getenv("HOME");
+                        extern unsigned int VIGetRetraceCount(void);
+                        unsigned r = VIGetRetraceCount();
                         if (port_opt.shotdir) {
-                            snprintf(path, sizeof(path), "%s/Mario Party 4 %05u.png",
-                                     port_opt.shotdir, frame_no);
+                            snprintf(path, sizeof(path), "%s/Mario Party 4 %05u (frame %u).png",
+                                     port_opt.shotdir, frame_no, r);
                         } else {
                             char desk[1024];
                             snprintf(desk, sizeof(desk), "%s/Desktop", home && *home ? home : ".");
                             mkdir(desk, 0755); /* a test user's home may lack one */
-                            snprintf(path, sizeof(path), "%s/Mario Party 4 %05u.png", desk,
-                                     frame_no);
+                            snprintf(path, sizeof(path), "%s/Mario Party 4 %05u (frame %u).png", desk,
+                                     frame_no, r);
                         }
                         pending_shot = path;
+                        {
+                            const char* rp = port_session_record_path();
+                            port_log("port> screenshot (F5): %s -- the game's frame %u%s%s\n", path, r,
+                                     rp ? ", recording " : "", rp ? rp : "");
+                            port_session_note("screenshot frame %u", r);
+                        }
                         break;
                     }
                     default:

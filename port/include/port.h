@@ -783,6 +783,10 @@ const char* port_machine_title(void);
 const char* port_machine_summary(void);
 const char* port_machine_verdict(void);   /* "ok" / "degraded" / "unsupported" */
 int port_display_asleep(void);            /* M52: the main display asleep (CGDisplayIsAsleep) */
+/* M51 session recording (src/debug/session.c): the open recording's path or
+ * NULL; a note into it ("m R TEXT") -- M52: the F5 screenshot's moment */
+const char* port_session_record_path(void);
+void port_session_note(const char* fmt, ...);
 int port_machine_degraded(void);
 int port_machine_reasons(const char** out, int cap);
 

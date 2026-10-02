@@ -105,6 +105,11 @@ static const LiteOpt lite_opts[] = {
     {43190, "m431.blob", 0, "Order Up: every shadow a round N64-style blob", 0},
     {44490, "m444.blob", 0, "Reversal of Fortune: every shadow a round N64-style blob", 0},
     {46390, "m463.blob", 0, "Panel Panic: every shadow a round N64-style blob", 0},
+    /* and three the shadow pass's counters name (PLAN.md 67.2): the
+     * heaviest shadow passes among the heavy screens */
+    {40990, "m409.blob", 0, "Toad's Quick Draw: every shadow a round N64-style blob", 0},
+    {43390, "m433.blob", 0, "Beach Volley Folly: every shadow a round N64-style blob", 0},
+    {41890, "m418.blob", 0, "Hide and Go BOOM!: every shadow a round N64-style blob", 0},
 };
 #define N_LITE ((int)(sizeof(lite_opts) / sizeof(lite_opts[0])))
 
@@ -487,6 +492,7 @@ typedef struct {
 } BlobGame;
 static const BlobGame blob_games[] = {
     {40190, 0.7f}, {43690, 0.7f}, {43590, 0.7f}, {43190, 0.7f}, {44490, 0.7f}, {46390, 0.7f},
+    {40990, 0.7f}, {43390, 0.7f}, {41890, 0.7f},
 };
 #define N_BLOB_GAMES ((int)(sizeof(blob_games) / sizeof(blob_games[0])))
 
@@ -500,11 +506,16 @@ static struct {
 static struct {
     const void* hsf;
     float cx, cy, cz, hw;
+    int stage; /* M52: the model receives the map too (a stage casting on itself): no blob */
 } gblob_ext[N_CASTER];
 static int gblob_next;
 
+/* the extent of the meshes that cast (their constData carries HU3D_CONST_SHADOW:
+ * FaceDrawShadow draws those alone); 0 when none does, or when the model
+ * also receives the map -- a stage that casts on itself (m433's beach: its
+ * one blob would be the size of the court), whose own shadows go */
 static int blob_extent(HSFDATA* hsf, float* cx, float* cy, float* cz, float* hw) {
-    int i, k, any = 0;
+    int i, k, any = 0, stage = 0;
     float x0 = 0, x1 = 0, y0 = 0, y1 = 0, z0 = 0, z1 = 0;
     for (k = 0; k < N_CASTER; k++) {
         if (gblob_ext[k].hsf == hsf) {
@@ -512,12 +523,23 @@ static int blob_extent(HSFDATA* hsf, float* cx, float* cy, float* cz, float* hw)
             *cy = gblob_ext[k].cy;
             *cz = gblob_ext[k].cz;
             *hw = gblob_ext[k].hw;
-            return 1;
+            return !gblob_ext[k].stage && *hw > 0.0f;
         }
+    }
+    if ((uintptr_t)hsf->object < 0x1000 || hsf->objectNum > 4096) {
+        return 0; /* no object table to read */
     }
     for (i = 0; i < (int)hsf->objectNum; i++) {
         HSFOBJECT* o = &hsf->object[i];
-        if (o->type != HSF_OBJ_MESH) {
+        u32 ca;
+        if (o->type != HSF_OBJ_MESH || (uintptr_t)o->constData < 0x1000) {
+            continue;
+        }
+        ca = ((HSFCONSTDATA*)o->constData)->attr;
+        if (ca & HU3D_CONST_SHADOW_MAP) {
+            stage = 1;
+        }
+        if (!(ca & HU3D_CONST_SHADOW)) {
             continue;
         }
         if (!any || o->mesh.mesh.min.x < x0) x0 = o->mesh.mesh.min.x;
@@ -528,20 +550,22 @@ static int blob_extent(HSFDATA* hsf, float* cx, float* cy, float* cz, float* hw)
         if (!any || o->mesh.mesh.max.z > z1) z1 = o->mesh.mesh.max.z;
         any = 1;
     }
-    if (!any) {
-        return 0;
+    if (any) {
+        *cx = (x0 + x1) * 0.5f;
+        *cy = (y0 + y1) * 0.5f;
+        *cz = (z0 + z1) * 0.5f;
+        *hw = (x1 - x0) > (z1 - z0) ? (x1 - x0) * 0.5f : (z1 - z0) * 0.5f;
+    } else {
+        *cx = *cy = *cz = *hw = 0.0f;
     }
-    *cx = (x0 + x1) * 0.5f;
-    *cy = (y0 + y1) * 0.5f;
-    *cz = (z0 + z1) * 0.5f;
-    *hw = (x1 - x0) > (z1 - z0) ? (x1 - x0) * 0.5f : (z1 - z0) * 0.5f;
     k = gblob_next++ % N_CASTER;
     gblob_ext[k].hsf = hsf;
     gblob_ext[k].cx = *cx;
     gblob_ext[k].cy = *cy;
     gblob_ext[k].cz = *cz;
     gblob_ext[k].hw = *hw;
-    return 1;
+    gblob_ext[k].stage = stage;
+    return any && !stage;
 }
 
 static const BlobGame* blob_game_now(void) {
@@ -571,7 +595,7 @@ void port_lite_shadow_begin(void) {
     for (i = 0; i < HU3D_MODEL_MAX; i++) {
         HU3DMODEL* m = &Hu3DData[i];
         float cx, cy, cz, hw, sx, sz, c, sn, ry, sc;
-        if (!m->hsf || !(m->attr & HU3D_ATTR_SHADOW) || (m->attr & (HU3D_ATTR_DISPOFF | HU3D_ATTR_HOOK))) {
+        if (!m->hsf || !(m->attr & HU3D_ATTR_SHADOW) || (m->attr & (HU3D_ATTR_DISPOFF | HU3D_ATTR_HOOK | HU3D_ATTR_CAMERA))) {
             continue;
         }
         if (m->attr & HU3D_ATTR_MOTION_OFF) {
@@ -611,6 +635,8 @@ void port_lite_shadow_begin(void) {
         gblob_c[gblob_n].r = hw * sc * g->rmul;
         if (gblob_c[gblob_n].r < 8.0f) {
             gblob_c[gblob_n].r = 8.0f;
+        } else if (gblob_c[gblob_n].r > 400.0f) {
+            gblob_c[gblob_n].r = 400.0f; /* m409's train: a long shadow, not a lake */
         }
         gblob_n++;
     }
@@ -731,21 +757,25 @@ static void blob_audit(void) {
             }
             continue;
         }
+        if ((m->attr & HU3D_ATTR_CAMERA) || (uintptr_t)m->hsf->object < 0x1000 || m->hsf->objectNum > 4096) {
+            continue; /* a camera model, or no object table to read (m412 faulted in one) */
+        }
         for (j = 0; j < (int)m->hsf->objectNum; j++) {
             HSFOBJECT* o = &m->hsf->object[j];
-            if (o->constData && (((HSFCONSTDATA*)o->constData)->attr & HU3D_CONST_SHADOW_MAP)) {
+            if (o->type != HSF_OBJ_MESH) {
+                continue; /* only a mesh's constData is the engine's */
+            }
+            if ((uintptr_t)o->constData >= 0x1000 && (((HSFCONSTDATA*)o->constData)->attr & HU3D_CONST_SHADOW_MAP)) {
                 recv = 1;
             }
-            if (nm[0] == '-' && o->type == HSF_OBJ_MESH && o->name) {
+            if (nm[0] == '-' && (uintptr_t)o->name >= 0x1000) {
                 nm = o->name;
             }
         }
         if (!(m->attr & HU3D_ATTR_SHADOW) && !recv) {
             continue;
         }
-        if (!blob_extent(m->hsf, &cx, &cy, &cz, &hw)) {
-            cx = cy = cz = hw = 0.0f;
-        }
+        blob_extent(m->hsf, &cx, &cy, &cz, &hw); /* the casting meshes' (0: none, or a stage) */
         port_log("port> blobaudit mg %d f+%lu model %d %s%s%s%s layer %d pos %.1f %.1f %.1f roty %.0f scale %.2f %.2f %.2f "
                  "extent c %.1f %.1f %.1f halfwidth %.1f objs %d %s\n",
                  port_cur_mg_number(), f, i, (m->attr & HU3D_ATTR_SHADOW) ? "CASTER" : "", recv ? " RECEIVER" : "",

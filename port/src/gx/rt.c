@@ -333,6 +333,7 @@ static double st_last_dec_ms, st_dec_ms_sum, st_dec_ms_max;
  * markers perf.c's port_shadow_exec queues around Hu3DShadowExec), published
  * at the present as st_last_shadow_ms; the render thread's alone */
 static double shd_rt_t0, shd_rt_acc, st_last_shadow_ms;
+static int shd_in; /* inside the span: replay_upto times its own chunks' share */
 #define JOIN_KINDS 12
 static struct { const char* why; unsigned long n; double s, max; } joins[JOIN_KINDS];
 static int njoins;
@@ -1281,17 +1282,27 @@ void rt_call(void (*fn)(void*), const void* args, size_t n, int sync) {
     }
 }
 
-/* M52 (PLAN.md 67): the shadow pass's two markers, run in stream order */
+/* M52 (PLAN.md 67): the shadow pass's two markers, run in stream order.
+ * Only replay is counted: replay_upto stops the clock at the end of each
+ * published chunk and starts it at the next (the wait for the game thread
+ * between chunks is not the pass's), and the decode ahead is left out as the
+ * frame's own timing leaves it out; the end marker is published at once
+ * (rt_call), not with the next draw. */
 static void shadow_mark_fn(void* a) {
     if (*(const int*)a) {
+        shd_in = 1;
         shd_rt_t0 = now();
-    } else if (shd_rt_t0 > 0.0) {
+    } else if (shd_in) {
         shd_rt_acc += now() - shd_rt_t0;
-        shd_rt_t0 = 0.0;
+        shd_in = 0;
     }
 }
 void rt_shadow_mark(int begin) {
-    rt_callq(shadow_mark_fn, &begin, sizeof(begin));
+    if (begin) {
+        rt_callq(shadow_mark_fn, &begin, sizeof(begin));
+    } else {
+        rt_call(shadow_mark_fn, &begin, sizeof(begin), 0);
+    }
 }
 double rt_last_shadow_ms(void) { return st_last_shadow_ms; }
 
@@ -2532,6 +2543,9 @@ static void replay_upto(u32 to) {
         return;
     }
     t0 = now();
+    if (shd_in) {
+        shd_rt_t0 = t0; /* M52: the span's clock restarts with the chunk */
+    }
     RT_ACQ_REL(); /* acquire: the records behind `to` after the position itself */
     while ((s32)(to - rd) > 0) {
         const Hdr* h;
@@ -2547,6 +2561,9 @@ static void replay_upto(u32 to) {
                 decode_ahead(w);
                 td = now() - td;
                 t0 += td; /* the decode is timed on its own, not as replay */
+                if (shd_in) {
+                    shd_rt_t0 += td;
+                }
             }
         }
         h = (const Hdr*)(buf + (rd & RT_MASK));
@@ -2600,6 +2617,11 @@ static void replay_upto(u32 to) {
         double d = now() - t0;
         st_replay_s += d;
         st_frame_replay_s += d;
+        if (shd_in) { /* M52: the span goes on in the next chunk */
+            double t = now();
+            shd_rt_acc += t - shd_rt_t0;
+            shd_rt_t0 = t;
+        }
     }
 }
 
