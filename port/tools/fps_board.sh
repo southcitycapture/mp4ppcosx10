@@ -50,13 +50,32 @@ E=5108   # the board's entry on the --nomovies walk (PLAN.md 54b.6)
 echo "# fps-board start $(date)  isle md5 $(md5 -q "$APP")  extra '$X'  three ${FB_THREE:-auto}" >> "$IDX"
 
 run() {
+    # M52: a run whose guard says BAD (before, during or after) is run again,
+    # up to twice; the discarded runs' logs are kept as NAME.badN.log
+    name=$1; ceiling=$2; shift 2
+    attempt=1
+    while :; do
+        run_once "$name" "$ceiling" "$@"
+        case "$g1$gw$g2" in *BAD*) ;; *) break ;; esac
+        [ $attempt -ge 3 ] && break
+        echo "$name discarded (guard BAD), attempt $attempt" >> "$IDX"
+        mv "$D/$name.log" "$D/$name.bad$attempt.log" 2>/dev/null
+        mv "$D/$name.csv" "$D/$name.bad$attempt.csv" 2>/dev/null
+        attempt=$((attempt + 1))
+        sleep 30
+    done
+}
+
+run_once() {
     name=$1; ceiling=$2; shift 2
     mkdir -p "$D/$name"
     rm -f "$D/$name"/*.ppm
     echo "fps-board: $name start $(date)"
     # M52: the guard (tools/m52_guard.sh as ~/m52guard.sh, when present): the
-    # display awake and nothing else busy before the run, read again after
-    g1=""; g2=""; [ -f "$HOME/m52guard.sh" ] && g1=$(sh "$HOME/m52guard.sh" pre)
+    # display awake and nothing else busy before the run, watched during it,
+    # read again after
+    g1=""; g2=""; gw=""; [ -f "$HOME/m52guard.sh" ] && g1=$(sh "$HOME/m52guard.sh" pre)
+    [ -n "$g1" ] && sh "$HOME/m52guard.sh" snap "$D/$name.cpu"
     t0=$(date +%s)
     "$APP" --shotdir "$D/$name" --perfdump "$D/$name.csv" "$@" $X > "$D/$name.log" 2>&1 &
     pid=$!
@@ -68,13 +87,16 @@ run() {
         fi
     done
     wait $pid; e=$?
-    [ -n "$g1" ] && g2=$(sh "$HOME/m52guard.sh" post)
+    if [ -n "$g1" ]; then
+        gw=$(sh "$HOME/m52guard.sh" delta "$D/$name.cpu")
+        g2=$(sh "$HOME/m52guard.sh" post)
+    fi
     fault=$(grep -c '^\*\*\* port' "$D/$name.log")
     m=""
     for f in "$D/$name"/*.ppm; do
         [ -f "$f" ] && m="$m $(basename "$f" .ppm):$(md5 -q "$f" | cut -c1-8)"
     done
-    echo "$name EXIT=$e wall=$(( $(date +%s) - t0 ))s fault=$fault md5$m args='$*'${g1:+ guard='$g1 | $g2'}" >> "$IDX"
+    echo "$name EXIT=$e wall=$(( $(date +%s) - t0 ))s fault=$fault md5$m args='$*'${g1:+ guard='$g1 | $gw | $g2'}" >> "$IDX"
     sleep 3
 }
 

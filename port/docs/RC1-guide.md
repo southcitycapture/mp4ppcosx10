@@ -12,10 +12,11 @@ your call after this run.
   pid; or just quit the game window).
 * A pad on port 1 (the Xbox pad), or the keyboard (Z = A, X = B, Return =
   START; F5 = screenshot; F1 or M = the port's menu).
-* About **3½–4 hours** for all 63 minigames (each one: about a minute of the
-  game hurrying there by itself, then the minigame, then its results).  You
-  can stop and resume at any point, so three sittings of ~21 minigames work
-  just as well (From / To below).
+* About **2½–3 hours** for all 63 minigames (each one about two minutes on
+  the G4: a minute of the game hurrying there by itself, then the minigame
+  and its results -- the lab's dry run of ten took 22 minutes).  You can stop
+  and resume at any point, so three sittings of ~21 minigames work just as
+  well (From / To below).
 
 ## 2. Running it
 
@@ -77,10 +78,12 @@ port/tools/session_video.sh ~/rc1/"DATE TIME marathon mNNN.rec" \
 ```
 
 → `~/mp4-videos/mNNN-finding-g4.mp4`: the G4 replaying those 20 seconds
-(F ± 10 s) in lockstep, every frame, with the game's own sound.  Leave out
-`--from/--to` for the whole recording (the minigame starts near frame
-14,000; the replay draws ~8 frames a second, so a 3-minute minigame takes
-~25 minutes).  `--nodolphin`: marathon recordings carry the lab's teleport
+(F ± 10 s) in lockstep, every frame, with the game's own sound.  For the
+whole minigame use `--from 14100` and leave out `--to` (the recording
+starts at the boot; before ~14,000 is the minute's hurry, which the replay
+runs through undrawn).  The replay draws ~8 frames a second: the lab's dry
+run made a 38-s minigame in 8 minutes and a 63-s one in 16
+(`~/mp4-videos/m52-m412-g4.mp4`, `m52-m418-g4.mp4`).  `--nodolphin`: marathon recordings carry the lab's teleport
 and do not turn into Dolphin movies yet (Read Me, WHAT IS NOT QUITE RIGHT
 YET); a session recorded from the boot with **Record this session** does.
 

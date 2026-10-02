@@ -99,9 +99,11 @@ run() {
     echo "chain: $name start $(date)"
     g1=""; g2=""
     case " $* " in *" --realtime "*|*" --soak "*) [ -f "$HOME/m52guard.sh" ] && g1=$(sh "$HOME/m52guard.sh" pre) ;; esac
+    [ -n "$g1" ] && sh "$HOME/m52guard.sh" snap "$D/$name.cpu"
     t0=$(date +%s)
     "$RAPP" --shotdir "$D/$name" --perfdump "$D/$name.csv" "$@" > "$D/$name.log" 2>&1 &
     pid=$!
+    gw=""
     [ "$smode" != "-" ] && sampler "$name" $pid "$smode"
     while kill -0 $pid 2>/dev/null; do
         sleep 5
@@ -111,13 +113,16 @@ run() {
         fi
     done
     wait $pid; e=$?
-    [ -n "$g1" ] && g2=$(sh "$HOME/m52guard.sh" post)
+    if [ -n "$g1" ]; then
+        gw=$(sh "$HOME/m52guard.sh" delta "$D/$name.cpu")
+        g2=$(sh "$HOME/m52guard.sh" post)
+    fi
     m=""
     for f in "$D/$name"/*.ppm; do
         [ -f "$f" ] && m="$m $(basename "$f" .ppm | sed 's/frame-0*//'):$(md5 -q "$f" | cut -c1-8)"
     done
     fault=$(grep -c '^\*\*\* port' "$D/$name.log")
-    echo "$name EXIT=$e wall=$(( $(date +%s) - t0 ))s fault=$fault isle=$(md5 -q "$RAPP" | cut -c1-8) md5$m args='$*'${g1:+ guard='$g1 | $g2'}" >> "$IDX"
+    echo "$name EXIT=$e wall=$(( $(date +%s) - t0 ))s fault=$fault isle=$(md5 -q "$RAPP" | cut -c1-8) md5$m args='$*'${g1:+ guard='$g1 | $gw | $g2'}" >> "$IDX"
     sleep 5
 }
 
