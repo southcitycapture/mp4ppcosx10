@@ -12,14 +12,20 @@ dual 1 GHz Power Mac G4 (PowerMac3,5), 1.5 GB, 64 MB Radeon 9000, Mac OS X
 **It is** the build the user plays the whole minigame marathon on (Developer
 Mode, every minigame recorded; `docs/RC1-guide.md`).  Nothing is renamed RC
 or 1.0 -- that is the user's call after the playtest.  **The 30-fps line**:
-@SCORE@ of 82 screens on the final build's count (`docs/fps-scoreboard.md`,
-Lite at auto); m409 Toad's Quick Draw passes at exactly the bar by five runs
-on 0.9.20 (29.9 / 29.7 / 28.9 / 29.0 / 29.5, median 29.5), m433 and m401 at
-29.9.  **Round shadows** (`<game>.blob`, ten games): a speed-only fallback
+80 of 82 screens on the final build's count (`docs/fps-scoreboard.md`,
+Lite at auto; four screens re-measured with the extended guard): the two short
+are m409 Toad's Quick Draw 29.2 and m433 Beach Volley Folly 29.3, the edge
+screens of every count since M48 -- by the brief's five-run A/B on 0.9.20 they
+pass (m409 29.5 exactly, m433 29.9; m401 29.9), and 0.9.21 reads the same as
+0.9.20 in an interleaved A/B (m409 29.3 / 29.4, m433 29.7 / 29.8).  **Round shadows** (`<game>.blob`, ten games): a speed-only fallback
 Benchmark Mode picks per game on a Mac below the reference; never on on the
-G4.  **Its evidence**: both md5 walks the references, the picture checks with
-Lite off 0.9.16's set but m427's known river, a soak of two hours or more with
-0 faults, the RC1 flow dry-run on the G4 (PLAN.md 67).
+G4.  **Its evidence** (the final build `f1`, PLAN.md 67): both md5 walks the
+references (`0b58c5ee` / `2b99c60a` / `4a9a640c`, movies `d2d40344` /
+`59008ce4` / `3f98f882`); the picture checks with Lite off 638 of 638
+identical to 0.9.16's set, 0 blips; a 2 h 05 min soak, 0 faults, 0 resyncs, no
+lock-up; the RC1 flow dry-run on the G4; one fault in nine runs of m432's load
+(line 27).  `littlejelly:~/MarioParty4-PowerPC-0.9.21.dmg`, md5 `5873a402`,
+installed on the G4 as `~/MarioParty4.app` (0.9.20 kept beside it).
 
 **Every open line below, with its status for RC1** (the numbers are the
 list's own):
@@ -43,15 +49,17 @@ list's own):
 | 15 | m427's river, two states at real time | **known, not a regression**; the picture checks pair it |
 | 16 | the G4 restarted once on its own | **not seen again** (M47-M52) |
 | 17 | Lite's options | **closed** (the user's picks, M50) |
-| 18 | m433 / m401 at the edge | **closed** -- five runs each on 0.9.20 with the display guarded: m433 29.9, m401 29.9 (M52) |
+| 18 | m433 / m401 at the edge | **settled by the brief's rule** -- five runs each on 0.9.20, guarded: m433 29.9, m401 29.9 (pass); m433 still reads 29.3 on the scoreboard's count (line 24's story) |
 | 19 | the round shadow `m441.blob` | **superseded** -- the user's M52 decision: round shadows are a speed-only fallback, `m441.bloball` and nine `<game>.blob` for Benchmark Mode to pick below the reference |
-| 20 | Benchmark Mode on other Macs | **G4 + MacBook (Rosetta) only**; M52 adds the round-shadow choice, seen on the MacBook (slower) |
+| 20 | Benchmark Mode on other Macs | **G4 + MacBook (Rosetta) only**; M52's round-shadow choice was shown on the G4 with the lab's stand-in for a slower reading (`MP4_BENCH_F441`) -- the MacBook was off the network all M52 |
 | 21 | `m441.bloball`'s picture | **settled by the user's decision** (line 19): never on by preference |
 | 22 | the Dolphin replay | **known limit** -- exact where people are the clock; the float/disc projects not started; marathon recordings do not convert (the Read Me says so) |
-| 23 | the marathon with real people | **RC1 is this test**; the lab's dry run (10 minigames, a stop and a resume, two videos) passed, PLAN.md 67.4 |
-| 24 | **m409 Toad's Quick Draw (M52)** | **at the bar** -- passes on its five-run median (29.5); its shadow pass costs 4 ms of the game thread (PLAN.md 67.2), a lever for a later milestone if the user wants it off the edge |
+| 23 | the marathon with real people | **RC1 is this test**; the lab's dry run on 0.9.21 passed (ten minigames recorded with a scripted player 1, a stop after five and a resume, the summary, two G4 videos in step to the end; PLAN.md 67.4); M51's scripted player paused the minigames -- a person presses START once at the card |
+| 24 | **m409 Toad's Quick Draw and m433 on the count (M52)** | **at the bar** -- m409 passes the brief's five-run A/B at exactly 29.5, both read 29.2-29.3 on the scoreboard's count (whose run includes the teleport's two frame dumps and the entry's lines); m409's shadow pass is 4 ms of its game thread (PLAN.md 67.3), the lever for a later milestone if the user wants both off the edge |
 | 25 | **the soak's memory (M52)** | **watch** -- an 8 h 18 min soak's rss climbed 262 -> 315 MB after the first board (~7 MB an hour); a party is 1-2 h, a marathon child minutes |
-| 26 | **the shadow passes elsewhere (M52)** | **measured, not built** -- the sweep names other minigames whose shadow pass is heavy (m407, m420, m445, m449, m461, ...; PLAN.md 67.2); each would be a table line and a proof |
+| 26 | **the shadow passes elsewhere (M52)** | **measured, not built** -- the sweep names other minigames whose shadow pass is heavy (m459, m420, m407, m449, m445, m461, ...; PLAN.md 67.3); each would be a table line and a proof |
+| 27 | **m432's load fault (M52)** | **open, intermittent** -- one SIGSEGV in the scoreboard's first m432 run, in `LoadHSF` at the minigame's first model (the module's data served from the prefetch's resident copy, read 9,000 frames earlier); not seen in the eight runs after (five in the first re-measure, three in the second), nor in M49-M51's (the same path, no fault); every soak since M36 deals m432.  The log is `docs/soak/m52/board/m432.log.gz`; a teleport loop with `--snap-every` is the way in (PLAN.md 67.5).  In the marathon a fault stops the marathon at that minigame ("Resume" goes on from it) |
+| 28 | **Finder's network browsing on the G4 (M52)** | **watch** -- `smbclient`, `nmblookup`, `DirectoryService` take 25-40% of a CPU now and then (the open Finder window's SHARED list); it cost one scoreboard run 12 s at 13-19 fps.  The lab's guard now catches it; a player with a Finder window open sees the same |
 
 ## The v1.0 line, amended at M40 (2026-09-23): "30 fps overall"
 

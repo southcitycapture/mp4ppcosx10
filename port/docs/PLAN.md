@@ -27396,3 +27396,557 @@ builds, the render thread at 17-25 ms; a screenshot at 06:28 found the
 screen awake and the rerun at 30.0 -- the display's 60-minute sleep the
 likeliest, not proved): compare both arms of an A/B before believing a
 slowdown, and discard a set where both moved.
+## 67. M52 log: release-candidate prep *(2026-10-01/02, littlejelly)*
+
+M51 left 0.9.20 at 80 of 82 on the count, the two misses at the edge, with
+Developer Mode's marathon and recordings ready for the user's playtest.
+M52's brief: the last preparation before **RC1** -- the user playing the
+whole minigame marathon on the G4, recorded.  Read M51's soak (item 0);
+**settle the edge** -- m409, m433, m401 five runs each on 0.9.20 with the
+display verified awake, a lever only for one genuinely short (item 1);
+**round shadows as a Benchmark choice** -- the user's decision: a speed-only
+fallback, never on by preference, Benchmark Mode deciding per machine and
+per game: `<game>.blob` for the games whose shadow pass costs most, each
+proved gameplay-neutral on both casts and pictured, none in the default set
+(item 2); **RC1 readiness** -- a dry run of the marathon flow with
+recording, a stop, a resume and two videos; the Read Me and the checklist
+up to date for a player; every open line given a status; a one-page RC1
+guide (item 3); **the scoreboard**, the picture checks and the md5 walks on
+the final build (item 4); 0.9.21 after a soak of two hours or more.  And,
+before any timed run, the display awake and nothing else busy -- M51 lost an
+A/B to a 10-15 fps reading.
+
+**The short answer.**  **The edge** (67.2): five runs each on 0.9.20, guarded
+-- **m409 29.5** (29.9 / 29.7 / 28.9 / 29.0 / 29.5: passes exactly at the
+bar), **m433 29.9**, **m401 29.9**: all three pass by the rule; no lever.
+**The guard** (67.2, 67.5): every timed run checks the display (`ioreg`,
+woken if asleep the way the game keeps it awake) and the other processes'
+CPU time across the run (`ps cputime`, read before and after -- a sampler
+during the run cost the edge screens their frames); the game marks any
+second the display sleeps (`DISPLAY-ASLEEP`); a BAD run is run again.  It
+found the G4's own noise: Finder browsing the network (`smbclient`,
+`nmblookup`, `DirectoryService`) cost one scoreboard run 12 s at 13-19 fps.
+**Round shadows** (67.3): drawn *into the game's own shadow map* instead of
+the casters' second drawing, so the floor projects them where the console's
+shadows fall on any surface; **ten options** -- `m401 m436 m435 m431 m444
+m463 .blob` (the heavy seven, m441 keeping `m441.bloball`) and **m409, m433,
+m418** (the counters' heaviest shadow passes among the heavy screens) --
+**every one identical to the console's game to the minigame's exit on both
+casts** (20 pairs), pictured (`docs/screenshots/m52-blob-*.jpg`), saving
+**2-15 ms of the drawn frame** (Fruits of Doom 32.9 -> 17.4 ms, Darts of Doom
+30.4 -> 16.9, Hide and Go BOOM! 30.2 -> 20.6 in lockstep); none in `ref`.
+**Benchmark Mode** picks them only on a Mac below the reference, game by
+game, from this Mac's slowness on Butterfly Blitz and each game's reference
+cost, the least visible change first, and measures Butterfly Blitz with the
+chosen set: on the G4 it chooses today's defaults and no round shadows; a
+slower Mac's reading (the lab's stand-in -- the MacBook was off the network)
+got all ten and Butterfly Blitz at 29.9.  **RC1** (67.4): the dry run on the
+final build -- ten minigames recorded with a scripted player 1, a stop
+after five and a resume, the summary, two G4 videos in step to the end;
+recording costs nothing (m409 29.9 x3 recorded); M51's scripted player had
+been pausing the minigames (fixed in the lab's script); F5's screenshot now
+names the game's frame for a finding; the Read Me, the checklist's RC1
+table (28 lines with a status) and `port/docs/RC1-guide.md`.  **The
+scoreboard: 80 of 82** (67.5), the two short the edge screens (m409 29.2, m433
+29.3 on the count; 0.9.21 equal to 0.9.20 in an A/B); **one fault**: m432's
+first model load, once in nine runs, not reproduced -- open (checklist line
+27).  **Final**: `f1` -- the
+md5 walks the references, the picture checks 638 of 638 identical to 0.9.16's
+with Lite off, a 2 h 05 min soak with 0 faults and no lock-up;
+**0.9.21**, `littlejelly:~/MarioParty4-PowerPC-0.9.21.dmg`.
+
+### 67.1 M51's soak, read (item 0)
+
+M51's leave-behind (`isle --soak --com4 --rtc dolphin --freshcard --status
+--perf` on 0.9.20, `b1186af5`, pid 47341, from 09:40) was read and stopped by
+pid at 17:58 G4 time (one SIGINT, `EXITCODE=0`;
+`docs/soak/m52/m52-soak-m51-leave.log.gz`): **29,886.0 s of game against
+29,886.1 s of wall (100.0%)** -- 8 h 18 min, 1,791,360 retraces, **six whole
+20-turn boards and 13 turns of the seventh**, 42 minigame modules; **0
+faults, 0 resyncs, 0 skin guard hits, no lock-up**, the worst frame 679 ms
+behind, 714 `stall:` lines, 35 underruns (the boot, the character select,
+the first board's first turn -- as every soak's); 18 `STUCK` lines, three at
+each board's end (the mode select, the character select twice: the soak's
+own navigation, as every soak's).  Two things only a soak this long shows:
+the resident memory climbs slowly after the first board (rss 262 MB at
+frame 149,340, 315 MB at the end -- ~7 MB an hour, the 149 MB resident set
+included; 1.5 GB in the machine), and the card's rename still takes ~1.75 s
+on the G4's drive (73 of the 279 flushes; behind the game, as since M40).
+
+### 67.2 The timed runs kept valid, and the edge settled (item 1)
+
+**Why M51's set read 10-15 fps, and the guard.**  The brief named the
+display's 60-minute sleep.  The game itself keeps the display awake, as any
+SDL game does: SDL's Cocoa event pump calls `UpdateSystemActivity(UsrActivity)`
+every 30 s while `SDL_DisableScreenSaver` is in force (the default; checked in
+`panther-sdl2/src/video/cocoa/SDL_cocoaevents.m`), so a display can only be
+asleep at the start of a run, between runs.  M51's bad set came 25 minutes
+after a two-hour soak (the game running, the display kept awake), so the sleep
+is not proved there either; the system log has nothing at that hour; what was
+running on littlejelly then -- the session's own once-a-minute ssh polls of
+the G4 (secure.log: 45-60 logins an hour from 12:00 to 17:58) -- costs an sshd
+key exchange each on a 1 GHz G4.  Whatever it was, every timed run of M52 is
+now guarded, with no system setting touched:
+
+* `tools/m52_guard.sh` (on the G4 as `~/m52guard.sh`), run by the chain
+  (`tools/m52_chain.sh`, every `--realtime` or `--soak` run) and by
+  `tools/fps_board.sh` before and after each run: the display's power state
+  (`ioreg -n IODisplayWrangler`, `CurrentPowerState` 4 = on) -- woken if
+  asleep the way the game keeps it awake, `UpdateSystemActivity(UsrActivity)`
+  through Python's ctypes -- and the CPU of every other process (`ps`), waited
+  for until under 15% (at most 10 minutes); the index line of every timed run
+  carries `guard='PRE | POST'`, and a run whose guard says `BAD` is not
+  counted (`tools/m52_ab.py`);
+* in the game: `port_display_asleep()` (`machine.c`: `CGDisplayIsAsleep`)
+  adds `DISPLAY-ASLEEP` to the `--status` line of any second the display
+  sleeps; `tools/fps_board.py` and Benchmark Mode do not count those seconds;
+* this session polled the G4 at most once a minute during timed runs.
+
+Every timed run of M52 had `display=4` before and after; the display never
+slept (no `DISPLAY-ASLEEP` second in any log).  The other processes were the
+story: the scoreboard (67.5) met Finder's network browsing mid-run, and the
+guard learnt to read every process's CPU time across the run.
+
+**The edge, five runs each on 0.9.20** (the installed `~/MarioParty4.app`,
+checked file for file against the 0.9.20 disk image: 101 files identical;
+the scoreboard's teleport at real time, interleaved m409 / m433 / m401,
+18:05-18:31 G4 time, every guard `ok`; `docs/soak/m52/edge/`):
+
+| screen | presented fps (runs) | median | drawn frame | consumed | rt | dec | verdict |
+|---|---|---:|---:|---:|---:|---:|---|
+| m409 Toad's Quick Draw | 29.9 / 29.7 / 28.9 / 28.95 / 29.5 | **29.5** | 27.1 | 5.9 | 21.1 | 4.4 | **passes, at the bar** |
+| m433 Beach Volley Folly | 29.9 / 29.9 / 29.7 / 29.4 / 29.9 | **29.9** | 25.7 | 6.0 | 17.9 | 4.4 | passes |
+| m401 Manta Rings | 29.9 / 29.9 / 29.9 / 29.9 / 30.0 | **29.9** | 22.4 | 7.5 | 18.4 | 6.6 | passes |
+
+By the brief's rule all three pass -- m433 and m401 plainly (the count's
+29.1s were single runs at the edge, as in M49-M51), **m409 exactly at the
+bar**: two of its five runs read 28.9-29.0, its game thread's drawn and
+consumed frames add to 33.0 ms of the 33.4 a frame pair allows.  Honestly:
+Toad's Quick Draw will go on reading 28.9 now and then.  No lever was built
+(none is required by the rule); the shadow sweep (67.3) names where one is --
+m409's projected shadow pass is 4.0 ms of its game thread, the most of any
+minigame but two, and its round shadows take 3.2 ms off the drawn frame -- but
+the user's decision keeps round shadows a fallback for slower Macs, and a
+pixel-exact trim of that pass was not found in this milestone.
+
+### 67.3 Round shadows as a Benchmark choice (item 2)
+
+**The user's decision (M52 brief)**: the round N64-style shadows are a
+speed-only fallback, never on by preference; Benchmark Mode decides them per
+machine and per game.  M50/M51's `m441.blob` / `m441.bloball` drew discs on
+Butterfly Blitz's flat floor from casters patched one by one in m441's code;
+a floor at one height is not every game's (Manta Rings' seabed is far below
+its swimmers: the first generic build drew its discs at the wrong height and
+they vanished), so the general option works inside the engine's own
+projected shadow instead.
+
+**How** (`port/src/debug/lite.c`, `<game>.blob`; `patches.txt` M52 block).
+`Hu3DShadowExec` draws every caster a second time into a 192x192 shadow map
+from the shadow camera, copies it, and the floor's shadow-map stage projects
+it.  With the option on for the screen: `port_lite_shadow_begin` (the start
+of `Hu3DExec`) collects the frame's casters -- the models with
+`HU3D_ATTR_SHADOW`, shown, not hooked: exactly the shadow loop's -- the
+patched loop skips their draws (`port_lite_shadow_skip`), and after it
+`port_lite_shadow_blobs` draws one soft disc per caster into the map, facing
+the shadow camera at the centre of the caster's casting meshes, in the map's
+own caster colour (`Hu3DShadowData.alpha`), full at the core and fading to
+nothing over the outer 30%.  The floor then projects the discs exactly where
+the console's shadows fall, on any surface (`m52-blob-m401.jpg`: Manta Rings'
+seabed).  The disc's radius is 0.8 x the geometric mean of the casting
+meshes' two horizontal half-extents (at least 0.3 of the larger: m433's net
+and m409's train are not lakes), at most 400 units.  Only meshes the console
+casts count (their constData carries `HU3D_CONST_SHADOW`); a model that
+receives the map as well -- a stage shading itself, Beach Volley Folly's
+beach -- gets no disc (its umbrellas' and palms' shadows go; the first build
+gave the beach one disc the size of the court).  Hook-function casters get a
+small disc at their position; a shown caster with `HU3D_ATTR_MOTION_OFF` (a
+shadow-only model whose motion only the shadow loop evaluates) keeps the
+console's pass for that frame (none of the ten has one).  Stamp Out! (m415)
+reads its shadow map back as its canvas and has no option.  Nothing the game
+reads changes: no attribute, counter, position, motion or random number.
+
+**Which games -- the counters** (`--perfdump`'s new columns: `shd_ms`, the
+game thread's time in `Hu3DShadowExec`, and `shd_rt_ms`, the render thread's
+replay of it, from two in-stream markers -- `perf.c port_shadow_exec`,
+`rt.c rt_shadow_mark`; `tools/m52_shadow.py`).  The sweep: 61 of the 63
+minigames in lockstep (every frame drawn), entry +300..+900, Lite at
+`ref,extras` (a slower Mac's set), `--blobaudit` (the casters and receivers
+every 300 frames); m412 faulted in the audit (a model with no object table;
+the audit was hardened and m412 measured on `g6`: 2.37 / 5.77 ms), m413/m422/
+m425/m427/m430/m434/m443/m451 cast nothing; `docs/soak/m52/sweep/`.  The
+heaviest shadow passes (game thread ms / render thread ms / the drawn frame):
+
+| minigame | shadow pass, game / render thread (ms) | drawn frame (ms) | casters shown |
+|---|---:|---:|---:|
+| m436 Fruits of Doom | 1.73 / 16.2 | 27.5 | 8 |
+| m435 Darts of Doom | 1.97 / 16.1 | 26.9 | 8 |
+| m418 Hide and Go BOOM! | 2.65 / 14.1 | 30.8 | 7 |
+| m459 Bowser Wrestling | 0.95 / 12.9 | 28.1 | 10 |
+| m420 Fish n' Drips | 2.64 / 12.8 | 26.6 | 8 |
+| m441 Butterfly Blitz | 1.75 / 10.0 | 27.1 | 4 |
+| m433 Beach Volley Folly | 3.07 / 9.9 | 25.0 | 7 |
+| m407 Domination | 3.70 / 8.6 | 22.4 | 68 |
+| m449 Goomba's Chip Flip | 4.01 / 8.3 | 20.6 | 6 |
+| m445 Bowser Bop | 2.78 / 8.0 | 26.9 | 11 |
+| m461 Bob-omb X-ing | 4.31 / 7.9 | 19.4 | 16 |
+| m431 Order Up | 1.46 / 7.4 | 28.8 | 5 |
+| m463 Panel Panic | 1.66 / 6.6 | 18.5 | 4 |
+| m401 Manta Rings | 1.15 / 4.9 | 25.2 | 4 |
+| m409 Toad's Quick Draw | **3.99** / 4.9 | 27.0 | 5 |
+| m444 Reversal of Fortune | 0.58 / 2.6 | 27.4 | 2 |
+
+(The whole table, all 61, is the sweep's; the render-thread column of this
+first sweep was taken with markers that could include a wait for the game
+thread -- fixed for the measurements below, which read within a few ms of it
+for the ten.)  **The options built**: the seven heavy ones (m441 keeps
+M51's `m441.bloball`) and three the counters name -- **m409** (the heaviest
+game-thread shadow pass of any screen at the bar), **m433** (an old edge
+screen) and **m418** (the heaviest drawn frame of all, 30.8 ms in lockstep):
+`m401.blob m436.blob m435.blob m431.blob m444.blob m463.blob m409.blob
+m433.blob m418.blob` (+ `blobs`, all of them, in `liteopts`).  Others the
+counters name (m459, m420, m407, m449, m445, m461, m410, m426, ...) are a
+table line and a proof each, for a later milestone.  **None is in `ref`,
+none an `extra`**: off on every machine unless chosen.
+
+**What each saves** (lockstep, every frame drawn, entry +300..+1,300, the
+console (`--nolite`) against the round shadows alone (`--liteopts
+mNNN.blob`), `g4`; `docs/soak/m52/blob/`):
+
+| game | console: drawn / rt (ms), shadow pass game / rt | round shadows: drawn / rt, shadow pass | saved: drawn, rt (ms) | visual cost |
+|---|---|---|---:|---:|
+| m401 Manta Rings | 27.8 / 21.2, 2.03 / 5.16 | 23.7 / 17.3, 0.45 / 0.31 | **4.1, 3.9** | 0.28 |
+| m431 Order Up | 29.6 / 23.6, 2.44 / 6.69 | 23.7 / 17.7, 0.34 / 0.29 | **5.8, 6.0** | 0.40 |
+| m418 Hide and Go BOOM! | 30.2 / 19.1, 2.59 / 10.38 | 20.6 / 10.1, 0.44 / 0.37 | **9.6, 9.0** | 0.42 |
+| m444 Reversal of Fortune | 27.2 / 19.5, 0.67 / 2.42 | 25.1 / 20.1, 0.22 / 0.23 | **2.1, -0.6** | 0.65 |
+| m463 Panel Panic | 28.7 / 19.1, 3.02 / 10.60 | 19.4 / 9.9, 0.50 / 0.39 | **9.3, 9.1** | 0.75 |
+| m409 Toad's Quick Draw | 27.4 / 21.3, 4.05 / 4.33 | 24.2 / 18.2, 0.36 / 0.29 | **3.2, 3.2** | 0.87 |
+| m435 Darts of Doom | 30.4 / 21.6, 4.75 / 15.52 | 16.9 / 8.6, 0.58 / 0.48 | **13.5, 12.9** | 1.46 |
+| m436 Fruits of Doom | 32.9 / 23.3, 3.56 / 17.43 | 17.4 / 8.5, 0.89 / 0.59 | **15.4, 14.8** | 1.76 |
+| m441 Butterfly Blitz (`bloball`) | 27.8 / 20.7, 5.12 / 8.80 | 21.2 / 13.3, 0 / 0 | **6.6, 7.4** | 1.81 |
+| m433 Beach Volley Folly | 25.2 / 20.2, 3.08 / 7.62 | 21.9 / 14.6, 1.19 / 0.70 | **3.3, 5.6** | 2.00 |
+
+The Bowser arena's shadow pass is most of its render thread (the throne,
+the pillars, the plates, Bowser and the four players drawn again into the
+map): the round shadows take Fruits of Doom's drawn frame from 32.9 to 17.4
+ms.  (The game thread's saving is larger than its shadow pass's own time:
+the drawn frame waits less on the render thread.)  The visual cost is the
+mean absolute difference of the two pictures over every pixel, 0-255
+(`tools/m52_blobimg.py`), the order Benchmark Mode walks.  The sizes above
+were measured on `g4`; the disc's final sizing (`g7`: the geometric mean,
+the stage rule) changes only how big the discs are.
+
+**The proofs** (`H:` runs, lockstep, `--gamehash 60` to the minigame's exit
+(`--mgexit`) -- every hash line, the exit frame and the results; the arm a
+slower Mac gets, `ref,extras,mNNN.blob` (m441: `ref,m441.bloball`), against
+`--nolite`, both casts; `g4`; `tools/m49b_hash.py`, `docs/soak/m52/h/`):
+
+| game | Mario, Luigi, Peach, Yoshi | Wario, DK, Daisy, Waluigi | left the minigame |
+|---|---|---|---|
+| m409 | **identical**, 369 lines, `db25ab9d` | **identical**, 357, `139ad81b` | +7,253 / +6,445 |
+| m433 | **identical**, 319, `de68699c` | **identical**, 323, `436b7130` | +4,248 / +4,433 |
+| m401 | **identical**, 310, `c60f99b4` | **identical**, 311, `a01187c6` | +3,727 both |
+| m436 | **identical**, 385, `0f92e551` (M50's chain) | **identical**, 387, `e454ac8a` (M50's) | +8,710 both |
+| m435 | **identical**, 349, `ef8c3630` | **identical**, 351, `34bc1820` | +5,953 both |
+| m431 | **identical**, 321, `d0e71d7a` | **identical**, 363, `ecc2f45e` | +4,354 / +6,835 |
+| m444 | **identical**, 311, `9a729d1f` | **identical**, 315, `9a01925e` | +3,669 / +3,787 |
+| m463 | **identical**, 297, `02991144` | **identical**, 298, `881e2dce` | +2,949 both |
+| m418 | **identical**, 301, `a0c913fe` | **identical**, 302, `68c0d1b5` | +3,180 both |
+| m441 (`bloball`) | **identical**, 336, `de40786e` | **identical**, 337, `d871e0bc` | +5,337 / +5,295 |
+
+Twenty pairs, every run exit 0 and 0 faults.  The builds after `g4` changed
+only which discs are drawn and how big (the sizing above; the audit made
+safe) -- nothing a game reads -- and the console path's lockstep frames are
+the same on `g4` and `g6` (m409's two dumps `8b667137` / `aa3d974a` on both).
+
+**The pictures**: `docs/screenshots/m52-blob-<game>.jpg` for the ten --
+the console (Lite off) and the round shadows alone, the same lockstep frames
+(entry +300 and +1,200), and under each the patch where the two differ most,
+enlarged twice.
+
+**Benchmark Mode's choice** (`port/src/ui/bench.c`, `blob_choose`).  Only a
+Mac judged slower than the reference gets any.  Scene 4 (Butterfly Blitz with
+the reference's set) gives this Mac's slowness against the reference: k =
+(33.4 ms x 30 / its fps) / 30.0 ms (m441's reference frame-pair cost).  Each
+game's reference cost (the M51 scoreboard's run of 0.9.20, the larger of the
+drawn + consumed frames and the render thread + decode) times k is its
+predicted frame pair here; every game whose prediction does not fit a frame
+pair at 29.5 fps gets its round shadows, walked cheapest visual cost first
+(m401, m431, m418, m444, m463, m409, m435, m436, m441, m433 -- the result
+lists them in that order); then, if Butterfly Blitz's is among them, scene 6
+measures Butterfly Blitz with the chosen set.  The result screen and the
+report name the games ("Round shadows (for speed) in ...").  `--mute` now
+reaches every child of Benchmark Mode and of the marathon (the MacBook's
+rule).
+
+On the G4 (`f1`, the final build; `BENCH:`, the lab's config saved and put
+back; `docs/soak/m52/bench/`): **"This Mac is as fast as the reference
+machine"** -- the movie 30.0, the board 30.0, Butterfly Blitz 26.2 with Lite
+off and 29.9 with it (three runs: at the edge), Makin' Waves 30.0 -> `lite =
+auto`, `water = auto`, `movies = 1`, `resident = 256`, **no round shadows**:
+today's defaults (`docs/screenshots/m52-bench-result-g4.jpg`).  **A slower
+Mac**: the MacBook (the lab's "slower" bench since M50) was off the network
+all night, so the choice was shown on the G4 with the lab's stand-in,
+`MP4_BENCH_F441=22` (scene 4's reading replaced; the log and the report say
+so; never set on a player's Mac): k = 1.52, every one of the ten predicted
+short -> `liteopts = ref,extras,m401.blob,m431.blob,m418.blob,m444.blob,
+m463.blob,m409.blob,m435.blob,m436.blob,m441.bloball,m433.blob`, and scene 6
+measured **Butterfly Blitz with that set at 29.9** on the G4
+(`docs/screenshots/m52-bench-result-lab-slower.jpg`, the report in
+`docs/soak/m52/bench/BENCH-lab/`).  The real benchmark's post-run guard read
+`BAD` (Spotlight's `mdworker` at 14% while the result screen showed --
+indexing the report it had just written to the Desktop), after the scenes'
+measurements.
+
+### 67.4 RC1 readiness (item 3)
+
+**(a) The dry run of the user's RC1 flow, on the G4, on the final build**
+(`f1`; `tools/m52_marathon.sh` as the lab's job, `docs/soak/m52/mt/`).  The
+marathon exactly as Developer Mode starts it -- `isle --marathon PLAN`, the
+plan Developer Mode writes: **m409-m418, ten in a row**, one person and three
+COMs, Mario / Luigi / Peach / Yoshi, **every minigame recorded** -- with a
+scripted stand-in for player 1.
+
+* **The first attempt stopped in m409, paused**: M51's stand-in
+  (`mg-human.play`) presses START every 300 frames from 14,200 to 25,900 so
+  that one of them meets the instruction card whenever it comes -- and every
+  later one pauses or unpauses the minigame (M51's two minigames happened to
+  end unpaused; Toad's Quick Draw ended with its pause menu up and the script
+  over).  The child was stopped by pid (and the driver, finding no result,
+  stopped the marathon and came back with the summary: the stop path).
+  **`ref/movies/mg-human-m52.play`**: `humanlike.py` to frame 34,000 (long
+  minigames and their results) and START only at 14,150 and 14,200 (the card
+  takes one; the other lands in the wipe, which ignores START).  A person at
+  the pad presses START once, so this is the stand-in's fault alone.
+* **The run** (00:44-01:07): m409 Toad's Quick Draw, m410 Three Throw, m411
+  Photo Finish, m412 Mr. Blizzard's Brigade, m413 Bob-omb Breakers -- then
+  **the stop** (the plan's `.stop` file, what "Stop the marathon here"
+  writes; the marathon stopped after the minigame then playing, m413, and
+  the game came back with the summary "! The marathon was stopped --
+  Developer Mode resumes it", 5 of 10, `next = 5` kept;
+  `docs/screenshots/m52-marathon-summary-stopped.jpg`) -- then **the resume**
+  (`isle --marathon PLAN` again, what "Resume the stopped marathon" runs:
+  "10 minigames, from 5"), m414 Long Claw of the Law, m415 Stamp Out!, m416
+  Candlelight Flight, m417 Makin' Waves, m418 Hide and Go BOOM!, and **the
+  summary**: "The marathon is over -- 10 of 10 minigames played, 1 player at
+  the controllers", each minigame's coins and time (player 1 won m412 and
+  m418), also as `Marathon 2026-10-02 01.06.txt`
+  (`docs/screenshots/m52-marathon-summary.jpg`).  1,300 s of driver for ten
+  minigames: ~2 min 10 s each including the minute's hurry.
+* **The files**: ten recordings, `~/Documents/MarioParty4 Recordings/
+  2026-10-02 HH.MM.SS marathon mNNN.rec`, 0.62-1.28 MB each, a summary text
+  at the stop and at the end, each child's log in `marathon-logs/`; the
+  lab's config saved and put back, the player's card untouched (the
+  children's scratch card).
+* **The videos** (`tools/session_video.sh`, now on the M52 job runner --
+  `JOBRUN`/`JOBWAIT`, `APP` -- `--from 14100 --nodolphin`):
+  **`littlejelly:~/mp4-videos/m52-m412-g4.mp4`** (Mr. Blizzard's Brigade,
+  38 s, 2,282 frames, the mix to -0.4 dB) and **`m52-m418-g4.mp4`** (Hide
+  and Go BOOM!, 63 s), each replayed on the G4 in lockstep from the boot
+  **in step to the end** (16,382 and 17,877 frames checked); 8 and 16
+  minutes each (`docs/screenshots/m52-video-m412.jpg`, a frame of the
+  first).  The Dolphin side is not offered for marathon recordings (the
+  teleport's parks, 66.3's limit) -- the Read Me and the guide say so.
+* **Recording costs no fps** (the scoreboard's teleport at real time,
+  interleaved, three runs each, on Toad's Quick Draw -- the screen at the bar,
+  the most sensitive there is; `f1`, every guard `ok`;
+  `docs/soak/m52/rcost/`): with `--sessionrec` **29.9 / 29.9 / 29.9**, the
+  drawn frame 26.6 ms; without **29.9 / 28.9 / 29.1**, 27.2 ms.  The
+  recorder's cost is under the screen's own run-to-run spread (M51: 30.0 x3
+  either way on m441 and a board).
+
+**(b) The Read Me** (`port/dist/Read Me.txt`, 0.9.21; 679 lines, 19 fewer):
+LITE MODE's round shadows rewritten as the speed-only fallback Benchmark
+Mode picks (ROUND SHADOWS, the ten games, what Beach Volley Folly loses),
+the options' list (`mNNN.blob`, `blobs`), Benchmark Mode's sixth scene and
+its "Round shadows" choice, F5's new name (`Mario Party 4 NNNNN (frame
+F).png`), "Reporting what you find" under Developer Mode, and WHAT IS NOT
+QUITE RIGHT YET cut to what a player meets (the speed line with m409 at the
+bar, the Dolphin replay's limits, marathon recordings and Dolphin; the
+version-by-version history is PLAN.md's).
+
+**F5 for a playtest finding** (`gl13.c`): the screenshot's name now carries
+the game's frame -- the retrace count from the boot, the number a recording
+and `session_video.sh --from` use: `Mario Party 4 NNNNN (frame F).png`; the
+log says `screenshot (F5): PATH -- the game's frame F, recording NAME`, and a
+recording in progress gets the note `m F screenshot frame F`.
+
+**(c) The checklist** (`port/docs/release-checklist.md`): a new first
+section, "RC1 = 0.9.21: what it is and what it is not", with every open line
+(1-23, and three new: m409 at the bar, the soak's slow memory climb, the
+shadow passes not built) given a status for RC1.
+
+**(d) `port/docs/RC1-guide.md`**: one page -- before you start, running the
+marathon (the rows, START at each card, stopping and resuming, the summary),
+what to note, reporting a finding (F5's frame, the recording's name, the
+minigame's log), making the videos (`session_video.sh ... --from F-600 --to
+F+600 --nodolphin`), and what is known before you start.
+
+### 67.5 The scoreboard (item 4)
+
+On the final build (**`f1`, 0.9.21**, the bundle's `isle` `d6ec5b14`, Lite at
+auto, the round shadows off) -- `port/docs/fps-scoreboard.md`, M51's kept as
+`fps-scoreboard-m51-after.md`, the logs `docs/soak/m52/board/`: the whole
+chain (`FB: front,title,boards,mg,menus`, three-run mode auto), 01:47-05:00 G4
+time, 121 runs, every run exit 0 but `goto-mstorydll` (exit 2, every
+milestone's) and **m432 (a fault, below)**, all screens at 100% game speed,
+every run guarded.  **It counted 78 of 82.**  Three things then:
+
+* **m432 Dungeon Duos faulted** at its first model load: SIGSEGV at
+  0x517c601c in `hsfload.c` (`LoadHSF` -> a static helper; the address no
+  pointer of the game's), the moment the minigame's data is first read.  The
+  data had come from the resident set, read ahead by the roulette's prefetch
+  at frame 5,162 (`mg_next data/m432.bin ... resident`), 9,000 frames before
+  the minigame -- the same path M49-M51's first m432 runs took without a
+  fault; a different minigame (m422) was being prefetched at 13,953 as in
+  every run of this teleport.  Eight runs after it (the two re-measures
+  below) and the sweep's played it cleanly.  **Not reproduced; open**
+  (checklist line 27): nothing M52 changed is on that path (the loader, the
+  heap and hsfload are untouched; the M52 hooks in `Hu3DExec` run after
+  it), but a fault on the final build is a fault -- its log is kept, and the
+  way in is a teleport loop with `--snap-every` around frame 14,477.  In the
+  marathon a fault stops the marathon at that minigame; Resume goes on.
+* **m409's third run lost 12 seconds at 13-19 fps** in the middle of play
+  (the other two never under 24.5 there), and the guard, which read the
+  machine before and after, saw nothing: the other runs' after-readings
+  named the culprits -- `nmblookup` 38%, `DirectoryService` 42%, later
+  `smbclient` 25%: the G4's Finder window shows the network's SHARED
+  computers and browses them now and then.  **The guard now reads every
+  process's CPU time** before and after the run (`ps cputime`, the
+  difference per process: what each really used during the run, read
+  outside it); a run whose others used over 3 s is BAD, and
+  `fps_board.sh` runs a BAD run again (twice at most, the discarded logs
+  kept as `NAME.badN.log`).  (A first try sampled `ps` every 5 s *during*
+  the run: it cost the edge screens their frames -- m409 28.6, m433 29.0,
+  `docs/soak/m52/board-edge-sampler/` -- and was thrown out.)
+* **w01's one run read 29.2 pooled** (the board's lines and the teleport's
+  hand-over lines meet: the line's old story, checklist line 12).
+
+**The four re-measured** with the CPU-time guard, three runs each
+(`FB_THREE=all`, 06:01-06:24, every run `ok` but one of b1's, re-run;
+`docs/soak/m52/board-edge2/`): **m432 30.0 / 29.9 / 30.0** (no fault),
+**w01 30.0 / 30.0 / 30.0**, **m409 29.8 / 29.2 / 28.9 -> 29.2**, **m433 29.2
+/ 29.3 / 29.8 -> 29.3**.  The table is the chain with those four.
+
+| screen | M51 (0.9.20) | M52 (0.9.21, runs) | game drawn / consumed, rt / dec (ms) | verdict |
+|---|---:|---|---|---|
+| m409 Toad's Quick Draw | 29.1 | **29.2** (29.8 / 29.2 / 28.9) | 26.4 / 6.3, 20.7 / 4.6 | **short by 0.3** |
+| m433 Beach Volley Folly | 29.1 | **29.3** (29.2 / 29.3 / 29.8) | 25.5 / 5.5, 18.0 / 4.4 | **short by 0.2** |
+| m401 Manta Rings | 30.0 | 29.9 (29.9 / 29.9 / 29.1) | 21.1 / 7.4, 18.2 / 6.8 | PASS |
+| m444 Reversal of Fortune | 29.9 | 29.8 (29.8 / 29.9 / 29.5) | 21.9 / 4.1, 21.7 / 6.4 | PASS |
+| w01 | 29.5 pooled | 30.0 (re-measured, x3) | 18.8 / 5.8, 13.3 / 5.3 | PASS |
+| m432 Dungeon Duos | 30.0 | 30.0 (re-measured; the chain's run faulted) | 24.2 / 5.4, 13.7 / 4.7 | PASS |
+
+**Screens meeting 29.5: 80 of 82** (M51 80).  **The two short are the two
+edge screens**, and by the brief's measure -- five runs, the A/B's windows
+(entry +300..+1,500) -- they pass: on 0.9.20 m409 **29.5** and m433 **29.9**
+(67.2), and on 0.9.21 against 0.9.20, interleaved the same morning
+(`docs/soak/m52/abf1/`, every guard `ok`): m409 **29.3 / 29.4**, m433 **29.7 /
+29.8**, the drawn frames 27.1 / 27.1 and 25.8 / 25.8 ms -- no change from
+0.9.20.  The count reads lower than the A/B on these two because its median
+takes every line of the screen from the entry (the load, the camera's sweep,
+the two frame dumps at +300 and +1,200) where the A/B starts at +300.  The
+rule is the count; the count says 80.
+
+### 67.6 The md5s, the picture checks, the soak, the disk image
+
+The final build is **`f1`**: `port/build-ppc-darwin/mp4-f1.app`, the bundle's
+`isle` **`d6ec5b14`** (the linked executable `dbe8ef3e` before the bundle's
+SDL install name), its 99 modules -- installed on the G4 as `~/mp4-f1.app`
+by `~/bin/m52push`, which since M52 sends the whole bundle and compares
+every file of `Contents/MacOS` by md5 with the build's (101 identical; M51's
+helper kept the last release's modules).  `f1` differs from the proofs'
+`g4` only in what draws the discs and how big (67.3), the audit's safety,
+`--mute` for the children, Benchmark's table and the lab's stand-in, and
+the tier line's version -- nothing a game reads.  The chain (`~/m52/final`,
+`tools/m52_chain.sh` with `~/m52.env`; `docs/soak/m52/final/`):
+
+* **The md5 walks**: `--nomovies` **`0b58c5ee` / `2b99c60a` / `4a9a640c`**,
+  movies **`d2d40344` / `59008ce4` / `3f98f882`** -- the references.
+* **The picture checks with Lite off** (`PC:@f1,--nolite` against M48's `@p`
+  set, 0.9.16's frames, `tools/m48_pccmp.py`): **638 of 638 identical** (m427's
+  two real-time runs landed in the river state 0.9.16's set holds, this
+  time), 24 runs, every run exit 0, 0 faults; `--halfwatch 1`: 49,834
+  frames, **0 half-black, 0 blips**.
+* **The soak** -- the release soak (`SOAK:125`: `--soak --com4 --rtc dolphin --freshcard
+  --status --perf --stuckwatch 200 --ovllog --frames 449500`, 07:14-09:19 G4
+  time, Lite at auto; `docs/soak/m52/m52-soak-final-125.log.gz`): **7,499.2 s
+  of game against 7,499.8 s of wall (100.0%)**, 449,500 retraces, the whole
+  20-turn board and 13 turns of the next, 28 minigame modules; **0 faults, 0
+  resyncs, 0 skin guard hits, no lock-up**, the worst frame 682 ms behind, 174
+  `stall:` lines, 36 underruns (the boot, the character select, the board's
+  first turn -- as every soak's); **three `STUCK` lines at frames 270,513,
+  283,066 and 297,284 -- the same three frames as M47's to M51's release
+  soaks** (the soak's own navigation).  (Its guard read `BAD` -- the other
+  processes used 78 s of CPU over the two hours, `DirectoryService` 16.5 s,
+  and `mdworker` was indexing at the end: a soak is not a timed run, but the
+  G4's background is now on record.)
+* **The disk image** -- **`littlejelly:~/MarioParty4-PowerPC-0.9.21.dmg`** (`tools/make_dmg.sh`
+  from `build-ppc-darwin/mp4-f1.app`, checked file for file against the G4's
+  `~/mp4-f1.app` first; 4,275,410 bytes, md5 **`5873a402...`**; the G4 keeps
+  `~/Mario Party 4 PowerPC Edition 0.9.21.dmg`): mounted on the G4, its
+  `Contents/MacOS` is the build's, **101 files identical** (`isle` `d6ec5b14`,
+  the 99 modules), the Read Me 0.9.21, the five licences.  **Installed on the
+  G4 from the image**: `~/MarioParty4.app` is 0.9.21 (101 files identical to
+  the image), 0.9.20 kept as `~/MarioParty4-0.9.20.app`.
+
+### 67.7 What M52 shipped (0.9.21)
+
+| | |
+|---|---|
+| `port/src/debug/lite.c`, `port/patches.txt` (M52 block) | `<game>.blob` for m401 m436 m435 m431 m444 m463 m409 m433 m418 (`blobs` in `liteopts`): the casters' second draw skipped in `Hu3DShadowExec` and a soft disc per caster drawn into the shadow map instead (`port_lite_shadow_begin/skip/blobs/end`); `--blobaudit` |
+| `port/src/debug/perf.c`, `port/src/gx/rt.c` | the shadow pass timed: `port_shadow_exec`, `rt_shadow_mark`; `--perfdump`'s `shd_ms`, `shd_rt_ms` |
+| `port/src/ui/bench.c` | the round shadows chosen per game below the reference (`blob_choose`, the table), scene 6, the result's and the report's lines; `--mute` to the children; `MP4_BENCH_F441` (the lab's) |
+| `port/src/ui/marathon.c` | `--mute` to the children |
+| `port/src/platform/machine.c`, `port/src/debug/selfplay.c` | `port_display_asleep` (`CGDisplayIsAsleep`): `DISPLAY-ASLEEP` on the status line; the tier line names 0.9.21 |
+| `port/src/gx/gl13.c`, `port/src/platform/defaults.c` | F5's name carries the game's frame; the log and the recording note it |
+| `port/src/platform/main.c`, `port/include/port.h` | `--blobaudit`; 0.9.21 / M52 |
+| `port/tools/m52_guard.sh`, `m52_chain.sh`, `m52_job.sh`, `m52_marathon.sh`, `m52_shadow.py`, `m52_ab.py`, `m52_blobimg.py`; `fps_board.sh` / `.py` (the guard; asleep seconds not counted); `session_video.sh` (the M52 job runner); `ref/movies/mg-human-m52.play` | the lab's |
+| `port/dist/Read Me.txt`, `port/docs/release-checklist.md`, `port/docs/RC1-guide.md`, `port/docs/fps-scoreboard.md` | ROUND SHADOWS, Benchmark's choice, F5, reporting, the known limits; the RC1 table; the guide; the scoreboard (M51's kept as `fps-scoreboard-m51-after.md`) |
+| `port/docs/screenshots/m52-*.jpg`, `port/docs/soak/m52/` | the pictures; the logs (gzipped) |
+
+### 67.8 What is left running, and what RC1 starts with
+
+On the G4 since 09:26 on 2026-10-02, on 0.9.21 (`~/MarioParty4.app`, `isle`
+`d6ec5b14`; the runner slot `~/isle.app` -> `MarioParty4.app`):
+
+```
+isle --soak --com4 --rtc dolphin --freshcard --status --perf
+```
+
+log `~/isle-log.txt`, **pid 92004**, Lite at auto (the lab's config holds
+`fullscreen`, `machine`, `image` only: every test that wrote to it put it
+back).  The player's card (`memcard-slot-a.raw`, 2026-09-15) and
+`~/memcard-backup.raw` untouched.  M52's bundles on the G4: `~/mp4-g1.app` ..
+`~/mp4-g7.app`, `~/mp4-f1.app` (the shipped build); the job runner
+`~/MarioParty4-chain.app` = `tools/m52_job.sh` (`~/m52/job.sh`,
+`~/m52/index.txt`; M51's executable kept as `~/m52/chain-exe-m51.bak`); the
+chain `~/m52chain.sh` with `~/m52.env`; the guard `~/m52guard.sh`; the
+scoreboard `~/fps_board.sh` with `~/fps-board-m52.env` (and `-m52edge`,
+`-m52edge2`); the marathon dry run's `~/m52mt.sh`, `~/m52/mg-human-m52.play`;
+ten marathon recordings in `~/Documents/MarioParty4 Recordings`.  On
+littlejelly: `~/mp4-videos/m52-m412-g4.mp4`, `m52-m418-g4.mp4`; the helpers
+`~/bin/m52job`, `m52wait`, `m52push`, `m52until`.
+
+**RC1 starts with**: the user's marathon on 0.9.21 (`port/docs/RC1-guide.md`:
+Developer Mode -> Minigame marathon, one player, Record each minigame on;
+three sittings of ~21 work as well as one); close the G4's Finder windows
+first (67.5); report a finding as the minigame, the F5 screenshot (its
+frame) and the recording's name.  For a later milestone: m432's load fault
+(checklist line 27: a teleport loop with `--snap-every` around frame
+14,477), m409's shadow pass (4 ms of its game thread) if the user wants the
+two edge screens off the bar, the other heavy shadow passes as round-shadow
+options (m459, m420, m407, m449, m445, m461), the MacBook's Benchmark run
+when it is back on the network (`ssh -o HostName=... mbp`, `--mute`).
+
+**Rules learnt**: a timed run's interference is best read as every
+process's CPU *time* across the run, outside it -- a sampler during it is
+itself interference (`ps` every 5 s took m409 from 29.1 to 28.6); the G4's
+own Finder browsing the network takes a CPU for seconds at a time; one ssh
+login is ~0.5 s of the G4's CPU (the guard sees it); SDL's event pump keeps
+the display awake while the game runs, so a sleeping display is a between-
+runs matter; a scripted player that presses START "until the card takes it"
+pauses the minigame after it -- press START at the card only; a mesh's
+shadow in this engine is a second draw of the whole caster into a map, the
+Bowser arena's being most of its render thread -- a stand-in drawn into the
+same map keeps the console's projection for free; size a stand-in from the
+meshes that really cast (a stage that shades itself is one huge "caster").

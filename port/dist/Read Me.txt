@@ -631,11 +631,12 @@ left is the disk itself holding the game.  (0.9.8 had about two or three
 an hour on the reference machine; the project's notes, PLAN.md section 55,
 have what 0.9.9 measured.)
 
-Speed: with Lite mode at its default, @SCORE@ of the 82 screens measured
+Speed: with Lite mode at its default, 80 of the 82 screens measured
 reach 30 frames a second on the reference machine (a dual 1 GHz G4 with a
-Radeon 9000), and every screen runs at the console's game speed.  Toad's
-Quick Draw sits exactly on the line (five runs: 29.9, 29.7, 28.9, 29.0,
-29.5): a dip to 29 there is the machine's edge.  With Lite off the seven
+Radeon 9000), and every screen runs at the console's game speed.  The two
+below sit on the line: Toad's Quick Draw and Beach Volley Folly (29.2 and
+29.3 on the last count, 29.5 and 29.9 over five runs) -- a dip to 29 there
+is the machine's edge.  With Lite off the seven
 Lite minigames are back at 27 to 29.7.
 
 Recordings in Dolphin: a recording replays in Dolphin exactly through the

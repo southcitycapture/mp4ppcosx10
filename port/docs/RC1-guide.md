@@ -89,9 +89,17 @@ YET); a session recorded from the boot with **Record this session** does.
 
 ## 6. Known before you start
 
-* Toad's Quick Draw (m409) sits exactly on the 29.5 line on the reference
-  machine (five runs: 29.9 / 29.7 / 28.9 / 29.0 / 29.5): a dip to 29 there
-  is the machine's edge, not a finding.
+* Toad's Quick Draw (m409) and Beach Volley Folly (m433) sit on the 29.5
+  line on the reference machine (29.2 / 29.3 on the last count; 29.5 / 29.9
+  over five runs): a dip to 29 there is the machine's edge, not a finding.
+* With a Finder window open on the network (SHARED in its sidebar), the
+  G4 now and then spends a few seconds of a CPU browsing it; a minigame
+  playing then can stutter for those seconds.  Close Finder windows before
+  a sitting.
+* A minigame that crashes stops the marathon there (the summary says so);
+  Resume goes on from it.  The lab saw one such fault in 0.9.21 (Dungeon
+  Duos, at its load, once in nine runs) -- if it happens, the minigame's log
+  in `marathon-logs/` is the report.
 * The Dolphin replay of a recording is exact through the menus, the
   board's dialogs and people's turns; inside a long physics minigame the
   two part after tens of seconds (float rounding), and a computer player's
