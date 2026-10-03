@@ -7,6 +7,24 @@ numbers are the long form. The machine is the reference G4 throughout — a
 dual 1 GHz Power Mac G4 (PowerMac3,5), 1.5 GB, 64 MB Radeon 9000, Mac OS X
 10.5 — unless a line says otherwise.
 
+## 0.9.22 (M53, 2026-10-03): RC1's build
+
+0.9.21 with the net for Dungeon Duos's load fault and nothing else a player
+can see (PLAN.md 68).  **The fault** (line 27) was not reproduced in 125
+loads (0 faults; 1 in 208 on the record); 0.9.22 compares every decode's
+source with the disc and puts the disc's bytes back on a difference,
+checksums the resident copies, guards the data directory images read-only
+(naming any writer) and prints every register and the model loader's state
+at a fault -- in 125 loads, the picture checks and a 2 h soak none of them
+fired.  **The memory** (line 25): bounded -- the resident set's 176 MB
+ceiling plus ~165 MB of capped caches.  **Its evidence** (`m53f`, isle
+`cda53343`): both md5 walks the references; the picture checks with Lite off
+636 of 638 identical to 0.9.16's set (the two: m427's known river state), 0
+half-black, 0 blips; a 2 h soak, 0 faults, no lock-up, 100.0% speed.
+`littlejelly:~/MarioParty4-PowerPC-0.9.22.dmg`, md5 `19a503ad`, installed on
+the G4 as `~/MarioParty4.app` (0.9.21 kept beside it).  The 30-fps count is
+0.9.21's (below), not re-measured: M53's checks run as data loads, not per frame.
+
 ## RC1 = 0.9.21 (M52, 2026-10-01): what it is and what it is not
 
 **It is** the build the user plays the whole minigame marathon on (Developer

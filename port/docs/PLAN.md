@@ -27950,3 +27950,377 @@ shadow in this engine is a second draw of the whole caster into a map, the
 Bowser arena's being most of its render thread -- a stand-in drawn into the
 same map keeps the console's projection for free; size a stand-in from the
 meshes that really cast (a stage that shades itself is one huge "caster").
+
+## 68. M53 log: Dungeon Duos's load fault and the slow memory climb *(2026-10-03, littlejelly, overnight)*
+
+M52 left one fault open on 0.9.21: **m432 Dungeon Duos** faulted at its first
+model load in the scoreboard's chain, once in nine runs (67.5, checklist line
+27), and the 8 h soak's resident memory climbed 262 -> 315 MB after the first
+board (67.1, line 25).  M53's brief: reproduce the fault, name its cause and
+fix it -- or, if it cannot be reproduced in a night, put diagnostics in the
+build that will catch it in the user's RC1 recordings and say what to send;
+find what grows in the soak and fix it, bound it or show it settles; then
+the picture checks, the md5 walks, a soak and 0.9.22, the G4 left idle for
+the user's RC1.
+
+**The short answer.**  **The fault was not reproduced**: 125 loads of m432
+tonight on the scoreboard's teleport (68.2) -- 10 on 0.9.21 itself, 115 on
+the diagnostic builds, four arms interleaved (plain; the prefetch slowed to
+the faulting run's cold-disk speed; the faulting run's exact arguments with
+its frame dumps and per-frame CSV; `--memstat`) -- **0 faults**.  With M49-M52's
+logged runs (M40-M52's builds) that is **1 fault in 208 loads**.  What the night established (68.1): the disc's data is sound (every
+child index of all 30 of m432's models in range, no object reached twice;
+no FSLIDE member on the disc reads before its output); the decoder is
+deterministic; the faulting run's game is line for line the clean runs'
+until the fault; the faulting pointer is `objtop + 0x144 * w` for a garbage
+symbol word `w` in the last 0x80 bytes of the model's decoded buffer; and an
+independent read of every port thread found none that writes the game's
+memory.  The one condition the faulting run had that no clean run did: the
+prefetch read `m432.bin` from a cold disk (232 ms; the page cache answered
+every clean run), and a slowed prefetch did not bring the fault back.
+**So M53 ships the net, not a fix** (68.3), all of it on by default in
+0.9.22 and silent unless something is wrong: **the data check** (every
+decode's source bytes compared with the disc image's before the game decodes
+them; a difference is logged with the bytes and the disc's are put back --
+the m432 fault, if its cause is the data directory image, is prevented and
+named), **the resident set's checksum** (a whole-file read from a copy that
+changed since it went in is logged and answered by the disk), **the
+directory guard** (a data directory image's pages are read-only from its
+read to its free; any store into one, by any thread, is named with its pc
+and lr and let through), and **the crash handler's registers and LoadHSF
+state** (every GPR, the last decode, the loader's `fileptr`/`NSymIndex`/
+`objtop` and the faulting address in objects).  In 125 loads, the soak and
+the walks none of them fired.  **What the user should send** if Dungeon
+Duos (or anything) stops in RC1 (68.3): the minigame's log,
+`~/Library/Application Support/MarioParty4/marathon-logs/mNNN.log` (outside
+the marathon `MarioParty4.log` in the same folder), copied before the next
+run overwrites it; the lines that matter start `*** port: fault`,
+`port> DATA CHECK FAILED`, `port> RESIDENT COPY CHANGED` or `port> WRITE
+INTO A DATA DIRECTORY IMAGE`.
+
+**The memory climb is a bounded working set, not a leak** (68.4): of the
+soak's +50 MB after its first hour, +30 MB is the resident set keeping each
+newly dealt minigame's data (by design, M36: 119 -> 149 MB), which can never
+pass **176 MB** (the 73 listed files, 103 MB, plus every minigame's and
+board's data and module, 73 MB) -- under its 256 MB budget, so it never
+evicts; the rest of the process (rss less the set, median per hour) rose 145
+-> 157 MB over the first three hours and then crept ~0.6 MB an hour (162 at
+hour eight), every port cache it holds having a cap (68.4's inventory).  At
+most **~340 MB** with every minigame dealt, against 1.5 GB in the machine.
+M53's 2 h soak with `--memstat 600` (68.4) splits it: over 110 minutes the
+resident set +15.6 MB (87 -> 109 files), the rest of malloc +12 MB as new
+modules and their screens came in (8 -> 33 modules linked, of 99), the
+texture cache flat at its 40 MB budget, the vertex cache's region at its 8
+MB cap and its array table flushed at its 16,384 limit (16,322 -> 775 at 80
+min).
+
+**Final**: **`m53f`** (bundle `isle` `cda53343`, d5's source + the
+version): the md5 walks the references, the picture checks with Lite off
+636 of 638 identical to 0.9.16's set (the two: m427's known river state), 0
+half-black and 0 blips in their 49,785 frames, a **2 h soak** with 0 faults
+(100.0% speed, the same three `STUCK` frames as every release soak since
+M47, 14 half-black frames = m416's dark room as in M45-M47's soaks, 0
+blips; the checks over the whole soak: 8,897 decodes, 0 failed; 813
+directory images guarded, 0 writes; 1,010 resident checksums, 0 changed);
+**0.9.22**, `littlejelly:~/MarioParty4-PowerPC-0.9.22.dmg` (md5
+`19a503ad`), installed on the G4 as `~/MarioParty4.app` (0.9.21 kept); the
+G4 left idle.
+
+### 68.1 The fault, read
+
+The log (`docs/soak/m52/board/m432.log.gz`, args: the scoreboard's teleport
+`--minigame m432 --turns 1 --ffto 14000 --frames 20000 --mgend 1800
+--mgdump 300,1200 --perfdump ...`, `--realtime`, 0.9.21 `f1`, isle `d6ec5b14`):
+SIGSEGV at 0x517c601c, pc `0x215e0` = `DispObject+0x1c` (`lwz r29,4(r4)`:
+the child's `type`), called from `DispObject`'s child loop (`0x21af4`) called
+from `LoadHSF` (`ObjectLoad` inlined), from `Hu3DModelCreate` from m432's
+`fn_1_46C` (`Hu3DModelCreateFile(0x3f0002)`: `data/m432.bin` member 2, LZ,
+572,003 bytes raw, 3 objects, 13 symbols; its symbol table is the last 0x80
+bytes of the buffer).  So the root's child pointer was `objtop + 0x144 *
+NSymIndex[k]` for a word no HSF of the disc holds.
+
+What was ruled out, each by a check rather than by argument:
+
+* **The disc.**  `tools/m53_hsfscan.py` decodes every LZ member of m432.bin
+  and walks each model as `DispObject` does: all 30 models, every child
+  symbol inside the table and every index inside the object table, no
+  object reached twice, the symbol table inside the decoded length.
+* **The decoder.**  All 41 of m432.bin's members are type 1 (LZ, its window
+  zeroed per call).  One latent decomp hazard found on the way:
+  `HuDecodeFslide` (types 4/5) copies `src[-1]` without the start check
+  `HuDecodeSlide` has, so a stream referring before its output would read
+  the heap header and whatever precedes it; `tools/m53_fslide.py` decodes
+  every FSLIDE member on the disc -- none does.  Not a bug the disc can
+  reach.
+* **The game.**  The faulting run's log and a clean run's (`board-edge2/
+  m432`) are identical line for line up to the fault (the heaps' dumps, the
+  data numbers, every `dvdheap` line), and the coins at the card are the
+  same in all five M52 runs of the teleport.  The game is deterministic up
+  to the fault; whatever differed is the port's timing.
+* **The port's threads.**  A read of every port thread (the render thread,
+  the mixer and texture workers, THP, the prefetch, the card, the log, the
+  snapshot writer) found none that writes MEM1: decode output goes to host
+  rings, read-backs to host buffers, the mixer's value half reads samples
+  and writes its own buses, the stream's disc reads run on the game thread
+  (the dvd_cache.c comment that says "the mixer's job" means the tick, which
+  is the game thread's), the write barrier can only crash (a page it did
+  not expect read-only goes to the crash path), never lose a store, and its
+  `fread`s are disarmed first.  Between the decode and `LoadHSF` the game
+  thread runs nothing else (`Hu3DModelCreateFile` is the two calls).
+* **What remains**: the data directory image (read into the DVD heap by
+  instDll at ~14,300, right after `HuDataDirClose(DATADIR_INST)` freed
+  inst.bin's in the same heap -- so a stale pointer into inst.bin's image
+  lands in m432.bin's) wrong at decode time, or the resident set's host
+  copy of m432.bin wrong (it was read from a cold disk 9,000 frames before:
+  `mg_next data/m432.bin 2647534 bytes in 232 ms`, the one difference from
+  every clean run, whose prefetch line never shows because the page cache
+  answers in under 100 ms).  Both are exactly what 68.3's checks see.
+
+### 68.2 The reproduction loop
+
+`tools/m53_loop.sh` (on the G4 `~/m53rep4.sh`, index `docs/soak/m53/
+loops-index.txt`): the scoreboard's teleport (`--rtc dolphin --freshcard
+--noconfig --realtime --perf --status --ovllog --com4 --play
+board-start-com4.play --nomovies --minigame m432 --turns 1 --ffto 14000
+--frames 14800`), ~76 s a run, each run's faults and M53 lines counted, the
+log kept only when something fired.
+
+| build | runs | arms | faults | checks fired |
+|---|---:|---|---:|---:|
+| 0.9.21 (`MarioParty4.app`, `d6ec5b14`) | 10 | plain | 0 | -- |
+| d2 (the data check, log only) | 26 | plain, `--memstat` | 0 | 0 |
+| d4 (+ the disc's bytes from the image, the resident checksum, the cold-disk stand-in) | 47 | plain / `M53_PFDELAY_US=5000` (the prefetch at 13 MB/s, the faulting run's 232 ms for m432.bin) / the faulting run's own arguments (`--perfdump`, `--mgdump 300,1200`, `--shotdir`, `--mgend 1800`) | 0 | 0 |
+| d5 (+ the directory guard, the put-back) | 42 | the same three | 0 | 0 |
+
+**125 loads, 0 faults, 0 data-check failures, 0 changed resident copies, 0
+writes into a guarded directory image** (31 images guarded per run).  On the
+record: 1 fault in 208 logged loads (the 83 of M40-M52's chains, the fault
+among them, and tonight's 125).  At ~1% a night's loop cannot
+tell a fixed build from an unlucky one -- the brief's proof (the old build
+crashing in the loop, the new one not) was not available, and this section
+claims none.
+
+Two things cost the loop: the first data check (d1) took the ring's newest
+read covering an address as the source of its bytes, and at boot a buffer an
+ARAM transfer had filled (mgconst.bin's member, copied out of ARAM) was
+"repaired" with the disc bytes of the read that had been there before --
+the decode then ran off MEM1's top (`docs/soak/m53/d1t-misfire.log.gz`).
+Since d2 a read's record is forgotten when its block is freed
+(`port_mem_freed`) or an ARAM transfer writes it (`aram.c`), and the check
+was log-only until d5.  And a Pikmin session (another project's lab, from
+the Mac) ran timed runs on the G4 from 02:10; the loop yields to a running
+`pikmin` (at most 20 min; it waited once, 40 s), and those runs overlapped
+a few of M53's loop runs -- their numbers from 02:10-02:15 had a second game
+beside them.
+
+`--hsfcheck` (a second decode of every model at `LoadHSF`, compared) was
+tried on two runs (199 models each, 0 differences) and kept opt-in: it doubled the
+run (147 s).
+
+### 68.3 The net: what 0.9.22 checks, and what to send
+
+All in `port/src/dvd/data_check.c` (+ hooks in dvd_fs.c, dvd_cache.c,
+crash.c, gx_skin.c's `port_mem_freed`, aram.c, snapshot.c, patches.txt's M53
+blocks for `HuDecodeData` and `LoadHSF`):
+
+* **The data check** (default on, `--nodatacheck`): `HuDecodeData` hands
+  its source first; the newest disc read covering it (dvd_fs.c's ring of
+  256) gives the file and offset; the disc image is read again into host
+  memory (never the resident copy: it is a suspect too) and compared over
+  the member's raw size + 64.  A difference logs `port> DATA CHECK FAILED
+  (M53): FILE +OFF: N of M bytes ... (first +a, last +b; MEM1 ...); read at
+  frame R, decoded at frame D`, any later read that landed on the range, 32
+  bytes of memory and disc, what the resident set's copy holds (the disc's,
+  the same wrong bytes, or neither) -- and **the disc's bytes are put back**,
+  so the game decodes what the console would have.  Cost: ~345 decodes and
+  26 MB compared per teleport run, ~0.3-0.6 s spread over the loads.
+* **The resident checksum**: every resident file's checksum is taken when it
+  goes in (dvd_cache.c `res_sum`); a whole-file read of one of 64 KB or more
+  (a data directory image -- what models are decoded from) checks it first,
+  and a changed copy is logged (`port> RESIDENT COPY CHANGED (M53)`),
+  dropped and the read answered by the disk.
+* **The directory guard**: a whole `data/` file read into MEM1 has its
+  interior pages made read-only until its block is freed (or a read lands
+  on it, or a snapshot restores); a store into one faults into
+  `port_dirguard_fault` (first in the handler): the page opens, the store
+  goes on, and `port> WRITE INTO A DATA DIRECTORY IMAGE (M53): FILE +OFF ...
+  at frame F, thread T: pc ... lr ...` names the writer (the first 16).
+* **The crash report**: every GPR (`registers:`), the last decode (frame,
+  source, destination, file and offset), and inside `LoadHSF` the loader's
+  globals and the faulting address as `objtop + n objects`; with
+  `--hsfcheck`, each object's children on the disc against what the table
+  holds.
+* `--hsfcheck` (opt-in), `M53_PFDELAY_US` (the lab's cold-disk stand-in for
+  the prefetch thread).
+
+If m432 faults in RC1, the log now says which of the three it was: a `DATA
+CHECK FAILED` line before the fault (or instead of it: the put-back) means
+the directory image was wrong, and the lines say whether the resident copy
+was; a `WRITE INTO` line names the writer outright; neither means the model
+changed after its decode, and the registers and the loader's state say
+where.  **What to send**: the minigame's log
+(`~/Library/Application Support/MarioParty4/marathon-logs/mNNN.log`, or
+`MarioParty4.log` in the same folder outside the marathon), copied before
+the game is started again (each run overwrites its own), with the F5
+screenshot's frame and the recording's name as RC1-guide.md says.
+
+### 68.4 The memory climb
+
+From M51's 8 h 18 min leave-behind soak (`docs/soak/m52/m52-soak-m51-
+leave.log.gz`, 29,856 status lines, one a second), per hour (215,784
+retraces):
+
+| hour | rss min / median / max (MB) | resident set at the hour's end (MB) | rss less the set, min / median (MB) | texture slots used |
+|---:|---|---:|---|---:|
+| 0 | 176 / 261 / 273 | 119 | 73 (the boot) / 145 | 664 |
+| 1 | 268 / 280 / 288 | 129 | 146 / 153 | 713 |
+| 2 | 284 / 293 / 301 | 138 | 150 / 157 | 831 |
+| 3 | 293 / 299 / 307 | 140 | 154 / 159 | 831 |
+| 4 | 293 / 301 / 310 | 142 | 151 / 159 | 907 |
+| 5 | 298 / 304 / 310 | 147 | 153 / 160 | 907 |
+| 6 | 303 / 308 / 314 | 147 | 156 / 161 | 907 |
+| 7 | 303 / 309 / 315 | 149 | 154 / 161 | 907 |
+| 8 | 303 / 311 / 315 | 149 | 154 / 162 | 907 |
+
+**What grows is the resident set**: the roulette's prefetch keeps each dealt
+minigame's data and module (and the board's) in the set -- M36's design, "a
+prefetched file joins the set when it fits" -- +30 MB after the first hour
+as new minigames were dealt.  Its ceiling is the disc's: the 73 listed
+files (103.1 MB, read at boot) plus every file the prefetch can ask for that
+the list does not hold -- each `data/m4NN.bin` and `dll/m4NNdll.rel`, the
+boards' `wNN.bin` and modules, 72.8 MB (`tools/m53_gcfs.py`'s FST) --
+**175.9 MB**, under the 256 MB budget the machine check gives a 1.5 GB Mac:
+the set never evicts and never passes 176 MB.  **The rest of the process**
+(the GL driver's copies of the 40 MB texture budget, the vertex cache's 16 MB
+region and tables, the render thread's 16 MB ring, the 99 modules' mappings,
+malloc's arenas) rose 145 -> 157 MB (median) over the first three hours and
+then ~0.6 MB an hour to 162 at hour eight; the texture cache's bytes stayed
+at 36.9-44.9 MB the whole soak (its budget 40 MB, overshooting by the frame's
+binds before an eviction), its slot high-water 664 -> 907 of 2,048 (an
+evicted entry frees everything it holds, `cache_free_slot`).  The inventory
+of every host allocation the port makes found nothing without a cap: the
+texture cache (2,048 entries, 40 MB), the vertex cache (a fixed region;
+entries swept after 900 idle frames, everything flushed past 16,384 arrays),
+the skin registry (48 models), vertex programs (256), the render ring (16
+MB), the curve memo (fixed), the modules (99 at most, never unmapped: 6.7 MB
+of VM in all).  **Bound: ~176 + ~165 = ~340 MB**, the set's part reached only
+once every minigame has been dealt.  No fix was needed and none was made;
+`--memstat SECS` now prints each part (68.6).
+
+**M53's soak with the counters** (the final build, `SX:120` with `--memstat
+600`, 05:01-07:01 G4 time; `docs/soak/m53/final/soak-120-mem-lines.txt`,
+`tools/m53_memstat.py`):
+
+| t (min) | frame | screen | rss MB | vsize MB | malloc in use / allocated MB | resident MB (files) | tex KB (entries) | vc region peak KB, entries / arrays | skin | modules |
+|---:|---:|---|---:|---:|---|---|---|---|---:|---:|
+| 0 | 1 | _minigameDLL | 108 | 904 | 86.3 / 96.0 | 50.5 (8) | 0 (0) | 0, 0 / 0 | 0 | 0 |
+| 10 | 35966 | w01dll | 258 | 1077 | 209.1 / 213.2 | 114.6 (87) | 40933 (554) | 8191, 754 / 5860 | 14 | 8 |
+| 20 | 71930 | w01dll | 257 | 1075 | 208.7 / 211.6 | 115.8 (89) | 40945 (625) | 8191, 1196 / 7553 | 19 | 12 |
+| 30 | 107895 | m428dll | 264 | 1081 | 214.6 / 217.5 | 116.6 (91) | 40090 (625) | 8191, 904 / 9897 | 19 | 16 |
+| 40 | 143859 | w01dll | 264 | 1082 | 214.0 / 216.3 | 116.6 (91) | 40918 (625) | 8191, 680 / 10780 | 19 | 17 |
+| 50 | 179824 | m441dll | 269 | 1095 | 220.0 / 229.7 | 117.7 (93) | 40957 (625) | 8191, 467 / 13462 | 19 | 21 |
+| 60 | 215692 | w01dll | 272 | 1098 | 222.3 / 232.1 | 119.7 (95) | 40954 (663) | 8191, 772 / 15121 | 19 | 23 |
+| 70 | 251657 | m416dll | 278 | 1104 | 226.2 / 237.5 | 122.8 (99) | 40272 (663) | 8191, 241 / 16322 | 19 | 26 |
+| 80 | 287620 | mentdll | 286 | 1112 | 232.2 / 244.4 | 122.8 (99) | 40921 (663) | 8191, 970 / 775 | 19 | 27 |
+| 90 | 323585 | m441dll | 284 | 1108 | 230.5 / 241.6 | 123.6 (101) | 40955 (667) | 8191, 445 / 3909 | 19 | 28 |
+| 100 | 359550 | w01dll | 282 | 1107 | 228.7 / 239.8 | 123.6 (101) | 40914 (667) | 8191, 1040 / 5677 | 19 | 28 |
+| 110 | 395502 | instdll | 292 | 1115 | 236.7 / 247.9 | 129.1 (107) | 40922 (831) | 8191, 918 / 7773 | 19 | 30 |
+| 120 | 431479 | resultdll | 292 | 1113 | 237.0 / 247.1 | 130.2 (109) | 40641 (831) | 8191, 614 / 12153 | 19 | 33 |
+
+From the first board on (t=10) to the end: rss +34 MB, of which the resident
+set +15.6 MB (its files 87 -> 109) and malloc's other arenas +12 MB, as
+modules came in (8 -> 33 linked); the texture cache at its 40 MB budget the
+whole time (its slots' high-water 554 -> 831), the vertex cache's region at
+its 8 MB peak from the first minute and its array table cycling (16,322 ->
+775 at 80 min: the flush at 16,384), the skin registry 19 of 48.  vsize
+1,077 -> 1,113 MB.  The same shape as the 8 h soak's first two hours: the
+resident set is the climb, and the rest follows the distinct screens seen,
+each part capped.
+
+### 68.5 The md5s, the picture checks, the soak, the disk image
+
+The final build is **`m53f`**: `port/build-ppc-darwin/mp4-m53f.app`, the
+bundle's `isle` **`cda53343`**, its 99 modules -- d5's source with the version
+0.9.22 (the loop's d5 differs in that string alone) -- installed on the G4 as
+`~/mp4-m53f.app` by `~/bin/m52push` (101 files identical).  The chain
+(`~/m53/final`, `tools/m52_chain.sh` with `~/m52.env` pointed at M53's --
+M52's kept as `~/m52.env.m52`; `docs/soak/m53/final/index.txt`), 04:11 G4
+time:
+
+* **The md5 walks**: `--nomovies` **`0b58c5ee` / `2b99c60a` / `4a9a640c`**,
+  movies **`d2d40344` / `59008ce4` / `3f98f882`** -- the references.
+* **The picture checks with Lite off** (`PC:@m53f,--nolite` against M48's
+  `@p` set, 0.9.16's frames, `tools/m48_pccmp.py`): **636 of 638 identical**;
+  the two that differ are m427's second real-time run in the river's other
+  state (`aa00e2b6` / `a8f08586`, the state M52's own second run logged and
+  0.9.15 already had, M47's 62) -- the known exception; 24 runs, every run exit
+  0, 0 faults; `--halfwatch 1`: **49,785 frames, 0 half-black, 0 blips**.
+  The directory guard in every run: 20-31 images guarded, **0 writes**; the
+  data check: **0 failed**.
+* **The soak** (`SX:120:@m53f,--memstat,600`: `--soak --com4 --rtc dolphin
+  --freshcard --status --perf --stuckwatch 200 --ovllog --halfwatch 3
+  --frames 431520 --memstat 600`, 05:01-07:01 G4 time, Lite at auto;
+  `docs/soak/m53/final/soak-120-memstat.log.gz`): **7,199.2 s of game
+  against 7,201.4 s of wall (100.0%)**, 431,520 retraces, the 20-turn board
+  and 11 turns of the next; **0 faults, no lock-up**, 1 resync (1.6 s, the
+  worst frame 773 ms behind), 188 `stall:` lines, 173 underruns; **three
+  `STUCK` lines at frames 270,513, 283,066 and 297,284 -- the same three as
+  M47's to M52's release soaks** (the soak's own navigation); `--halfwatch
+  3`: 70,938 frames, **0 blips**, 14 half-black -- **m416's dark room at
+  251,151-251,229**, the stretch M45-M47's soaks named (60.5, 61.10, 62.13).
+  M53's checks over the soak: 8,897 decodes checked (518 MB, 5.4 s in all),
+  **0 failed**; 813 directory images guarded, **0 writes**; 1,010 whole-file
+  reads from the resident set checksummed, **0 changed**.
+* **The disk image** -- **`littlejelly:~/MarioParty4-PowerPC-0.9.22.dmg`**
+  (`tools/make_dmg.sh` from `build-ppc-darwin/mp4-m53f.app`; 4,100,452
+  bytes, md5 **`19a503ad7d9113d94c1ab3104902927c`**; the G4 keeps `~/Mario
+  Party 4 PowerPC Edition 0.9.22.dmg`): mounted on the G4, its app's
+  `Contents/MacOS` is the build's, **101 files identical** (`isle`
+  `cda53343`, the 99 modules, the snapmap), the Read Me 0.9.22, the five
+  licences.  **Installed on the G4 from the image**: `~/MarioParty4.app` is
+  0.9.22 (101 files identical to the image), 0.9.21 kept as
+  `~/MarioParty4-0.9.21.app`; the runner's slot points at it (`g4 use
+  MarioParty4.app`).  The memory card files (`memcard-slot-a.raw`,
+  `~/memcard-backup.raw`) untouched.
+
+### 68.6 What M53 shipped (0.9.22)
+
+| | |
+|---|---|
+| `port/src/dvd/data_check.c` (new) | the data check (the put-back), the directory guard, `--hsfcheck`, the crash report's last decode and LoadHSF state |
+| `port/src/dvd/dvd_fs.c` | the ring of reads into MEM1, `port_dvd_truth` (the image's bytes), `port_dvd_forget`, the guard armed after a whole `data/` read and opened before any read |
+| `port/src/dvd/dvd_cache.c` | the resident checksum (`res_sum`; a changed copy dropped to the disk), `port_dvd_cache_peek`, `port_dvd_cache_bytes`; `M53_PFDELAY_US` |
+| `port/src/debug/crash.c` | every GPR; the guard first in the handler; `port_data_crash_report` |
+| `port/src/debug/selfplay.c`, `port/src/platform/main.c`, `gx_draw.c`, `gx_skin.c` | `--memstat SECS`: rss, vsize, malloc in use/allocated, the resident set, the texture cache, the vertex cache's region/peak/entries/arrays, the skin registry, the modules |
+| `port/patches.txt` (M53) | `HuDecodeData` -> `port_decode_check`; `LoadHSF` -> `port_hsf_load_check` |
+| `port/src/gx/gx_skin.c`, `port/src/audio/aram.c`, `port/src/debug/snapshot.c` | a freed block / an ARAM transfer / a restore: the read ring forgets it, the guard opens it |
+| `port/tools/m53_loop.sh`, `m53_hsfscan.py`, `m53_fslide.py`, `m53_gcfs.py` | the loop; the HSF walk; the FSLIDE audit; the disc image reader |
+
+**Where things are.**  On the G4: `~/MarioParty4.app` = **0.9.22** (from the
+image), `~/MarioParty4-0.9.21.app` kept, `~/mp4-m53f.app` (the final),
+`~/mp4-d2.app` .. `~/mp4-d5.app` (the loop's builds), the loop
+`~/m53rep4.sh` and its runs `~/m53/rep-*` (logs kept only for runs where
+something fired: none but d1's boot misfire), the final chain's `~/m53/final`,
+`~/m52.env` pointed at M53 (M52's `~/m52.env.m52`).  On littlejelly: the
+image `~/MarioParty4-PowerPC-0.9.22.dmg`; the helpers `~/bin/m52job`,
+`m52wait`, `m52push` (unchanged).  **The G4 was left idle** at the end: no
+leave-behind soak (the user's RC1 needs the machine), the chain app's job
+finished, no `isle` running.
+
+**RC1 starts with**: 0.9.22 instead of 0.9.21 (RC1-guide.md, updated): the
+same marathon, and if anything stops, the minigame's log copied before the
+next run (section 4).  For a later milestone: m432's fault, if a log brings
+one of 68.3's lines; `HuDecodeFslide`'s missing start check (a decomp note
+beside `docs/decomp-struct-notes.md`: harmless on this disc); M52's list
+(m409's shadow pass, the other heavy shadow passes as round-shadow options,
+the MacBook's Benchmark run).
+
+**Rules learnt**: a check whose "truth" is a copy can only agree with the
+copy -- compare with the disc, and say separately what the copy holds; a
+"newest write covering this address" table must forget a block when it is
+freed and when anything else (an ARAM transfer) fills it, or it will
+"repair" good bytes (d1 did, at boot); a fault at ~1% cannot be proved fixed
+in a night's loop -- what a night can do is make the next occurrence name
+its cause; another project's lab may share the G4 (a Pikmin session ran
+timed jobs from 02:10): look for its processes before timing and yield to
+them.

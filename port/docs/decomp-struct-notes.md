@@ -596,3 +596,14 @@ The intended line is plainly `CharMotionVoiceOnSet(charNo[j], motId[j][1], 1);`
 — it is the voice-on counterpart of line 467's voice-off, which uses the
 player index. Patched in `port/patches.txt`; the effect on the console is a
 no-op for the first player and the removal of a stray write for the others.
+
+## `HuDecodeFslide` reads before its output (src/game/decode.c) -- latent, unreachable on this disc (M53)
+
+`HuDecodeSlide` guards a back-reference that reaches before the start of
+the output (`if (src - 1 < dstPOrig) *dst++ = 0;`); `HuDecodeFslide`, which
+decode types 4 and 5 use, copies `src[-1]` with no such check.  A stream
+whose encoder assumed a zeroed window would make it read the heap block's
+header and the bytes of whatever lies before the destination.  The retail
+code is the same (the decomp matches), and no FSLIDE member on the GMPE01
+disc ever does it -- `port/tools/m53_fslide.py` decodes every one the way
+the function does and finds none -- so this is a note, not a patch.
