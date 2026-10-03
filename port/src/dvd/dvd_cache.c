@@ -95,6 +95,8 @@ typedef struct Res {
     int pinned;             /* on the list: evicted after everything else */
     int queued;             /* a job for it is in the queue or running */
     int locked;             /* mlock succeeded */
+    u32 sum;                /* M53: the bytes' checksum when they went in */
+    unsigned in_frame;      /* M53: the frame they went in */
 } Res;
 
 static Res* res;
@@ -247,8 +249,13 @@ static int open_source(void) {
 
 /* read [off, off+len) of entry n into dst (or, dst NULL, into the scratch
  * buffer and drop it); the number of bytes read */
+static int pf_delay_us = -1; /* M53: the lab's cold-disk stand-in (M53_PFDELAY_US per 64 KB) */
 static u32 read_range(int n, u32 off, u32 len, u8* dst) {
     u32 got = 0;
+    if (pf_delay_us < 0) {
+        const char* e = getenv("M53_PFDELAY_US");
+        pf_delay_us = e ? atoi(e) : 0;
+    }
     if (port_dvd_image_path()) {
         off_t base = (off_t)port_dvd_entry_offset(n) + off;
         if (fd < 0) {
@@ -261,11 +268,17 @@ static u32 read_range(int n, u32 off, u32 len, u8* dst) {
             if (!dst && want > SCRATCH) {
                 want = SCRATCH;
             }
+            if (pf_delay_us && want > 65536) {
+                want = 65536;
+            }
             r = pread(fd, to, want, base + got);
             if (r <= 0) {
                 break;
             }
             got += (u32)r;
+            if (pf_delay_us) {
+                usleep((useconds_t)pf_delay_us);
+            }
         }
     } else {
         char full[1200];
@@ -338,6 +351,25 @@ static void evict_one(void) {
     stat_evicted_bytes += res[best].len;
 }
 
+/* M53 (PLAN.md 68): a checksum of a resident file's bytes, taken when they
+ * go in and checked whenever the game reads the whole file (a data
+ * directory image: what the minigames' models are decoded from), so a
+ * resident copy something in the process wrote over is never served */
+static u32 res_sum(const u8* p, u32 n) {
+    u32 a = 0x9E3779B9u ^ n, b = 0x85EBCA6Bu, i;
+    const u32* w = (const u32*)p;
+    for (i = 0; i + 4 <= n; i += 4) {
+        a += w[i >> 2];
+        b ^= a;
+        b = (b << 7) | (b >> 25);
+    }
+    for (; i < n; i++) {
+        a += p[i];
+    }
+    return a ^ b;
+}
+static unsigned long stat_sum_checks, stat_sum_bad;
+
 /* take ownership of buf (len bytes, entry n); 1 if it went in */
 static int insert(int n, u8* buf, u32 len) {
     if (res[n].buf) {
@@ -358,6 +390,8 @@ static int insert(int n, u8* buf, u32 len) {
     }
     res[n].buf = buf;
     res[n].len = len;
+    res[n].sum = res_sum(buf, len);
+    res[n].in_frame = gl13_frame_number();
     res[n].last_use = ++use_clock;
     total_bytes += len;
     if (mlock_ok) {
@@ -768,6 +802,30 @@ int port_dvd_cache_serve(int entry, unsigned offset, void* dst, unsigned len) {
         pthread_mutex_unlock(&mu);
         return 0;
     }
+    if (offset == 0 && len == r->len && len >= 65536) {
+        u32 s = res_sum(r->buf, r->len);
+        stat_sum_checks++;
+        if (s != r->sum) {
+            /* the copy changed after it went in: drop it, the disk answers */
+            unsigned in_frame = r->in_frame;
+            u32 was = r->sum;
+            stat_sum_bad++;
+            if (r->locked) {
+                munlock(r->buf, r->len);
+                stat_locked_bytes -= r->len;
+            }
+            free(r->buf);
+            r->buf = NULL;
+            r->locked = 0;
+            total_bytes -= r->len;
+            pthread_mutex_unlock(&mu);
+            port_log("\nport> RESIDENT COPY CHANGED (M53): %s (%u bytes, resident since frame %u) no "
+                     "longer has the bytes it was read with (checksum %08x, now %08x) at frame %u; "
+                     "dropped, the disk answers\n",
+                     port_dvd_entry_path(entry), len, in_frame, was, s, gl13_frame_number());
+            return 0;
+        }
+    }
     memcpy(dst, r->buf + offset, len);
     r->last_use = ++use_clock;
     r->hits++;
@@ -776,6 +834,21 @@ int port_dvd_cache_serve(int entry, unsigned offset, void* dst, unsigned len) {
     pthread_mutex_unlock(&mu);
     dvdlog_note(entry, offset, len, -1.0f, 0);
     return 1;
+}
+
+/* M53: the data check's copy of the disc's bytes -- no stats, no log line */
+int port_dvd_cache_peek(int entry, unsigned offset, void* dst, unsigned len) {
+    int ok = 0;
+    if (!res || entry < 0 || entry >= nres) {
+        return 0;
+    }
+    pthread_mutex_lock(&mu);
+    if (res[entry].buf && offset + len <= res[entry].len) {
+        memcpy(dst, res[entry].buf + offset, len);
+        ok = 1;
+    }
+    pthread_mutex_unlock(&mu);
+    return ok;
 }
 
 /* a read the disk answered: the log line, the stats, and -- a listed file
@@ -875,6 +948,22 @@ void port_dvd_cache_service(void) {
     pthread_mutex_unlock(&mu);
 }
 
+/* M53: --memstat -- the set's bytes and files held */
+unsigned long port_dvd_cache_bytes(int* files) {
+    int i, k = 0;
+    if (!res) {
+        *files = 0;
+        return 0;
+    }
+    pthread_mutex_lock(&mu);
+    for (i = 0; i < nres; i++) {
+        k += res[i].buf != NULL;
+    }
+    pthread_mutex_unlock(&mu);
+    *files = k;
+    return total_bytes;
+}
+
 void port_dvd_cache_status(char* buf, size_t n) {
     if (!res || !budget_bytes) {
         buf[0] = '\0';
@@ -905,6 +994,8 @@ void port_dvd_cache_report(void) {
     dvdlog_drain();
     port_log("port> loader: disk reads after a prefetch of the same file: %lu, %lu of them over "
              "100 ms\n", stat_disk_after_pre, stat_disk_after_pre_over100);
+    port_log("port> loader: %lu whole-file reads from the set checked against their checksum, %lu "
+             "CHANGED (M53)\n", stat_sum_checks, stat_sum_bad);
     if (stat_dvdlog_lost) {
         port_log("port> loader: --dvdlog dropped %lu line(s) (more than %d reads between two "
                  "retraces)\n", stat_dvdlog_lost, DVDLOG_RING);

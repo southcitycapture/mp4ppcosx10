@@ -26,6 +26,7 @@
 
 static int watchdog_progressed(void);
 int port_wb_fault(const void* addr);
+void port_data_crash_report(const void* fault_addr); /* M53: src/dvd/data_check.c */
 int port_skinwatch_fault(const void* addr, void* uap); /* M48: gx_skin.c */
 
 static void handler(int sig, siginfo_t* info, void* uap) {
@@ -149,7 +150,21 @@ static void handler(int sig, siginfo_t* info, void* uap) {
             frame = next;
         }
     }
+    /* M53 (PLAN.md 68): every general register -- the pointer that faulted
+     * and the values beside it are what a backtrace cannot say */
+    if (uc && uc->uc_mcontext) {
+        const unsigned int* g = (const unsigned int*)&uc->uc_mcontext->ss.r0;
+        int k;
+        port_log("    registers:\n");
+        for (k = 0; k < 32; k += 4) {
+            port_log("      r%-2d %08x  r%-2d %08x  r%-2d %08x  r%-2d %08x\n", k, g[k], k + 1, g[k + 1],
+                     k + 2, g[k + 2], k + 3, g[k + 3]);
+        }
+    }
 #endif
+    if ((sig == SIGBUS || sig == SIGSEGV) && info) {
+        port_data_crash_report(info->si_addr); /* M53: the last decode, LoadHSF's state */
+    }
 #else
     (void)uap;
     port_log("\n*** port: signal %d at address %p\n", sig, info ? info->si_addr : NULL);

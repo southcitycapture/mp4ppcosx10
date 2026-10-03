@@ -508,6 +508,34 @@ static void park_board(void) {
  * PLAN.md §16.10 item 2 asked for the audio's own invariants to travel with
  * the harness's result line; they are the tail of this one.
  */
+/* M53 (PLAN.md 68): --memstat SECS -- the host memory by subsystem, the
+ * soak's answer to "what grows": the process (resident, virtual), malloc's
+ * zones, the resident set, the texture cache (entries, bytes held by GL), the
+ * vertex cache (region cursor/peak, entries/arrays), the skin registry, the
+ * modules linked so far */
+void gx_vc_mem_stats(unsigned long* cursor_kb, unsigned long* peak_kb, unsigned long* cap_kb,
+                     unsigned long* nent, unsigned long* narr);
+int gx_skin_hsf_count(void);
+unsigned long port_dvd_cache_bytes(int* files);
+int port_dll_resident_count(void);
+unsigned port_vsize_mb(void);
+unsigned long port_malloc_used_kb(unsigned long* total_kb);
+static void port_memstat_line(u32 frame) {
+    unsigned tex_n = 0, tex_kb = 0;
+    unsigned long vcur, vpeak, vcap, vent, varr, mtot = 0, mused;
+    int resf = 0;
+    unsigned long resb = port_dvd_cache_bytes(&resf);
+    gx_tex_cache_stats(&tex_n, &tex_kb);
+    gx_vc_mem_stats(&vcur, &vpeak, &vcap, &vent, &varr);
+    mused = port_malloc_used_kb(&mtot);
+    port_log("port> mem f%-7u %-12s t=%.0fs  rss %u MB  vsize %u MB  malloc %lu/%lu KB  "
+             "res %lu KB (%d files)  tex %u entries %u KB  vc region %lu/%lu KB (peak %lu) "
+             "ent %lu arr %lu  skin %d  modules %d\n",
+             frame, screen_name((int)omcurovl), port_now_seconds(), port_rss_mb(), port_vsize_mb(),
+             mused, mtot, resb / 1024, resf, tex_n, tex_kb, vcur, vcap, vpeak, vent, varr,
+             gx_skin_hsf_count(), port_dll_resident_count());
+}
+
 static void status_line(u32 frame) {
     double fps = 0.0, aud = 0.0;
     int mg = (int)GWSystem.mg_next;
@@ -1277,6 +1305,14 @@ void port_selfplay_tick(u32 frame) {
     }
     if (port_opt.status && (frame % 60u) == 0u) {
         status_line(frame);
+    }
+    if (port_opt.memstat > 0) {
+        static double next_mem;
+        double now = port_now_seconds();
+        if (now >= next_mem) {
+            next_mem = now + port_opt.memstat;
+            port_memstat_line(frame);
+        }
     }
 }
 

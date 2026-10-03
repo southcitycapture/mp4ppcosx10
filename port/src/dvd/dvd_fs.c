@@ -249,6 +249,119 @@ BOOL DVDClose(DVDFileInfo* fi) {
 
 void port_wb_disarm(const void* ptr, size_t n); /* M42: gx_wb.c */
 
+/* ---- M53 (PLAN.md 68): the last reads into memory, for the data check -----
+ *
+ * data_check.c compares a data file's bytes in MEM1 with the disc's just
+ * before the game decodes them; this ring says which read put the bytes at
+ * an address (the newest read covering it), and port_dvd_truth reads the
+ * disc's own bytes again into host memory. */
+typedef struct ReadRec {
+    const u8* addr;
+    u32 len;
+    int entry;
+    u32 off;
+    unsigned frame;
+} ReadRec;
+#define RREC 256
+static ReadRec rrec[RREC];
+static unsigned rrec_n;
+
+static void rrec_note(const void* addr, u32 len, int entry, u32 off) {
+    unsigned gl13_frame_number(void);
+    ReadRec* r = &rrec[rrec_n++ % RREC];
+    r->addr = (const u8*)addr;
+    r->len = len;
+    r->entry = entry;
+    r->off = off;
+    r->frame = gl13_frame_number();
+}
+
+/* the bytes at [p, p+n) are no longer a read's: the block was freed
+ * (port_mem_freed) or an ARAM transfer wrote it (aram.c) */
+void port_dvd_forget(const void* p, unsigned long n) {
+    unsigned i, cnt = rrec_n < RREC ? rrec_n : RREC;
+    const u8* lo = (const u8*)p;
+    const u8* hi = lo + n;
+    for (i = 0; i < cnt; i++) {
+        ReadRec* r = &rrec[i];
+        if (r->len && r->addr < hi && r->addr + r->len > lo) {
+            r->len = 0;
+        }
+    }
+}
+
+/* the newest read whose destination holds p: 1 and its fields, or 0 */
+int port_dvd_read_of(const void* p, const void** addr, unsigned* len, int* entry, unsigned* off,
+                     unsigned* frame) {
+    unsigned i, n = rrec_n < RREC ? rrec_n : RREC;
+    const u8* q = (const u8*)p;
+    for (i = 1; i <= n; i++) {
+        const ReadRec* r = &rrec[(rrec_n - i) % RREC];
+        if (q >= r->addr && q < r->addr + r->len) {
+            *addr = r->addr;
+            *len = r->len;
+            *entry = r->entry;
+            *off = r->off;
+            *frame = r->frame;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* reads newer than the one at `frame` that overlap [p, p+n): how many (the
+ * newest's frame and entry in *f, *e) -- a later read landing on live data */
+int port_dvd_reads_over(const void* p, unsigned n, const void* except, unsigned* f, int* e) {
+    unsigned i, k = 0, cnt = rrec_n < RREC ? rrec_n : RREC;
+    const u8* lo = (const u8*)p;
+    const u8* hi = lo + n;
+    for (i = 1; i <= cnt; i++) {
+        const ReadRec* r = &rrec[(rrec_n - i) % RREC];
+        if (r->addr == (const u8*)except) {
+            break;
+        }
+        if (r->addr < hi && r->addr + r->len > lo) {
+            if (!k) {
+                *f = r->frame;
+                *e = r->entry;
+            }
+            k++;
+        }
+    }
+    return (int)k;
+}
+
+int port_dvd_cache_peek(int entry, unsigned offset, void* dst, unsigned len); /* dvd_cache.c */
+
+/* the disc's bytes [off, off+len) of entry n into host memory: the count read */
+unsigned port_dvd_truth(int n, unsigned off, void* dst, unsigned len) {
+    size_t got = 0;
+    if (n < 0 || n >= entry_count || off >= entries[n].length) {
+        return 0;
+    }
+    if (off + len > entries[n].length) {
+        len = entries[n].length - off;
+    }
+    if (image) {
+        if (fseek(image, (long)(entries[n].offset + off), SEEK_SET) != 0) {
+            return 0;
+        }
+        got = fread(dst, 1, len, image);
+    } else {
+        char full[1200];
+        FILE* f;
+        snprintf(full, sizeof(full), "%s/%s", tree_root, entries[n].path);
+        f = fopen(full, "rb");
+        if (!f) {
+            return 0;
+        }
+        fseek(f, off, SEEK_SET);
+        got = fread(dst, 1, len, f);
+        fclose(f);
+    }
+    return (unsigned)got;
+}
+
 static s32 do_read(DVDFileInfo* fi, void* addr, s32 length, s32 offset) {
     int n = (int)fi->cb.command;
     size_t got;
@@ -304,6 +417,7 @@ static s32 do_read(DVDFileInfo* fi, void* addr, s32 length, s32 offset) {
         got = fread(addr, 1, (size_t)length, f);
         fclose(f);
     }
+    rrec_note(addr, (u32)got, n, (u32)offset); /* M53 */
     reads++;
     bytes_read += got;
     if (port_opt.verbose) { port_log("port> dvd read done, got %u\n", (unsigned)got); }
@@ -359,4 +473,13 @@ const char* port_dvd_tree_root(void) { return image ? NULL : tree_root; }
 void port_dvd_stats(void) {
     port_log("port> DVD: %lu reads, %lu bytes, %.0f ms in reads, %lu over 100 ms\n", reads, bytes_read,
              slow_read_s * 1000.0, slow_reads);
+}
+
+/* M53: the resident set's copy of [off, off+len) of entry n, when it holds
+ * one (data_check.c compares it with the disc's too) */
+int port_dvd_resident_copy(int n, unsigned off, void* dst, unsigned len) {
+    if (n < 0 || n >= entry_count || off + len > entries[n].length) {
+        return 0;
+    }
+    return port_dvd_cache_peek(n, off, dst, len);
 }

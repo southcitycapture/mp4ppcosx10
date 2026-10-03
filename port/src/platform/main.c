@@ -22,6 +22,7 @@
 #if defined(__APPLE__)
 #include <mach-o/dyld.h>
 #include <mach/mach.h>
+#include <malloc/malloc.h>
 #endif
 
 /* The process's resident set, in MB, for the status line (M18).  A number that
@@ -37,6 +38,30 @@ unsigned port_rss_mb(void) {
     }
 #endif
     return 0;
+}
+
+/* M53 (PLAN.md 68): --memstat's process and malloc numbers */
+unsigned port_vsize_mb(void) {
+#ifdef __APPLE__
+    struct task_basic_info info;
+    mach_msg_type_number_t n = TASK_BASIC_INFO_COUNT;
+    if (task_info(mach_task_self(), TASK_BASIC_INFO, (task_info_t)&info, &n) == KERN_SUCCESS) {
+        return (unsigned)(info.virtual_size / (1024 * 1024));
+    }
+#endif
+    return 0;
+}
+
+unsigned long port_malloc_used_kb(unsigned long* total_kb) {
+#ifdef __APPLE__
+    malloc_statistics_t st;
+    malloc_zone_statistics(NULL, &st);
+    *total_kb = (unsigned long)(st.size_allocated / 1024);
+    return (unsigned long)(st.size_in_use / 1024);
+#else
+    *total_kb = 0;
+    return 0;
+#endif
 }
 
 PortOptions port_opt;
@@ -64,6 +89,7 @@ void port_mtx_memo_report(void);
 void port_motion_exec_report(void);
 void port_vtx_rewrite_report(void); /* M43: src/os/vtx_rewrite.c */
 void port_wb_report(void);
+void port_data_check_report(void); /* M53: src/dvd/data_check.c */
 void port_matwalk_report(void);
 void port_curve_memo_report(void);
 void port_sparse_report(void);
@@ -443,6 +469,10 @@ static void usage(const char* argv0) {
             "  --pmcwin A,B      M43: --pmc counts frames A..B from the minigame's entry\n"
             "  --pmc N           M43: the G4's performance counters on the game thread,\n"
             "                    event set N (1..3), split by region, reported at exit\n"
+            "  --nodatacheck     M53: no check of a data file's bytes against the disc\n"
+            "                    before the game decodes them (src/dvd/data_check.c)\n"
+            "  --hsfcheck        M53: each model compared with a second decode at LoadHSF\n"
+            "  --memstat SECS    M53: a 'port> mem' line every SECS seconds\n"
             "  --nowb            M42: the vertex cache re-hashes every array each drawn\n"
             "                    frame (no write barrier on the pages it has read)\n"
             "  --nomotionexec    M42: Hu3DMotionExec is the game's own compiled body\n"
@@ -1598,6 +1628,12 @@ int port_parse_args(int argc, char** argv) {
             port_opt.pmc = atoi(argv[++i]);
         } else if (!strcmp(a, "--nowb")) {
             port_opt.nowb = 1;
+        } else if (!strcmp(a, "--hsfcheck")) {
+            port_opt.hsfcheck = 1;
+        } else if (!strcmp(a, "--nodatacheck")) {
+            port_opt.nodatacheck = 1;
+        } else if (!strcmp(a, "--memstat") && i + 1 < argc) {
+            port_opt.memstat = atoi(argv[++i]);
         } else if (!strcmp(a, "--nomotionexec")) {
             port_opt.nomotionexec = 1;
         } else if (!strcmp(a, "--nopacklights")) {
@@ -1795,6 +1831,7 @@ void port_shutdown(int code) {
     port_motion_exec_report();
     port_vtx_rewrite_report(); /* M43 */
     port_wb_report();
+    port_data_check_report(); /* M53 */
     port_matwalk_report();
     port_curve_memo_report();
     port_sparse_report();

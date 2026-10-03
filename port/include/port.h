@@ -749,6 +749,13 @@ typedef struct PortOptions {
     int clockskew_set;
     int keepplay;           /* --keepplay  M51: a --play script goes on when --humans take over (the
                              *   lab's stand-in for the person at controller 1)        */
+    int nodatacheck;        /* --nodatacheck  M53: no check of a data file's bytes in memory
+                             *   against the disc before the game decodes them        */
+    int hsfcheck;           /* --hsfcheck  M53: every model LoadHSF is handed is compared with
+                             *   a second decode of the disc's bytes (a diagnostic: the
+                             *   decode's cost again at every model load)              */
+    int memstat;            /* --memstat SECS  M53: a "port> mem" line every SECS seconds
+                             *   (each subsystem's host memory)                       */
 } PortOptions;
 
 extern PortOptions port_opt;

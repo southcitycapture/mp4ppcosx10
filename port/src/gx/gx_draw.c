@@ -7906,6 +7906,17 @@ static void job_fill(GxDecJob* j, const u8* p, const u8* end, u32 count) {
     memcpy(j->fill, plan_fill, (size_t)plan_nfill * sizeof(plan_fill[0]));
 }
 
+/* M53 (PLAN.md 68): the vertex cache's memory for --memstat: the region's
+ * cursor and peak, and the host-side entries and arrays it keys */
+void gx_vc_mem_stats(unsigned long* cursor_kb, unsigned long* peak_kb, unsigned long* cap_kb,
+                     unsigned long* nent, unsigned long* narr) {
+    *cursor_kb = (unsigned long)(vc_cursor / 1024);
+    *peak_kb = stat_vc_region_peak / 1024;
+    *cap_kb = (unsigned long)(vc_cap / 1024);
+    *nent = vc_nent;
+    *narr = vc_narr;
+}
+
 /* M48 (PLAN.md 63): the region's bounds and generation, for --glists on the
  * render thread (the generation changes only at a reset, which drains the
  * render thread first: rt_finish_join) */

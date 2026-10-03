@@ -53,6 +53,8 @@ ARCallback ARRegisterDMACallback(ARCallback cb) {
     return old;
 }
 
+void port_dvd_forget(const void* p, unsigned long n); /* M53: dvd_fs.c */
+
 void ARStartDMA(u32 type, uintptr_t mainmem_addr, u32 aram_addr, u32 length) {
     u8* aram = (u8*)port_aram();
     if (aram_addr + length > PORT_ARAM_SIZE) {
@@ -63,6 +65,7 @@ void ARStartDMA(u32 type, uintptr_t mainmem_addr, u32 aram_addr, u32 length) {
         memcpy(aram + aram_addr, (void*)mainmem_addr, length);
     } else {
         memcpy((void*)mainmem_addr, aram + aram_addr, length);
+        port_dvd_forget((const void*)mainmem_addr, length); /* M53: ARAM's bytes now, not a read's */
     }
     dma_bytes += length;
     if (dma_callback) {

@@ -1017,3 +1017,15 @@ src/game/hsfman.c	            } else if (Hu3DCameraNo == 0 && Hu3DShadowF != 0 &
 src/game/hsfman.c	    Hu3DAnimExec();\n    HuPerfEnd(3);\n	    Hu3DAnimExec();\n    port_lite_shadow_end();\n    HuPerfEnd(3);\n
 src/game/hsfman.c	        if (var_r31->hsf != 0 && (var_r31->attr & HU3D_ATTR_SHADOW) != 0 && (var_r31->attr & HU3D_ATTR_DISPOFF) == 0 && (var_r31->attr & HU3D_ATTR_HOOK) == 0) {	        if (var_r31->hsf != 0 && (var_r31->attr & HU3D_ATTR_SHADOW) != 0 && (var_r31->attr & HU3D_ATTR_DISPOFF) == 0 && (var_r31->attr & HU3D_ATTR_HOOK) == 0 && !port_lite_shadow_skip()) {
 src/game/hsfman.c	    Hu3DDrawPost();\n    shadowModelDrawF = 0;	    port_lite_shadow_blobs();\n    Hu3DDrawPost();\n    shadowModelDrawF = 0;
+
+# ---------------------------------------------------------------- game/decode.c
+# M53 (PLAN.md 68): the data check -- every decode's source bytes compared with
+# the disc's first (src/dvd/data_check.c), a difference logged and put back.
+# Game behaviour is unchanged when the bytes are the disc's (always, unless
+# something wrote the data directory image after it was read).
+src/game/decode.c	void HuDecodeData(void *src, void *dst, u32 size, s32 decodeType)\n{\n    struct Decode_s decode;\n    struct Decode_s *decodeP = &decode;\n	void port_decode_check(void *src, void *dst, u32 size, s32 decodeType);\n\nvoid HuDecodeData(void *src, void *dst, u32 size, s32 decodeType)\n{\n    struct Decode_s decode;\n    struct Decode_s *decodeP = &decode;\n    port_decode_check(src, dst, size, decodeType);\n
+
+# ---------------------------------------------------------------- game/hsfload.c
+# M53 (PLAN.md 68): --hsfcheck -- the model LoadHSF is handed, compared with a
+# second decode of the disc's bytes before the loader rewrites it in place.
+src/game/hsfload.c	HSFDATA *LoadHSF(void *data)\n{\n    HSFDATA *hsf;\n	void port_hsf_load_check(void *data);\n\nHSFDATA *LoadHSF(void *data)\n{\n    HSFDATA *hsf;\n    port_hsf_load_check(data);\n

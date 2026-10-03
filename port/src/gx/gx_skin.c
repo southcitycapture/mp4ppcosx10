@@ -232,6 +232,7 @@ void port_musyx_mix_mem_freed(const void* data, unsigned long size);
 unsigned port_frame_frees; /* M24: HuMemMemoryFree calls this frame (perf.c's stall line) */
 void port_curve_memo_freed(const void* data, unsigned long size);
 void port_wb_freed(const void* ptr, size_t n);
+void port_dvd_forget(const void* p, unsigned long n); /* M53: dvd_fs.c */
 void port_mem_freed(const void* data, unsigned long size) {
     const u8* lo = (const u8*)data;
     const u8* hi = lo + size;
@@ -240,6 +241,7 @@ void port_mem_freed(const void* data, unsigned long size) {
     port_musyx_mix_mem_freed(data, size); /* M19 item 2: a voice still reading it? */
     port_curve_memo_freed(data, size);    /* M28 (b): a memoised track in it? */
     port_wb_freed(data, size);            /* M42: the write barrier forgets the block */
+    port_dvd_forget(data, size);          /* M53: no disc read's bytes live here now */
     for (i = 0; i < nhsfs; i++) {
         SkinHsf* h = &hsfs[i];
         int hit;
@@ -1843,6 +1845,8 @@ void gx_skin_frame_end(void) {
     }
     frame_skin_verts = 0;
 }
+
+int gx_skin_hsf_count(void) { return nhsfs; } /* M53: --memstat */
 
 void gx_skin_report(void) {
     sr_report();
