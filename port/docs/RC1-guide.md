@@ -1,8 +1,9 @@
 # RC1: playing the whole minigame marathon on the G4
 
-One page for the release-candidate playtest (M52, PLAN.md 67).  The build is
-**0.9.21** (`~/MarioParty4.app` on the G4, or the disk image
-`MarioParty4-PowerPC-0.9.21.dmg`).  Nothing is named RC or 1.0 — that is
+One page for the release-candidate playtest (M52, PLAN.md 67; M53, PLAN.md
+68).  The build is **0.9.22** (`~/MarioParty4.app` on the G4, 0.9.21 kept as
+`~/MarioParty4-0.9.21.app`; or the disk image
+`MarioParty4-PowerPC-0.9.22.dmg`).  Nothing is named RC or 1.0 — that is
 your call after this run.
 
 ## 1. Before you start
@@ -65,6 +66,15 @@ that is expected, not a finding.
    the G4, frame for frame (`--replay`), and can video it.  The minigame's
    own log is `~/Library/Application Support/MarioParty4/marathon-logs/mNNN.log`
    (attach it if anything crashed).
+4. **If a minigame crashes or stops** (the marathon's summary says
+   "stopped" or "crashed"), copy its log **before the next marathon or
+   game** -- each run overwrites its own: `marathon-logs/mNNN.log` (outside
+   the marathon, `MarioParty4.log` in the same folder).  0.9.22 writes what
+   the lab needs into it (PLAN.md 68.3): lines starting `*** port: fault`
+   (with every register and, at a model load, the loader's state), `port>
+   DATA CHECK FAILED`, `port> RESIDENT COPY CHANGED` or `port> WRITE INTO A
+   DATA DIRECTORY IMAGE`.  Any of those lines in any log is worth sending,
+   crash or not -- the game carries on past the last three.
 
 ## 5. Making the videos
 
@@ -97,9 +107,12 @@ YET); a session recorded from the boot with **Record this session** does.
   playing then can stutter for those seconds.  Close Finder windows before
   a sitting.
 * A minigame that crashes stops the marathon there (the summary says so);
-  Resume goes on from it.  The lab saw one such fault in 0.9.21 (Dungeon
-  Duos, at its load, once in nine runs) -- if it happens, the minigame's log
-  in `marathon-logs/` is the report.
+  Resume goes on from it.  The lab has seen one such fault (Dungeon Duos,
+  at its first model load, once in 208 loads; none in M53's 125): if it
+  happens, the minigame's log in `marathon-logs/` is the report (section 4).
+  If its cause is the minigame's data in memory, 0.9.22 puts the disc's
+  bytes back and the game goes on -- the log then has a `DATA CHECK FAILED`
+  line, which is the report.
 * The Dolphin replay of a recording is exact through the menus, the
   board's dialogs and people's turns; inside a long physics minigame the
   two part after tens of seconds (float rounding), and a computer player's

@@ -1,0 +1,149 @@
+# a1 start Sat Oct  3 01:03:17 EDT 2026 md5 d6ec5b140599e54609c6c656be64328a N=3 extra=''
+a1 r1 EXIT=0 fault=0 m432=1 wall=79s
+a1 r2 EXIT=0 fault=0 m432=1 wall=75s
+a1 r3 EXIT=0 fault=0 m432=1 wall=76s
+# a1 end Sat Oct  3 01:07:13 EDT 2026
+# a2 start Sat Oct  3 01:09:11 EDT 2026 md5 d6ec5b140599e54609c6c656be64328a N=40 extra=''
+a2 r1 EXIT=0 fault=0 m432=1 wall=76s
+a2 r2 EXIT=0 fault=0 m432=1 wall=76s
+a2 r3 EXIT=0 fault=0 m432=1 wall=75s
+a2 r4 EXIT=0 fault=0 m432=1 wall=79s
+a2 r5 EXIT=0 fault=0 m432=1 wall=79s
+a2 r6 EXIT=0 fault=0 m432=1 wall=76s
+a2 r7 EXIT=0 fault=0 m432=1 wall=75s
+# a2 end Sat Oct  3 01:18:21 EDT 2026
+# d1t start Sat Oct  3 01:18:28 EDT 2026 md5 e166d780061077d74f5037711cddf5f0 N=1 extra='--memstat 10'
+d1t r1 EXIT=138 fault=1 m432=0 wall=3s
+# d1t end Sat Oct  3 01:18:34 EDT 2026
+# d2t start Sat Oct  3 01:22:09 EDT 2026 md5 848ec06b62d2aaece48f7d809b32ece1 N=1 extra='--memstat 10'
+d2t r1 EXIT=0 fault=0 m432=1 wall=76s
+# d2t end Sat Oct  3 01:23:27 EDT 2026
+# d2a start Sat Oct  3 01:23:58 EDT 2026 md5 848ec06b62d2aaece48f7d809b32ece1 N=45 extra='--memstat 60'
+d2a r1 EXIT=0 fault=0 m432=1 wall=76s
+d2a r2 EXIT=0 fault=0 m432=1 wall=75s
+d2a r3 EXIT=0 fault=0 m432=1 wall=76s
+d2a r4 EXIT=0 fault=0 m432=1 wall=76s
+d2a r5 EXIT=0 fault=0 m432=1 wall=76s
+d2a r6 EXIT=0 fault=0 m432=1 wall=75s
+d2a r7 EXIT=0 fault=0 m432=1 wall=76s
+d2a r8 EXIT=0 fault=0 m432=1 wall=76s
+d2a r9 EXIT=0 fault=0 m432=1 wall=75s
+d2a r10 EXIT=0 fault=0 m432=1 wall=76s
+d2a r11 EXIT=0 fault=0 m432=1 wall=76s
+d2a r12 EXIT=0 fault=0 m432=1 wall=76s
+d2a r13 EXIT=0 fault=0 m432=1 wall=75s
+d2a r14 EXIT=0 fault=0 m432=1 wall=76s
+d2a r15 EXIT=0 fault=0 m432=1 wall=76s
+d2a r16 EXIT=0 fault=0 m432=1 wall=75s
+d2a r17 EXIT=0 fault=0 m432=1 wall=76s
+d2a r18 EXIT=0 fault=0 m432=1 wall=76s
+d2a r19 EXIT=0 fault=0 m432=1 wall=76s
+d2a r20 EXIT=0 fault=0 m432=1 wall=76s
+d2a r21 EXIT=0 fault=0 m432=1 wall=75s
+d2a r22 EXIT=0 fault=0 m432=1 wall=76s
+d2a r23 EXIT=0 fault=0 m432=1 wall=76s
+d2a r24 EXIT=0 fault=0 m432=1 wall=76s
+d2a r25 EXIT=0 fault=0 m432=1 wall=75s
+# d2a end Sat Oct  3 01:56:21 EDT 2026
+# d4t start Sat Oct  3 01:56:39 EDT 2026 md5 c78ee9b11b6470bf4e965847a216c05a N=1 arms='X=1;--hsfcheck|M53_PFDELAY_US=5000;--hsfcheck'
+d4t r1-1 EXIT=0 fault=0 checks=0 wall=147s arm='X=1;--hsfcheck'
+d4t r1-2 EXIT=0 fault=0 checks=0 wall=143s arm='M53_PFDELAY_US=5000;--hsfcheck'
+# d4t end Sat Oct  3 02:01:33 EDT 2026
+# d4a start Sat Oct  3 02:02:12 EDT 2026 md5 c78ee9b11b6470bf4e965847a216c05a N=60 arms='X=1;--memstat 120|M53_PFDELAY_US=5000;--memstat 120'
+d4a r1-1 EXIT=0 fault=0 checks=0 wall=134s arm='X=1;--memstat 120'
+d4a r1-2 EXIT=0 fault=0 checks=0 wall=137s arm='M53_PFDELAY_US=5000;--memstat 120'
+d4a r2-1 EXIT=0 fault=0 checks=0 wall=134s arm='X=1;--memstat 120'
+d4a r2-2 EXIT=0 fault=0 checks=0 wall=82s arm='M53_PFDELAY_US=5000;--memstat 120'
+d4a r3-1 EXIT=0 fault=0 checks=0 wall=98s arm='X=1;--memstat 120'
+d4a r3-2 EXIT=0 fault=0 checks=0 wall=95s arm='M53_PFDELAY_US=5000;--memstat 120'
+d4a r4-1 EXIT=0 fault=0 checks=0 wall=89s arm='X=1;--memstat 120'
+# d4a end Sat Oct  3 02:15:15 EDT 2026
+# d4b start Sat Oct  3 02:15:28 EDT 2026 md5 c78ee9b11b6470bf4e965847a216c05a N=60 arms='X=1;--memstat 120|M53_PFDELAY_US=5000;--memstat 120'
+d4b yielded 40s to a pikmin run
+d4b r1-1 EXIT=0 fault=0 checks=0 wall=76s arm='X=1;--memstat 120'
+d4b r1-2 EXIT=0 fault=0 checks=0 wall=76s arm='M53_PFDELAY_US=5000;--memstat 120'
+d4b r2-1 EXIT=0 fault=0 checks=0 wall=76s arm='X=1;--memstat 120'
+d4b r2-2 EXIT=0 fault=0 checks=0 wall=75s arm='M53_PFDELAY_US=5000;--memstat 120'
+d4b r3-1 EXIT=0 fault=0 checks=0 wall=75s arm='X=1;--memstat 120'
+d4b r3-2 EXIT=0 fault=0 checks=0 wall=76s arm='M53_PFDELAY_US=5000;--memstat 120'
+d4b r4-1 EXIT=0 fault=0 checks=0 wall=76s arm='X=1;--memstat 120'
+d4b r4-2 EXIT=0 fault=0 checks=0 wall=75s arm='M53_PFDELAY_US=5000;--memstat 120'
+# d4b end Sat Oct  3 02:26:31 EDT 2026
+# d4c start Sat Oct  3 02:26:37 EDT 2026 md5 c78ee9b11b6470bf4e965847a216c05a N=60 arms='X=1;--memstat 120|M53_PFDELAY_US=5000;--memstat 120|X=1;--shotdir /Users/zach/m53/shots --perfdump /Users/zach/m53/shots/p.csv --mgend 1800 --mgdump 300,1200'
+d4c r1-1 EXIT=0 fault=0 checks=0 wall=75s arm='X=1;--memstat 120'
+d4c r1-2 EXIT=0 fault=0 checks=0 wall=76s arm='M53_PFDELAY_US=5000;--memstat 120'
+d4c r1-3 EXIT=0 fault=0 checks=0 wall=100s arm='X=1;--shotdir /Users/zach/m53/shots --perfdump /Users/zach/m53/shots/p.csv --mgend 1800 --mgdump 300,1200'
+d4c r2-1 EXIT=0 fault=0 checks=0 wall=76s arm='X=1;--memstat 120'
+d4c r2-2 EXIT=0 fault=0 checks=0 wall=76s arm='M53_PFDELAY_US=5000;--memstat 120'
+d4c r2-3 EXIT=0 fault=0 checks=0 wall=100s arm='X=1;--shotdir /Users/zach/m53/shots --perfdump /Users/zach/m53/shots/p.csv --mgend 1800 --mgdump 300,1200'
+d4c r3-1 EXIT=0 fault=0 checks=0 wall=76s arm='X=1;--memstat 120'
+d4c r3-2 EXIT=0 fault=0 checks=0 wall=75s arm='M53_PFDELAY_US=5000;--memstat 120'
+d4c r3-3 EXIT=0 fault=0 checks=0 wall=100s arm='X=1;--shotdir /Users/zach/m53/shots --perfdump /Users/zach/m53/shots/p.csv --mgend 1800 --mgdump 300,1200'
+d4c r4-1 EXIT=0 fault=0 checks=0 wall=75s arm='X=1;--memstat 120'
+d4c r4-2 EXIT=0 fault=0 checks=0 wall=76s arm='M53_PFDELAY_US=5000;--memstat 120'
+d4c r4-3 EXIT=0 fault=0 checks=0 wall=100s arm='X=1;--shotdir /Users/zach/m53/shots --perfdump /Users/zach/m53/shots/p.csv --mgend 1800 --mgdump 300,1200'
+d4c r5-1 EXIT=0 fault=0 checks=0 wall=76s arm='X=1;--memstat 120'
+d4c r5-2 EXIT=0 fault=0 checks=0 wall=76s arm='M53_PFDELAY_US=5000;--memstat 120'
+d4c r5-3 EXIT=0 fault=0 checks=0 wall=100s arm='X=1;--shotdir /Users/zach/m53/shots --perfdump /Users/zach/m53/shots/p.csv --mgend 1800 --mgdump 300,1200'
+d4c r6-1 EXIT=0 fault=0 checks=0 wall=76s arm='X=1;--memstat 120'
+d4c r6-2 EXIT=0 fault=0 checks=0 wall=76s arm='M53_PFDELAY_US=5000;--memstat 120'
+d4c r6-3 EXIT=0 fault=0 checks=0 wall=100s arm='X=1;--shotdir /Users/zach/m53/shots --perfdump /Users/zach/m53/shots/p.csv --mgend 1800 --mgdump 300,1200'
+d4c r7-1 EXIT=0 fault=0 checks=0 wall=76s arm='X=1;--memstat 120'
+d4c r7-2 EXIT=0 fault=0 checks=0 wall=75s arm='M53_PFDELAY_US=5000;--memstat 120'
+d4c r7-3 EXIT=0 fault=0 checks=0 wall=100s arm='X=1;--shotdir /Users/zach/m53/shots --perfdump /Users/zach/m53/shots/p.csv --mgend 1800 --mgdump 300,1200'
+d4c r8-1 EXIT=0 fault=0 checks=0 wall=79s arm='X=1;--memstat 120'
+d4c r8-2 EXIT=0 fault=0 checks=0 wall=75s arm='M53_PFDELAY_US=5000;--memstat 120'
+d4c r8-3 EXIT=0 fault=0 checks=0 wall=101s arm='X=1;--shotdir /Users/zach/m53/shots --perfdump /Users/zach/m53/shots/p.csv --mgend 1800 --mgdump 300,1200'
+d4c r9-1 EXIT=0 fault=0 checks=0 wall=76s arm='X=1;--memstat 120'
+d4c r9-2 EXIT=0 fault=0 checks=0 wall=75s arm='M53_PFDELAY_US=5000;--memstat 120'
+d4c r9-3 EXIT=0 fault=0 checks=0 wall=101s arm='X=1;--shotdir /Users/zach/m53/shots --perfdump /Users/zach/m53/shots/p.csv --mgend 1800 --mgdump 300,1200'
+d4c r10-1 EXIT=0 fault=0 checks=0 wall=76s arm='X=1;--memstat 120'
+d4c r10-2 EXIT=0 fault=0 checks=0 wall=75s arm='M53_PFDELAY_US=5000;--memstat 120'
+d4c r10-3 EXIT=0 fault=0 checks=0 wall=100s arm='X=1;--shotdir /Users/zach/m53/shots --perfdump /Users/zach/m53/shots/p.csv --mgend 1800 --mgdump 300,1200'
+# d4c end Sat Oct  3 03:09:38 EDT 2026
+# d5t start Sat Oct  3 03:09:50 EDT 2026 md5 0afce01f9fbe197180e7602fe4f4da18 N=1 arms='X=1;--memstat 60'
+d5t r1-1 EXIT=0 fault=0 checks=0 wall=75s arm='X=1;--memstat 60'
+# d5t end Sat Oct  3 03:11:08 EDT 2026
+# d5a start Sat Oct  3 03:11:27 EDT 2026 md5 0afce01f9fbe197180e7602fe4f4da18 N=60 arms='X=1;--memstat 120|M53_PFDELAY_US=5000;--memstat 120|X=1;--shotdir /Users/zach/m53/shots --perfdump /Users/zach/m53/shots/p.csv --mgend 1800 --mgdump 300,1200'
+d5a r1-1 EXIT=0 fault=0 checks=0 wall=75s arm='X=1;--memstat 120'
+d5a r1-2 EXIT=0 fault=0 checks=0 wall=76s arm='M53_PFDELAY_US=5000;--memstat 120'
+d5a r1-3 EXIT=0 fault=0 checks=0 wall=103s arm='X=1;--shotdir /Users/zach/m53/shots --perfdump /Users/zach/m53/shots/p.csv --mgend 1800 --mgdump 300,1200'
+d5a r2-1 EXIT=0 fault=0 checks=0 wall=82s arm='X=1;--memstat 120'
+d5a r2-2 EXIT=0 fault=0 checks=0 wall=82s arm='M53_PFDELAY_US=5000;--memstat 120'
+d5a r2-3 EXIT=0 fault=0 checks=0 wall=109s arm='X=1;--shotdir /Users/zach/m53/shots --perfdump /Users/zach/m53/shots/p.csv --mgend 1800 --mgdump 300,1200'
+d5a r3-1 EXIT=0 fault=0 checks=0 wall=82s arm='X=1;--memstat 120'
+d5a r3-2 EXIT=0 fault=0 checks=0 wall=88s arm='M53_PFDELAY_US=5000;--memstat 120'
+d5a r3-3 EXIT=0 fault=0 checks=0 wall=113s arm='X=1;--shotdir /Users/zach/m53/shots --perfdump /Users/zach/m53/shots/p.csv --mgend 1800 --mgdump 300,1200'
+d5a r4-1 EXIT=0 fault=0 checks=0 wall=88s arm='X=1;--memstat 120'
+d5a r4-2 EXIT=0 fault=0 checks=0 wall=86s arm='M53_PFDELAY_US=5000;--memstat 120'
+d5a r4-3 EXIT=0 fault=0 checks=0 wall=125s arm='X=1;--shotdir /Users/zach/m53/shots --perfdump /Users/zach/m53/shots/p.csv --mgend 1800 --mgdump 300,1200'
+d5a r5-1 EXIT=0 fault=0 checks=0 wall=79s arm='X=1;--memstat 120'
+d5a r5-2 EXIT=0 fault=0 checks=0 wall=75s arm='M53_PFDELAY_US=5000;--memstat 120'
+d5a r5-3 EXIT=0 fault=0 checks=0 wall=100s arm='X=1;--shotdir /Users/zach/m53/shots --perfdump /Users/zach/m53/shots/p.csv --mgend 1800 --mgdump 300,1200'
+d5a r6-1 EXIT=0 fault=0 checks=0 wall=75s arm='X=1;--memstat 120'
+d5a r6-2 EXIT=0 fault=0 checks=0 wall=76s arm='M53_PFDELAY_US=5000;--memstat 120'
+d5a r6-3 EXIT=0 fault=0 checks=0 wall=100s arm='X=1;--shotdir /Users/zach/m53/shots --perfdump /Users/zach/m53/shots/p.csv --mgend 1800 --mgdump 300,1200'
+d5a r7-1 EXIT=0 fault=0 checks=0 wall=76s arm='X=1;--memstat 120'
+d5a r7-2 EXIT=0 fault=0 checks=0 wall=76s arm='M53_PFDELAY_US=5000;--memstat 120'
+d5a r7-3 EXIT=0 fault=0 checks=0 wall=100s arm='X=1;--shotdir /Users/zach/m53/shots --perfdump /Users/zach/m53/shots/p.csv --mgend 1800 --mgdump 300,1200'
+d5a r8-1 EXIT=0 fault=0 checks=0 wall=76s arm='X=1;--memstat 120'
+d5a r8-2 EXIT=0 fault=0 checks=0 wall=76s arm='M53_PFDELAY_US=5000;--memstat 120'
+d5a r8-3 EXIT=0 fault=0 checks=0 wall=100s arm='X=1;--shotdir /Users/zach/m53/shots --perfdump /Users/zach/m53/shots/p.csv --mgend 1800 --mgdump 300,1200'
+d5a r9-1 EXIT=0 fault=0 checks=0 wall=76s arm='X=1;--memstat 120'
+d5a r9-2 EXIT=0 fault=0 checks=0 wall=76s arm='M53_PFDELAY_US=5000;--memstat 120'
+d5a r9-3 EXIT=0 fault=0 checks=0 wall=100s arm='X=1;--shotdir /Users/zach/m53/shots --perfdump /Users/zach/m53/shots/p.csv --mgend 1800 --mgdump 300,1200'
+d5a r10-1 EXIT=0 fault=0 checks=0 wall=76s arm='X=1;--memstat 120'
+d5a r10-2 EXIT=0 fault=0 checks=0 wall=76s arm='M53_PFDELAY_US=5000;--memstat 120'
+d5a r10-3 EXIT=0 fault=0 checks=0 wall=100s arm='X=1;--shotdir /Users/zach/m53/shots --perfdump /Users/zach/m53/shots/p.csv --mgend 1800 --mgdump 300,1200'
+d5a r11-1 EXIT=0 fault=0 checks=0 wall=76s arm='X=1;--memstat 120'
+d5a r11-2 EXIT=0 fault=0 checks=0 wall=76s arm='M53_PFDELAY_US=5000;--memstat 120'
+d5a r11-3 EXIT=0 fault=0 checks=0 wall=100s arm='X=1;--shotdir /Users/zach/m53/shots --perfdump /Users/zach/m53/shots/p.csv --mgend 1800 --mgdump 300,1200'
+d5a r12-1 EXIT=0 fault=0 checks=0 wall=76s arm='X=1;--memstat 120'
+d5a r12-2 EXIT=0 fault=0 checks=0 wall=76s arm='M53_PFDELAY_US=5000;--memstat 120'
+d5a r12-3 EXIT=0 fault=0 checks=0 wall=100s arm='X=1;--shotdir /Users/zach/m53/shots --perfdump /Users/zach/m53/shots/p.csv --mgend 1800 --mgdump 300,1200'
+d5a r13-1 EXIT=0 fault=0 checks=0 wall=76s arm='X=1;--memstat 120'
+d5a r13-2 EXIT=0 fault=0 checks=0 wall=76s arm='M53_PFDELAY_US=5000;--memstat 120'
+d5a r13-3 EXIT=0 fault=0 checks=0 wall=100s arm='X=1;--shotdir /Users/zach/m53/shots --perfdump /Users/zach/m53/shots/p.csv --mgend 1800 --mgdump 300,1200'
+d5a r14-1 EXIT=0 fault=0 checks=0 wall=76s arm='X=1;--memstat 120'
+d5a r14-2 EXIT=0 fault=0 checks=0 wall=76s arm='M53_PFDELAY_US=5000;--memstat 120'
+# d5a end Sat Oct  3 04:11:45 EDT 2026

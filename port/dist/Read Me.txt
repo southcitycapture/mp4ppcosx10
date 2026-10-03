@@ -1,6 +1,6 @@
 Mario Party 4 PowerPC Edition
 =============================
-Version 0.9.21
+Version 0.9.22
 
 
 WHAT THIS IS
@@ -654,6 +654,17 @@ paint with, drew about 13 frames a second on one 1 GHz processor in
 0.9.8 --
 and there the sound breaks up now and then while the game catches up.
 A two-processor Mac does not.
+
+Dungeon Duos once stopped at its loading screen in the lab (one load in
+208).  0.9.22 checks every piece of game data against the disc as it is
+unpacked and puts the disc's own bytes back if anything has changed them,
+and if any minigame does stop, its log says why: the log of a marathon's
+minigame is in the MarioParty4 folder of your Library's Application Support,
+in marathon-logs, named after the minigame (outside the marathon,
+MarioParty4.log in the same folder).  A later game overwrites it, so copy
+it before playing on; lines starting "*** port: fault", "DATA CHECK
+FAILED", "RESIDENT COPY CHANGED" or "WRITE INTO A DATA DIRECTORY IMAGE"
+are the ones the project wants to see.
 
 The game's memory card is one card in slot A;
 slot B is always empty.  A second controller works (checked with a pad on
