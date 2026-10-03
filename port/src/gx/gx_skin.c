@@ -233,6 +233,7 @@ unsigned port_frame_frees; /* M24: HuMemMemoryFree calls this frame (perf.c's st
 void port_curve_memo_freed(const void* data, unsigned long size);
 void port_wb_freed(const void* ptr, size_t n);
 void port_dvd_forget(const void* p, unsigned long n); /* M53: dvd_fs.c */
+void port_dirguard_open(const void* p, unsigned long n); /* M53: data_check.c */
 void port_mem_freed(const void* data, unsigned long size) {
     const u8* lo = (const u8*)data;
     const u8* hi = lo + size;
@@ -242,6 +243,7 @@ void port_mem_freed(const void* data, unsigned long size) {
     port_curve_memo_freed(data, size);    /* M28 (b): a memoised track in it? */
     port_wb_freed(data, size);            /* M42: the write barrier forgets the block */
     port_dvd_forget(data, size);          /* M53: no disc read's bytes live here now */
+    port_dirguard_open(data, size);       /* M53: a freed directory image is writable again */
     for (i = 0; i < nhsfs; i++) {
         SkinHsf* h = &hsfs[i];
         int hit;

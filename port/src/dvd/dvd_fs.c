@@ -248,6 +248,8 @@ BOOL DVDClose(DVDFileInfo* fi) {
 }
 
 void port_wb_disarm(const void* ptr, size_t n); /* M42: gx_wb.c */
+void port_dirguard_open(const void* p, unsigned long n);       /* M53: data_check.c */
+void port_dirguard_arm(const void* addr, unsigned len, int entry);
 
 /* ---- M53 (PLAN.md 68): the last reads into memory, for the data check -----
  *
@@ -382,6 +384,7 @@ static s32 do_read(DVDFileInfo* fi, void* addr, s32 length, s32 offset) {
      * write barrier protected (fread would fail with EFAULT), and a copy
      * would fault on every page: the destination is unprotected first */
     port_wb_disarm(addr, (size_t)length);
+    port_dirguard_open(addr, (unsigned long)length); /* M53 */
     /* M36 (PLAN.md 51): the resident set answers first.  Same bytes, no
      * disk; the completion below lands at the same instant either way. */
     if (port_dvd_cache_serve(n, (u32)offset, addr, (u32)length)) {
@@ -418,6 +421,10 @@ static s32 do_read(DVDFileInfo* fi, void* addr, s32 length, s32 offset) {
         fclose(f);
     }
     rrec_note(addr, (u32)got, n, (u32)offset); /* M53 */
+    if (offset == 0 && got >= entries[n].length && got >= 2 * 4096 &&
+        strncmp(entries[n].path, "data/", 5) == 0) {
+        port_dirguard_arm(addr, (unsigned)got, n); /* M53: never written from here on */
+    }
     reads++;
     bytes_read += got;
     if (port_opt.verbose) { port_log("port> dvd read done, got %u\n", (unsigned)got); }

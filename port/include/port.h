@@ -31,7 +31,7 @@ extern "C" {
 /* ---- settings, from argv ------------------------------------------------- */
 /* M32: the shipped version (the dmg's name, the plist, the --defaults header)
  * and the milestone that built it. */
-#define PORT_VERSION_STRING "0.9.21"
+#define PORT_VERSION_STRING "0.9.22"
 #define PORT_MILESTONE "M52"
 /* M51 (PLAN.md 66.2): the console's clock at HuSysInit's frand() is its RTC +
  * 2,702,265 ticks (Dolphin, measured at two RTCs); the port's deterministic

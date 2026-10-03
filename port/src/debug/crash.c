@@ -27,6 +27,7 @@
 static int watchdog_progressed(void);
 int port_wb_fault(const void* addr);
 void port_data_crash_report(const void* fault_addr); /* M53: src/dvd/data_check.c */
+int port_dirguard_fault(const void* addr, void* uap);  /* M53 */
 int port_skinwatch_fault(const void* addr, void* uap); /* M48: gx_skin.c */
 
 static void handler(int sig, siginfo_t* info, void* uap) {
@@ -35,6 +36,9 @@ static void handler(int sig, siginfo_t* info, void* uap) {
     }
     /* M42 (PLAN.md 57.5): the vertex cache's write barrier -- a store to a
      * page it protected; the page is writable again and the store retries */
+    if ((sig == SIGBUS || sig == SIGSEGV) && info && port_dirguard_fault(info->si_addr, uap)) {
+        return; /* M53: a store into a guarded data directory image, named and let through */
+    }
     if ((sig == SIGBUS || sig == SIGSEGV) && info && port_skinwatch_fault(info->si_addr, uap)) {
         return; /* M48: --skinreadwatch's page, opened; the access retries */
     }
