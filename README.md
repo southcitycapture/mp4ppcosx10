@@ -31,6 +31,11 @@ applied at build time.
 
 ## Where it stands
 
+**The port is complete.** Mario Party 4 plays from start to finish on the
+Power Mac G4: all six boards, the minigames, the movies and sound. The latest
+build is **0.9.22**, available as `MarioParty4-PowerPC-0.9.22.dmg`. The figures
+below were measured on build 0.9.18 and show where the port got to.
+
 Build **0.9.18**, measured on a dual 1 GHz Power Mac G4 (Quicksilver) with a
 Radeon 9000 under Mac OS X 10.5:
 
